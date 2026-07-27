@@ -3744,14 +3744,29 @@ function initSupabaseSync() {
       if (!error && driversData) {
         const driversList = [];
         for (const data of driversData) {
-          const user = usersMap[data.id] || {};
-          let vehicle = {};
-          if (data.vehicle_id) {
+          let user = usersMap[data.id];
+          if (!user || !user.name || user.name === 'مستخدم جديد' || user.name === 'سائق جديد') {
             try {
-              const { data: vData } = await supabaseClient.from('vehicles').select('*').eq('id', data.vehicle_id).maybeSingle();
-              if (vData) vehicle = vData;
+              const { data: uData } = await supabaseClient.from('users').select('*').eq('id', data.id).maybeSingle();
+              if (uData) {
+                user = uData;
+                usersMap[data.id] = uData;
+              }
             } catch (e) {}
           }
+          user = user || {};
+
+          let vehicle = {};
+          try {
+            if (data.vehicle_id) {
+              const { data: vData } = await supabaseClient.from('vehicles').select('*').eq('id', data.vehicle_id).maybeSingle();
+              if (vData) vehicle = vData;
+            }
+            if (!vehicle.model) {
+              const { data: vData } = await supabaseClient.from('vehicles').select('*').eq('driver_id', data.id).maybeSingle();
+              if (vData) vehicle = vData;
+            }
+          } catch (e) {}
 
           const dateObj = new Date(data.updated_at || Date.now());
           const statusVal = data.verification_status || 'unregistered';

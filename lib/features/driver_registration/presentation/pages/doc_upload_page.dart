@@ -231,7 +231,7 @@ class _DocUploadPageState extends State<DocUploadPage> {
     }
   }
 
-  void _onSubmit() {
+  Future<void> _onSubmit() async {
     if (_formKey.currentState!.validate()) {
       if (!_isAllDocumentsUploaded()) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -246,30 +246,75 @@ class _DocUploadPageState extends State<DocUploadPage> {
         return;
       }
 
-      GlobalState.instance.submitDriverDocuments(
-        name: _vehicleNameController.text.trim(),
-        number: _vehicleNumberController.text.trim(),
-        idCardFrontUrl: _idCardFrontUrl!,
-        idCardBackUrl: _idCardBackUrl!,
-        driverLicenseFrontUrl: _driverLicenseFrontUrl!,
-        driverLicenseBackUrl: _driverLicenseBackUrl!,
-        vehicleLicenseFrontUrl: _vehicleLicenseFrontUrl!,
-        vehicleLicenseBackUrl: _vehicleLicenseBackUrl!,
-        vehicleImages: _vehicleImagesUrls,
-        driverName: _driverNameController.text.trim(),
-        driverAge: int.tryParse(_driverAgeController.text.trim()) ?? 0,
-        driverGender: _driverGender,
-        phone: _driverPhoneController.text.trim(),
-        vehicleCategory: _vehicleCategory,
-        hasAC: _hasAC,
-        maxPassengers: _maxPassengers,
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(color: AppColors.mediumBlue),
+                const SizedBox(height: 16),
+                Text(
+                  'جاري حفظ البيانات والمستندات...',
+                  style: GoogleFonts.cairo(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
 
-      // Route to review pending page
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const ReviewPendingPage()),
-      );
+      try {
+        await GlobalState.instance.submitDriverDocuments(
+          name: _vehicleNameController.text.trim(),
+          number: _vehicleNumberController.text.trim(),
+          idCardFrontUrl: _idCardFrontUrl!,
+          idCardBackUrl: _idCardBackUrl!,
+          driverLicenseFrontUrl: _driverLicenseFrontUrl!,
+          driverLicenseBackUrl: _driverLicenseBackUrl!,
+          vehicleLicenseFrontUrl: _vehicleLicenseFrontUrl!,
+          vehicleLicenseBackUrl: _vehicleLicenseBackUrl!,
+          vehicleImages: _vehicleImagesUrls,
+          driverName: _driverNameController.text.trim(),
+          driverAge: int.tryParse(_driverAgeController.text.trim()) ?? 0,
+          driverGender: _driverGender,
+          phone: _driverPhoneController.text.trim(),
+          vehicleCategory: _vehicleCategory,
+          hasAC: _hasAC,
+          maxPassengers: _maxPassengers,
+        );
+
+        if (!mounted) return;
+        Navigator.pop(context); // Dismiss loading dialog
+
+        // Route to review pending page
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const ReviewPendingPage()),
+        );
+      } catch (e) {
+        if (mounted) {
+          Navigator.pop(context); // Dismiss loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('حدث خطأ أثناء حفظ البيانات: $e', style: GoogleFonts.cairo()),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
     }
   }
 

@@ -1030,30 +1030,52 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     driverMaxPassengers = maxPassengers;
     verificationStatus = DriverVerificationStatus.submitted;
 
-    if (userUid != null) {
-      final vehicleId = _supabase.from('vehicles').insert({
-        'driver_id': userUid!,
-        'model': name,
-        'number_plate': number,
-        'color': 'فضي',
-        'type': selectedVehicleType,
-        'vehicle_category': vehicleCategory,
-        'has_ac': hasAC,
-        'max_passengers': maxPassengers,
-        'images': vehicleImages,
-      }).select('id').single();
+    final uid = userUid ?? _supabase.auth.currentUser?.id;
+    if (uid == null) {
+      debugPrint('[GlobalState] ❌ Cannot submit driver documents: userUid is null');
+      throw Exception('لم يتم الحصول على معرف المستخدم. يرجى إعادة تسجيل الدخول.');
+    }
+
+    userUid = uid;
+
+    try {
+      // 1. Insert/upsert vehicle record
+      String? vehicleId;
+      try {
+        final vRes = await _supabase.from('vehicles').insert({
+          'driver_id': uid,
+          'model': name,
+          'number_plate': number,
+          'color': 'فضي',
+          'type': selectedVehicleType,
+          'vehicle_category': vehicleCategory,
+          'has_ac': hasAC,
+          'max_passengers': maxPassengers,
+          'images': vehicleImages,
+        }).select('id').single();
+        vehicleId = vRes['id']?.toString();
+      } catch (vErr) {
+        debugPrint('[GlobalState] Vehicle insert note: $vErr');
+      }
+
+      // 2. Upsert user record with real driver name and phone
+      final effectivePhone = (phone != null && phone.trim().isNotEmpty)
+          ? phone.trim()
+          : (phoneNumber ?? '');
 
       await _supabase.from('users').upsert({
-        'id': userUid!,
-        'name': driverName,
-        'phone_number': phone ?? phoneNumber ?? '',
+        'id': uid,
+        'name': driverName.trim(),
+        'phone_number': effectivePhone,
         'role': 'driver',
       });
+      userName = driverName.trim();
+      if (effectivePhone.isNotEmpty) phoneNumber = effectivePhone;
 
-      await _supabase.from('drivers').upsert({
-        'id': userUid!,
+      // 3. Upsert driver record with ALL document URLs and verification status 'submitted'
+      final driverData = <String, dynamic>{
+        'id': uid,
         'verification_status': 'submitted',
-        'vehicle_id': (await vehicleId)['id'],
         'national_id_url': idCardFrontUrl,
         'national_id_back_url': idCardBackUrl,
         'license_url': driverLicenseFrontUrl,
@@ -1062,12 +1084,19 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         'vehicle_back_url': vehicleLicenseBackUrl,
         'is_online': false,
         'is_available': false,
-      });
-
-      if (phone != null && phone.isNotEmpty) {
-        phoneNumber = phone;
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      if (vehicleId != null) {
+        driverData['vehicle_id'] = vehicleId;
       }
+
+      await _supabase.from('drivers').upsert(driverData);
+      debugPrint('[GlobalState] ✓ submitDriverDocuments complete for driver $uid');
+    } catch (e) {
+      debugPrint('[GlobalState] ❌ Error in submitDriverDocuments: $e');
+      rethrow;
     }
+
     notifyListeners();
   }
 

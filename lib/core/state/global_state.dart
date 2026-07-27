@@ -1090,7 +1090,29 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         driverData['vehicle_id'] = vehicleId;
       }
 
-      await _supabase.from('drivers').upsert(driverData);
+      try {
+        await _supabase.from('drivers').upsert(driverData);
+      } catch (upsertErr) {
+        final errStr = upsertErr.toString();
+        if (errStr.contains('PGRST204') || errStr.contains('column')) {
+          debugPrint('[GlobalState] Missing columns in drivers table — trying fallback upsert: $upsertErr');
+          // Fallback to core columns if database lacks new back URL columns
+          final fallbackData = <String, dynamic>{
+            'id': uid,
+            'verification_status': 'submitted',
+            'national_id_url': idCardFrontUrl,
+            'license_url': driverLicenseFrontUrl,
+            'is_online': false,
+            'is_available': false,
+            'updated_at': DateTime.now().toIso8601String(),
+          };
+          if (vehicleId != null) fallbackData['vehicle_id'] = vehicleId;
+          await _supabase.from('drivers').upsert(fallbackData);
+        } else {
+          rethrow;
+        }
+      }
+
       debugPrint('[GlobalState] ✓ submitDriverDocuments complete for driver $uid');
     } catch (e) {
       debugPrint('[GlobalState] ❌ Error in submitDriverDocuments: $e');

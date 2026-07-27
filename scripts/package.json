@@ -1,0 +1,10 @@
+{
+  "name": "inride-migration-scripts",
+  "version": "1.0.0",
+  "description": "Migration scripts from Firebase to Supabase for inRide",
+  "main": "migrate_firebase_to_supabase.js",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "firebase-admin": "^13.0.2"
+  }
+}

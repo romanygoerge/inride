@@ -1,0 +1,49 @@
+{
+  "users": {
+    "count": 6,
+    "failed": 0
+  },
+  "passengers": {
+    "count": 4,
+    "failed": 3
+  },
+  "drivers": {
+    "count": 6,
+    "failed": 3
+  },
+  "vehicles": {
+    "count": 11,
+    "failed": 17
+  },
+  "rideRequests": {
+    "count": 289,
+    "failed": 42
+  },
+  "rideOffers": {
+    "count": 0,
+    "failed": 0
+  },
+  "chatMessages": {
+    "count": 6,
+    "failed": 0
+  },
+  "ratings": {
+    "count": 87,
+    "failed": 0
+  },
+  "notifications": {
+    "count": 116,
+    "failed": 0
+  },
+  "transactions": {
+    "count": 0,
+    "failed": 0
+  },
+  "supportChats": {
+    "count": 0,
+    "failed": 0
+  },
+  "imagesMigrated": 1,
+  "filesMigrated": 0,
+  "errorsFixed": []
+}

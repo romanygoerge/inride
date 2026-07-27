@@ -1,0 +1,197 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/models/notification_model.dart';
+
+class NotificationDetailsPage extends StatelessWidget {
+  final NotificationModel notification;
+
+  const NotificationDetailsPage({
+    super.key,
+    required this.notification,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final iconData = _getIconForType(notification.type);
+    final iconColor = _getColorForType(notification.type);
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: Text(
+          'تفاصيل الإشعار',
+          style: GoogleFonts.cairo(
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.textPrimary, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Top Card
+              Container(
+                padding: const EdgeInsets.all(24.0),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 15,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    // Large icon
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: iconColor.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        iconData,
+                        color: iconColor,
+                        size: 40,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Title
+                    Text(
+                      notification.title,
+                      style: GoogleFonts.cairo(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    // Date & Time
+                    Text(
+                      _formatDateTime(notification.createdAt),
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Message content card
+              Container(
+                padding: const EdgeInsets.all(24.0),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 15,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'محتوى الرسالة',
+                      style: GoogleFonts.cairo(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Divider(color: AppColors.border),
+                    const SizedBox(height: 12),
+                    Text(
+                      notification.body,
+                      style: GoogleFonts.cairo(
+                        fontSize: 14,
+                        color: AppColors.textPrimary,
+                        height: 1.7,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  IconData _getIconForType(String type) {
+    switch (type) {
+      case 'new_trip':
+        return Icons.directions_car_filled_rounded;
+      case 'accept_trip':
+        return Icons.check_circle_rounded;
+      case 'cancel_trip':
+        return Icons.cancel_rounded;
+      case 'driver_arrived':
+        return Icons.pin_drop_rounded;
+      case 'new_message':
+        return Icons.chat_bubble_rounded;
+      case 'offers':
+        return Icons.local_offer_rounded;
+      case 'app_updates':
+        return Icons.system_update_alt_rounded;
+      case 'admin_notifications':
+      default:
+        return Icons.campaign_rounded;
+    }
+  }
+
+  Color _getColorForType(String type) {
+    switch (type) {
+      case 'new_trip':
+        return Colors.blue;
+      case 'accept_trip':
+        return Colors.green;
+      case 'cancel_trip':
+        return Colors.red;
+      case 'driver_arrived':
+        return Colors.teal;
+      case 'new_message':
+        return Colors.orange;
+      case 'offers':
+        return Colors.purple;
+      case 'app_updates':
+        return Colors.blueGrey;
+      case 'admin_notifications':
+      default:
+        return Colors.amber.shade800;
+    }
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final months = [
+      'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+      'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+    ];
+    final hour = dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
+    final period = dt.hour >= 12 ? 'م' : 'ص';
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year} - $hour:$minute $period';
+  }
+}

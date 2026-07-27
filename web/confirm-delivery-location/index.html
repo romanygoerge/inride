@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تحديد موقع المستلم | inRide</title>
+    
+    <!-- Google Fonts: Cairo & Outfit -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS for Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+    <style>
+        :root {
+            --primary-color: #2196F3;
+            --primary-dark: #1976D2;
+            --secondary-color: #0D47A1;
+            --background-color: #F8FAFC;
+            --text-color: #1E293B;
+            --text-secondary: #64748B;
+            --border-color: #E2E8F0;
+            --success-color: #10B981;
+            --error-color: #EF4444;
+            --warning-color: #F59E0B;
+            --card-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Cairo', sans-serif;
+        }
+
+        body {
+            background-color: var(--background-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 16px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 480px;
+            background: #ffffff;
+            border-radius: 30px;
+            box-shadow: var(--card-shadow);
+            overflow: hidden;
+            border: 1px solid rgba(0, 0, 0, 0.03);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            min-height: 520px;
+            animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            padding: 35px 20px;
+            text-align: center;
+            color: white;
+            box-shadow: 0 4px 20px rgba(13, 71, 161, 0.15);
+        }
+
+        .header-logo {
+            font-family: 'Outfit', sans-serif;
+            font-size: 42px;
+            font-weight: 900;
+            letter-spacing: 0.5px;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-top: 8px;
+            opacity: 0.95;
+        }
+
+        .content {
+            padding: 24px;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        /* Views management */
+        .view-panel {
+            display: none;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+        }
+
+        .view-panel.active {
+            display: flex;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* Loading View */
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid var(--border-color);
+            border-top: 4px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 40px auto 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            text-align: center;
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        /* Card components */
+        .info-card {
+            background-color: #F8FAFC;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+
+        .info-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .info-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .info-icon {
+            font-size: 20px;
+            color: var(--primary-color);
+        }
+
+        .info-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .info-value {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+
+        .msg-bubble {
+            font-size: 15px;
+            line-height: 1.7;
+            color: var(--text-color);
+            text-align: center;
+            margin-bottom: 28px;
+            font-weight: 600;
+        }
+
+        /* Buttons */
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            padding: 16px;
+            font-size: 15px;
+            font-weight: 700;
+            border-radius: 16px;
+            cursor: pointer;
+            border: none;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            outline: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+            color: white;
+            box-shadow: 0 10px 20px -5px rgba(33, 150, 243, 0.35);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px -5px rgba(33, 150, 243, 0.45);
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--primary-color);
+            border: 2px solid var(--primary-color);
+            margin-top: 14px;
+        }
+
+        .btn-outline:hover {
+            background-color: rgba(33, 150, 243, 0.05);
+            transform: translateY(-2px);
+        }
+
+        /* Success & Error icons */
+        .status-icon-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .status-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto;
+        }
+
+        .status-title {
+            font-size: 20px;
+            font-weight: 900;
+            text-align: center;
+            margin-bottom: 12px;
+        }
+
+        .status-desc {
+            font-size: 14px;
+            color: var(--text-secondary);
+            text-align: center;
+            line-height: 1.6;
+            margin-bottom: 28px;
+        }
+
+        /* Map Container and Pin */
+        #map-container {
+            width: 100%;
+            height: 380px;
+            border-radius: 24px;
+            overflow: hidden;
+            position: relative;
+            border: 1px solid var(--border-color);
+            margin-bottom: 16px;
+        }
+
+        #leaflet-map {
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* Custom Map Pin absolute centered */
+        .map-center-pin {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -100%);
+            z-index: 999;
+            pointer-events: none; /* Let clicks pass through to the map */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .pin-icon {
+            width: 38px;
+            height: 38px;
+            background-color: var(--error-color);
+            border-radius: 50% 50% 50% 0;
+            transform: rotate(-45deg);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            border: 2px solid white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .pin-icon::after {
+            content: '';
+            width: 14px;
+            height: 14px;
+            background: white;
+            border-radius: 50%;
+        }
+
+        .pin-shadow {
+            width: 10px;
+            height: 4px;
+            background: rgba(0,0,0,0.25);
+            border-radius: 50%;
+            margin-top: -2px;
+            animation: pulse 1s ease infinite alternate;
+        }
+
+        /* Floating Address HUD on Map picker */
+        .map-address-hud {
+            background: white;
+            border-radius: 16px;
+            padding: 12px 16px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            font-size: 13px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 16px;
+            line-height: 1.5;
+            min-height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .footer {
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 24px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container" id="main-container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-logo">inRide</div>
+            <div class="header-title">تحديد موقع استلاف الديلفري 📍</div>
+        </div>
+
+        <!-- Dynamic Content Body -->
+        <div class="content">
+
+            <!-- 1. LOADING VIEW -->
+            <div id="view-loading" class="view-panel active">
+                <div class="spinner"></div>
+                <div class="loading-text" id="loading-status-text">جاري الاتصال بالنظام للتحقق من الطلب...</div>
+            </div>
+
+            <!-- 2. INTRO VIEW -->
+            <div id="view-intro" class="view-panel">
+                <div class="msg-bubble" id="intro-message">
+                    يريد المرسل إرسال طرد إليك، اضغط على الزر بالأسفل لمشاركة موقعك الحالي.
+                </div>
+                
+                <div class="info-card">
+                    <div class="info-row">
+                        <span class="info-icon">👤</span>
+                        <div>
+                            <div class="info-label">اسم المرسل</div>
+                            <div class="info-value" id="info-sender-name">...</div>
+                        </div>
+                    </div>
+                    <div class="info-row" id="package-description-row" style="display:none;">
+                        <span class="info-icon">📦</span>
+                        <div>
+                            <div class="info-label">وصف الطرد</div>
+                            <div class="info-value" id="info-package-desc">...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" id="btn-gps">
+                    <svg style="width:20px;height:20px;fill:currentColor;" viewBox="0 0 24 24">
+                        <path d="M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4Z"/>
+                    </svg>
+                    <span>مشاركة موقعي الحالي الآن 📍</span>
+                </button>
+
+                <button class="btn btn-outline" id="btn-show-map">
+                    تحديد الموقع يدويًا على الخريطة 🗺️
+                </button>
+            </div>
+
+            <!-- 3. MAP PICKER VIEW -->
+            <div id="view-map" class="view-panel" style="padding:0;">
+                <div id="map-container">
+                    <div id="leaflet-map"></div>
+                    <!-- Center Pin -->
+                    <div class="map-center-pin">
+                        <div class="pin-icon"></div>
+                        <div class="pin-shadow"></div>
+                    </div>
+                </div>
+                
+                <div class="map-address-hud" id="hud-address">
+                    جاري تحديد إحداثيات الموقع... 📍
+                </div>
+
+                <button class="btn btn-primary" id="btn-confirm-map">
+                    تأكيد موقع التوصيل المختار 📌
+                </button>
+                <button class="btn btn-outline" id="btn-back-to-intro" style="margin-top:10px;">
+                    رجوع للخلف
+                </button>
+            </div>
+
+            <!-- 4. SUCCESS VIEW -->
+            <div id="view-success" class="view-panel">
+                <div class="status-icon-container">
+                    <svg class="status-icon" viewBox="0 0 24 24">
+                        <path fill="#10B981" d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                    </svg>
+                </div>
+                <div class="status-title" style="color:var(--success-color);">تم إرسال موقعك بنجاح! 🎉</div>
+                <div class="status-desc">
+                    شكراً لك، تم حفظ إحداثيات التوصيل وتحديث المسار وتكلفة التوصيل لدى الكابتن تلقائياً. السائق في طريقه إليك الآن.
+                </div>
+            </div>
+
+            <!-- 5. ERROR VIEW -->
+            <div id="view-error" class="view-panel">
+                <div class="status-icon-container">
+                    <svg class="status-icon" viewBox="0 0 24 24">
+                        <path fill="#EF4444" d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                    </svg>
+                </div>
+                <div class="status-title" style="color:var(--error-color);" id="error-title">فشلت العملية ❌</div>
+                <div class="status-desc" id="error-desc">حدث خطأ أثناء تحميل بيانات الطلب أو تحديد موقعك. يرجى المحاولة مجدداً.</div>
+                
+                <button class="btn btn-primary" id="btn-retry" style="display:none;">
+                    إعادة المحاولة 🔄
+                </button>
+            </div>
+
+            <!-- Footer -->
+            <div class="footer">
+                &copy; 2026 inRide Inc. All rights reserved.
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        // ==========================================
+        // Supabase Config
+        // ==========================================
+        const SUPABASE_URL = 'https://fylruevfksmqnkykqkin.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5bHJ1ZXZma3NtcW5reWtxa2luIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NTY3NDYsImV4cCI6MjEwMDMzMjc0Nn0.u5NVng7fsptjQOnNlEYP7MzNDp8_ssN94xSxzg8VYi4';
+
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // State variables
+        let requestId = null;
+        let token = null;
+        let requestData = null;
+        let isGpsRunning = false;
+        let retryCallback = null;
+
+        // Leaflet Map State
+        let map = null;
+        let mapCenterLatLng = { lat: 30.0444, lng: 31.2357 }; // Default Cairo
+        let reverseGeocodeTimer = null;
+
+        // ==========================================
+        // View Panel Switching
+        // ==========================================
+        function showView(viewId) {
+            document.querySelectorAll('.view-panel').forEach(panel => {
+                panel.classList.remove('active');
+            });
+            document.getElementById(viewId).classList.add('active');
+        }
+
+        function showLoading(text) {
+            document.getElementById('loading-status-text').textContent = text;
+            showView('view-loading');
+        }
+
+        function showError(title, desc, onRetry) {
+            document.getElementById('error-title').textContent = title;
+            document.getElementById('error-desc').textContent = desc;
+            const btnRetry = document.getElementById('btn-retry');
+            if (onRetry) {
+                btnRetry.style.display = 'flex';
+                retryCallback = onRetry;
+            } else {
+                btnRetry.style.display = 'none';
+                retryCallback = null;
+            }
+            showView('view-error');
+        }
+
+        // ==========================================
+        // Helper Coordinates Formulas (Haversine)
+        // ==========================================
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Earth radius in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c; // Distance in km
+        }
+
+        function calculateFare(distance) {
+            let fare = 15.0; // Base 15 EGP
+            if (distance > 2.0) {
+                fare += (distance - 2.0) * 3.0; // 3 EGP per KM after 2 KM
+            }
+            return parseFloat(fare.toFixed(2));
+        }
+
+        // ==========================================
+        // Load Request Details from Firestore
+        // ==========================================
+        async function loadRequestAndInit() {
+            const urlParams = new URLSearchParams(window.location.search);
+            requestId = urlParams.get('requestId');
+            token = urlParams.get('token');
+
+            if (!requestId) {
+                showError("عذراً، الطلب غير متوفر ❌", "لم نتمكن من العثور على معرّف الطلب في الرابط المفتوح.");
+                return;
+            }
+
+            showLoading("جاري الاتصال بالنظام والتحقق من صلاحية الرابط...");
+
+            try {
+                // Fetch Request Record from Supabase
+                const { data, error } = await supabaseClient
+                    .from('ride_requests')
+                    .select('*')
+                    .eq('id', requestId)
+                    .maybeSingle();
+
+                if (error || !data) {
+                    showError("عذراً، لم يتم العثور على الطلب ❌", "هذا الطلب غير مسجل في أنظمتنا أو تم حذفه.");
+                    return;
+                }
+
+                requestData = {
+                    ...data,
+                    pickupLatitude: data.pickup_latitude ?? data.pickupLatitude,
+                    pickupLongitude: data.pickup_longitude ?? data.pickupLongitude,
+                    recipientToken: data.recipient_token ?? data.recipientToken,
+                    isDeliveryLocationConfirmed: data.is_delivery_location_confirmed ?? data.isDeliveryLocationConfirmed,
+                };
+
+                // Mark link as opened in Supabase
+                await supabaseClient.from('ride_requests').update({
+                    link_opened: true,
+                    link_opened_time: new Date().toISOString()
+                }).eq('id', requestId).catch(e => console.warn("Failed to update linkOpened tracking:", e));
+
+                // 4. Token validation
+                if (data.recipientToken && data.recipientToken !== token) {
+                    showError("الرابط غير صالح ❌", "عذراً، هذا الرابط غير صحيح أو انتهت صلاحية توثيقه الأمنية.");
+                    return;
+                }
+
+                // 5. Expiration / Completed check
+                if (data.status === 'Completed' || data.status === 'Cancelled' || data.status === 'Expired') {
+                    showError("رابط منتهي ⚠️", "انتهت صلاحية هذا الرابط لأن طلب التوصيل مكتمل أو ملغى بالفعل.");
+                    return;
+                }
+
+                // 6. Already Confirmed check
+                if (data.isDeliveryLocationConfirmed && data.allowLocationUpdate !== true) {
+                    showError("تم تحديد الموقع مسبقاً ✅", "لقد تم إدخال وتأكيد موقع التسليم لهذا الطلب بنجاح مسبقاً.");
+                    return;
+                }
+
+                // 7. Load Passenger Name
+                let passengerName = "المرسل";
+                if (data.passengerId) {
+                    const passSnap = await db.collection('Users').doc(data.passengerId).get();
+                    if (passSnap.exists && passSnap.data().name) {
+                        passengerName = passSnap.data().name;
+                    }
+                }
+
+                // Update UI values
+                document.getElementById('info-sender-name').textContent = passengerName;
+                document.getElementById('intro-message').textContent = `يريد (${passengerName}) إرسال طرد إليك، اضغط على الزر بالأسفل لمشاركة موقعك الحالي.`;
+                
+                if (data.packageDescription) {
+                    document.getElementById('package-description-row').style.display = 'flex';
+                    document.getElementById('info-package-desc').textContent = data.packageDescription;
+                }
+
+                showView('view-intro');
+
+            } catch (e) {
+                console.error(e);
+                showError("حدث خطأ في النظام ❌", "فشل تحميل تفاصيل طلب التوصيل. يرجى التأكد من اتصالك بالإنترنت.", loadRequestAndInit);
+            }
+        }
+
+        // ==========================================
+        // Geolocation GPS sharing logic
+        // ==========================================
+        function handleGpsSharing() {
+            if (isGpsRunning) return;
+            isGpsRunning = true;
+
+            showLoading("جاري طلب صلاحية الموقع وجلب إحداثياتك الحالية بدقة عالية...");
+
+            if (!navigator.geolocation) {
+                isGpsRunning = false;
+                showError("الجهاز غير مدعوم ❌", "متصفحك الحالي لا يدعم ميزة تحديد المواقع عبر الـ GPS.");
+                return;
+            }
+
+            let attemptCount = 0;
+            const maxAttempts = 3;
+
+            function attemptFetchPosition() {
+                attemptCount++;
+                navigator.geolocation.getCurrentPosition(
+                    async (position) => {
+                        try {
+                            // Permission granted & got position
+                            await db.collection('RideRequests').doc(requestId).update({
+                                locationPermissionGranted: true
+                            });
+
+                            const lat = position.coords.latitude;
+                            const lng = position.coords.longitude;
+                            const accuracy = position.coords.accuracy || 0;
+                            const timestamp = position.timestamp ? new Date(position.timestamp) : new Date();
+
+                            showLoading("تم جلب موقعك! جاري احتساب التكلفة وتحديث الكابتن...");
+
+                            // Save location
+                            await saveRecipientLocation(lat, lng, accuracy, timestamp, 'gps');
+
+                        } catch (err) {
+                            console.error(err);
+                            isGpsRunning = false;
+                            showError("فشل تحديث البيانات ❌", "حدث خطأ أثناء حفظ موقعك بقاعدة البيانات. يرجى المحاولة مجدداً.", handleGpsSharing);
+                        }
+                    },
+                    async (error) => {
+                        console.warn("Geolocation error:", error);
+                        
+                        // Log permission denied
+                        if (error.code === error.PERMISSION_DENIED) {
+                            await db.collection('RideRequests').doc(requestId).update({
+                                locationPermissionGranted: false
+                            }).catch(e => {});
+
+                            isGpsRunning = false;
+                            showError("صلاحية الموقع مرفوضة ⚠️", "يرجى منح صلاحية الوصول للموقع الجغرافي للمتصفح لتتمكن من مشاركة موقعك بضغطة واحدة.", handleGpsSharing);
+                        } else {
+                            // Timeout or position unavailable -> retry automatically
+                            if (attemptCount < maxAttempts) {
+                                showLoading(`فشلت محاولة جلب الموقع (${attemptCount}/${maxAttempts}). جاري إعادة المحاولة تلقائياً...`);
+                                setTimeout(attemptFetchPosition, 1500);
+                            } else {
+                                isGpsRunning = false;
+                                showError("فشل تحديد موقعك الجغرافي 📡", "تعذر جلب موقعك بدقة عالية من الـ GPS. يرجى التحقق من تفعيل الـ GPS بجهازك أو استخدم التحديد اليدوي.", handleGpsSharing);
+                            }
+                        }
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 8000,
+                        maximumAge: 0
+                    }
+                );
+            }
+
+            attemptFetchPosition();
+        }
+
+        // ==========================================
+        // Save Location & Calculate Fare to Firestore
+        // ==========================================
+        async function saveRecipientLocation(lat, lng, accuracy, timestamp, source, addressText) {
+            try {
+                const pickupLat = requestData.pickupLatitude;
+                const pickupLng = requestData.pickupLongitude;
+                
+                const distance = calculateDistance(pickupLat, pickupLng, lat, lng);
+                const fare = calculateFare(distance);
+
+                const finalAddress = addressText || (source === 'gps' ? "موقع المستلم (GPS)" : "موقع المستلم (خريطة يدوي)");
+
+                await supabaseClient.from('ride_requests').update({
+                    destination_latitude: lat,
+                    destination_longitude: lng,
+                    destination_address: finalAddress,
+                    distance: distance,
+                    offered_fare: fare,
+                    is_delivery_location_confirmed: true,
+                    receiver_location_confirmed: true,
+                    receiver_location_source: source,
+                    receiver_location_accuracy: accuracy,
+                    receiver_location_timestamp: timestamp,
+                    location_sent: true,
+                    location_sent_time: new Date().toISOString()
+                }).eq('id', requestId);
+
+                isGpsRunning = false;
+                showView('view-success');
+
+            } catch (e) {
+                console.error(e);
+                isGpsRunning = false;
+                showError("فشل تحديث البيانات ❌", "حدث خطأ أثناء الاتصال بالنظام لتسجيل موقعك. يرجى المحاولة مجدداً.", () => {
+                    saveRecipientLocation(lat, lng, accuracy, timestamp, source, addressText);
+                });
+            }
+        }
+
+        // ==========================================
+        // Leaflet Manual Map Selector
+        // ==========================================
+        function initLeafletMap() {
+            showView('view-map');
+            
+            // Try to pre-center on current location if cached, else default Cairo
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        mapCenterLatLng = { lat: position.coords.latitude, lng: position.coords.longitude };
+                        setupMapInstance();
+                    },
+                    () => {
+                        setupMapInstance(); // Fallback on error
+                    }
+                );
+            } else {
+                setupMapInstance();
+            }
+        }
+
+        function setupMapInstance() {
+            if (map) {
+                map.setView([mapCenterLatLng.lat, mapCenterLatLng.lng], 15);
+                triggerReverseGeocode(mapCenterLatLng.lat, mapCenterLatLng.lng);
+                return;
+            }
+
+            // Create Leaflet Map instance
+            map = L.map('leaflet-map', {
+                center: [mapCenterLatLng.lat, mapCenterLatLng.lng],
+                zoom: 15,
+                zoomControl: false,
+                attributionControl: false
+            });
+
+            // Load OSM Tiles (Voyager theme matching Flutter application)
+            L.tileLayer('https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png', {
+                maxZoom: 19
+            }).addTo(map);
+
+            // Listen to map drag/movement to track coordinates
+            map.on('move', () => {
+                const center = map.getCenter();
+                mapCenterLatLng = { lat: center.lat, lng: center.lng };
+                document.getElementById('hud-address').textContent = "جاري تحديد إحداثيات الموقع... 📍";
+            });
+
+            map.on('moveend', () => {
+                const center = map.getCenter();
+                mapCenterLatLng = { lat: center.lat, lng: center.lng };
+                debounceReverseGeocode(center.lat, center.lng);
+            });
+
+            // Initial reverse geocode
+            triggerReverseGeocode(mapCenterLatLng.lat, mapCenterLatLng.lng);
+        }
+
+        function debounceReverseGeocode(lat, lng) {
+            clearTimeout(reverseGeocodeTimer);
+            reverseGeocodeTimer = setTimeout(() => {
+                triggerReverseGeocode(lat, lng);
+            }, 600);
+        }
+
+        async function triggerReverseGeocode(lat, lng) {
+            const hud = document.getElementById('hud-address');
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ar`, {
+                    headers: { 'User-Agent': 'inRideApp/1.0' }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    const displayName = data.display_name;
+                    if (displayName) {
+                        const parts = displayName.split(',');
+                        let formattedAddress = displayName;
+                        if (parts.length > 3) {
+                            formattedAddress = `${parts[0].trim()}، ${parts[1].trim()}، ${parts[2].trim()}`;
+                        }
+                        hud.textContent = formattedAddress;
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn("Reverse geocode failed:", e);
+            }
+            hud.textContent = `موقع محدد (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+        }
+
+        async function handleMapConfirmation() {
+            showLoading("جاري تسجيل وتحديث موقع التوصيل المحدد...");
+            const address = document.getElementById('hud-address').textContent;
+            await saveRecipientLocation(mapCenterLatLng.lat, mapCenterLatLng.lng, 0, new Date(), 'manual', address);
+        }
+
+        // ==========================================
+        // Event Listeners Binding
+        // ==========================================
+        document.getElementById('btn-gps').addEventListener('click', handleGpsSharing);
+        document.getElementById('btn-show-map').addEventListener('click', initLeafletMap);
+        
+        document.getElementById('btn-back-to-intro').addEventListener('click', () => {
+            showView('view-intro');
+        });
+
+        document.getElementById('btn-confirm-map').addEventListener('click', handleMapConfirmation);
+        
+        document.getElementById('btn-retry').addEventListener('click', () => {
+            if (retryCallback) retryCallback();
+        });
+
+        // Run on page load
+        window.onload = loadRequestAndInit;
+
+    </script>
+</body>
+</html>

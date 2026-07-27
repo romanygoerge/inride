@@ -1,0 +1,12 @@
+{
+  "name": "inride-fcm-backend",
+  "version": "1.0.0",
+  "description": "FCM Push Notifications Backend for inRide",
+  "main": "api/index.js",
+  "scripts": {
+    "start": "node api/index.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}

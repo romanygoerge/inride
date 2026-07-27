@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="لوحة إدارة تطبيق inRide - إدارة الرحلات والسائقين والركاب">
+  <title>inRide | لوحة الإدارة</title>
+
+  <!-- Google Fonts: Cairo + Outfit (matching Flutter app) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <!-- Remix Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.6.0/fonts/remixicon.css" rel="stylesheet">
+
+  <!-- Dashboard Styles -->
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' stop-color='%232196F3'/><stop offset='100%25' stop-color='%230D47A1'/></linearGradient></defs><rect width='100' height='100' rx='20' fill='url(%23g)'/><text x='50' y='68' font-family='Outfit,sans-serif' font-size='45' font-weight='900' fill='white' text-anchor='middle'>iR</text></svg>">
+</head>
+<body>
+
+  <!-- Mobile Overlay -->
+  <div class="overlay" id="overlay"></div>
+
+  <div class="app-layout">
+    <!-- ============================================
+         SIDEBAR
+         ============================================ -->
+    <aside class="sidebar" id="sidebar">
+      <!-- Brand Header -->
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <span>iR</span>
+        </div>
+        <div class="sidebar-brand">
+          <h1>inRide</h1>
+          <p>لوحة الإدارة</p>
+        </div>
+      </div>
+
+      <!-- Navigation -->
+      <nav class="sidebar-nav">
+        <div class="nav-section-title">القائمة الرئيسية</div>
+
+        <div class="nav-item active" data-page="dashboard" id="nav-dashboard">
+          <i class="ri-dashboard-3-fill"></i>
+          <span>لوحة التحكم</span>
+        </div>
+
+        <div class="nav-item" data-page="trips" id="nav-trips">
+          <i class="ri-route-fill"></i>
+          <span>الرحلات والطلبات</span>
+        </div>
+
+        <div class="nav-item" data-page="drivers" id="nav-drivers">
+          <i class="ri-steering-2-fill"></i>
+          <span>السائقين والتوثيق</span>
+          <span class="badge" id="driversBadge">0</span>
+        </div>
+
+        <div class="nav-item" data-page="passengers" id="nav-passengers">
+          <i class="ri-group-fill"></i>
+          <span>الركاب والمستخدمين</span>
+        </div>
+
+        <div class="nav-section-title">المالية والتشغيل</div>
+
+        <div class="nav-item" data-page="wallet" id="nav-wallet">
+          <i class="ri-wallet-3-fill"></i>
+          <span>المحفظة والمالية</span>
+        </div>
+
+        <div class="nav-item" data-page="pricing" id="nav-pricing">
+          <i class="ri-price-tag-3-fill"></i>
+          <span>التسعير والمناطق</span>
+        </div>
+
+        <div class="nav-section-title">التواصل والدعم</div>
+
+        <div class="nav-item" data-page="messages" id="nav-messages">
+          <i class="ri-notification-badge-fill"></i>
+          <span>الإشعارات والرسائل</span>
+        </div>
+
+        <div class="nav-item" data-page="support" id="nav-support">
+          <i class="ri-customer-service-2-fill"></i>
+          <span>الدعم الفني والشكاوى</span>
+          <span class="badge" id="supportBadge" style="background:var(--warning);">0</span>
+        </div>
+
+        <div class="nav-item" data-page="content" id="nav-content">
+          <i class="ri-advertisement-fill"></i>
+          <span>إدارة المحتوى</span>
+        </div>
+
+        <div class="nav-section-title">المراقبة والأمان</div>
+
+        <div class="nav-item" data-page="monitoring" id="nav-monitoring">
+          <i class="ri-pulse-fill"></i>
+          <span>مراقبة النظام والأداء</span>
+        </div>
+
+        <div class="nav-item" data-page="logs" id="nav-logs">
+          <i class="ri-lock-2-fill"></i>
+          <span>الصلاحيات وسجلات التدقيق</span>
+        </div>
+
+        <div class="nav-item" data-page="settings" id="nav-settings">
+          <i class="ri-settings-4-fill"></i>
+          <span>الإعدادات العامة</span>
+        </div>
+
+        <div class="nav-item nav-item-logout" onclick="showToast('تم تسجيل الخروج')">
+          <i class="ri-logout-box-r-line"></i>
+          <span>تسجيل الخروج</span>
+        </div>
+      </nav>
+
+      <!-- Footer User Info -->
+      <div class="sidebar-footer">
+        <div class="sidebar-user">
+          <div class="user-avatar-placeholder" style="width:40px;height:40px;font-size:16px;">أ</div>
+          <div class="sidebar-user-info">
+            <h4>أحمد محمد</h4>
+            <span>مدير النظام</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ============================================
+         MAIN CONTENT
+         ============================================ -->
+    <main class="main-content">
+      <!-- Header Bar -->
+      <header class="header">
+        <div class="header-right">
+          <button class="mobile-menu-btn" onclick="toggleSidebar()">
+            <i class="ri-menu-line"></i>
+          </button>
+          <div class="header-title">
+            <h2 id="headerTitle">لوحة التحكم</h2>
+            <p id="headerSub">مرحباً بك في لوحة إدارة inRide</p>
+          </div>
+        </div>
+
+        <div class="header-left">
+          <div class="header-search">
+            <input type="text" placeholder="بحث..." id="globalSearch">
+            <i class="ri-search-line"></i>
+          </div>
+
+          <button class="header-icon-btn" onclick="showToast('لا توجد إشعارات جديدة')">
+            <i class="ri-notification-3-line"></i>
+            <span class="notification-dot"></span>
+          </button>
+
+          <button class="header-icon-btn" onclick="showToast('الوضع الليلي قريباً')">
+            <i class="ri-moon-line"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- Dynamic Page Content -->
+      <div class="page-content" id="pageContent">
+        <!-- Content rendered by JavaScript -->
+      </div>
+    </main>
+  </div>
+
+  <!-- Supabase JS SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- Dashboard JS -->
+  <script src="app.js?v=3"></script>
+</body>
+</html>

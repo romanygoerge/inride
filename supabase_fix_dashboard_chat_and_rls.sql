@@ -137,12 +137,33 @@ CREATE TABLE IF NOT EXISTS public.support_chats (
     user_name TEXT DEFAULT '',
     status TEXT DEFAULT 'open',
     last_message TEXT DEFAULT '',
-    last_message_at TIMESTAMPTZ DEFAULT NOW(),
-    unread_admin_count INT DEFAULT 0,
-    unread_user_count INT DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- 0. Drop strict Foreign Key constraints on support tables
+ALTER TABLE public.support_messages DROP CONSTRAINT IF EXISTS support_messages_sender_id_fkey;
+ALTER TABLE public.support_messages DROP CONSTRAINT IF EXISTS support_messages_user_id_fkey;
+ALTER TABLE public.support_messages DROP CONSTRAINT IF EXISTS support_messages_conversation_id_fkey;
+ALTER TABLE public.support_messages DROP CONSTRAINT IF EXISTS support_messages_receiver_id_fkey;
+ALTER TABLE public.support_chats DROP CONSTRAINT IF EXISTS support_chats_id_fkey;
+ALTER TABLE public.support_chats DROP CONSTRAINT IF EXISTS support_chats_user_id_fkey;
+
+ALTER TABLE public.support_messages ADD COLUMN IF NOT EXISTS conversation_id UUID;
+ALTER TABLE public.support_messages ADD COLUMN IF NOT EXISTS receiver_id UUID;
+ALTER TABLE public.support_messages ADD COLUMN IF NOT EXISTS sender_type TEXT DEFAULT 'rider';
+ALTER TABLE public.support_messages ADD COLUMN IF NOT EXISTS message TEXT DEFAULT '';
+ALTER TABLE public.support_messages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'sent';
+ALTER TABLE public.support_messages ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+ALTER TABLE public.support_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+
+ALTER TABLE public.support_chats ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE public.support_chats ADD COLUMN IF NOT EXISTS user_type TEXT DEFAULT 'rider';
+ALTER TABLE public.support_chats ADD COLUMN IF NOT EXISTS user_name TEXT DEFAULT '';
+ALTER TABLE public.support_chats ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'open';
+ALTER TABLE public.support_chats ADD COLUMN IF NOT EXISTS last_message TEXT DEFAULT '';
+ALTER TABLE public.support_chats ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.support_chats ADD COLUMN IF NOT EXISTS unread_admin_count INT DEFAULT 0;
+ALTER TABLE public.support_chats ADD COLUMN IF NOT EXISTS unread_user_count INT DEFAULT 0;
+ALTER TABLE public.support_chats ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.support_chats ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
 
 CREATE TABLE IF NOT EXISTS public.support_messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

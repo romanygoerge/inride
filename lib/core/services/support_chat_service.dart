@@ -259,24 +259,8 @@ class SupportChatService {
     _processedMessageIds.add(msgId);
     _notifyListeners();
 
-    debugPrint('[SupportChat] Support Message Sent: id=$msgId, senderType=$senderTypeStr');
-
     try {
-      // 1. Insert message into Supabase
-      await _supabase.from('support_messages').insert({
-        'id': msgId,
-        'conversation_id': userId,
-        'user_id': userId,
-        'sender_id': userId,
-        'sender_type': senderTypeStr,
-        'message': text.trim(),
-        'text': text.trim(),
-        'status': 'sent',
-        'is_admin': false,
-        'created_at': now.toIso8601String(),
-      });
-
-      // 2. Upsert support_chats conversation metadata
+      // 1. Ensure support_chats conversation metadata exists first
       await _supabase.from('support_chats').upsert({
         'id': userId,
         'user_id': userId,
@@ -288,6 +272,35 @@ class SupportChatService {
       }).catchError((err) {
         debugPrint('[SupportChat] Non-critical warning upserting support_chats: $err');
       });
+
+      // 2. Insert message into Supabase
+      try {
+        await _supabase.from('support_messages').insert({
+          'id': msgId,
+          'conversation_id': userId,
+          'user_id': userId,
+          'sender_id': userId,
+          'sender_type': senderTypeStr,
+          'message': text.trim(),
+          'text': text.trim(),
+          'status': 'sent',
+          'is_admin': false,
+          'created_at': now.toIso8601String(),
+        });
+      } catch (insertErr) {
+        debugPrint('[SupportChat] Retry inserting simplified message object: $insertErr');
+        await _supabase.from('support_messages').insert({
+          'id': msgId,
+          'conversation_id': userId,
+          'user_id': userId,
+          'sender_type': senderTypeStr,
+          'message': text.trim(),
+          'text': text.trim(),
+          'status': 'sent',
+          'is_admin': false,
+          'created_at': now.toIso8601String(),
+        });
+      }
 
       // 3. Insert notification for Admin in admin_notifications table
       await _supabase.from('admin_notifications').insert({
@@ -306,7 +319,6 @@ class SupportChatService {
       return true;
     } catch (e) {
       debugPrint('[SupportChat] Error sending support message: $e');
-      // Retry or mark error status locally
       return false;
     }
   }

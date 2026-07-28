@@ -3525,9 +3525,15 @@ async function loadSupportChatsFromSupabase() {
     if (userIds.length > 0) {
       const { data: users } = await supabaseClient.from('users').select('id, name, phone_number, role').in('id', userIds);
       const { data: drivers } = await supabaseClient.from('drivers').select('id, name, phone_number').in('id', userIds);
+      const { data: passengers } = await supabaseClient.from('passengers').select('id, name, phone, phone_number').in('id', userIds);
       
       (users || []).forEach(u => { userMap[u.id] = { name: u.name || 'مستخدم', role: u.role || 'rider', phone: u.phone_number }; });
       (drivers || []).forEach(d => { userMap[d.id] = { name: d.name || 'سائق', role: 'driver', phone: d.phone_number }; });
+      (passengers || []).forEach(p => { 
+        if (!userMap[p.id] || !userMap[p.id].name || userMap[p.id].name === 'مستخدم' || userMap[p.id].name === 'راكب') {
+          userMap[p.id] = { name: p.name || 'راكب', role: 'rider', phone: p.phone || p.phone_number }; 
+        }
+      });
     }
 
     liveSupportChats = (chats || []).map(c => {
@@ -3781,7 +3787,18 @@ async function sendSupportReply(id) {
   console.log("[SupportChat Log] Support Message Sent: id=" + msgId + " to recipient=" + id);
 
   try {
-    // 1. Insert message
+    // 1. Ensure support_chats conversation entry exists
+    await supabaseClient.from('support_chats').upsert({
+      id: id,
+      user_id: id,
+      status: 'open',
+      last_message: text,
+      last_message_at: nowStr,
+      updated_at: nowStr,
+      unread_admin_count: 0
+    }).catch(e => console.warn('[SupportChat] Non-critical upsert warning:', e));
+
+    // 2. Insert support_message
     const { error: insErr } = await supabaseClient.from('support_messages').insert({
       id: msgId,
       conversation_id: id,
@@ -3797,13 +3814,11 @@ async function sendSupportReply(id) {
     });
 
     if (insErr) {
-      console.warn('[SupportChat Log] Retry inserting support_message with recipient id as sender:', insErr.message);
+      console.warn('[SupportChat Log] Retry inserting simplified support_message:', insErr.message);
       await supabaseClient.from('support_messages').insert({
         id: msgId,
         conversation_id: id,
         user_id: id,
-        sender_id: id,
-        receiver_id: id,
         sender_type: 'admin',
         message: text,
         text: text,
@@ -3812,11 +3827,6 @@ async function sendSupportReply(id) {
         created_at: nowStr
       });
     }
-
-    // 2. Update conversation
-    await supabaseClient.from('support_chats').upsert({
-      id: id,
-      user_id: id,
       status: 'open',
       last_message: text,
       last_message_at: nowStr,
@@ -5432,6 +5442,18 @@ async function sendProfileChatMessage() {
     console.log("[SupportChat Log] Support Message Sent: id=" + msgId + " from profile to recipient=" + uid);
 
     try {
+      // 1. Ensure support_chats conversation entry exists first
+      await supabaseClient.from('support_chats').upsert({
+        id: uid,
+        user_id: uid,
+        status: 'open',
+        last_message: text,
+        last_message_at: nowStr,
+        updated_at: nowStr,
+        unread_admin_count: 0
+      }).catch(e => console.warn('[SupportChat] Non-critical upsert warning:', e));
+
+      // 2. Insert message into support_messages
       const { error: insertError } = await supabaseClient.from('support_messages').insert({
         id: msgId,
         conversation_id: uid,
@@ -5447,13 +5469,11 @@ async function sendProfileChatMessage() {
       });
 
       if (insertError) {
-        console.warn('[SupportChat Log] Retry inserting support_message with uid as sender:', insertError.message);
+        console.warn('[SupportChat Log] Retry inserting simplified support_message:', insertError.message);
         await supabaseClient.from('support_messages').insert({
           id: msgId,
           conversation_id: uid,
           user_id: uid,
-          sender_id: uid,
-          receiver_id: uid,
           sender_type: 'admin',
           message: text,
           text: text,

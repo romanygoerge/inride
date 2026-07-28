@@ -3776,7 +3776,7 @@ async function sendSupportReply(id) {
   textEl.value = '';
   const nowStr = new Date().toISOString();
   const msgId = crypto.randomUUID ? crypto.randomUUID() : ('admin_msg_' + Date.now());
-  const adminSenderId = (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : 'd8daab61-f140-4c1d-a90e-2657499c94ad';
+  const adminSenderId = (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : id;
 
   console.log("[SupportChat Log] Support Message Sent: id=" + msgId + " to recipient=" + id);
 
@@ -5427,7 +5427,7 @@ async function sendProfileChatMessage() {
   if (supabaseClient) {
     const nowStr = new Date().toISOString();
     const msgId = crypto.randomUUID ? crypto.randomUUID() : ('admin_msg_' + Date.now());
-    const adminSenderId = (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : 'd8daab61-f140-4c1d-a90e-2657499c94ad';
+    const adminSenderId = (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : uid;
 
     console.log("[SupportChat Log] Support Message Sent: id=" + msgId + " from profile to recipient=" + uid);
 

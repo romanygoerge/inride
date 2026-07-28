@@ -160,18 +160,28 @@ CREATE TABLE IF NOT EXISTS public.support_messages (
     read_at TIMESTAMPTZ
 );
 
--- 2. Ensure Admin User Record exists in `public.users` table
+-- 2. Ensure Admin User Records exist in `public.users` table
 INSERT INTO public.users (id, name, email, role, created_at, updated_at)
-VALUES (
-    'd8daab61-f140-4c1d-a90e-2657499c94ad',
-    'مدير النظام',
-    'admin@inride.com',
-    'admin',
-    NOW(),
-    NOW()
-)
+VALUES 
+    (
+        'fbf9e43e-3ca0-4950-ab0e-11367a24c162',
+        'روماني جورج',
+        'romanygoerge48@gmail.com',
+        'admin',
+        NOW(),
+        NOW()
+    ),
+    (
+        'd8daab61-f140-4c1d-a90e-2657499c94ad',
+        'مدير النظام',
+        'admin@inride.com',
+        'admin',
+        NOW(),
+        NOW()
+    )
 ON CONFLICT (id) DO UPDATE SET
     role = 'admin',
+    email = EXCLUDED.email,
     updated_at = NOW();
 
 -- 3. Fix Row Level Security (RLS) policies for Open Access Admin Dashboard

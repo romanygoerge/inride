@@ -14,23 +14,41 @@ if (typeof window.supabase !== 'undefined') {
 }
 
 // ============================================
-// AUTHENTICATION & AUTHORIZATION STATE (Open Access Mode)
+// AUTHENTICATION & AUTHORIZATION STATE (Supabase Auth)
 // ============================================
-let currentAdminUser = { id: 'd8daab61-f140-4c1d-a90e-2657499c94ad', email: 'admin@inride.com' };
-let currentAdminProfile = { id: 'd8daab61-f140-4c1d-a90e-2657499c94ad', name: 'مدير النظام', role: 'admin', email: 'admin@inride.com' };
-let isAuthenticatedAdmin = true;
+let currentAdminUser = null;
+let currentAdminProfile = null;
+let isAuthenticatedAdmin = false;
 let isSyncStarted = false;
 
 function showLoginAlert(message, type = 'danger') {
-  // Disabled in open access mode
+  const alertEl = document.getElementById('loginAlert');
+  if (!alertEl) return;
+  alertEl.className = `login-alert alert-${type}`;
+  alertEl.innerHTML = `<i class="ri-error-warning-line"></i> <span>${message}</span>`;
+  alertEl.style.display = 'flex';
 }
 
 function clearLoginAlert() {
-  // Disabled in open access mode
+  const alertEl = document.getElementById('loginAlert');
+  if (alertEl) {
+    alertEl.style.display = 'none';
+    alertEl.innerHTML = '';
+  }
 }
 
 function showLoginView(message = null, type = 'danger') {
-  showDashboardView();
+  const loginScreen = document.getElementById('loginScreen');
+  const appLayout = document.querySelector('.app-layout');
+
+  if (loginScreen) loginScreen.style.display = 'flex';
+  if (appLayout) appLayout.classList.add('hidden-layout');
+
+  if (message) {
+    showLoginAlert(message, type);
+  } else {
+    clearLoginAlert();
+  }
 }
 
 function showDashboardView() {
@@ -51,32 +69,50 @@ async function verifyAndApplyAdminSession(session) {
     const userId = session.user.id;
 
     // Retrieve authenticated user profile from 'users' table
-    const { data: userProfile, error } = await supabaseClient
+    let { data: userProfile, error } = await supabaseClient
       .from('users')
       .select('*')
       .eq('id', userId)
       .maybeSingle();
 
     if (error) {
-      console.error("Error fetching user profile:", error);
-      await supabaseClient.auth.signOut();
-      showLoginView("حدث خطأ أثناء التحقق من صلاحيات حسابك. يرجى المحاولة لاحقاً.");
-      return false;
+      console.warn("Error fetching user profile:", error);
     }
 
-    // Verify user role is strictly 'admin'
-    // Open Access Mode: Keep admin profile enabled
-    currentAdminUser = session.user || { id: 'd8daab61-f140-4c1d-a90e-2657499c94ad', email: 'admin@inride.com' };
-    currentAdminProfile = userProfile || { id: 'd8daab61-f140-4c1d-a90e-2657499c94ad', name: 'مدير النظام', role: 'admin', email: 'admin@inride.com' };
+    currentAdminUser = session.user;
+    currentAdminProfile = userProfile || {
+      id: userId,
+      name: session.user.email ? session.user.email.split('@')[0] : 'مدير النظام',
+      role: 'admin',
+      email: session.user.email
+    };
+
     isAuthenticatedAdmin = true;
     showDashboardView();
+
+    // Update UI sidebar user details
+    const userNameEl = document.getElementById('sidebarUserName');
+    const userEmailEl = document.getElementById('sidebarUserEmail');
+    const userAvatarEl = document.getElementById('sidebarUserAvatar');
+
+    if (userNameEl) userNameEl.textContent = currentAdminProfile.name || 'مدير النظام';
+    if (userEmailEl) userEmailEl.textContent = session.user.email || 'admin@inride.com';
+    if (userAvatarEl) userAvatarEl.textContent = (currentAdminProfile.name || 'م').charAt(0).toUpperCase();
+
+    if (!isSyncStarted) {
+      isSyncStarted = true;
+      initSupabaseSync();
+    }
+
+    const savedPage = sessionStorage.getItem('admin_currentPage') || 'dashboard';
+    renderPage(savedPage);
+    updateHeaderTitle(savedPage);
+
     return true;
   } catch (err) {
     console.error("Session verification error:", err);
-    isAuthenticatedAdmin = true;
-    currentAdminProfile = { id: 'd8daab61-f140-4c1d-a90e-2657499c94ad', name: 'مدير النظام', role: 'admin', email: 'admin@inride.com' };
-    showDashboardView();
-    return true;
+    showLoginView("حدث خطأ أثناء التحقق من صلاحيات حسابك.");
+    return false;
   }
 }
 
@@ -267,30 +303,35 @@ async function handleLogin(event) {
 }
 
 async function handleLogout() {
-  showToast("تم إفراغ الذاكرة التخزينية ومزامنة اللوحة بنجاح.");
-  renderPage('dashboard');
+  try {
+    if (supabaseClient && supabaseClient.auth) {
+      await supabaseClient.auth.signOut();
+    }
+  } catch (e) {}
+  isAuthenticatedAdmin = false;
+  currentAdminUser = null;
+  currentAdminProfile = null;
+  showToast("تم تسجيل الخروج بنجاح.");
+  showLoginView();
 }
 
 async function initAdminAuth() {
-  showDashboardView();
-
-  // Initialize UI sidebar user details
-  const userNameEl = document.getElementById('sidebarUserName');
-  const userEmailEl = document.getElementById('sidebarUserEmail');
-  const userAvatarEl = document.getElementById('sidebarUserAvatar');
-
-  if (userNameEl) userNameEl.textContent = 'مدير النظام';
-  if (userEmailEl) userEmailEl.textContent = 'admin@inride.com';
-  if (userAvatarEl) userAvatarEl.textContent = 'م';
-
-  if (!isSyncStarted) {
-    isSyncStarted = true;
-    initSupabaseSync();
+  if (!supabaseClient) {
+    showDashboardView();
+    return;
   }
 
-  const savedPage = sessionStorage.getItem('admin_currentPage') || 'dashboard';
-  renderPage(savedPage);
-  updateHeaderTitle(savedPage);
+  try {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (session && session.user) {
+      await verifyAndApplyAdminSession(session);
+    } else {
+      showLoginView();
+    }
+  } catch (e) {
+    console.warn("Session check error:", e);
+    showLoginView();
+  }
 }
 
 if (document.readyState === 'complete' || document.readyState === 'interactive') {

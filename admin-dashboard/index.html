@@ -26,9 +26,46 @@
   <div class="overlay" id="overlay"></div>
 
   <!-- ============================================
-       LOGIN SCREEN (Disabled - Open Access)
+       LOGIN SCREEN
        ============================================ -->
-  <div class="login-container" id="loginScreen" style="display: none;"></div>
+  <div class="login-container" id="loginScreen" style="display: flex;">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="login-logo">
+          <span>iR</span>
+        </div>
+        <h1>inRide</h1>
+        <p class="login-subtitle">لوحة الإدارة - تسجيل الدخول لحساب الأدمن</p>
+      </div>
+
+      <div class="login-alert alert-danger" id="loginAlert" style="display: none;"></div>
+
+      <form onsubmit="handleLogin(event)">
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="form-label" style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;">البريد الإلكتروني</label>
+          <div class="input-with-icon" style="position:relative;">
+            <input type="email" id="loginEmail" class="form-input" placeholder="admin@inride.com" value="romanygoerge48@gmail.com" required style="width:100%;padding:12px 14px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-family:inherit;">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 24px;">
+          <label class="form-label" style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;">كلمة المرور</label>
+          <div class="input-with-icon" style="position:relative;">
+            <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" required style="width:100%;padding:12px 14px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-family:inherit;">
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="loginSubmitBtn">
+          <i class="ri-login-box-line"></i>
+          <span id="loginSubmitText">تسجيل الدخول</span>
+        </button>
+      </form>
+
+      <div class="login-footer-note" style="text-align:center;font-size:12px;color:var(--text-light);margin-top:20px;">
+        نظام إدارة inRide - جميع الحقوق محفوظة &copy; 2026
+      </div>
+    </div>
+  </div>
 
   <div class="app-layout">
     <!-- ============================================

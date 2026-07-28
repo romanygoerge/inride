@@ -25,7 +25,60 @@
   <!-- Mobile Overlay -->
   <div class="overlay" id="overlay"></div>
 
-  <div class="app-layout">
+  <!-- ============================================
+       LOGIN SCREEN (Supabase Email & Password Auth)
+       ============================================ -->
+  <div class="login-container" id="loginScreen">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="login-logo">
+          <span>iR</span>
+        </div>
+        <h1>inRide</h1>
+        <p class="login-subtitle">لوحة التحكم الإدارية (Admin Dashboard)</p>
+      </div>
+
+      <div class="login-alert" id="loginAlert" style="display: none;"></div>
+
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label for="loginEmail"><i class="ri-mail-fill"></i> البريد الإلكتروني للمدير</label>
+          <input 
+            type="email" 
+            id="loginEmail" 
+            class="form-control" 
+            placeholder="admin@inride.com" 
+            required 
+            autocomplete="email" 
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="loginPassword"><i class="ri-lock-2-fill"></i> كلمة المرور</label>
+          <input 
+            type="password" 
+            id="loginPassword" 
+            class="form-control" 
+            placeholder="••••••••" 
+            required 
+            autocomplete="current-password" 
+          />
+        </div>
+
+        <button type="submit" id="loginSubmitBtn" class="btn btn-primary btn-block">
+          <i class="ri-login-box-line"></i>
+          <span id="loginSubmitText">تسجيل الدخول</span>
+        </button>
+      </form>
+
+      <div class="login-footer-note">
+        <i class="ri-shield-keyhole-line"></i>
+        <span>الوصول مقتصر حصراً على الحساب الإداري المعتمد في Supabase</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-layout hidden-layout">
     <!-- ============================================
          SIDEBAR
          ============================================ -->
@@ -113,7 +166,7 @@
           <span>الإعدادات العامة</span>
         </div>
 
-        <div class="nav-item nav-item-logout" onclick="showToast('تم تسجيل الخروج')">
+        <div class="nav-item nav-item-logout" onclick="handleLogout()">
           <i class="ri-logout-box-r-line"></i>
           <span>تسجيل الخروج</span>
         </div>
@@ -122,10 +175,10 @@
       <!-- Footer User Info -->
       <div class="sidebar-footer">
         <div class="sidebar-user">
-          <div class="user-avatar-placeholder" style="width:40px;height:40px;font-size:16px;">أ</div>
+          <div class="user-avatar-placeholder" id="sidebarUserAvatar" style="width:40px;height:40px;font-size:16px;">م</div>
           <div class="sidebar-user-info">
-            <h4>أحمد محمد</h4>
-            <span>مدير النظام</span>
+            <h4 id="sidebarUserName">مدير النظام</h4>
+            <span id="sidebarUserEmail">admin@inride.com</span>
           </div>
         </div>
       </div>

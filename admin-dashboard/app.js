@@ -13,6 +13,369 @@ if (typeof window.supabase !== 'undefined') {
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 }
 
+// ============================================
+// AUTHENTICATION & AUTHORIZATION STATE
+// ============================================
+let currentAdminUser = null;
+let currentAdminProfile = null;
+let isAuthenticatedAdmin = false;
+let isSyncStarted = false;
+
+function showLoginAlert(message, type = 'danger') {
+  const alertEl = document.getElementById('loginAlert');
+  if (!alertEl) return;
+  alertEl.className = `login-alert alert-${type}`;
+  alertEl.style.display = 'flex';
+  
+  let iconClass = 'ri-error-warning-line';
+  if (type === 'success') iconClass = 'ri-checkbox-circle-line';
+  if (type === 'warning') iconClass = 'ri-alert-line';
+
+  alertEl.innerHTML = `<i class="${iconClass}" style="font-size: 18px; flex-shrink: 0;"></i> <span>${message}</span>`;
+}
+
+function clearLoginAlert() {
+  const alertEl = document.getElementById('loginAlert');
+  if (alertEl) {
+    alertEl.style.display = 'none';
+    alertEl.innerHTML = '';
+  }
+}
+
+function showLoginView(message = null, type = 'danger') {
+  const loginScreen = document.getElementById('loginScreen');
+  const appLayout = document.querySelector('.app-layout');
+
+  if (appLayout) appLayout.classList.add('hidden-layout');
+  if (loginScreen) loginScreen.style.display = 'flex';
+
+  if (message) {
+    showLoginAlert(message, type);
+  } else {
+    clearLoginAlert();
+  }
+}
+
+function showDashboardView() {
+  const loginScreen = document.getElementById('loginScreen');
+  const appLayout = document.querySelector('.app-layout');
+
+  if (loginScreen) loginScreen.style.display = 'none';
+  if (appLayout) appLayout.classList.remove('hidden-layout');
+  clearLoginAlert();
+}
+
+async function verifyAndApplyAdminSession(session) {
+  if (!session || !session.user) {
+    showLoginView();
+    return false;
+  }
+
+  try {
+    const userId = session.user.id;
+
+    // Retrieve authenticated user profile from 'users' table
+    const { data: userProfile, error } = await supabaseClient
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error fetching user profile:", error);
+      await supabaseClient.auth.signOut();
+      showLoginView("حدث خطأ أثناء التحقق من صلاحيات حسابك. يرجى المحاولة لاحقاً.");
+      return false;
+    }
+
+    // Verify user role is strictly 'admin'
+    if (!userProfile || userProfile.role !== 'admin') {
+      console.warn("Access Denied: Non-admin user attempted access:", userId, userProfile?.role);
+      // Immediately sign out user & deny access
+      await supabaseClient.auth.signOut();
+      currentAdminUser = null;
+      currentAdminProfile = null;
+      isAuthenticatedAdmin = false;
+      showLoginView("تم رفض الوصول: هذا الحساب غير مصرح له بالدخول كمدير نظام (Access Denied).", "danger");
+      return false;
+    }
+
+    // Authenticated & Verified Admin
+    currentAdminUser = session.user;
+    currentAdminProfile = userProfile;
+    isAuthenticatedAdmin = true;
+
+    // Update UI sidebar user details
+    const userNameEl = document.getElementById('sidebarUserName');
+    const userEmailEl = document.getElementById('sidebarUserEmail');
+    const userAvatarEl = document.getElementById('sidebarUserAvatar');
+
+    if (userNameEl) userNameEl.textContent = userProfile.name || 'مدير النظام';
+    if (userEmailEl) userEmailEl.textContent = session.user.email || userProfile.email || 'Admin';
+    if (userAvatarEl) userAvatarEl.textContent = (userProfile.name || 'م').charAt(0).toUpperCase();
+
+    showDashboardView();
+
+    // Init real-time sync if not already started
+    if (!isSyncStarted) {
+      isSyncStarted = true;
+      initSupabaseSync();
+    }
+
+    // Render current page
+    const savedPage = sessionStorage.getItem('admin_currentPage') || 'dashboard';
+    renderPage(savedPage);
+    updateHeaderTitle(savedPage);
+
+    return true;
+  } catch (err) {
+    console.error("Session verification error:", err);
+    await supabaseClient.auth.signOut();
+    showLoginView("حدث خطأ غير متوقع أثناء التحقق من الصلاحيات.");
+    return false;
+  }
+}
+
+async function initSupabaseSync() {
+  if (!supabaseClient) return;
+
+  console.log('[SupabaseSync Log] Initializing real-time database synchronization with Supabase...');
+
+  const fetchRealData = async () => {
+    try {
+      // 1. Fetch Users table
+      const { data: users, error: userError } = await supabaseClient.from('users').select('*');
+      if (userError) console.warn('[SupabaseSync Log] Error fetching users:', userError);
+
+      // 2. Fetch Drivers table
+      const { data: drivers, error: driverError } = await supabaseClient.from('drivers').select('*');
+      if (driverError) {
+        console.warn('[SupabaseSync Log] Error fetching drivers:', driverError);
+        return;
+      }
+
+      if (drivers && Array.isArray(drivers)) {
+        const fullDrivers = [];
+        for (const drv of drivers) {
+          const userObj = users ? users.find(u => u.id === drv.id) : null;
+          let vehicleObj = null;
+          if (drv.vehicle_id) {
+            try {
+              const { data: vData } = await supabaseClient.from('vehicles').select('*').eq('id', drv.vehicle_id).maybeSingle();
+              vehicleObj = vData;
+            } catch (_) {}
+          }
+
+          // Count completed trips
+          let completedTripsCount = 0;
+          try {
+            const { count } = await supabaseClient
+              .from('ride_requests')
+              .select('*', { count: 'exact', head: true })
+              .eq('driver_id', drv.id)
+              .eq('status', 'Completed');
+            completedTripsCount = count || 0;
+          } catch (_) {}
+
+          // Compute average rating from real ratings table
+          let avgRating = 0.0;
+          let ratingDisplay = "No ratings yet";
+          try {
+            const { data: ratingsData } = await supabaseClient
+              .from('ratings')
+              .select('rating')
+              .eq('receiver_id', drv.id);
+
+            if (ratingsData && ratingsData.length > 0) {
+              const total = ratingsData.reduce((acc, r) => acc + (parseFloat(r.rating) || 0), 0);
+              avgRating = parseFloat((total / ratingsData.length).toFixed(1));
+              ratingDisplay = avgRating.toFixed(1);
+            }
+          } catch (_) {}
+
+          let statusAr = 'قيد المراجعة';
+          if (drv.verification_status === 'verified') statusAr = 'معتمد';
+          else if (drv.verification_status === 'rejected') statusAr = 'مرفوض';
+          else if (drv.verification_status === 'unregistered') statusAr = 'غير مسجل';
+
+          const driverName = userObj?.name || 'سائق';
+          fullDrivers.push({
+            id: 'DRV_' + drv.id.substring(0, 6),
+            uid: drv.id,
+            name: driverName,
+            phone: userObj?.phone_number || drv.phone || '',
+            email: userObj?.email || '',
+            address: drv.address || userObj?.address || '',
+            rating: ratingDisplay,
+            ratingNum: avgRating,
+            vehicleType: vehicleObj?.type || drv.vehicle_type || 'car',
+            vehicleName: vehicleObj?.model || drv.vehicle_name || 'مركبة',
+            vehicleColor: vehicleObj?.color || 'فضي',
+            licensePlate: vehicleObj?.number_plate || '',
+            status: drv.verification_status || 'submitted',
+            statusAr: statusAr,
+            rejectionReason: drv.rejection_reason || '',
+            totalTrips: completedTripsCount || drv.total_trips || 0,
+            earnings: drv.total_earnings || 0,
+            isOnline: drv.is_online || false,
+            joinDate: drv.created_at ? new Date(drv.created_at).toLocaleDateString('ar-EG') : '2026/01/10',
+            avatar: driverName.charAt(0).toUpperCase(),
+            nationalIdUrl: drv.national_id_url || '',
+            nationalIdBackUrl: drv.national_id_back_url || '',
+            licenseUrl: drv.license_url || '',
+            licenseBackUrl: drv.license_back_url || '',
+            vehicleFrontUrl: drv.vehicle_front_url || '',
+            vehicleBackUrl: drv.vehicle_back_url || '',
+            vehicleLicenseUrl: drv.vehicle_license_url || '',
+          });
+        }
+
+        if (fullDrivers.length > 0) {
+          mockData.drivers = fullDrivers;
+          updatePendingBadge();
+          if (currentPage === 'drivers' || currentPage === 'dashboard') {
+            renderPage(currentPage);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[SupabaseSync Log] Exception during sync:', e);
+    }
+  };
+
+  await fetchRealData();
+
+  try {
+    supabaseClient.channel('admin_realtime_drivers')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, async (payload) => {
+        console.log('[SupabaseSync Log] Realtime update on drivers:', payload);
+        await fetchRealData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, async (payload) => {
+        console.log('[SupabaseSync Log] Realtime update on users:', payload);
+        await fetchRealData();
+      })
+      .subscribe();
+  } catch (err) {
+    console.warn('[SupabaseSync Log] Error setting up channel:', err);
+  }
+}
+
+async function handleLogin(event) {
+  if (event) event.preventDefault();
+  clearLoginAlert();
+
+  const emailInput = document.getElementById('loginEmail');
+  const passwordInput = document.getElementById('loginPassword');
+  const submitBtn = document.getElementById('loginSubmitBtn');
+  const submitText = document.getElementById('loginSubmitText');
+
+  const email = emailInput ? emailInput.value.trim() : '';
+  const password = passwordInput ? passwordInput.value : '';
+
+  if (!email || !password) {
+    showLoginAlert("يرجى إدخال البريد الإلكتروني وكلمة المرور.");
+    return;
+  }
+
+  // Set Loading state
+  if (submitBtn) submitBtn.disabled = true;
+  if (submitText) submitText.textContent = "جاري التحقق وتسجيل الدخول...";
+
+  try {
+    // Supabase Email & Password Auth
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
+      email: email,
+      password: password
+    });
+
+    if (error) {
+      console.error("Login error from Supabase Auth:", error);
+      let errorMsg = "حدث خطأ أثناء تسجيل الدخول.";
+      
+      const msg = (error.message || '').toLowerCase();
+      if (msg.includes('invalid login credentials') || msg.includes('invalid credentials') || msg.includes('user not found') || msg.includes('wrong password')) {
+        errorMsg = "بيانات الدخول غير صحيحة. يرجى التأكد من البريد الإلكتروني وكلمة المرور.";
+      } else if (msg.includes('invalid email') || msg.includes('unable to validate email address')) {
+        errorMsg = "صيغة البريد الإلكتروني غير صحيحة.";
+      } else if (msg.includes('network') || msg.includes('failed to fetch') || msg.includes('rate limit')) {
+        errorMsg = "تعذر الاتصال بالخادم. يرجى التأكد من الاتصال بالإنترنت والمحاولة مجدداً.";
+      } else {
+        errorMsg = "خطأ في تسجيل الدخول: " + error.message;
+      }
+
+      showLoginAlert(errorMsg, "danger");
+      return;
+    }
+
+    if (data && data.session) {
+      await verifyAndApplyAdminSession(data.session);
+    } else {
+      showLoginAlert("لم يتم استلام جلسة دخول صالحة.", "danger");
+    }
+  } catch (err) {
+    console.error("Unexpected error during login:", err);
+    showLoginAlert("حدث خطأ غير متوقع: " + err.message, "danger");
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+    if (submitText) submitText.textContent = "تسجيل الدخول";
+  }
+}
+
+async function handleLogout() {
+  try {
+    await supabaseClient.auth.signOut();
+  } catch (e) {
+    console.warn("Logout warning:", e);
+  }
+  currentAdminUser = null;
+  currentAdminProfile = null;
+  isAuthenticatedAdmin = false;
+  sessionStorage.removeItem('admin_currentPage');
+  showLoginView("تم تسجيل الخروج بنجاح.", "success");
+}
+
+async function initAdminAuth() {
+  if (!supabaseClient) {
+    console.error("Supabase client is not initialized!");
+    showLoginAlert("خطأ في الاتصال بقاعدة بيانات Supabase.", "danger");
+    return;
+  }
+
+  // Listen to Auth State Changes
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      if (session) {
+        await verifyAndApplyAdminSession(session);
+      }
+    } else if (event === 'SIGNED_OUT') {
+      currentAdminUser = null;
+      currentAdminProfile = null;
+      isAuthenticatedAdmin = false;
+      showLoginView();
+    }
+  });
+
+  // Check initial session
+  try {
+    const { data: { session }, error } = await supabaseClient.auth.getSession();
+    if (error) {
+      console.warn("Error checking existing session:", error);
+      showLoginView();
+      return;
+    }
+
+    if (session) {
+      await verifyAndApplyAdminSession(session);
+    } else {
+      showLoginView();
+    }
+  } catch (err) {
+    console.error("Error in initAdminAuth:", err);
+    showLoginView();
+  }
+}
+
 function showToast(message) {
   let toastContainer = document.getElementById('toastContainer');
   if (!toastContainer) {
@@ -75,7 +438,9 @@ const mockData = {
       date: "اليوم، 10:15",
       riderName: "كريم أحمد",
       riderPhone: "01012345678",
+      riderUid: "PAS01",
       driverName: "محمد علي",
+      driverUid: "DRV01",
       from: "شارع الجلاء، السادات",
       to: "جامعة السادات",
       price: 45,
@@ -90,7 +455,9 @@ const mockData = {
       date: "اليوم، 11:30",
       riderName: "سارة محمود",
       riderPhone: "01198765432",
+      riderUid: "PAS02",
       driverName: "أحمد حسن",
+      driverUid: "DRV02",
       from: "المنطقة الأولى",
       to: "المنطقة الرابعة",
       price: 20,
@@ -422,6 +789,11 @@ function animateCounter(element, target, duration = 1200) {
 // ============================================
 
 function navigateTo(page) {
+  if (!isAuthenticatedAdmin || !currentAdminProfile || currentAdminProfile.role !== 'admin') {
+    showLoginView("يرجى تسجيل الدخول كمدير نظام مصرح له للوصول إلى لوحة التحكم.");
+    return;
+  }
+
   currentPage = page;
   sessionStorage.setItem('admin_currentPage', page);
   if (page === 'driver-profile' || page === 'passenger-profile') {
@@ -698,15 +1070,19 @@ function renderDashboard() {
                   <tr>
                     <td><span class="font-outfit fw-700" style="color:var(--medium-blue);">${trip.id}</span></td>
                     <td>
-                      <div class="user-cell">
+                      <div class="user-cell" style="cursor:pointer;" onclick="${trip.riderUid ? `viewUserProfile('${trip.riderUid}', 'rider')` : ''}" title="عرض ملف الراكب">
                         <div class="user-avatar-placeholder">${trip.riderName.charAt(0)}</div>
                         <div>
-                          <div class="user-name">${trip.riderName}</div>
+                          <div class="user-name" style="color:var(--medium-blue);font-weight:700;text-decoration:underline;">${trip.riderName}</div>
                         </div>
                       </div>
                     </td>
                     <td>
-                      <div class="user-name">${trip.driverName}</div>
+                      ${trip.driverUid ? `
+                        <div class="user-name" style="cursor:pointer;color:var(--medium-blue);font-weight:700;text-decoration:underline;" onclick="viewUserProfile('${trip.driverUid}', 'driver')" title="عرض ملف الكابتن">
+                          ${trip.driverName}
+                        </div>
+                      ` : `<span style="color:var(--text-light);font-size:12px;">—</span>`}
                     </td>
                     <td>
                       <div class="route-cell">
@@ -882,15 +1258,21 @@ function renderTrips() {
             <td><span class="font-outfit fw-700" style="color:var(--medium-blue);">${trip.id}</span></td>
             <td><span style="font-size:12px;color:var(--text-light);font-weight:600;">${trip.date}</span></td>
             <td>
-              <div class="user-cell">
+              <div class="user-cell" style="cursor:pointer;" onclick="${trip.riderUid ? `viewUserProfile('${trip.riderUid}', 'rider')` : ''}" title="عرض ملف الراكب">
                 <div class="user-avatar-placeholder">${trip.riderName.charAt(0)}</div>
                 <div>
-                  <div class="user-name">${trip.riderName}</div>
+                  <div class="user-name" style="color:var(--medium-blue);font-weight:700;text-decoration:underline;">${trip.riderName}</div>
                   <div class="user-sub">${trip.riderPhone}</div>
                 </div>
               </div>
             </td>
-            <td><div class="user-name">${trip.driverName}</div></td>
+            <td>
+              ${trip.driverUid ? `
+                <div class="user-name" style="cursor:pointer;color:var(--medium-blue);font-weight:700;text-decoration:underline;" onclick="viewUserProfile('${trip.driverUid}', 'driver')" title="عرض ملف الكابتن">
+                  <i class="ri-steering-2-line" style="margin-left:4px;"></i>${trip.driverName}
+                </div>
+              ` : `<span style="color:var(--text-light);font-size:12px;">—</span>`}
+            </td>
             <td>
               <div class="route-cell">
                 <div class="route-dots">
@@ -1204,35 +1586,238 @@ function renderDrivers() {
   `;
 }
 
-function approveDriver(driverId) {
-  const driver = mockData.drivers.find(d => d.id === driverId);
-  if (driver) {
-    if (supabaseClient && driver.uid) {
-      supabaseClient.from('drivers').update({ verification_status: 'verified' }).eq('id', driver.uid)
-        .then(({ error }) => {
-          if (!error) {
-            showToast(`✅ تم اعتماد السائق ${driver.name} بنجاح`);
-          } else {
-            showToast(`❌ فشل الاعتماد: ${error.message}`);
-          }
-        }).catch(err => {
-          showToast(`❌ فشل الاعتماد: ${err.message}`);
-        });
-    } else {
-      // Local fallback
-      driver.status = 'verified';
-      driver.statusAr = 'معتمد';
-      updatePendingBadge();
-      renderPage('drivers');
-      showToast(`✅ تم اعتماد السائق ${driver.name} بنجاح`);
+async function sendPushNotificationBackend({ recipientId, title, body, type = 'driver_status' }) {
+  console.log(`[PushNotificationLog] Sending push to ${recipientId} | Title: "${title}" | Body: "${body}"`);
+  try {
+    if (supabaseClient && recipientId) {
+      await supabaseClient.from('notifications').insert({
+        id: generateUUID(),
+        user_id: recipientId,
+        title: title,
+        body: body,
+        type: type,
+        is_read: false,
+        created_at: new Date().toISOString(),
+        data: { recipientId, title, body, type }
+      });
     }
+
+    const backendPushUrl = 'https://inride-push-backend.vercel.app/api';
+    const res = await fetch(backendPushUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientId: recipientId,
+        title: title,
+        body: body,
+        type: type,
+        data: { recipientId, title, body, type }
+      })
+    });
+    const resData = await res.json();
+    console.log('[PushNotificationLog] Dispatch response:', res.status, resData);
+  } catch (err) {
+    console.error('[PushNotificationLog] Error sending push notification:', err);
   }
 }
 
+function approveDriver(driverUidOrId) {
+  const driver = mockData.drivers.find(d => d.uid === driverUidOrId || d.id === driverUidOrId);
+  const targetUid = driver ? driver.uid : driverUidOrId;
+  const driverName = driver ? driver.name : 'السائق';
+
+  if (!targetUid) {
+    showToast('❌ لم يتم العثور على كود السائق');
+    return;
+  }
+
+  const approveTitle = "Your driver account has been approved.";
+  const approveBody = "Congratulations! Your driver account has been approved. You can now start accepting trips.";
+
+  if (supabaseClient) {
+    supabaseClient.from('drivers')
+      .update({ verification_status: 'verified', rejection_reason: null, updated_at: new Date().toISOString() })
+      .eq('id', targetUid)
+      .then(async ({ error }) => {
+        if (!error) {
+          if (driver) {
+            driver.status = 'verified';
+            driver.statusAr = 'معتمد';
+            driver.rejectionReason = '';
+          }
+          updatePendingBadge();
+          renderPage(currentPage);
+          showToast(`✅ تم اعتماد السائق ${driverName} بنجاح`);
+          await sendPushNotificationBackend({
+            recipientId: targetUid,
+            title: approveTitle,
+            body: approveBody,
+            type: 'driver_approved'
+          });
+        } else {
+          showToast(`❌ فشل الاعتماد: ${error.message}`);
+        }
+      }).catch(err => {
+        showToast(`❌ فشل الاعتماد: ${err.message}`);
+      });
+  } else {
+    if (driver) {
+      driver.status = 'verified';
+      driver.statusAr = 'معتمد';
+      driver.rejectionReason = '';
+      updatePendingBadge();
+      renderPage(currentPage);
+      showToast(`✅ تم اعتماد السائق ${driverName} بنجاح`);
+    }
+  }
+
+  const modal = document.querySelector('.modal-backdrop');
+  if (modal) modal.remove();
+}
+
+function rejectDriverPrompt(driverUidOrId) {
+  const driver = mockData.drivers.find(d => d.uid === driverUidOrId || d.id === driverUidOrId);
+  const targetUid = driver ? driver.uid : driverUidOrId;
+  const driverName = driver ? driver.name : 'السائق';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="modal-card" style="max-width:440px;width:90%;">
+      <div class="modal-header">
+        <h3><i class="ri-close-circle-line text-danger" style="margin-left:8px;"></i> رفض طلب السائق (${driverName})</h3>
+        <button class="modal-close-btn" onclick="this.closest('.modal-backdrop').remove()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:20px;">
+        <label style="display:block;margin-bottom:8px;font-weight:700;font-size:13px;">سبب الرفض (سيتم إرساله في الإشعار الفوري للسائق):</label>
+        <textarea id="rejectionReasonInput" rows="3" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);resize:vertical;" placeholder="اكتب سبب رفض المستندات أو التراخيص..."></textarea>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:10px;padding:16px;background:var(--bg-primary);">
+        <button class="btn btn-outline" onclick="this.closest('.modal-backdrop').remove()">إلغاء</button>
+        <button class="btn btn-primary" style="background:var(--error);border-color:var(--error);" onclick="confirmRejectDriver('${targetUid}')">
+          تأكيد الرفض وإرسال الإشعار
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function confirmRejectDriver(driverUid) {
+  const reasonInput = document.getElementById('rejectionReasonInput');
+  const rejectionReason = reasonInput ? reasonInput.value.trim() : '';
+
+  const driver = mockData.drivers.find(d => d.uid === driverUid || d.id === driverUid);
+  const driverName = driver ? driver.name : 'السائق';
+
+  const rejectTitle = "Driver application rejected.";
+  const rejectBody = rejectionReason ? `Driver application rejected: ${rejectionReason}` : "Driver application rejected.";
+
+  if (supabaseClient) {
+    supabaseClient.from('drivers')
+      .update({ verification_status: 'rejected', rejection_reason: rejectionReason, updated_at: new Date().toISOString() })
+      .eq('id', driverUid)
+      .then(async ({ error }) => {
+        if (!error) {
+          if (driver) {
+            driver.status = 'rejected';
+            driver.statusAr = 'مرفوض';
+            driver.rejectionReason = rejectionReason;
+          }
+          updatePendingBadge();
+          renderPage(currentPage);
+          showToast(`❌ تم رفض طلب السائق ${driverName}`);
+          await sendPushNotificationBackend({
+            recipientId: driverUid,
+            title: rejectTitle,
+            body: rejectBody,
+            type: 'driver_rejected'
+          });
+        } else {
+          showToast(`❌ فشل عملية الرفض: ${error.message}`);
+        }
+      }).catch(err => {
+        showToast(`❌ فشل عملية الرفض: ${err.message}`);
+      });
+  } else {
+    if (driver) {
+      driver.status = 'rejected';
+      driver.statusAr = 'مرفوض';
+      driver.rejectionReason = rejectionReason;
+      updatePendingBadge();
+      renderPage(currentPage);
+      showToast(`❌ تم رفض طلب السائق ${driverName}`);
+    }
+  }
+
+  const modal = document.querySelector('.modal-backdrop');
+  if (modal) modal.remove();
+}
+
+function reviewDriverDocs(driverUidOrId) {
+  const driver = mockData.drivers.find(d => d.uid === driverUidOrId || d.id === driverUidOrId);
+  if (!driver) {
+    showToast('❌ تعذر تحميل وثائق السائق');
+    return;
+  }
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="modal-card" style="max-width:720px;width:95%;max-height:90vh;overflow-y:auto;">
+      <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border-color);">
+        <h3 style="font-size:16px;font-weight:700;"><i class="ri-file-search-line text-blue" style="margin-left:8px;"></i> مراجعة مستندات السائق: ${driver.name}</h3>
+        <button class="modal-close-btn" onclick="this.closest('.modal-backdrop').remove()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:20px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;font-size:13px;">
+          <div><strong>الاسم:</strong> ${driver.name}</div>
+          <div><strong>الهاتف:</strong> ${driver.phone}</div>
+          <div><strong>العنوان:</strong> ${driver.address || 'غير مدخل'}</div>
+          <div><strong>المركبة:</strong> ${driver.vehicleName || '—'} (${driver.licensePlate || '—'})</div>
+          <div><strong>حالة الحساب:</strong> <span class="status-badge ${driver.status}">${driver.statusAr}</span></div>
+          <div><strong>التقييم:</strong> ${driver.rating} ⭐</div>
+        </div>
+
+        <h4 style="font-size:14px;font-weight:700;margin-bottom:12px;border-top:1px solid var(--border-light);padding-top:12px;">المستندات والتراخيص الرسمية:</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div style="background:#f9f9f9;padding:10px;border-radius:8px;border:1px solid #eee;">
+            <div style="font-size:12px;font-weight:700;margin-bottom:6px;">بطاقة الرقم القومي (وجه أمامي)</div>
+            ${driver.nationalIdUrl ? `<a href="${driver.nationalIdUrl}" target="_blank"><img src="${driver.nationalIdUrl}" style="width:100%;height:140px;object-fit:cover;border-radius:6px;"></a>` : '<div style="color:var(--text-light);font-size:12px;padding:20px;text-align:center;">غير متوفر</div>'}
+          </div>
+          <div style="background:#f9f9f9;padding:10px;border-radius:8px;border:1px solid #eee;">
+            <div style="font-size:12px;font-weight:700;margin-bottom:6px;">رخصة القيادة (وجه أمامي)</div>
+            ${driver.licenseUrl ? `<a href="${driver.licenseUrl}" target="_blank"><img src="${driver.licenseUrl}" style="width:100%;height:140px;object-fit:cover;border-radius:6px;"></a>` : '<div style="color:var(--text-light);font-size:12px;padding:20px;text-align:center;">غير متوفر</div>'}
+          </div>
+          <div style="background:#f9f9f9;padding:10px;border-radius:8px;border:1px solid #eee;">
+            <div style="font-size:12px;font-weight:700;margin-bottom:6px;">رخصة المركبة (وجه أمامي)</div>
+            ${driver.vehicleFrontUrl || driver.vehicleLicenseUrl ? `<a href="${driver.vehicleFrontUrl || driver.vehicleLicenseUrl}" target="_blank"><img src="${driver.vehicleFrontUrl || driver.vehicleLicenseUrl}" style="width:100%;height:140px;object-fit:cover;border-radius:6px;"></a>` : '<div style="color:var(--text-light);font-size:12px;padding:20px;text-align:center;">غير متوفر</div>'}
+          </div>
+          <div style="background:#f9f9f9;padding:10px;border-radius:8px;border:1px solid #eee;">
+            <div style="font-size:12px;font-weight:700;margin-bottom:6px;">رخصة القيادة / المركبة (خلفي)</div>
+            ${driver.licenseBackUrl || driver.nationalIdBackUrl ? `<a href="${driver.licenseBackUrl || driver.nationalIdBackUrl}" target="_blank"><img src="${driver.licenseBackUrl || driver.nationalIdBackUrl}" style="width:100%;height:140px;object-fit:cover;border-radius:6px;"></a>` : '<div style="color:var(--text-light);font-size:12px;padding:20px;text-align:center;">غير متوفر</div>'}
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:space-between;padding:16px 20px;background:var(--bg-primary);border-top:1px solid var(--border-color);">
+        <button class="btn btn-outline" style="color:var(--error);border-color:var(--error);" onclick="rejectDriverPrompt('${driver.uid}')">
+          <i class="ri-close-circle-line"></i> رفض الطلب مع السبب
+        </button>
+        <button class="btn btn-success" style="background:var(--success);" onclick="approveDriver('${driver.uid}')">
+          <i class="ri-checkbox-circle-line"></i> اعتماد الحساب وإرسال الإشعار
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
 function viewDriver(driverId) {
-  const driver = mockData.drivers.find(d => d.id === driverId);
+  const driver = mockData.drivers.find(d => d.id === driverId || d.uid === driverId);
   if (driver) {
-    showToast(`📋 عرض بيانات: ${driver.name}`);
+    reviewDriverDocs(driver.uid);
   }
 }
 
@@ -1499,7 +2084,6 @@ function submitAddUser(role) {
           name: name,
           phone_number: phone,
           email: email,
-          address: address,
           role: isDriver ? 'driver' : 'rider',
           rating: rating,
           created_at: new Date().toISOString()
@@ -1531,14 +2115,6 @@ function submitAddUser(role) {
           logAction(`إضافة كابتن جديد (الاسم: ${name}، الهاتف: ${phone})`);
           showToast('✅ تم إضافة الكابتن بنجاح');
         } else {
-          const { error: pError } = await supabaseClient.from('passengers').insert({
-            id: uid,
-            name: name,
-            phone: phone,
-            created_at: new Date().toISOString()
-          });
-          if (pError) throw pError;
-
           logAction(`إضافة راكب جديد (الاسم: ${name}، الهاتف: ${phone})`);
           showToast('✅ تم إضافة الراكب بنجاح');
         }
@@ -1731,7 +2307,6 @@ function submitEditUser(uid, role) {
           name: name,
           phone_number: phone,
           email: email,
-          address: address,
           rating: rating
         }).eq('id', uid);
         if (userError) throw userError;
@@ -1856,8 +2431,6 @@ function submitDeleteUser(uid, role) {
           if (driverData && driverData.vehicle_id) {
             await supabaseClient.from('vehicles').delete().eq('id', driverData.vehicle_id);
           }
-        } else {
-          await supabaseClient.from('passengers').delete().eq('id', uid);
         }
 
         const { error: userDeleteError } = await supabaseClient.from('users').delete().eq('id', uid);
@@ -2892,39 +3465,158 @@ function initMessagesPage() {
   }
 }
 
-// ---- TECHNICAL SUPPORT & COMPLAINTS ----
+// ---- REALTIME SUPABASE TECHNICAL SUPPORT & COMPLAINTS ----
+let liveSupportChats = [];
+let activeTicketId = null;
+let supportSearchQuery = '';
+let supportFilterStatus = 'all';
+let supportRealtimeSubscribed = false;
+
+function playNotificationChime() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
+  } catch (e) {}
+}
+
+async function initSupportRealtimeSystem() {
+  if (!supabaseClient) return;
+
+  await loadSupportChatsFromSupabase();
+
+  if (!supportRealtimeSubscribed) {
+    supportRealtimeSubscribed = true;
+    console.log("[SupportChat Log] Realtime Connected to support channels");
+
+    supabaseClient
+      .channel('admin_support_chats')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_chats' }, payload => {
+        console.log("[SupportChat Log] Realtime Event support_chats:", payload.eventType);
+        loadSupportChatsFromSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, payload => {
+        console.log("[SupportChat Log] Realtime Event support_messages:", payload.eventType);
+        const newMsg = payload.new;
+        if (newMsg && (newMsg.sender_type !== 'admin' && !newMsg.is_admin)) {
+          console.log("[SupportChat Log] Support Message Delivered: id=" + newMsg.id);
+          playNotificationChime();
+        }
+        loadSupportChatsFromSupabase();
+        if (activeTicketId) {
+          refreshActiveTicketChat();
+        }
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log("[SupportChat Log] Realtime Connected successfully");
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          console.log("[SupportChat Log] Realtime Disconnected: status=" + status);
+        }
+      });
+  }
+}
+
+async function loadSupportChatsFromSupabase() {
+  if (!supabaseClient) return;
+
+  try {
+    const { data: chats, error } = await supabaseClient
+      .from('support_chats')
+      .select('*')
+      .order('updated_at', { ascending: false });
+
+    if (error) throw error;
+
+    // Fetch user details for names and roles
+    const userIds = (chats || []).map(c => c.id || c.user_id).filter(Boolean);
+    let userMap = {};
+    if (userIds.length > 0) {
+      const { data: users } = await supabaseClient.from('users').select('id, name, phone_number, role').in('id', userIds);
+      const { data: drivers } = await supabaseClient.from('drivers').select('id, name, phone_number').in('id', userIds);
+      
+      (users || []).forEach(u => { userMap[u.id] = { name: u.name || 'مستخدم', role: u.role || 'rider', phone: u.phone_number }; });
+      (drivers || []).forEach(d => { userMap[d.id] = { name: d.name || 'سائق', role: 'driver', phone: d.phone_number }; });
+    }
+
+    liveSupportChats = (chats || []).map(c => {
+      const uId = c.id || c.user_id;
+      const uInfo = userMap[uId] || {};
+      return {
+        id: uId,
+        user_id: uId,
+        user_name: uInfo.name || c.user_name || 'مستخدم inRide',
+        user_type: uInfo.role || c.user_type || 'rider',
+        phone: uInfo.phone || '',
+        status: c.status || 'open',
+        last_message: c.last_message || '',
+        last_message_at: c.last_message_at || c.updated_at || c.created_at,
+        unread_admin_count: c.unread_admin_count || 0,
+      };
+    });
+
+    // Update global badge
+    const totalUnread = liveSupportChats.reduce((acc, curr) => acc + (curr.unread_admin_count || 0), 0);
+    const badgeEl = document.getElementById('supportBadge');
+    if (badgeEl) {
+      badgeEl.innerText = totalUnread;
+      badgeEl.style.display = totalUnread > 0 ? 'inline-block' : 'none';
+    }
+    console.log("[SupportChat Log] Unread Count Updated: totalUnread=" + totalUnread);
+
+    // Re-render conversation list if support page is visible
+    const container = document.getElementById('supportConversationsList');
+    if (container) {
+      container.innerHTML = renderConversationsListHtml();
+    }
+  } catch (e) {
+    console.warn("[SupportChat Log] Error loading support chats:", e);
+  }
+}
+
 function renderSupport() {
+  initSupportRealtimeSystem();
+
   return `
     <div class="page-section">
-      <div style="display:grid;grid-template-columns: 1fr 2fr; gap:24px;">
-        <!-- Complaints list -->
-        <div class="card" style="max-height:600px;overflow-y:auto;">
-          <div class="card-header">
-            <h3>تذاكر الدعم والشكاوى</h3>
+      <div style="display:grid;grid-template-columns: 340px 1fr; gap:24px;">
+        <!-- Complaints / Conversations list -->
+        <div class="card" style="max-height:680px;display:flex;flex-direction:column;">
+          <div class="card-header" style="padding:16px;border-bottom:1px solid var(--border-light);">
+            <h3 style="margin-bottom:10px;">تذاكر الدعم والشكاوى</h3>
+            <input type="text" id="supportSearchInput" placeholder="بحث باسم العميل أو رقم الهاتف..." 
+                   value="${supportSearchQuery}" 
+                   oninput="onSupportSearchInput(this.value)" 
+                   style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-size:12px;" />
+            <div style="display:flex;gap:6px;margin-top:10px;">
+              <button class="btn btn-sm ${supportFilterStatus === 'all' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('all')">الكل</button>
+              <button class="btn btn-sm ${supportFilterStatus === 'open' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('open')">مفتوحة</button>
+              <button class="btn btn-sm ${supportFilterStatus === 'pending' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('pending')">قيد المتابعة</button>
+              <button class="btn btn-sm ${supportFilterStatus === 'resolved' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('resolved')">تم الحل</button>
+            </div>
           </div>
-          <div class="card-body" style="padding:0;display:flex;flex-direction:column;">
-            ${mockData.supportTickets.map(tkt => `
-              <div onclick="selectTicket('${tkt.id}')" style="padding:14px;border-bottom:1px solid var(--border-light);cursor:pointer;background:${activeTicketId === tkt.id ? 'rgba(30,136,229,0.06)' : 'transparent'};transition:all 0.2s;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                  <span style="font-weight:700;font-size:12px;color:var(--medium-blue);">${tkt.id}</span>
-                  <span class="status-badge ${tkt.status === 'open' ? 'pending' : (tkt.status === 'resolved' ? 'completed' : 'active')}">${tkt.statusAr}</span>
-                </div>
-                <div style="font-weight:700;font-size:13px;color:var(--text-primary);margin-bottom:4px;">${tkt.subject}</div>
-                <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-light);">
-                  <span>بواسطة: ${tkt.user} (${tkt.type})</span>
-                  <span>${tkt.date}</span>
-                </div>
-              </div>
-            `).join('')}
+          <div id="supportConversationsList" class="card-body" style="padding:0;overflow-y:auto;flex:1;">
+            ${renderConversationsListHtml()}
           </div>
         </div>
 
-        <!-- Ticket details and chat -->
-        <div class="card" style="display:flex;flex-direction:column;min-height:500px;">
-          ${activeTicketId ? renderTicketChat() : `
+        <!-- Ticket details and active chat -->
+        <div class="card" id="activeSupportChatContainer" style="display:flex;flex-direction:column;min-height:550px;">
+          ${activeTicketId ? renderTicketChatHtml() : `
             <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-light);">
-              <i class="ri-customer-service-2-line" style="font-size:64px;margin-bottom:16px;"></i>
-              <p>يرجى اختيار شكوى من القائمة الجانبية للرد ومتابعة الشكاوى مباشرة</p>
+              <i class="ri-customer-service-2-line" style="font-size:64px;margin-bottom:16px;color:var(--medium-blue);"></i>
+              <p style="font-weight:600;">اختر محادثة من القائمة الجانبية للتواصل المباشر مع العميل</p>
             </div>
           `}
         </div>
@@ -2933,76 +3625,260 @@ function renderSupport() {
   `;
 }
 
-function renderTicketChat() {
-  const tkt = mockData.supportTickets.find(t => t.id === activeTicketId);
-  if (!tkt) return '';
-  
+function renderConversationsListHtml() {
+  let filtered = liveSupportChats.filter(c => {
+    if (supportFilterStatus !== 'all' && c.status !== supportFilterStatus) return false;
+    if (supportSearchQuery.trim()) {
+      const q = supportSearchQuery.toLowerCase();
+      const matchName = c.user_name.toLowerCase().includes(q);
+      const matchPhone = (c.phone || '').includes(q);
+      const matchId = c.id.toLowerCase().includes(q);
+      return matchName || matchPhone || matchId;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    return `<div style="text-align:center;padding:32px;color:var(--text-light);font-size:13px;">لا توجد محادثات دعم مطابقة.</div>`;
+  }
+
+  return filtered.map(tkt => {
+    const isSelected = activeTicketId === tkt.id;
+    const timeStr = tkt.last_message_at ? new Date(tkt.last_message_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'}) : '';
+    const userRoleAr = tkt.user_type === 'driver' ? 'سائق' : 'راكب';
+
+    let statusBadgeClass = 'pending';
+    let statusAr = 'مفتوحة';
+    if (tkt.status === 'resolved') { statusBadgeClass = 'completed'; statusAr = 'تم الحل'; }
+    else if (tkt.status === 'pending') { statusBadgeClass = 'active'; statusAr = 'قيد المتابعة'; }
+
+    return `
+      <div onclick="selectTicket('${tkt.id}')" style="padding:14px;border-bottom:1px solid var(--border-light);cursor:pointer;background:${isSelected ? 'rgba(30,136,229,0.08)' : 'transparent'};transition:all 0.2s;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="font-weight:700;font-size:13px;color:var(--text-primary);">${tkt.user_name}</span>
+          <span class="status-badge ${statusBadgeClass}">${statusAr}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text-light);margin-bottom:4px;">
+          <span>${userRoleAr} • ${tkt.phone || ''}</span>
+          <span>${timeStr}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px;">${tkt.last_message || 'لا توجد رسائل'}</div>
+          ${tkt.unread_admin_count > 0 ? `<span style="background:var(--error);color:white;border-radius:10px;padding:2px 7px;font-size:10px;font-weight:bold;">${tkt.unread_admin_count}</span>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function onSupportSearchInput(val) {
+  supportSearchQuery = val;
+  const container = document.getElementById('supportConversationsList');
+  if (container) container.innerHTML = renderConversationsListHtml();
+}
+
+function setSupportFilter(status) {
+  supportFilterStatus = status;
+  renderPage('support');
+}
+
+async function selectTicket(id) {
+  activeTicketId = id;
+  renderPage('support');
+  markConversationAsReadByAdmin(id);
+}
+
+async function markConversationAsReadByAdmin(id) {
+  if (!supabaseClient || !id) return;
+  try {
+    await supabaseClient.from('support_chats').update({ unread_admin_count: 0 }).eq('id', id);
+    await supabaseClient.from('support_messages').update({ status: 'read', read_at: new Date().toISOString() }).eq('user_id', id).neq('sender_type', 'admin');
+    console.log("[SupportChat Log] Support Message Read: conversationId=" + id);
+    loadSupportChatsFromSupabase();
+  } catch (e) {
+    console.warn("[SupportChat Log] Error marking read:", e);
+  }
+}
+
+async function refreshActiveTicketChat() {
+  const container = document.getElementById('activeSupportChatContainer');
+  if (!container || !activeTicketId) return;
+  container.innerHTML = await renderTicketChatHtmlAsync();
+}
+
+function renderTicketChatHtml() {
+  // Return skeleton while loading messages asynchronously
+  renderTicketChatHtmlAsync().then(html => {
+    const container = document.getElementById('activeSupportChatContainer');
+    if (container) container.innerHTML = html;
+  });
+  return `<div style="flex:1;display:flex;align-items:center;center;justify-content:center;"><i class="ri-loader-4-line ri-spin" style="font-size:32px;color:var(--medium-blue);"></i></div>`;
+}
+
+async function renderTicketChatHtmlAsync() {
+  const tkt = liveSupportChats.find(t => t.id === activeTicketId) || { id: activeTicketId, user_name: 'مستخدم', user_type: 'rider', status: 'open' };
+
+  let messages = [];
+  if (supabaseClient && activeTicketId) {
+    try {
+      const { data, error } = await supabaseClient
+        .from('support_messages')
+        .select('*')
+        .or(`user_id.eq.${activeTicketId},conversation_id.eq.${activeTicketId}`)
+        .order('created_at', { ascending: true });
+      if (!error && data) messages = data;
+    } catch (e) {}
+  }
+
+  const userRoleAr = tkt.user_type === 'driver' ? 'سائق' : 'راكب';
+
   return `
-    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-color);">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-color);padding:16px 20px;">
       <div>
-        <h3 style="margin-bottom:2px;">${tkt.subject}</h3>
-        <p style="font-size:12px;color:var(--text-secondary);">كود التذكرة: ${tkt.id} • العميل: ${tkt.user} (${tkt.type})</p>
+        <h3 style="margin-bottom:2px;">محادثة: ${tkt.user_name}</h3>
+        <p style="font-size:12px;color:var(--text-secondary);">النوع: ${userRoleAr} • الحالة: ${tkt.status}</p>
       </div>
       <div style="display:flex;gap:8px;">
-        <button class="btn btn-outline btn-sm" onclick="assignTicket('${tkt.id}')"><i class="ri-user-shared-line"></i> تحويل لموظف</button>
-        <button class="btn btn-primary btn-sm" style="background:var(--success);" onclick="resolveTicket('${tkt.id}')"><i class="ri-check-line"></i> إغلاق وحل الشكوى</button>
+        <button class="btn btn-outline btn-sm" onclick="setConversationStatus('${tkt.id}', 'pending')"><i class="ri-time-line"></i> قيد المتابعة</button>
+        <button class="btn btn-primary btn-sm" style="background:var(--success);" onclick="setConversationStatus('${tkt.id}', 'resolved')"><i class="ri-check-line"></i> إغلاق وحل الشكوى</button>
       </div>
     </div>
     
-    <div style="flex:1;padding:20px;overflow-y:auto;background:var(--bg-primary);display:flex;flex-direction:column;gap:14px;max-height:360px;">
-      ${tkt.replies.map(rep => `
-        <div style="align-self:${rep.sender === 'user' ? 'flex-start' : 'flex-end'};max-width:70%;">
-          <div style="padding:10px 16px;border-radius:var(--radius-md);background:${rep.sender === 'user' ? 'white' : 'var(--medium-blue)'};color:${rep.sender === 'user' ? 'var(--text-primary)' : 'white'};box-shadow:var(--shadow-sm);font-size:13px;">
-            ${rep.text}
-          </div>
-          <div style="font-size:10px;color:var(--text-light);text-align:${rep.sender === 'user' ? 'right' : 'left'};margin-top:4px;">
-            ${rep.sender === 'user' ? tkt.user : 'الدعم الفني (أحمد)'}
-          </div>
-        </div>
-      `).join('')}
+    <div id="chatMessagesScrollArea" style="flex:1;padding:20px;overflow-y:auto;background:var(--bg-primary);display:flex;flex-direction:column;gap:14px;max-height:420px;">
+      ${messages.length === 0 ? `<div style="text-align:center;padding:32px;color:var(--text-light);">لا توجد رسائل سابقة في هذه المحادثة.</div>` : 
+        messages.map(msg => {
+          const isAdmin = msg.sender_type === 'admin' || msg.is_admin === true;
+          const text = msg.message || msg.text || '';
+          const dateObj = msg.created_at ? new Date(msg.created_at) : new Date();
+          const timeStr = dateObj.toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'});
+
+          let statusIcon = '';
+          if (isAdmin) {
+            if (msg.status === 'read' || msg.read_at) {
+              statusIcon = '<i class="ri-check-double-line" style="color:#64B5F6;font-size:13px;margin-right:4px;" title="تمت القراءة"></i>';
+            } else if (msg.status === 'delivered' || msg.delivered_at) {
+              statusIcon = '<i class="ri-check-double-line" style="color:rgba(255,255,255,0.7);font-size:13px;margin-right:4px;" title="تم التسليم"></i>';
+            } else {
+              statusIcon = '<i class="ri-check-line" style="color:rgba(255,255,255,0.7);font-size:13px;margin-right:4px;" title="تم الإرسال"></i>';
+            }
+          }
+
+          return `
+            <div style="align-self:${isAdmin ? 'flex-end' : 'flex-start'};max-width:75%;">
+              <div style="padding:10px 16px;border-radius:var(--radius-md);background:${isAdmin ? 'var(--medium-blue)' : 'white'};color:${isAdmin ? 'white' : 'var(--text-primary)'};box-shadow:var(--shadow-sm);font-size:13px;border:${isAdmin ? 'none' : '1px solid var(--border-color)'};">
+                ${text}
+              </div>
+              <div style="font-size:10px;color:var(--text-light);text-align:${isAdmin ? 'left' : 'right'};margin-top:4px;display:flex;align-items:center;justify-content:${isAdmin ? 'flex-start' : 'flex-end'};gap:4px;">
+                <span>${isAdmin ? 'الدعم الفني' : tkt.user_name} • ${timeStr}</span>
+                ${statusIcon}
+              </div>
+            </div>
+          `;
+        }).join('')
+      }
     </div>
 
     <div style="padding:16px;border-top:1px solid var(--border-color);display:flex;gap:12px;align-items:center;">
-      <textarea id="replyText" placeholder="اكتب ردك هنا..." rows="1" style="flex:1;padding:12px;border:1px solid var(--border-color);border-radius:var(--radius-md);resize:none;font-family:inherit;"></textarea>
-      <button class="btn btn-primary" style="padding:12px 20px;" onclick="sendReply('${tkt.id}')"><i class="ri-send-plane-fill"></i> رد</button>
+      <textarea id="replyText" placeholder="اكتب ردك هنا..." rows="1" 
+                onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); sendSupportReply('${tkt.id}'); }"
+                style="flex:1;padding:12px;border:1px solid var(--border-color);border-radius:var(--radius-md);resize:none;font-family:inherit;"></textarea>
+      <button class="btn btn-primary" style="padding:12px 20px;" onclick="sendSupportReply('${tkt.id}')"><i class="ri-send-plane-fill"></i> رد</button>
     </div>
   `;
 }
 
-function selectTicket(id) {
-  activeTicketId = id;
-  renderPage('support');
-}
+async function sendSupportReply(id) {
+  const textEl = document.getElementById('replyText');
+  if (!textEl) return;
+  const text = textEl.value.trim();
+  if (!text || !supabaseClient) return;
 
-function sendReply(id) {
-  const text = document.getElementById('replyText').value;
-  if (!text.trim()) return;
-  
-  const tkt = mockData.supportTickets.find(t => t.id === id);
-  if (tkt) {
-    tkt.replies.push({ sender: 'admin', text: text });
-    tkt.status = 'pending';
-    tkt.statusAr = 'قيد المتابعة';
-    logAction(`إضافة رد على تذكرة الدعم ${id}`);
-    renderPage('support');
+  textEl.value = '';
+  const nowStr = new Date().toISOString();
+  const msgId = crypto.randomUUID ? crypto.randomUUID() : ('admin_msg_' + Date.now());
+
+  console.log("[SupportChat Log] Support Message Sent: id=" + msgId + " to recipient=" + id);
+
+  try {
+    // 1. Insert message
+    await supabaseClient.from('support_messages').insert({
+      id: msgId,
+      conversation_id: id,
+      user_id: id,
+      sender_id: currentAdminUser ? currentAdminUser.id : id,
+      receiver_id: id,
+      sender_type: 'admin',
+      message: text,
+      text: text,
+      status: 'sent',
+      is_admin: true,
+      created_at: nowStr
+    });
+
+    // 2. Update conversation
+    await supabaseClient.from('support_chats').upsert({
+      id: id,
+      user_id: id,
+      status: 'open',
+      last_message: text,
+      last_message_at: nowStr,
+      updated_at: nowStr,
+      unread_admin_count: 0
+    });
+
+    // 3. Dispatch Push Notification via OneSignal Backend Endpoint
+    dispatchPushNotificationToUser(id, "الدعم الفني", text, msgId);
+
+    refreshActiveTicketChat();
+    loadSupportChatsFromSupabase();
+  } catch (e) {
+    console.error("[SupportChat Log] Error sending admin reply:", e);
+    showToast("❌ حدث خطأ أثناء إرسال الرسالة");
   }
 }
 
-function resolveTicket(id) {
-  const tkt = mockData.supportTickets.find(t => t.id === id);
-  if (tkt) {
-    tkt.status = 'resolved';
-    tkt.statusAr = 'تم الحل';
-    logAction(`إغلاق وحل الشكوى للتذكرة ${id}`);
-    renderPage('support');
-    showToast(`✅ تم إغلاق تذكرة الشكوى ${id}`);
+async function dispatchPushNotificationToUser(recipientId, title, body, messageId) {
+  try {
+    const pushEndpoint = '/api/push-notification';
+    const response = await fetch(pushEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientId: recipientId,
+        title: title,
+        body: body,
+        type: 'support_chat',
+        data: {
+          conversation_id: recipientId,
+          sender_id: 'admin',
+          message_id: messageId,
+          notification_type: 'support_chat'
+        }
+      })
+    });
+
+    if (response.ok) {
+      console.log("[SupportChat Log] Push Notification Sent: recipientId=" + recipientId);
+    } else {
+      console.warn("[SupportChat Log] Push Notification Failed: HTTP " + response.status);
+    }
+  } catch (e) {
+    console.warn("[SupportChat Log] Push Notification Failed: " + e.message);
   }
 }
 
-function assignTicket(id) {
-  showToast('👤 تم تحويل تذكرة الدعم للموظف المختص بالمراجعة المالية');
-  logAction(`تحويل التذكرة ${id} إلى موظف المراجعة المالية`);
+async function setConversationStatus(id, newStatus) {
+  if (!supabaseClient || !id) return;
+  try {
+    await supabaseClient.from('support_chats').update({ status: newStatus }).eq('id', id);
+    showToast(`✅ تم تحديث حالة المحادثة إلى: ${newStatus === 'resolved' ? 'تم الحل' : 'قيد المتابعة'}`);
+    loadSupportChatsFromSupabase();
+    refreshActiveTicketChat();
+  } catch (e) {
+    console.error("Error setting status:", e);
+  }
 }
+
 
 // ---- CONTENT MANAGER (Banners, Coupons, FAQs) ----
 function renderContent() {
@@ -3319,27 +4195,28 @@ function modifyUserStatus(uid, action, userRole) {
   if (supabaseClient) {
     (async () => {
       try {
-        let updateFields = {};
-        if (action === 'suspend') {
-          updateFields.status = 'suspended';
-        } else if (action === 'activate') {
-          updateFields.status = 'active';
-        } else if (action === 'ban') {
-          updateFields.status = 'banned';
-        } else if (action === 'verify') {
-          updateFields.status = 'active';
+        if (userRole === 'driver' || action === 'verify') {
+          let vStatus = 'pending';
+          if (action === 'verify' || action === 'activate') {
+            vStatus = 'verified';
+          } else if (action === 'suspend' || action === 'ban') {
+            vStatus = 'rejected';
+          }
+          const { error: driverError } = await supabaseClient.from('drivers').update({ verification_status: vStatus }).eq('id', uid);
+          if (driverError && userRole === 'driver') throw driverError;
         }
-        
-        const { error: userError } = await supabaseClient.from('users').update(updateFields).eq('id', uid);
-        if (userError) throw userError;
 
-        if (userRole === 'driver' && action === 'verify') {
-          const { error: driverError } = await supabaseClient.from('drivers').update({ verification_status: 'verified' }).eq('id', uid);
-          if (driverError) throw driverError;
+        if (action === 'ban') {
+          const farFuture = new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000).toISOString();
+          const { error: banErr } = await supabaseClient.from('users').update({ banned_until: farFuture }).eq('id', uid);
+          if (banErr) throw banErr;
+        } else if (action === 'activate') {
+          const { error: actErr } = await supabaseClient.from('users').update({ banned_until: null }).eq('id', uid);
+          if (actErr) throw actErr;
         }
 
         logAction(`إجراء (${action}) على حساب المستخدم/السائق: ${uid}`);
-        showToast(`✅ تم تنفيذ الإجراء ${action} بنجاح`);
+        showToast(`✅ تم تنفيذ الإجراء بنجاح`);
       } catch (err) {
         showToast(`❌ فشل الإجراء: ${err.message}`);
       }
@@ -3405,15 +4282,13 @@ function adjustUserWallet(uid, amountStr, role) {
           .eq('id', uid);
         if (updateError) throw updateError;
         
-        // Add to wallet_transactions
-        const txnId = 'TXN-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-        await supabaseClient.from('wallet_transactions').insert({
-          id: txnId,
+        // Add to transactions
+        await supabaseClient.from('transactions').insert({
           user_id: uid,
+          title: 'تعديل الرصيد من الإدارة',
           amount: amount,
-          type: amount >= 0 ? 'deposit' : 'withdrawal',
-          description: 'تعديل الرصيد من الإدارة',
-          status: 'completed',
+          type: amount >= 0 ? 'charge' : 'deduction',
+          balance_after: newBal,
           created_at: new Date().toISOString()
         });
 
@@ -3554,8 +4429,7 @@ function submitDocApproval(uid, decision) {
     // Rejected
     if (supabaseClient) {
       supabaseClient.from('drivers').update({
-        verification_status: 'rejected',
-        rejection_reason: reason
+        verification_status: 'rejected'
       }).eq('id', uid)
         .then(({ error }) => {
           if (!error) {
@@ -3645,29 +4519,52 @@ function initSupabaseSync() {
       });
     };
 
+    const passengersMap = {};
+
     const fetchUsers = async () => {
+      try {
+        const { data: pData } = await supabaseClient.from('passengers').select('*');
+        if (pData) {
+          pData.forEach(p => {
+            passengersMap[p.id] = p;
+          });
+        }
+      } catch (e) {}
+
       const { data: usersData, error } = await supabaseClient.from('users').select('*');
       if (!error && usersData) {
         const passengers = [];
         usersData.forEach(data => {
           usersMap[data.id] = data;
+
+          const pRecord = passengersMap[data.id] || {};
+          let cleanName = data.name || data.full_name;
+          if (!cleanName || cleanName === 'مستخدم هاتف' || cleanName === 'مستخدم جديد' || cleanName.trim() === '') {
+            if (pRecord.name && pRecord.name !== 'مستخدم هاتف' && pRecord.name !== 'مستخدم جديد' && pRecord.name.trim() !== '') {
+              cleanName = pRecord.name;
+            } else {
+              cleanName = data.phone_number || data.phone || pRecord.phone || 'راكب';
+            }
+          }
+          data.cleanName = cleanName;
+
           if (data.role === 'rider' || !data.role) {
             const dateObj = new Date(data.created_at || Date.now());
             passengers.push({
               id: data.id.substring(0, 8).toUpperCase(),
               uid: data.id,
-              name: data.name || data.full_name || 'مستخدم جديد',
-              phone: data.phone_number || data.phone || '—',
-              email: data.email || '—',
-              address: data.address || '—',
-              rating: data.rating || 5.0,
+              name: cleanName,
+              phone: data.phone_number || data.phone || pRecord.phone || '—',
+              email: data.email || pRecord.email || '—',
+              address: data.address || pRecord.address || '—',
+              rating: data.rating || pRecord.rating || 5.0,
               totalTrips: 0,
               totalSpent: 0,
               joinDate: dateObj.toLocaleDateString('ar-EG'),
               status: data.status || 'active',
               statusAr: data.status === 'suspended' ? 'معلق' : (data.status === 'banned' ? 'محظور' : 'نشط'),
               lastTrip: '—',
-              avatar: (data.name || data.full_name || 'م').charAt(0),
+              avatar: cleanName.charAt(0),
             });
           }
         });
@@ -3678,6 +4575,9 @@ function initSupabaseSync() {
         renderPage(currentPage);
         if (typeof fetchDrivers === 'function') {
           fetchDrivers();
+        }
+        if (typeof fetchTrips === 'function') {
+          fetchTrips();
         }
       }
     };
@@ -3711,20 +4611,36 @@ function initSupabaseSync() {
           const pId = data.passenger_id || data.passengerId;
           const dId = data.driver_id || data.driverId;
           const passenger = usersMap[pId] || {};
+          const pRecord = passengersMap[pId] || {};
           const driver = usersMap[dId] || {};
+
+          let rName = passenger.cleanName || passenger.name || passenger.full_name || pRecord.name;
+          if (!rName || rName === 'مستخدم هاتف' || rName === 'مستخدم جديد' || rName.trim() === '') {
+            rName = passenger.phone_number || passenger.phone || pRecord.phone || (pId ? 'راكب (' + pId.substring(0, 6) + ')' : 'عميل');
+          }
+
+          let dName = '—';
+          if (dId) {
+            dName = driver.name || driver.full_name || 'سائق';
+            if (dName === 'مستخدم جديد' || dName === 'سائق جديد' || dName.trim() === '') {
+              dName = driver.phone_number || driver.phone || ('كابتن (' + dId.substring(0, 6) + ')');
+            }
+          }
 
           trips.push({
             id: (data.id || '').substring(0, 8).toUpperCase(),
             requestId: data.id,
             date: `${localeDate}، ${dateStr}`,
-            riderName: passenger.name || 'عميل',
-            riderPhone: passenger.phone_number || '—',
-            driverName: dId ? (driver.name || 'سائق') : '—',
+            riderUid: pId,
+            riderName: rName,
+            riderPhone: passenger.phone_number || passenger.phone || pRecord.phone || '—',
+            driverUid: dId,
+            driverName: dName,
             from: data.pickup_address || data.pickupAddress || '—',
             to: data.destination_address || data.destinationAddress || '—',
             price: tripPrice,
             status: data.status === 'Completed' ? 'مكتملة' : (data.status === 'Cancelled' ? 'ملغاة' : 'جارية'),
-            vehicle: data.vehicle_type === 'scooter' ? 'اسكوتر' : 'عربية',
+            vehicle: data.vehicle_type === 'scooter' ? 'اسكوتر' : (data.vehicle_type === 'motorcycle' ? 'موتوسيكل' : 'عربية'),
             isDeliveryLocationConfirmed: data.is_delivery_location_confirmed || false,
           });
         });
@@ -3738,6 +4654,13 @@ function initSupabaseSync() {
     };
 
     fetchTrips();
+
+    supabaseClient.channel('public:ride_requests')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ride_requests' }, () => {
+        console.log('[Dashboard] Realtime ride_requests update received');
+        fetchTrips();
+      })
+      .subscribe();
 
     const fetchDrivers = async () => {
       const { data: driversData, error } = await supabaseClient.from('drivers').select('*');
@@ -3850,7 +4773,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Restore saved page before initializing sync
+  // Restore saved page state before auth check
   const savedPage = sessionStorage.getItem('admin_currentPage');
   if (savedPage) {
     currentPage = savedPage;
@@ -3860,11 +4783,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Initialize Supabase real-time sync
-  initSupabaseSync();
-
-  // Render initial page
-  navigateTo(currentPage);
+  // Initialize Admin Authentication & Session Verification
+  initAdminAuth();
 
   // Update pending badge
   updatePendingBadge();
@@ -4105,7 +5025,7 @@ function renderDriverProfile() {
                 <tr>
                   <td><span class="font-outfit fw-700" style="color:var(--medium-blue);">${trip.id}</span></td>
                   <td><span style="font-size:12px;color:var(--text-light);font-weight:600;">${trip.date}</span></td>
-                  <td><span class="user-name">${trip.riderName}</span></td>
+                  <td><span class="user-name" style="cursor:pointer;color:var(--medium-blue);font-weight:700;text-decoration:underline;" onclick="${trip.riderUid ? `viewUserProfile('${trip.riderUid}', 'rider')` : ''}" title="عرض ملف الراكب">${trip.riderName}</span></td>
                   <td>
                     <div class="route-cell">
                       <div class="route-addresses">
@@ -4281,7 +5201,7 @@ function renderPassengerProfile() {
                 <tr>
                   <td><span class="font-outfit fw-700" style="color:var(--medium-blue);">${trip.id}</span></td>
                   <td><span style="font-size:12px;color:var(--text-light);font-weight:600;">${trip.date}</span></td>
-                  <td><span class="user-name">${trip.driverName}</span></td>
+                  <td><span class="user-name" style="cursor:pointer;color:var(--medium-blue);font-weight:700;text-decoration:underline;" onclick="${trip.driverUid ? `viewUserProfile('${trip.driverUid}', 'driver')` : ''}" title="عرض ملف الكابتن">${trip.driverName}</span></td>
                   <td>
                     <div class="route-cell">
                       <div class="route-addresses">
@@ -4310,58 +5230,99 @@ function renderPassengerProfile() {
   `;
 }
 
-function initProfileChatSync(uid, role) {
-  if (profileChatUnsubscribe) {
-    profileChatUnsubscribe();
-    profileChatUnsubscribe = null;
+let activeProfileChatChannel = null;
+
+async function initProfileChatSync(uid, role) {
+  if (activeProfileChatChannel && supabaseClient) {
+    supabaseClient.removeChannel(activeProfileChatChannel);
+    activeProfileChatChannel = null;
   }
 
   const chatContainer = document.getElementById('profileChatMessages');
   if (!chatContainer) return;
 
-  if (typeof firebase === 'undefined') {
+  if (!supabaseClient) {
     renderLocalProfileChat(uid);
     return;
   }
 
-  const db = firebase.firestore();
+  // 1. Initial Load & Render
+  await renderSupabaseProfileChat(uid);
 
-  // Mark messages as read by admin
-  db.collection('SupportChats').doc(uid).set({
-    unreadByAdmin: false
-  }, { merge: true }).catch(err => console.warn("Error marking chat read by admin:", err));
-
-  profileChatUnsubscribe = db.collection('SupportChats').doc(uid).collection('Messages')
-    .orderBy('createdAt', 'asc')
-    .onSnapshot(snapshot => {
-      let html = '';
-      if (snapshot.empty) {
-        html = '<div style="text-align:center;padding:24px;color:var(--text-light);font-size:13px;">لا توجد رسائل سابقة. ابدأ المحادثة الآن.</div>';
-      } else {
-        snapshot.forEach(doc => {
-          const msg = doc.data();
-          const isSupport = msg.senderId === 'support';
-          const dateObj = msg.createdAt ? (msg.createdAt.toDate ? msg.createdAt.toDate() : new Date(msg.createdAt)) : new Date();
-          const time = dateObj.toLocaleTimeString('ar-EG', {hour: '2-digit', minute:'2-digit'});
-          
-          html += `
-            <div style="align-self: ${isSupport ? 'flex-end' : 'flex-start'}; max-width: 75%; margin-bottom: 12px; display: flex; flex-direction: column;">
-              <div style="padding: 10px 14px; border-radius: var(--radius-md); background: ${isSupport ? 'var(--medium-blue)' : 'white'}; color: ${isSupport ? 'white' : 'var(--text-primary)'}; box-shadow: var(--shadow-sm); font-size: 13px; border: ${isSupport ? 'none' : '1px solid var(--border-color)'};">
-                ${msg.text}
-              </div>
-              <div style="font-size: 10px; color: var(--text-light); text-align: ${isSupport ? 'left' : 'right'}; margin-top: 4px;">
-                ${isSupport ? 'الدعم الفني' : 'المستخدم'} • ${time}
-              </div>
-            </div>
-          `;
-        });
+  // 2. Realtime listener for this profile conversation
+  activeProfileChatChannel = supabaseClient.channel(`profile_support_${uid}`)
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'support_messages',
+      filter: `user_id=eq.${uid}`
+    }, payload => {
+      console.log("[SupportChat Log] Profile Chat Realtime event:", payload.eventType);
+      renderSupabaseProfileChat(uid);
+    })
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log("[SupportChat Log] Realtime Connected to profile chat: " + uid);
       }
-      chatContainer.innerHTML = html;
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }, err => {
-      console.warn("Firestore support chat listener error:", err);
-      chatContainer.innerHTML = `<div style="text-align:center;color:var(--error);font-size:12px;padding:12px;">خطأ في تحميل المحادثة: ${err.message}</div>`;
     });
+}
+
+async function renderSupabaseProfileChat(uid) {
+  const chatContainer = document.getElementById('profileChatMessages');
+  if (!chatContainer || !supabaseClient) return;
+
+  try {
+    const { data: messages, error } = await supabaseClient
+      .from('support_messages')
+      .select('*')
+      .or(`user_id.eq.${uid},conversation_id.eq.${uid}`)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    let html = '';
+    if (!messages || messages.length === 0) {
+      html = '<div style="text-align:center;padding:24px;color:var(--text-light);font-size:13px;">لا توجد رسائل سابقة. ابدأ المحادثة الآن.</div>';
+    } else {
+      messages.forEach(msg => {
+        const isSupport = msg.sender_type === 'admin' || msg.is_admin === true;
+        const text = msg.message || msg.text || '';
+        const dateObj = msg.created_at ? new Date(msg.created_at) : new Date();
+        const time = dateObj.toLocaleTimeString('ar-EG', {hour: '2-digit', minute:'2-digit'});
+
+        let statusIcon = '';
+        if (isSupport) {
+          if (msg.status === 'read' || msg.read_at) {
+            statusIcon = '<i class="ri-check-double-line" style="color:#64B5F6;font-size:12px;margin-right:4px;" title="تمت القراءة"></i>';
+          } else if (msg.status === 'delivered' || msg.delivered_at) {
+            statusIcon = '<i class="ri-check-double-line" style="color:rgba(255,255,255,0.7);font-size:12px;margin-right:4px;" title="تم التسليم"></i>';
+          } else {
+            statusIcon = '<i class="ri-check-line" style="color:rgba(255,255,255,0.7);font-size:12px;margin-right:4px;" title="تم الإرسال"></i>';
+          }
+        }
+        
+        html += `
+          <div style="align-self: ${isSupport ? 'flex-end' : 'flex-start'}; max-width: 75%; margin-bottom: 12px; display: flex; flex-direction: column;">
+            <div style="padding: 10px 14px; border-radius: var(--radius-md); background: ${isSupport ? 'var(--medium-blue)' : 'white'}; color: ${isSupport ? 'white' : 'var(--text-primary)'}; box-shadow: var(--shadow-sm); font-size: 13px; border: ${isSupport ? 'none' : '1px solid var(--border-color)'};">
+              ${text}
+            </div>
+            <div style="font-size: 10px; color: var(--text-light); text-align: ${isSupport ? 'left' : 'right'}; margin-top: 4px; display:flex; align-items:center; justify-content:${isSupport ? 'flex-start' : 'flex-end'}; gap:4px;">
+              <span>${isSupport ? 'الدعم الفني' : 'المستخدم'} • ${time}</span>
+              ${statusIcon}
+            </div>
+          </div>
+        `;
+      });
+    }
+    chatContainer.innerHTML = html;
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+
+    // Mark as read by admin
+    supabaseClient.from('support_chats').update({ unread_admin_count: 0 }).eq('id', uid).catch(() => {});
+  } catch (e) {
+    console.warn("[SupportChat Log] Error loading profile chat:", e);
+    renderLocalProfileChat(uid);
+  }
 }
 
 function renderLocalProfileChat(uid) {
@@ -4373,7 +5334,6 @@ function renderLocalProfileChat(uid) {
     { senderId: 'support', text: 'أهلاً بك! يرجى إيضاح تفاصيل استفسارك وسنقوم بالرد عليك فوراً.', createdAt: new Date(Date.now() - 1800000) }
   ];
 
-  // save back to cache if newly initialized
   if (!mockData.supportChats[uid]) {
     mockData.supportChats[uid] = msgs;
   }
@@ -4398,36 +5358,56 @@ function renderLocalProfileChat(uid) {
   chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
-function sendProfileChatMessage() {
+async function sendProfileChatMessage() {
   const input = document.getElementById('profileChatInput');
   if (!input) return;
   const text = input.value.trim();
   if (!text) return;
 
   const uid = activeProfileUid;
-  const role = activeProfileRole;
+  if (!uid) return;
+
+  input.value = '';
 
   if (supabaseClient) {
-    // Assuming support_messages and support_chats tables for Supabase if implemented.
-    // For now we will just use local fallback until the schema is fully ready.
-    addLocalProfileChatMessage(uid, text);
-    input.value = '';
-    
-    // Future Supabase Implementation:
-    /*
-    supabaseClient.from('support_messages').insert({
-      chat_id: uid,
-      sender_id: 'support',
-      text: text,
-      is_seen: false
-    }).then(() => {
-      // update support_chats
-    });
-    */
+    const nowStr = new Date().toISOString();
+    const msgId = crypto.randomUUID ? crypto.randomUUID() : ('admin_msg_' + Date.now());
+
+    console.log("[SupportChat Log] Support Message Sent: id=" + msgId + " from profile to recipient=" + uid);
+
+    try {
+      await supabaseClient.from('support_messages').insert({
+        id: msgId,
+        conversation_id: uid,
+        user_id: uid,
+        sender_id: currentAdminUser ? currentAdminUser.id : uid,
+        receiver_id: uid,
+        sender_type: 'admin',
+        message: text,
+        text: text,
+        status: 'sent',
+        is_admin: true,
+        created_at: nowStr
+      });
+
+      await supabaseClient.from('support_chats').upsert({
+        id: uid,
+        user_id: uid,
+        status: 'open',
+        last_message: text,
+        last_message_at: nowStr,
+        updated_at: nowStr,
+        unread_admin_count: 0
+      });
+
+      dispatchPushNotificationToUser(uid, "الدعم الفني", text, msgId);
+      renderSupabaseProfileChat(uid);
+    } catch (e) {
+      console.error("[SupportChat Log] Error sending profile chat message:", e);
+      addLocalProfileChatMessage(uid, text);
+    }
   } else {
-    // Local fallback
     addLocalProfileChatMessage(uid, text);
-    input.value = '';
   }
 }
 
@@ -4445,5 +5425,6 @@ function addLocalProfileChatMessage(uid, text) {
   renderLocalProfileChat(uid);
   logAction(`إرسال رسالة دعم محلياً للمستخدم: ${uid}`);
 }
+
 
 

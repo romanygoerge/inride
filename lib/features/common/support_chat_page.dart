@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
+import '../../core/services/support_chat_service.dart';
 
 class SupportChatPage extends StatefulWidget {
   const SupportChatPage({super.key});
@@ -14,9 +14,8 @@ class SupportChatPage extends StatefulWidget {
 class _SupportChatPageState extends State<SupportChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final SupabaseClient _supabase = Supabase.instance.client;
+  final SupportChatService _chatService = SupportChatService.instance;
   late final String _userId;
-  late final Stream<List<Map<String, dynamic>>> _messagesStream;
 
   @override
   void initState() {
@@ -25,40 +24,14 @@ class _SupportChatPageState extends State<SupportChatPage> {
     _userId = globalState.userUid ?? 'anonymous_user';
 
     if (_userId != 'anonymous_user') {
-      _messagesStream = _supabase
-          .from('support_messages')
-          .stream(primaryKey: ['id'])
-          .eq('user_id', _userId)
-          .map((list) {
-        final sorted = List<Map<String, dynamic>>.from(list);
-        sorted.sort((a, b) {
-          final aTime = DateTime.tryParse(a['created_at'] ?? '') ?? DateTime(1970);
-          final bTime = DateTime.tryParse(b['created_at'] ?? '') ?? DateTime(1970);
-          return bTime.compareTo(aTime);
-        });
-        return sorted;
-      });
-    } else {
-      _messagesStream = const Stream.empty();
-    }
-
-    _markChatAsRead();
-  }
-
-  void _markChatAsRead() {
-    if (_userId != 'anonymous_user') {
-      _supabase.from('support_chats').upsert({
-        'id': _userId,
-        'status': 'open',
-        'updated_at': DateTime.now().toIso8601String(),
-      }).catchError((e) {
-        debugPrint('Error marking support chat read: $e');
-      });
+      _chatService.initializeForUser(_userId);
+      _chatService.setChatPageActive(true);
     }
   }
 
   @override
   void dispose() {
+    _chatService.setChatPageActive(false);
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -69,30 +42,15 @@ class _SupportChatPageState extends State<SupportChatPage> {
     if (text.isEmpty || _userId == 'anonymous_user') return;
 
     _messageController.clear();
+    await _chatService.sendMessage(text);
 
-    try {
-      await _supabase.from('support_chats').upsert({
-        'id': _userId,
-        'status': 'open',
-        'updated_at': DateTime.now().toIso8601String(),
-      });
-
-      await _supabase.from('support_messages').insert({
-        'user_id': _userId,
-        'sender_id': _userId,
-        'text': text,
-        'is_admin': false,
-        'created_at': DateTime.now().toIso8601String(),
-      });
-    } catch (e) {
-      debugPrint('Error sending support message: $e');
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
     }
-
-    _scrollController.animateTo(
-      0.0,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-    );
   }
 
   @override
@@ -142,25 +100,13 @@ class _SupportChatPageState extends State<SupportChatPage> {
         child: Column(
           children: [
             Expanded(
-              child: StreamBuilder<List<Map<String, dynamic>>>(
-                stream: _messagesStream,
+              child: StreamBuilder<List<SupportChatMessage>>(
+                stream: _chatService.messagesStream,
+                initialData: _chatService.currentMessages,
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator(color: AppColors.mediumBlue));
-                  }
+                  final messages = snapshot.data ?? [];
 
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Text(
-                        'حدث خطأ أثناء تحميل الرسائل.',
-                        style: GoogleFonts.cairo(color: AppColors.textSecondary),
-                      ),
-                    );
-                  }
-
-                  final docs = snapshot.data ?? [];
-                  
-                  if (docs.isEmpty) {
+                  if (messages.isEmpty) {
                     return Center(
                       child: Padding(
                         padding: const EdgeInsets.all(32.0),
@@ -196,11 +142,11 @@ class _SupportChatPageState extends State<SupportChatPage> {
                     controller: _scrollController,
                     reverse: true,
                     padding: const EdgeInsets.all(16),
-                    itemCount: docs.length,
+                    itemCount: messages.length,
                     itemBuilder: (context, index) {
-                      final data = docs[index];
-                      final isMe = (data['sender_id'] ?? data['senderId']) == _userId;
-                      return _buildMessageBubble(data, isMe);
+                      final msg = messages[index];
+                      final isMe = !msg.isAdmin && msg.senderId == _userId;
+                      return _buildMessageBubble(msg, isMe);
                     },
                   );
                 },
@@ -223,6 +169,7 @@ class _SupportChatPageState extends State<SupportChatPage> {
                       ),
                       child: TextField(
                         controller: _messageController,
+                        onSubmitted: (_) => _sendMessage(),
                         decoration: InputDecoration(
                           hintText: 'اكتب رسالتك هنا...',
                           hintStyle: GoogleFonts.cairo(fontSize: 13, color: AppColors.textLight),
@@ -256,9 +203,17 @@ class _SupportChatPageState extends State<SupportChatPage> {
     );
   }
 
-  Widget _buildMessageBubble(Map<String, dynamic> msg, bool isMe) {
-    final date = DateTime.tryParse(msg['created_at'] ?? '') ?? DateTime.now();
-    final timeStr = '${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  Widget _buildMessageBubble(SupportChatMessage msg, bool isMe) {
+    final timeStr = '${msg.createdAt.hour}:${msg.createdAt.minute.toString().padLeft(2, '0')}';
+
+    Widget statusIcon;
+    if (msg.status == 'read') {
+      statusIcon = const Icon(Icons.done_all, size: 14, color: Color(0xFF64B5F6)); // Blue double tick
+    } else if (msg.status == 'delivered' || msg.deliveredAt != null) {
+      statusIcon = const Icon(Icons.done_all, size: 14, color: Colors.white70); // White/grey double tick
+    } else {
+      statusIcon = const Icon(Icons.done, size: 14, color: Colors.white70); // Single tick
+    }
 
     return Align(
       alignment: isMe ? Alignment.centerLeft : Alignment.centerRight,
@@ -279,7 +234,7 @@ class _SupportChatPageState extends State<SupportChatPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              msg['text'] ?? '',
+              msg.message,
               style: GoogleFonts.cairo(
                 fontSize: 14,
                 color: isMe ? Colors.white : AppColors.textPrimary,
@@ -297,6 +252,10 @@ class _SupportChatPageState extends State<SupportChatPage> {
                     color: isMe ? Colors.white70 : AppColors.textLight,
                   ),
                 ),
+                if (isMe) ...[
+                  const SizedBox(width: 4),
+                  statusIcon,
+                ],
               ],
             ),
           ],

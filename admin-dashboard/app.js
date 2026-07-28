@@ -3748,7 +3748,24 @@ async function sendSupportReply(id) {
       unread_admin_count: 0
     });
 
-    // 3. Dispatch Push Notification via OneSignal Backend Endpoint
+    // 3. Insert in-app notification for recipient in Supabase
+    const notifId = `${id}_support_${Date.now()}`;
+    await supabaseClient.from('notifications').insert({
+      id: notifId,
+      user_id: id,
+      title: 'الدعم الفني',
+      body: text,
+      type: 'support_chat',
+      is_read: false,
+      created_at: nowStr,
+      data: {
+        conversation_id: id,
+        message_id: msgId,
+        type: 'support_chat'
+      }
+    }).catch(e => console.warn('[SupportChat] Non-critical notification insert warning:', e));
+
+    // 4. Dispatch Push Notification via OneSignal Backend Endpoint & Direct Fallback
     dispatchPushNotificationToUser(id, "الدعم الفني", text, msgId);
 
     refreshActiveTicketChat();
@@ -3760,6 +3777,25 @@ async function sendSupportReply(id) {
 }
 
 async function dispatchPushNotificationToUser(recipientId, title, body, messageId) {
+  if (!recipientId || !body) return;
+
+  const pushPayload = {
+    app_id: '388d1944-0b83-4942-8f80-b12584def7d7',
+    target_channel: 'push',
+    include_aliases: { external_id: [recipientId] },
+    headings: { en: title, ar: title },
+    contents: { en: body, ar: body },
+    data: {
+      conversation_id: recipientId,
+      sender_id: 'admin',
+      message_id: messageId,
+      type: 'support_chat'
+    },
+    android_channel_id: 'high_importance_channel',
+    android_accent_color: 'FF1976D2',
+    priority: 10
+  };
+
   try {
     const pushEndpoint = '/api/push-notification';
     const response = await fetch(pushEndpoint, {
@@ -3770,22 +3806,30 @@ async function dispatchPushNotificationToUser(recipientId, title, body, messageI
         title: title,
         body: body,
         type: 'support_chat',
-        data: {
-          conversation_id: recipientId,
-          sender_id: 'admin',
-          message_id: messageId,
-          notification_type: 'support_chat'
-        }
+        data: pushPayload.data
       })
     });
 
     if (response.ok) {
-      console.log("[SupportChat Log] Push Notification Sent: recipientId=" + recipientId);
-    } else {
-      console.warn("[SupportChat Log] Push Notification Failed: HTTP " + response.status);
+      console.log("[SupportChat Log] Push Notification Sent via Vercel Backend: recipientId=" + recipientId);
+      return;
     }
   } catch (e) {
-    console.warn("[SupportChat Log] Push Notification Failed: " + e.message);
+    console.warn("[SupportChat Log] Vercel push endpoint failed, trying direct OneSignal API:", e.message);
+  }
+
+  // Direct OneSignal REST API Fallback
+  try {
+    const osResponse = await fetch('https://api.onesignal.com/notifications', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8'
+      },
+      body: JSON.stringify(pushPayload)
+    });
+    console.log("[SupportChat Log] Direct OneSignal Push response status:", osResponse.status);
+  } catch (err) {
+    console.warn("[SupportChat Log] Direct OneSignal Push Exception:", err.message);
   }
 }
 
@@ -5251,19 +5295,17 @@ function renderLocalProfileChat(uid) {
   const chatContainer = document.getElementById('profileChatMessages');
   if (!chatContainer) return;
 
-  const msgs = mockData.supportChats[uid] || [
-    { senderId: 'user', text: 'مرحباً، أريد التواصل مع الدعم الفني لمشكلة ما.', createdAt: new Date(Date.now() - 3600000) },
-    { senderId: 'support', text: 'أهلاً بك! يرجى إيضاح تفاصيل استفسارك وسنقوم بالرد عليك فوراً.', createdAt: new Date(Date.now() - 1800000) }
-  ];
+  const msgs = mockData.supportChats[uid] || [];
 
-  if (!mockData.supportChats[uid]) {
-    mockData.supportChats[uid] = msgs;
+  if (msgs.length === 0) {
+    chatContainer.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-light);font-size:13px;">لا توجد رسائل سابقة. ابدأ المحادثة الآن.</div>';
+    return;
   }
 
   let html = '';
   msgs.forEach(msg => {
     const isSupport = msg.senderId === 'support';
-    const time = msg.createdAt.toLocaleTimeString('ar-EG', {hour: '2-digit', minute:'2-digit'});
+    const time = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString('ar-EG', {hour: '2-digit', minute:'2-digit'}) : '';
     html += `
       <div style="align-self: ${isSupport ? 'flex-end' : 'flex-start'}; max-width: 75%; margin-bottom: 12px; display: flex; flex-direction: column;">
         <div style="padding: 10px 14px; border-radius: var(--radius-md); background: ${isSupport ? 'var(--medium-blue)' : 'white'}; color: ${isSupport ? 'white' : 'var(--text-primary)'}; box-shadow: var(--shadow-sm); font-size: 13px; border: ${isSupport ? 'none' : '1px solid var(--border-color)'};">
@@ -5321,6 +5363,23 @@ async function sendProfileChatMessage() {
         updated_at: nowStr,
         unread_admin_count: 0
       });
+
+      // Insert in-app notification for recipient in Supabase
+      const notifId = `${uid}_support_${Date.now()}`;
+      await supabaseClient.from('notifications').insert({
+        id: notifId,
+        user_id: uid,
+        title: 'الدعم الفني',
+        body: text,
+        type: 'support_chat',
+        is_read: false,
+        created_at: nowStr,
+        data: {
+          conversation_id: uid,
+          message_id: msgId,
+          type: 'support_chat'
+        }
+      }).catch(e => console.warn('[SupportChat] Non-critical notification insert warning:', e));
 
       dispatchPushNotificationToUser(uid, "الدعم الفني", text, msgId);
       renderSupabaseProfileChat(uid);

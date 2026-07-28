@@ -1,4 +1,6 @@
 const https = require('https');
+const fs = require('fs');
+const path = require('path');
 
 const ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN || '';
 const PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'fylruevfksmqnkykqkin';
@@ -38,4 +40,16 @@ function apiRequest(pathStr, method = 'GET', body = null) {
     });
 }
 
-console.log('Auth config update script initialized.');
+async function runSupportSql() {
+    console.log('--- Applying Support Chat System SQL Migration ---');
+    const sqlPath = path.join(__dirname, '..', 'supabase_support_chat_system.sql');
+    const sqlContent = fs.readFileSync(sqlPath, 'utf8');
+
+    const res = await apiRequest(`/projects/${PROJECT_REF}/database/query`, 'POST', {
+        query: sqlContent
+    });
+
+    console.log('SQL Execution Status:', res.status);
+}
+
+runSupportSql().catch(console.error);

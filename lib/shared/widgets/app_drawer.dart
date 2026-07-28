@@ -406,9 +406,8 @@ class AppDrawer extends StatelessWidget {
               } else if (state.currentRole == UserRole.driver) {
                 await state.stopDriverLocationTracking();
               }
-              state.reset();
               if (context.mounted) {
-                Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                await state.performSafeLogout(context);
               }
             },
           ),

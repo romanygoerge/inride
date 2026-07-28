@@ -1,12 +1,13 @@
 {
-  "name": "inride-fcm-backend",
+  "name": "inride-push-backend",
   "version": "1.0.0",
-  "description": "FCM Push Notifications Backend for inRide",
+  "description": "Supabase & OneSignal Push Notification Backend for inRide",
   "main": "api/index.js",
   "scripts": {
     "start": "node api/index.js"
   },
   "dependencies": {
-    "firebase-admin": "^12.0.0"
+    "@supabase/supabase-js": "^2.45.0",
+    "node-fetch": "^2.6.7"
   }
 }

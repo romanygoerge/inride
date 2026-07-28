@@ -1,14 +1,15 @@
 const https = require('https');
 
-const ACCESS_TOKEN = 'sbp_689d4622bab4702fe8f755da4dd9877a2331c7c7';
-const PROJECT_REF = 'fylruevfksmqnkykqkin';
+const ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN || '';
+const PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'fylruevfksmqnkykqkin';
 
-function apiRequest(path, method = 'GET', body = null) {
+function apiRequest(pathStr, method = 'GET', body = null) {
     return new Promise((resolve, reject) => {
+        if (!ACCESS_TOKEN) return reject(new Error('SUPABASE_ACCESS_TOKEN environment variable required.'));
         const options = {
             hostname: 'api.supabase.com',
             port: 443,
-            path: '/v1' + path,
+            path: '/v1' + pathStr,
             method: method,
             headers: {
                 'Authorization': `Bearer ${ACCESS_TOKEN}`,
@@ -37,28 +38,4 @@ function apiRequest(path, method = 'GET', body = null) {
     });
 }
 
-async function checkDb() {
-    console.log('--- Querying Supabase Database state ---');
-    const sqlContent = `
-        SELECT 'ride_requests' as t, count(*) as c FROM public.ride_requests
-        UNION ALL
-        SELECT 'ride_offers' as t, count(*) as c FROM public.ride_offers
-        UNION ALL
-        SELECT 'drivers' as t, count(*) as c FROM public.drivers
-        UNION ALL
-        SELECT 'users' as t, count(*) as c FROM public.users;
-
-        SELECT id, passenger_id, driver_id, status, vehicle_type, service_type, created_at 
-        FROM public.ride_requests 
-        ORDER BY created_at DESC 
-        LIMIT 10;
-    `;
-
-    const res = await apiRequest(`/projects/${PROJECT_REF}/database/query`, 'POST', {
-        query: sqlContent
-    });
-
-    console.log('SQL Execution Result:', JSON.stringify(res.body, null, 2));
-}
-
-checkDb().catch(console.error);
+console.log('Script initialized.');

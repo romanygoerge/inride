@@ -66,4 +66,46 @@ class AppLogger {
   static void streamLog(String streamName, String event, {dynamic data}) {
     debugPrint('⚡ $_tag [Stream:$streamName] -> $event${data != null ? ' | Data: $data' : ''}');
   }
+
+  /// Driver Registration Event
+  static void driverRegistrationLog(String message, {String? driverId, Map<String, dynamic>? extra}) {
+    debugPrint('📝 $_tag [DriverRegistration] ${driverId != null ? "[Driver: $driverId] " : ""}$message ${extra != null ? "| Data: $extra" : ""}');
+  }
+
+  /// Document Upload Event
+  static void documentUploadLog(String docType, String status, {String? url}) {
+    debugPrint('📤 $_tag [DocumentUpload] $docType -> $status ${url != null ? "($url)" : ""}');
+  }
+
+  /// Approval Event
+  static void approvalLog(String driverId, String status, {String? reason}) {
+    debugPrint('✅ $_tag [DriverApproval] Driver: $driverId -> Status: $status ${reason != null ? "| Reason: $reason" : ""}');
+  }
+
+  /// Push Notification Event
+  static void pushNotificationLog(String recipientId, String title, String body, {bool success = true}) {
+    debugPrint('${success ? "🔔" : "❌"} $_tag [PushNotification] Recipient: $recipientId | Title: "$title" | Body: "$body"');
+  }
+
+  /// Logout Event
+  static void logoutLog(String userId, String status) {
+    debugPrint('🚪 $_tag [Logout] User: $userId -> $status');
+  }
+
+  /// Session Restore Event
+  static void sessionRestoreLog(String userId, {required bool isOffline, String? role}) {
+    debugPrint('🔄 $_tag [SessionRestore] User: $userId | Role: $role | OfflineMode: $isOffline');
+  }
+
+  /// Offline Detection Event
+  static void offlineLog(String message) {
+    debugPrint('📶 $_tag [OfflineDetection] $message');
+  }
+
+  /// Supabase Error Event
+  static void supabaseErrorLog(String context, dynamic error, [StackTrace? stackTrace]) {
+    debugPrint('💥 $_tag [SupabaseError:$context] -> $error');
+    if (stackTrace != null) debugPrint('Stack: $stackTrace');
+  }
 }
+

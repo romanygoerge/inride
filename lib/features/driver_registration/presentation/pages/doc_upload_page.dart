@@ -20,6 +20,7 @@ class _DocUploadPageState extends State<DocUploadPage> {
   final TextEditingController _driverNameController = TextEditingController();
   final TextEditingController _driverAgeController = TextEditingController();
   final TextEditingController _driverPhoneController = TextEditingController();
+  final TextEditingController _driverAddressController = TextEditingController();
   String _driverGender = 'ذكر';
   String _vehicleCategory = 'motorcycle'; // 'motorcycle' or 'private_car'
   bool _hasAC = false;
@@ -64,6 +65,11 @@ class _DocUploadPageState extends State<DocUploadPage> {
     if (state.phoneNumber != null && state.phoneNumber!.isNotEmpty) {
       _driverPhoneController.text = state.phoneNumber!;
     }
+    if (state.driverAddress != null && state.driverAddress!.isNotEmpty) {
+      _driverAddressController.text = state.driverAddress!;
+    } else if (state.passengerAddress != null && state.passengerAddress!.isNotEmpty) {
+      _driverAddressController.text = state.passengerAddress!;
+    }
   }
 
   @override
@@ -73,6 +79,7 @@ class _DocUploadPageState extends State<DocUploadPage> {
     _driverNameController.dispose();
     _driverAgeController.dispose();
     _driverPhoneController.dispose();
+    _driverAddressController.dispose();
     super.dispose();
   }
 
@@ -290,6 +297,7 @@ class _DocUploadPageState extends State<DocUploadPage> {
           driverName: _driverNameController.text.trim(),
           driverAge: int.tryParse(_driverAgeController.text.trim()) ?? 0,
           driverGender: _driverGender,
+          address: _driverAddressController.text.trim(),
           phone: _driverPhoneController.text.trim(),
           vehicleCategory: _vehicleCategory,
           hasAC: _hasAC,
@@ -335,8 +343,7 @@ class _DocUploadPageState extends State<DocUploadPage> {
         leading: IconButton(
           icon: const Icon(Icons.logout_outlined, color: AppColors.error),
           onPressed: () {
-            GlobalState.instance.reset();
-            Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+            GlobalState.instance.performSafeLogout(context);
           },
         ),
       ),
@@ -410,6 +417,22 @@ class _DocUploadPageState extends State<DocUploadPage> {
                   decoration: const InputDecoration(
                     hintText: 'رقم الهاتف الجوال للتواصل',
                     prefixIcon: Icon(Icons.phone_outlined, color: AppColors.textLight),
+                    fillColor: AppColors.background,
+                  ),
+                  style: GoogleFonts.cairo(fontSize: 14, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _driverAddressController,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'يرجى إدخال عنوان الإقامة الكامل';
+                    }
+                    return null;
+                  },
+                  decoration: const InputDecoration(
+                    hintText: 'عنوان الإقامة (المدينة، المنطقة، الشارع)',
+                    prefixIcon: Icon(Icons.location_on_outlined, color: AppColors.textLight),
                     fillColor: AppColors.background,
                   ),
                   style: GoogleFonts.cairo(fontSize: 14, color: AppColors.textPrimary),

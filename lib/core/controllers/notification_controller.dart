@@ -10,15 +10,22 @@ class NotificationController extends ChangeNotifier {
   final SupabaseClient _supabase = Supabase.instance.client;
   
   List<NotificationModel> _notifications = [];
-  int _unreadCount = 0;
   bool _isLoading = true;
   String? _userId;
 
   StreamSubscription<List<NotificationModel>>? _notificationsSubscription;
   StreamSubscription<int>? _unreadCountSubscription;
 
-  List<NotificationModel> get notifications => _notifications;
-  int get unreadCount => _unreadCount;
+  List<NotificationModel> get notifications {
+    final role = GlobalState.instance.currentRole;
+    return _notifications.where((n) => n.matchesRole(role)).toList();
+  }
+
+  int get unreadCount {
+    final role = GlobalState.instance.currentRole;
+    return _notifications.where((n) => !n.isRead && n.matchesRole(role)).length;
+  }
+
   bool get isLoading => _isLoading;
 
   void init(String userId) {
@@ -45,8 +52,7 @@ class NotificationController extends ChangeNotifier {
     );
 
     _unreadCountSubscription = _repository.getUnreadCountStream(userId).listen(
-      (countVal) {
-        _unreadCount = countVal;
+      (_) {
         notifyListeners();
       },
       onError: (error) {

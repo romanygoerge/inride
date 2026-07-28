@@ -70,8 +70,14 @@ class LocationService {
     }
   }
 
-  /// Listen to live location updates.
+  Stream<Position>? _sharedPositionStream;
+
+  /// Listen to live location updates. Shared broadcast stream to prevent multiple native notification services.
   Stream<Position> getLocationStream() {
+    if (_sharedPositionStream != null) {
+      return _sharedPositionStream!;
+    }
+
     try {
       late final LocationSettings settings;
       if (defaultTargetPlatform == TargetPlatform.android) {
@@ -100,12 +106,14 @@ class LocationService {
         );
       }
 
-      return Geolocator.getPositionStream(locationSettings: settings).map((pos) {
+      _sharedPositionStream = Geolocator.getPositionStream(locationSettings: settings).map((pos) {
         MapCoordinatesHelper.deviceLocation = LatLng(pos.latitude, pos.longitude);
         return pos;
       }).handleError((error) {
         debugPrint("Location stream error caught: $error");
-      });
+      }).asBroadcastStream();
+
+      return _sharedPositionStream!;
     } catch (e) {
       debugPrint("Failed to initialize position stream: $e");
       return const Stream.empty();

@@ -3418,6 +3418,23 @@ async function initSupportRealtimeSystem() {
 
   await loadSupportChatsFromSupabase();
 
+  if (window.mainSupportPollTimer) {
+    clearInterval(window.mainSupportPollTimer);
+    window.mainSupportPollTimer = null;
+  }
+
+  window.mainSupportPollTimer = setInterval(() => {
+    if (currentPage === 'support') {
+      loadSupportChatsFromSupabase();
+      if (activeTicketId) {
+        refreshActiveTicketChat();
+      }
+    } else {
+      clearInterval(window.mainSupportPollTimer);
+      window.mainSupportPollTimer = null;
+    }
+  }, 4000);
+
   if (!supportRealtimeSubscribed) {
     supportRealtimeSubscribed = true;
     console.log("[SupportChat Log] Realtime Connected to support channels");
@@ -3718,16 +3735,17 @@ async function sendSupportReply(id) {
   textEl.value = '';
   const nowStr = new Date().toISOString();
   const msgId = crypto.randomUUID ? crypto.randomUUID() : ('admin_msg_' + Date.now());
+  const adminSenderId = (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : 'd8daab61-f140-4c1d-a90e-2657499c94ad';
 
   console.log("[SupportChat Log] Support Message Sent: id=" + msgId + " to recipient=" + id);
 
   try {
     // 1. Insert message
-    await supabaseClient.from('support_messages').insert({
+    const { error: insErr } = await supabaseClient.from('support_messages').insert({
       id: msgId,
       conversation_id: id,
       user_id: id,
-      sender_id: currentAdminUser ? currentAdminUser.id : id,
+      sender_id: adminSenderId,
       receiver_id: id,
       sender_type: 'admin',
       message: text,
@@ -3736,6 +3754,23 @@ async function sendSupportReply(id) {
       is_admin: true,
       created_at: nowStr
     });
+
+    if (insErr) {
+      console.warn('[SupportChat Log] Retry inserting support_message with recipient id as sender:', insErr.message);
+      await supabaseClient.from('support_messages').insert({
+        id: msgId,
+        conversation_id: id,
+        user_id: id,
+        sender_id: id,
+        receiver_id: id,
+        sender_type: 'admin',
+        message: text,
+        text: text,
+        status: 'sent',
+        is_admin: true,
+        created_at: nowStr
+      });
+    }
 
     // 2. Update conversation
     await supabaseClient.from('support_chats').upsert({
@@ -5204,6 +5239,11 @@ async function initProfileChatSync(uid, role) {
     activeProfileChatChannel = null;
   }
 
+  if (window.profileChatPollTimer) {
+    clearInterval(window.profileChatPollTimer);
+    window.profileChatPollTimer = null;
+  }
+
   const chatContainer = document.getElementById('profileChatMessages');
   if (!chatContainer) return;
 
@@ -5231,6 +5271,16 @@ async function initProfileChatSync(uid, role) {
         console.log("[SupportChat Log] Realtime Connected to profile chat: " + uid);
       }
     });
+
+  // 3. Fallback Auto-polling for active profile chat
+  window.profileChatPollTimer = setInterval(() => {
+    if (activeProfileUid === uid && document.getElementById('profileChatMessages')) {
+      renderSupabaseProfileChat(uid);
+    } else {
+      clearInterval(window.profileChatPollTimer);
+      window.profileChatPollTimer = null;
+    }
+  }, 3000);
 }
 
 async function renderSupabaseProfileChat(uid) {
@@ -5336,15 +5386,16 @@ async function sendProfileChatMessage() {
   if (supabaseClient) {
     const nowStr = new Date().toISOString();
     const msgId = crypto.randomUUID ? crypto.randomUUID() : ('admin_msg_' + Date.now());
+    const adminSenderId = (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : 'd8daab61-f140-4c1d-a90e-2657499c94ad';
 
     console.log("[SupportChat Log] Support Message Sent: id=" + msgId + " from profile to recipient=" + uid);
 
     try {
-      await supabaseClient.from('support_messages').insert({
+      const { error: insertError } = await supabaseClient.from('support_messages').insert({
         id: msgId,
         conversation_id: uid,
         user_id: uid,
-        sender_id: currentAdminUser ? currentAdminUser.id : uid,
+        sender_id: adminSenderId,
         receiver_id: uid,
         sender_type: 'admin',
         message: text,
@@ -5354,6 +5405,23 @@ async function sendProfileChatMessage() {
         created_at: nowStr
       });
 
+      if (insertError) {
+        console.warn('[SupportChat Log] Retry inserting support_message with uid as sender:', insertError.message);
+        await supabaseClient.from('support_messages').insert({
+          id: msgId,
+          conversation_id: uid,
+          user_id: uid,
+          sender_id: uid,
+          receiver_id: uid,
+          sender_type: 'admin',
+          message: text,
+          text: text,
+          status: 'sent',
+          is_admin: true,
+          created_at: nowStr
+        });
+      }
+
       await supabaseClient.from('support_chats').upsert({
         id: uid,
         user_id: uid,
@@ -5362,7 +5430,7 @@ async function sendProfileChatMessage() {
         last_message_at: nowStr,
         updated_at: nowStr,
         unread_admin_count: 0
-      });
+      }).catch(e => console.warn('[SupportChat] Non-critical upsert warning:', e));
 
       // Insert in-app notification for recipient in Supabase
       const notifId = `${uid}_support_${Date.now()}`;

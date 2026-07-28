@@ -70,13 +70,17 @@
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
-        <!-- OneSignal notification channel ID -->
-        <meta-data
-            android:name="com.onesignal.NotificationServiceExtension"
-            android:value="com.inride.inride_app.OneSignalNotificationServiceExtension" />
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- High Importance Notification Channel for Heads-up Banners -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="high_importance_channel" />
+        <meta-data
+            android:name="onesignal_notification_accent_color"
+            android:value="FF1976D2" />
 
         <!-- Geolocator background service override to stop service when application task is closed -->
         <service

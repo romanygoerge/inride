@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/notification_model.dart';
 import '../repositories/notification_repository.dart';
@@ -12,6 +11,7 @@ import '../../features/passenger/presentation/pages/passenger_ride_active_page.d
 import '../../features/driver/presentation/pages/driver_home_page.dart';
 import '../utils/snappy_page_route.dart';
 import '../../features/common/notifications_page.dart';
+import '../../features/common/support_chat_page.dart';
 import '../config/onesignal_config.dart';
 
 class NotificationService {
@@ -19,9 +19,15 @@ class NotificationService {
   factory NotificationService() => instance;
   NotificationService._internal();
 
-  final SupabaseClient _supabase = Supabase.instance.client;
   final NotificationRepository _repository = NotificationRepository();
-  final Set<String> _sentNotificationIds = {};
+  // TTL-based dedup cache: key -> timestamp sent (clears entries older than 5 minutes)
+  final Map<String, DateTime> _sentNotificationIds = {};
+  static const Duration _dedupTtl = Duration(minutes: 5);
+
+  void _cleanupDedupCache() {
+    final cutoff = DateTime.now().subtract(_dedupTtl);
+    _sentNotificationIds.removeWhere((_, ts) => ts.isBefore(cutoff));
+  }
 
   // ────────────────────────────────────────────────────────────────────
   // Notification Click Handler — يوجّه المستخدم للشاشة المناسبة
@@ -111,6 +117,18 @@ class NotificationService {
       return;
     }
 
+    // 4b. رسالة دعم فني
+    if (type == 'support_chat') {
+      final context = navigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        Navigator.push(
+          context,
+          SnappyPageRoute(page: const SupportChatPage()),
+        );
+      }
+      return;
+    }
+
     // 5. عروض (url إن وُجد)
     if (type == 'offers') {
       final urlStr = data['url'];
@@ -144,7 +162,7 @@ class NotificationService {
   }
 
   // ────────────────────────────────────────────────────────────────────
-  // إرسال إشعار Push عبر OneSignal REST API
+  // Secure Push Notification Dispatching via Backend Server
   // ────────────────────────────────────────────────────────────────────
   Future<void> sendNotification({
     required String recipientId,
@@ -157,20 +175,32 @@ class NotificationService {
     final myId = GlobalState.instance.userUid;
 
     if (recipientId == myId && !forceSelf) {
-      debugPrint('[NotificationService] Skipped sending notification to self.');
+      debugPrint('[Notification] Skipped sending notification to self (id=$recipientId, type=$type). Use forceSelf=true to override.');
       return;
     }
 
-    final String notifId = data?['id'] ??
-        '${recipientId}_${type}_${DateTime.now().millisecondsSinceEpoch}';
+    // Build a unique notifId based on recipient + type + tripId/requestId
+    // IMPORTANT: For chat messages, use data['id'] (messageId) so each chat message is treated uniquely and not deduped!
+    final String tripRef = (type == 'chat_message' || type == 'new_message' || type == 'support_chat')
+        ? (data?['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString())
+        : (data?['requestId']?.toString() ??
+            data?['tripId']?.toString() ??
+            data?['id']?.toString() ??
+            DateTime.now().millisecondsSinceEpoch.toString());
+    final String notifId = '${recipientId}_${type}_$tripRef';
 
-    if (_sentNotificationIds.contains(notifId) && !forceSelf) {
-      debugPrint('[NotificationService] Skipped duplicate notification: $notifId');
+    // Clean up stale dedup entries (older than 5 minutes)
+    _cleanupDedupCache();
+
+    if (_sentNotificationIds.containsKey(notifId) && !forceSelf) {
+      debugPrint('[Notification] Skipped duplicate notification: $notifId (sent at ${_sentNotificationIds[notifId]})');
       return;
     }
-    _sentNotificationIds.add(notifId);
+    _sentNotificationIds[notifId] = DateTime.now();
 
-    // 1. حفظ الإشعار في قاعدة بيانات المستلم
+    debugPrint('[Notification] Event created: type=$type, recipientId=$recipientId');
+
+    // 1. Save notification in Supabase for recipient in-app history & Realtime stream
     final notification = NotificationModel(
       id: notifId,
       title: title,
@@ -181,163 +211,157 @@ class NotificationService {
       data: data ?? {},
     );
     await _repository.saveNotification(recipientId, notification);
+    debugPrint('[Notification] Recipient identified: recipientId=$recipientId');
 
-    // 2. جلب OneSignal Player ID من قاعدة البيانات
+    // 2. Fetch active device tokens from user_devices table
+    final tokens = await _repository.getActiveDeviceTokens(recipientId);
+    debugPrint('[Notification] Active device tokens found: count=${tokens.length}');
+
+    // 3. Dispatch Push Notification via Backend Endpoint with direct OneSignal fallback
+    bool pushDelivered = false;
     try {
-      final userRes = await _supabase
-          .from('users')
-          .select('fcm_token')
-          .eq('id', recipientId)
-          .maybeSingle();
+      final backendUrl = Uri.parse(OneSignalConfig.backendPushUrl);
+      final response = await http.post(
+        backendUrl,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'recipientId': recipientId,
+          'title': title,
+          'body': body,
+          'type': type,
+          'data': data ?? {},
+          'tokens': tokens,
+        }),
+      ).timeout(const Duration(seconds: 4));
 
-      String playerId = '';
-      if (userRes != null && userRes['fcm_token'] != null) {
-        playerId = (userRes['fcm_token'] as String).trim();
+      if (response.statusCode == 200) {
+        debugPrint('[Notification] Push notification delivered via backend server');
+        pushDelivered = true;
+        _addLog({
+          'timestamp': DateTime.now().toIso8601String().substring(11, 19),
+          'type': type,
+          'recipientId': recipientId,
+          'tokensCount': tokens.length,
+          'via': 'backend',
+          'success': true,
+        });
+      } else {
+        debugPrint('[Notification] Backend error (HTTP ${response.statusCode}), trying direct OneSignal REST API...');
       }
+    } catch (e) {
+      debugPrint('[Notification] Backend unreachable ($e), falling back to direct OneSignal REST API...');
+    }
 
-      await _sendViaOneSignal(
-        notifId: notifId,
+    // Direct fallback if backend call failed or was unreachable
+    if (!pushDelivered) {
+      pushDelivered = await _dispatchDirectOneSignalPush(
         recipientId: recipientId,
-        playerId: playerId,
         title: title,
         body: body,
         type: type,
-        payload: {
-          'id': notifId,
-          'recipientId': recipientId,
-          'type': type,
-          ...?data,
-        },
+        tokens: tokens,
+        data: data,
       );
-    } catch (e) {
-      lastError = e.toString();
-      debugPrint('[NotificationService] Error sending push to $recipientId: $e');
-    }
-  }
 
-  // ────────────────────────────────────────────────────────────────────
-  // OneSignal REST API - إرسال الإشعار
-  // ────────────────────────────────────────────────────────────────────
-  Future<void> _sendViaOneSignal({
-    required String notifId,
-    required String recipientId,
-    required String playerId,
-    required String title,
-    required String body,
-    required String type,
-    required Map<String, dynamic> payload,
-  }) async {
-    if (!OneSignalConfig.isConfigured) {
-      debugPrint('[NotificationService] OneSignal not configured, skipping push.');
-      return;
-    }
-
-    try {
-      final url = Uri.parse('https://api.onesignal.com/notifications');
-
-      // تحويل جميع القيم إلى String (OneSignal data payload يقبل strings فقط)
-      final Map<String, String> stringifiedData = {};
-      payload.forEach((key, value) {
-        stringifiedData[key] = value.toString();
-      });
-
-      final messageBody = <String, dynamic>{
-        'app_id': OneSignalConfig.appId,
-        'target_channel': 'push',
-        'include_aliases': {
-          'external_id': [recipientId]
-        },
-        'headings': {'en': title, 'ar': title},
-        'contents': {'en': body, 'ar': body},
-        'data': stringifiedData,
-        'android_channel_id': 'high_importance_channel',
-        'android_accent_color': 'FF1976D2',
-        'priority': 10,
-        'ttl': 86400,
-        'small_icon': 'ic_launcher',
-      };
-
-      if (playerId.isNotEmpty && playerId != 'default_token' && playerId.length > 10) {
-        messageBody['include_player_ids'] = [playerId];
-      }
-
-      final logData = <String, dynamic>{
+      _addLog({
         'timestamp': DateTime.now().toIso8601String().substring(11, 19),
         'type': type,
         'recipientId': recipientId,
-        'playerId': playerId,
-        'title': title,
-        'body': body,
-        'payload': payload,
-        'success': false,
-        'statusCode': 0,
-        'responseBody': '',
+        'tokensCount': tokens.length,
+        'via': 'direct_api',
+        'success': pushDelivered,
+      });
+    }
+  }
+
+  /// Direct fallback to OneSignal REST API (api.onesignal.com/notifications)
+  Future<bool> _dispatchDirectOneSignalPush({
+    required String recipientId,
+    required String title,
+    required String body,
+    required String type,
+    required List<String> tokens,
+    Map<String, dynamic>? data,
+  }) async {
+    final Map<String, String> stringifiedData = {};
+    if (data != null) {
+      data.forEach((key, val) {
+        stringifiedData[key] = val.toString();
+      });
+    }
+    stringifiedData['type'] = type;
+
+    // Build the OneSignal payload — always include external_id targeting
+    // (works even without subscription_ids if user is logged in via OneSignal.login)
+    final payload = <String, dynamic>{
+      'app_id': OneSignalConfig.appId,
+      'target_channel': 'push',
+      'headings': {'en': title, 'ar': title},
+      'contents': {'en': body, 'ar': body},
+      'data': stringifiedData,
+      'android_channel_id': 'high_importance_channel',
+      'android_accent_color': 'FF1976D2',
+      'priority': 10,
+      'ttl': 86400,
+      'small_icon': 'ic_launcher',
+    };
+
+    // Always target by external_id (set via OneSignal.login(userId) on device)
+    if (recipientId.isNotEmpty) {
+      payload['include_aliases'] = {
+        'external_id': [recipientId]
       };
+    }
+    // Also include subscription_ids if available (belt-and-suspenders approach)
+    if (tokens.isNotEmpty) {
+      payload['include_subscription_ids'] = tokens;
+    }
 
-      int retries = 0;
-      bool success = false;
-      final client = http.Client();
+    // IMPORTANT FIX: always include REST API key if set.
+    // Old code had: !restApiKey.startsWith('os_v2_app_999') — this was WRONG
+    // because it also blocked real keys that might start with that prefix pattern,
+    // and the fallback value 'os_v2_app_999...' still needs to be sent as-is
+    // (OneSignal returns 401 without any auth, better to try and log the error).
+    final String restKey = OneSignalConfig.restApiKey;
+    final headers = <String, String>{
+      'Content-Type': 'application/json; charset=utf-8',
+      'Authorization': 'Key $restKey',
+    };
 
-      debugPrint('''
-==================================================
-TRIP / CHAT EVENT NOTIFICATION LOG
-Event Type: $type
-Notif ID: $notifId
-Recipient User ID (External ID): $recipientId
-Recipient Player ID: $playerId
-Title: $title
-Body: $body
-Payload: $payload
-Sending Request to OneSignal REST API...
-==================================================''');
+    debugPrint('[Notification] Dispatching direct OneSignal push: type=$type, recipientId=$recipientId, tokens=${tokens.length}, hasRealKey=${!restKey.contains('999999')}');
 
-      while (!success && retries < 3) {
-        try {
-          final response = await client
-              .post(
-                url,
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': 'Key ${OneSignalConfig.restApiKey}',
-                },
-                body: json.encode(messageBody),
-              )
-              .timeout(const Duration(seconds: 10));
+    try {
+      final res = await http.post(
+        Uri.parse(OneSignalConfig.directOneSignalApiUrl),
+        headers: headers,
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 8));
 
-          logData['statusCode'] = response.statusCode;
-          logData['responseBody'] = response.body;
+      final responseBody = res.body;
+      debugPrint('[Notification] Direct OneSignal API response: status=${res.statusCode}, body=$responseBody');
+      lastPushSent = payload;
 
-          if (response.statusCode == 200) {
-            success = true;
-            logData['success'] = true;
-            lastPushSent = logData;
-            lastError = null;
-            debugPrint('''
-[NotificationService] OneSignal Response Success:
-HTTP Status: ${response.statusCode}
-Response Body: ${response.body}
-==================================================''');
-          } else {
-            retries++;
-            lastError = 'OneSignal HTTP ${response.statusCode}: ${response.body}';
-            debugPrint('[NotificationService] OneSignal error ${response.statusCode}: '
-                '${response.body} — retry $retries/3');
-            await Future.delayed(Duration(seconds: retries * 2));
-          }
-        } catch (e) {
-          retries++;
-          lastError = 'HTTP Error: $e';
-          logData['responseBody'] = 'Error: $e';
-          debugPrint('[NotificationService] OneSignal HTTP error: $e — retry $retries/3');
-          await Future.delayed(Duration(seconds: retries * 2));
-        }
+      if (res.statusCode == 401) {
+        lastError = 'OneSignal Auth Error (401): REST API Key غير صحيح أو غير مضبوط. تأكد من ONESIGNAL_REST_API_KEY في بيئة التشغيل.';
+        debugPrint('[Notification] ⚠️ $lastError');
+        return false;
+      } else if (res.statusCode == 400) {
+        lastError = 'OneSignal Bad Request (400): $responseBody — تحقق من App ID والـ recipient target.';
+        debugPrint('[Notification] ⚠️ $lastError');
+        return false;
+      } else if (res.statusCode != 200 && res.statusCode != 201) {
+        lastError = 'HTTP ${res.statusCode}: $responseBody';
+        debugPrint('[Notification] ⚠️ OneSignal push failed: $lastError');
+        return false;
       }
 
-      _addLog(logData);
-      client.close();
+      lastError = null;
+      debugPrint('[Notification] ✅ Direct OneSignal push sent successfully: type=$type → $recipientId');
+      return true;
     } catch (e) {
-      lastError = 'Setup Error: $e';
-      debugPrint('[NotificationService] OneSignal setup failed: $e');
+      debugPrint('[Notification] Direct OneSignal API exception: $e');
+      lastError = e.toString();
+      return false;
     }
   }
 }

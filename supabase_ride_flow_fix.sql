@@ -172,6 +172,7 @@ DECLARE
     v_driver_user RECORD;
     v_vehicle RECORD;
     v_final_fare NUMERIC;
+    v_existing_offer_id UUID;
 BEGIN
     -- 1. Lock and inspect the ride request
     SELECT * INTO v_request 
@@ -188,7 +189,7 @@ BEGIN
     END IF;
 
     -- Check if request is still available for acceptance
-    IF v_request.status NOT IN ('Pending', 'Searching', 'pending', 'searching') THEN
+    IF LOWER(TRIM(COALESCE(v_request.status, ''))) NOT IN ('pending', 'searching') THEN
         RETURN jsonb_build_object(
             'success', false,
             'code', 'RIDE_ALREADY_TAKEN',
@@ -205,7 +206,8 @@ BEGIN
     IF NOT FOUND THEN
         -- Auto-create missing driver row if needed
         INSERT INTO public.drivers (id, is_online, is_available, verification_status)
-        VALUES (p_driver_id, true, false, 'verified');
+        VALUES (p_driver_id, true, false, 'verified')
+        ON CONFLICT (id) DO UPDATE SET is_available = false, updated_at = NOW();
     ELSE
         UPDATE public.drivers
         SET 
@@ -215,13 +217,9 @@ BEGIN
     END IF;
 
     -- Determine final fare
-    v_final_fare := COALESCE(p_offered_fare, v_request.offered_fare);
+    v_final_fare := COALESCE(p_offered_fare, v_request.offered_fare, 0.0);
 
-    -- 3. Get driver user & vehicle details for ride_offers record
-    SELECT * INTO v_driver_user FROM public.users WHERE id = p_driver_id;
-    SELECT * INTO v_vehicle FROM public.vehicles WHERE id = v_driver.vehicle_id LIMIT 1;
-
-    -- 4. Update ride request status to Accepted and bind driver
+    -- 3. Update ride request status to Accepted and bind driver
     UPDATE public.ride_requests
     SET 
         status = 'Accepted',
@@ -229,46 +227,63 @@ BEGIN
         offered_fare = v_final_fare
     WHERE id = p_request_id;
 
-    -- 5. Upsert the accepted offer record
-    INSERT INTO public.ride_offers (
-        id,
-        request_id,
-        driver_id,
-        passenger_id,
-        driver_name,
-        driver_avatar,
-        driver_rating,
-        vehicle_type,
-        vehicle_name,
-        license_plate,
-        price,
-        eta_minutes,
-        status,
-        created_at
-    ) VALUES (
-        gen_random_uuid(),
-        p_request_id,
-        p_driver_id,
-        v_request.passenger_id,
-        COALESCE(v_driver_user.name, 'كابتن'),
-        COALESCE(v_driver_user.avatar_url, ''),
-        COALESCE(v_driver_user.rating, 5.0),
-        COALESCE(v_vehicle.vehicle_category, v_vehicle.type, v_request.vehicle_type),
-        COALESCE(v_vehicle.model, 'سيارة'),
-        COALESCE(v_vehicle.number_plate, ''),
-        v_final_fare,
-        3,
-        'accepted',
-        NOW()
-    )
-    ON CONFLICT (id) DO UPDATE SET
-        status = 'accepted',
-        price = EXCLUDED.price;
+    -- 4. Safely manage ride_offers record
+    BEGIN
+        SELECT id INTO v_existing_offer_id
+        FROM public.ride_offers
+        WHERE request_id = p_request_id AND driver_id = p_driver_id
+        LIMIT 1;
 
-    -- 6. Mark any other pending offers for this request as rejected
-    UPDATE public.ride_offers
-    SET status = 'rejected'
-    WHERE request_id = p_request_id AND driver_id <> p_driver_id;
+        IF v_existing_offer_id IS NOT NULL THEN
+            UPDATE public.ride_offers
+            SET status = 'accepted', price = v_final_fare
+            WHERE id = v_existing_offer_id;
+        ELSE
+            SELECT * INTO v_driver_user FROM public.users WHERE id = p_driver_id;
+            IF v_driver IS NOT NULL AND v_driver.vehicle_id IS NOT NULL THEN
+                SELECT * INTO v_vehicle FROM public.vehicles WHERE id = v_driver.vehicle_id LIMIT 1;
+            END IF;
+
+            INSERT INTO public.ride_offers (
+                id,
+                request_id,
+                driver_id,
+                passenger_id,
+                driver_name,
+                driver_avatar,
+                driver_rating,
+                vehicle_type,
+                vehicle_name,
+                license_plate,
+                price,
+                eta_minutes,
+                status,
+                created_at
+            ) VALUES (
+                gen_random_uuid(),
+                p_request_id,
+                p_driver_id,
+                v_request.passenger_id,
+                COALESCE(v_driver_user.name, 'كابتن'),
+                COALESCE(v_driver_user.avatar_url, ''),
+                COALESCE(v_driver_user.rating, 5.0),
+                COALESCE(v_vehicle.vehicle_category, v_vehicle.type, v_request.vehicle_type, 'car'),
+                COALESCE(v_vehicle.model, 'سيارة'),
+                COALESCE(v_vehicle.number_plate, ''),
+                v_final_fare,
+                3,
+                'accepted',
+                NOW()
+            );
+        END IF;
+
+        -- Mark any other pending offers for this request as rejected
+        UPDATE public.ride_offers
+        SET status = 'rejected'
+        WHERE request_id = p_request_id AND driver_id <> p_driver_id;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'ride_offers update ignored: %', SQLERRM;
+    END;
 
     RETURN jsonb_build_object(
         'success', true,
@@ -276,7 +291,9 @@ BEGIN
         'message', 'تم قبول الرحلة بنجاح',
         'request_id', p_request_id,
         'passenger_id', v_request.passenger_id,
-        'fare', v_final_fare
+        'driver_id', p_driver_id,
+        'fare', v_final_fare,
+        'status', 'Accepted'
     );
 EXCEPTION WHEN OTHERS THEN
     RETURN jsonb_build_object(

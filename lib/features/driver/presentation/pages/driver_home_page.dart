@@ -88,14 +88,19 @@ class _DriverHomePageState extends State<DriverHomePage> {
                            state.rideStatus == RideStatus.arrived ||
                            state.rideStatus == RideStatus.tripStarted;
       
+      // Only navigate if not already navigating AND we are not in the middle of accepting
+      // (acceptance flow handles its own navigation after dialog dismissal)
       if (isActiveRide && !_isNavigatingToActivePage && !_isAcceptingRide) {
-        _isNavigatingToActivePage = true;
-        Navigator.push(
-          context,
-          SnappyPageRoute(page: const DriverRideActivePage()),
-        ).then((_) {
-          _isNavigatingToActivePage = false;
-        });
+        final currentRoute = ModalRoute.of(context);
+        if (currentRoute != null && currentRoute.isCurrent) {
+          _isNavigatingToActivePage = true;
+          Navigator.push(
+            context,
+            SnappyPageRoute(page: const DriverRideActivePage()),
+          ).then((_) {
+            _isNavigatingToActivePage = false;
+          });
+        }
       }
     }
   }
@@ -148,11 +153,14 @@ class _DriverHomePageState extends State<DriverHomePage> {
     }
 
     // 2. Stream pending requests via Realtime WebSocket
+    debugPrint('[Ride] Listening for new rides...');
     _requestsSubscription?.cancel();
     _requestsSubscription = RideRepository.instance.streamPendingRequests().listen((requests) {
       if (mounted) {
         _processIncomingRequests(requests);
       }
+    }, onError: (err) {
+      debugPrint('[Ride] Realtime stream error on DriverHomePage: $err');
     });
 
     // 3. Periodic fallback timer (every 12 seconds) to ensure fresh polling & clear stale
@@ -207,6 +215,10 @@ class _DriverHomePageState extends State<DriverHomePage> {
     }).toList();
 
     AppLogger.rideLog('DriverHome', 'Filtered to ${filteredRequests.length} matching requests for driver vehicle: $driverVehicleType');
+
+    for (var req in filteredRequests) {
+      debugPrint('[Ride] New ride received: ride_id=${req.requestId}');
+    }
 
     final newIds = filteredRequests.map((r) => '${r.requestId}_${r.offeredFare}_${r.status}').join(',');
     final currentIds = _activeRequests.map((r) => '${r.requestId}_${r.offeredFare}_${r.status}').join(',');
@@ -315,10 +327,13 @@ class _DriverHomePageState extends State<DriverHomePage> {
           );
         },
       );
+
+      bool acceptSuccess = false;
       try {
         _isAcceptingRide = true;
-        // Atomic acceptance using PostgreSQL RPC transaction (Requirement 4)
+        // Atomic acceptance using PostgreSQL RPC transaction
         await GlobalState.instance.driverAcceptRide(req.requestId, fare);
+        acceptSuccess = true;
       } catch (e) {
         AppLogger.error('DriverAccept', 'Accept error in UI', e);
         if (mounted) {
@@ -333,15 +348,37 @@ class _DriverHomePageState extends State<DriverHomePage> {
         }
       } finally {
         _isAcceptingRide = false;
+        // Pop the loading dialog safely
         if (dialogContext != null && dialogContext!.mounted) {
-          Navigator.pop(dialogContext!); // Pop dialog specifically using its context
+          try {
+            Navigator.of(dialogContext!).pop();
+          } catch (err) {
+            AppLogger.error('DriverAccept', 'Error popping accept dialog context', err);
+          }
         }
-        _onStateChange();
+        // Navigate to active ride page AFTER dialog is dismissed, using postFrameCallback
+        // to ensure the widget tree is stable before navigating
+        if (acceptSuccess && mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || _isNavigatingToActivePage) return;
+            final currentRoute = ModalRoute.of(context);
+            if (currentRoute != null && currentRoute.isCurrent) {
+              _isNavigatingToActivePage = true;
+              Navigator.push(
+                context,
+                SnappyPageRoute(page: const DriverRideActivePage()),
+              ).then((_) {
+                _isNavigatingToActivePage = false;
+              });
+            }
+          });
+        }
       }
     }
   }
 
   void _acceptRequest(RideRequestModel req) {
+    if (_isAcceptingRide) return;
     _submitBidInline(req, req.offeredFare);
   }
 
@@ -428,9 +465,31 @@ class _DriverHomePageState extends State<DriverHomePage> {
             ),
           ),
 
+          if (GlobalState.instance.isOffline)
+            Positioned(
+              top: MediaQuery.of(context).padding.top,
+              left: 0,
+              right: 0,
+              child: Container(
+                color: Colors.amber.shade800,
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.wifi_off_rounded, color: Colors.white, size: 16),
+                    const SizedBox(width: 8),
+                    Text(
+                      'لا يوجد اتصال بالإنترنت - الوضع غير المتصل',
+                      style: GoogleFonts.cairo(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
           // 2. Custom App Bar Overlay
           Positioned(
-            top: MediaQuery.of(context).padding.top + 12,
+            top: MediaQuery.of(context).padding.top + (GlobalState.instance.isOffline ? 36 : 12),
             left: 16,
             right: 16,
             child: Row(
@@ -810,9 +869,11 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
     _myOfferStream = _streamMyOffer(widget.request.requestId);
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
-        setState(() {
-          _calculateSecondsLeft();
-        });
+        _calculateSecondsLeft();
+        if (_secondsLeft <= 0) {
+          timer.cancel();
+        }
+        setState(() {});
       }
     });
   }

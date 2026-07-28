@@ -382,7 +382,9 @@ class _ProfilePageState extends State<ProfilePage> {
                             const Icon(Icons.star, color: Colors.orange, size: 16),
                             const SizedBox(width: 4),
                             Text(
-                              '${state.userRating.toStringAsFixed(1)} ${isRider ? "تقييم الراكب" : "تقييم الكابتن"} (عرض المراجعات ↗)',
+                              state.userRating > 0.0
+                                  ? '${state.userRating.toStringAsFixed(1)} ${isRider ? "تقييم الراكب" : "تقييم الكابتن"} (عرض المراجعات ↗)'
+                                  : 'لا توجد تقييمات بعد (عرض المراجعات ↗)',
                               style: GoogleFonts.cairo(
                                 fontSize: 13,
                                 color: AppColors.mediumBlue,
@@ -426,6 +428,12 @@ class _ProfilePageState extends State<ProfilePage> {
                         icon: Icons.phone_android_outlined,
                         label: 'رقم الهاتف المعرّف (مغلق)',
                         value: state.phoneNumber ?? '+20 10 1234 5678',
+                      ),
+                      const Divider(color: AppColors.border, height: 16),
+                      _buildInfoTile(
+                        icon: Icons.location_on_outlined,
+                        label: 'العنوان المسجل',
+                        value: (isRider ? state.passengerAddress : state.driverAddress) ?? state.driverAddress ?? state.passengerAddress ?? 'غير محدد',
                       ),
                       const Divider(color: AppColors.border, height: 16),
                       _buildInfoTile(

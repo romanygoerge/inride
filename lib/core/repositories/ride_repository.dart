@@ -77,8 +77,9 @@ class RideRepository {
     );
 
     final map = newRequest.toDatabaseMap();
+    debugPrint('[Ride] Creating ride...');
     await _supabase.from('ride_requests').upsert(map);
-    debugPrint('[TripLifecycle] Created ride request: $requestId for passenger: $passengerId');
+    debugPrint('[Ride] Ride created successfully: ride_id=$requestId');
     return requestId;
   }
 
@@ -246,6 +247,7 @@ class RideRepository {
     required String driverId,
     double? offeredFare,
   }) async {
+    debugPrint('[Ride] Attempting to accept ride: ride_id=$requestId');
     AppLogger.rideLog('RideAccept', 'Initiating atomic acceptance RPC call', requestId: requestId, driverId: driverId);
     try {
       final response = await _supabase.rpc('accept_ride_request', params: {
@@ -265,13 +267,24 @@ class RideRepository {
       AppLogger.rideLog('RideAccept', 'RPC response received', requestId: requestId, driverId: driverId, extra: result);
 
       if (!success) {
+        if (code == 'RIDE_ALREADY_TAKEN' || message.contains('قبولها') || message.contains('متاحة')) {
+          throw Exception('عفواً، هذه الرحلة لم تعد متاحة أو تم قبولها من كابتن آخر');
+        }
+        if (code == 'REQUEST_NOT_FOUND') {
+          throw Exception('طلب الرحلة غير موجود أو تم إلغاؤه');
+        }
         throw Exception(message.isNotEmpty ? message : 'تعذر قبول الرحلة ($code)');
       }
 
+      debugPrint('[Ride] Ride status updated: searching -> accepted');
       return result;
     } catch (e, stack) {
       AppLogger.error('RideAccept', 'RPC accept failed or unavailable, checking fallback...', e, stack);
-      if (e.toString().contains('function') || e.toString().contains('not found') || e.toString().contains('42883')) {
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('socketexception') || errStr.contains('timeout') || errStr.contains('network') || errStr.contains('connection refused')) {
+        throw Exception('انقطع الاتصال بالإنترنت، يرجى التحقق من اتصالك وإعادة المحاولة');
+      }
+      if (errStr.contains('function') || errStr.contains('not found') || errStr.contains('42883')) {
         AppLogger.rideLog('RideAccept', 'RPC function accept_ride_request missing, performing safe manual update fallback', requestId: requestId, driverId: driverId);
         return await _fallbackAcceptRideRequest(requestId: requestId, driverId: driverId, offeredFare: offeredFare);
       }
@@ -527,11 +540,11 @@ class RideRepository {
     return _supabase
         .from('drivers')
         .stream(primaryKey: ['id'])
+        .eq('is_online', true)
         .map((list) {
       return list.map((item) => Map<String, dynamic>.from(item)).where((driver) {
-        final bool isOnline = driver['is_online'] ?? driver['isOnline'] ?? false;
         final bool isAvailable = driver['is_available'] ?? driver['isAvailable'] ?? true;
-        if (!isOnline || !isAvailable) return false;
+        if (!isAvailable) return false;
 
         double? dLat = ((driver['current_latitude'] ?? driver['currentLatitude']) as num?)?.toDouble();
         double? dLng = ((driver['current_longitude'] ?? driver['currentLongitude']) as num?)?.toDouble();

@@ -70,18 +70,9 @@ class DriverLocationService {
       double? latitude = position?.latitude ?? MapCoordinatesHelper.deviceLocation?.latitude;
       double? longitude = position?.longitude ?? MapCoordinatesHelper.deviceLocation?.longitude;
 
-      bool isAvailable = true;
-      try {
-        final driverRes = await _supabase.from('drivers').select('is_available').eq('id', driverId).maybeSingle();
-        if (driverRes != null && driverRes['is_available'] != null) {
-          isAvailable = driverRes['is_available'] as bool;
-        }
-      } catch (_) {}
-
       final updateData = <String, dynamic>{
         'id': driverId,
         'is_online': true,
-        'is_available': isAvailable,
         'updated_at': DateTime.now().toIso8601String(),
       };
 

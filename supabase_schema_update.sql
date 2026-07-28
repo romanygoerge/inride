@@ -9,6 +9,8 @@ ALTER TABLE public.drivers ADD COLUMN IF NOT EXISTS national_id_back_url TEXT DE
 ALTER TABLE public.drivers ADD COLUMN IF NOT EXISTS license_back_url TEXT DEFAULT '';
 ALTER TABLE public.drivers ADD COLUMN IF NOT EXISTS vehicle_front_url TEXT DEFAULT '';
 ALTER TABLE public.drivers ADD COLUMN IF NOT EXISTS vehicle_back_url TEXT DEFAULT '';
+ALTER TABLE public.drivers ADD COLUMN IF NOT EXISTS address TEXT DEFAULT '';
+ALTER TABLE public.drivers ADD COLUMN IF NOT EXISTS rejection_reason TEXT DEFAULT '';
 
 ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS vehicle_category TEXT DEFAULT 'car';
 ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS has_ac BOOLEAN DEFAULT FALSE;

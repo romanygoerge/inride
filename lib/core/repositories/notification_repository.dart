@@ -78,34 +78,97 @@ class NotificationRepository {
     await _supabase.from('notifications').upsert(map);
   }
 
-  // Save/Update FCM Token across Tables
+  // Save/Update FCM / Push Token across user_devices and Legacy Tables
   Future<void> saveFCMToken(String userId, String token) async {
+    if (token.isEmpty) return;
     try {
       if (token == 'default_token') {
         final existing = await _supabase.from('users').select('fcm_token').eq('id', userId).maybeSingle();
         final currentToken = existing?['fcm_token'] as String?;
         if (currentToken != null && currentToken.isNotEmpty && currentToken != 'default_token') {
-          debugPrint("Preserving existing FCM token for user $userId ($currentToken)");
+          debugPrint("[NotificationRepository] Preserving existing token for user $userId ($currentToken)");
           return;
         }
       }
-      await _supabase.from('users').update({'fcm_token': token}).eq('id', userId);
-      await _supabase.from('passengers').update({'fcm_token': token}).eq('id', userId);
-      await _supabase.from('drivers').update({'fcm_token': token}).eq('id', userId);
+
+      // Upsert into user_devices table
+      try {
+        await _supabase.from('user_devices').upsert({
+          'user_id': userId,
+          'device_token': token,
+          'platform': kIsWeb ? 'web' : (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android'),
+          'is_active': true,
+          'updated_at': DateTime.now().toIso8601String(),
+        }, onConflict: 'user_id, device_token');
+        debugPrint("[NotificationRepository] Upserted active device token in user_devices table for $userId");
+      } catch (e) {
+        debugPrint("[NotificationRepository] Warning upserting user_devices: $e");
+      }
+
+      // Update legacy columns
+      try {
+        await _supabase.from('users').update({'fcm_token': token}).eq('id', userId);
+      } catch (_) {}
+      try {
+        await _supabase.from('drivers').update({'fcm_token': token}).eq('id', userId);
+      } catch (_) {}
     } catch (e) {
-      debugPrint("Error saving FCM token: $e");
+      debugPrint("[NotificationRepository] Error saving push token: $e");
     }
   }
 
-  // Clear/Remove FCM Token across Tables
+  // Clear/Deactivate Push Token in user_devices table
   Future<void> clearFCMToken(String userId) async {
     try {
-      await _supabase.from('users').update({'fcm_token': ''}).eq('id', userId);
-      await _supabase.from('passengers').update({'fcm_token': ''}).eq('id', userId);
-      await _supabase.from('drivers').update({'fcm_token': ''}).eq('id', userId);
+      try {
+        await _supabase
+            .from('user_devices')
+            .update({'is_active': false, 'updated_at': DateTime.now().toIso8601String()})
+            .eq('user_id', userId);
+      } catch (_) {}
+      try {
+        await _supabase.from('users').update({'fcm_token': ''}).eq('id', userId);
+      } catch (_) {}
+      try {
+        await _supabase.from('drivers').update({'fcm_token': ''}).eq('id', userId);
+      } catch (_) {}
+      debugPrint("[NotificationRepository] Deactivated device tokens for user $userId");
     } catch (e) {
-      debugPrint("Error clearing FCM token from database: $e");
+      debugPrint("[NotificationRepository] Error deactivating tokens: $e");
     }
+  }
+
+  // Retrieve active device tokens for a specific user ID
+  Future<List<String>> getActiveDeviceTokens(String userId) async {
+    try {
+      final res = await _supabase
+          .from('user_devices')
+          .select('device_token')
+          .eq('user_id', userId)
+          .eq('is_active', true);
+      
+      final tokens = (res as List)
+          .map((row) => row['device_token'] as String?)
+          .whereType<String>()
+          .where((t) => t.isNotEmpty)
+          .toList();
+
+      if (tokens.isNotEmpty) return tokens;
+
+      // Fallback query users/drivers tables
+      final userRes = await _supabase.from('users').select('fcm_token').eq('id', userId).maybeSingle();
+      if (userRes != null && userRes['fcm_token'] != null && (userRes['fcm_token'] as String).length > 10) {
+        return [(userRes['fcm_token'] as String)];
+      }
+
+      final driverRes = await _supabase.from('drivers').select('fcm_token').eq('id', userId).maybeSingle();
+      if (driverRes != null && driverRes['fcm_token'] != null && (driverRes['fcm_token'] as String).length > 10) {
+        return [(driverRes['fcm_token'] as String)];
+      }
+    } catch (e) {
+      debugPrint("[NotificationRepository] Error getting active device tokens: $e");
+    }
+    return [];
   }
 
   // Sync recent admin notifications to user's notifications list

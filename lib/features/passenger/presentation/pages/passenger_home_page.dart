@@ -247,9 +247,31 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
             ),
           ),
 
+          if (GlobalState.instance.isOffline)
+            Positioned(
+              top: MediaQuery.of(context).padding.top,
+              left: 0,
+              right: 0,
+              child: Container(
+                color: Colors.amber.shade800,
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.wifi_off_rounded, color: Colors.white, size: 16),
+                    const SizedBox(width: 8),
+                    Text(
+                      'لا يوجد اتصال بالإنترنت - الوضع غير المتصل',
+                      style: GoogleFonts.cairo(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
           // 2. Custom App Bar Overlays
           Positioned(
-            top: MediaQuery.of(context).padding.top + 12,
+            top: MediaQuery.of(context).padding.top + (GlobalState.instance.isOffline ? 36 : 12),
             left: 16,
             right: 16,
             child: Row(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/utils/snappy_page_route.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
@@ -33,6 +34,8 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
 
   RideStatus? _lastRideStatus;
   bool _isPanelCollapsed = false;
+  bool _isCompleting = false;
+  bool _isSubmittingRating = false;
 
   @override
   void initState() {
@@ -93,8 +96,9 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
       return;
     }
 
-    if (state.rideStatus == RideStatus.completed) {
-      if (mounted) {
+    if (state.rideStatus == RideStatus.completed || _lastRideStatus == RideStatus.completed || _isSubmittingRating) {
+      if (_lastRideStatus != RideStatus.completed && mounted) {
+        _lastRideStatus = RideStatus.completed;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('تم إنهاء الرحلة بنجاح', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
@@ -289,7 +293,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
   @override
   Widget build(BuildContext context) {
     final state = GlobalState.instance;
-    final isCompleted = state.rideStatus == RideStatus.completed;
+    final isCompleted = state.rideStatus == RideStatus.completed || _lastRideStatus == RideStatus.completed || _isSubmittingRating;
 
     return PopScope(
       canPop: state.canExitApplication(),
@@ -476,11 +480,32 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                     IconButton(
                                       icon: const Icon(Icons.call, color: AppColors.mediumBlue),
                                       onPressed: () async {
-                                        final phone = state.acceptedOffer?.driver.phoneNumber;
+                                        final messenger = ScaffoldMessenger.of(context);
+                                        String? phone = state.activePassengerPhone ?? state.currentRideRequest?.recipientPhone;
+
+                                        if (phone == null || phone.isEmpty) {
+                                          final pId = state.activePassengerId ?? state.currentRideRequest?.passengerId;
+                                          if (pId != null && pId.isNotEmpty) {
+                                            try {
+                                              final uRes = await Supabase.instance.client.from('users').select('phone_number, phone').eq('id', pId).maybeSingle();
+                                              phone = (uRes?['phone_number'] ?? uRes?['phone'] ?? '').toString();
+                                            } catch (_) {}
+                                          }
+                                        }
+
                                         if (phone != null && phone.isNotEmpty) {
                                           final Uri url = Uri(scheme: 'tel', path: phone);
                                           if (await canLaunchUrl(url)) {
                                             await launchUrl(url);
+                                          }
+                                        } else {
+                                          if (mounted) {
+                                            messenger.showSnackBar(
+                                              SnackBar(
+                                                content: Text('رقم العميل غير متوفر حالياً', style: GoogleFonts.cairo()),
+                                                backgroundColor: Colors.orange,
+                                              ),
+                                            );
                                           }
                                         }
                                       },
@@ -859,7 +884,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                 child: ElevatedButton(
                                   onPressed: isLocationUnconfirmed
                                       ? null
-                                      : () {
+                                      : () async {
                                           if (state.rideStatus == RideStatus.driverOnWay) {
                                             state.arriveAtPickup();
                                           } else if (state.rideStatus == RideStatus.arrived) {
@@ -881,6 +906,8 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                               state.startTrip();
                                             }
                                           } else if (state.rideStatus == RideStatus.tripStarted) {
+                                            if (_isCompleting) return;
+                                            _isCompleting = true;
                                             if (state.currentServiceType == 'delivery') {
                                               showDialog<String>(
                                                 context: context,
@@ -893,10 +920,12 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                                 if (photoUrl != null && photoUrl.isNotEmpty) {
                                                   await state.submitDeliveryPhoto(photoUrl);
                                                   await state.completeTrip();
+                                                } else {
+                                                  _isCompleting = false;
                                                 }
                                               });
                                             } else {
-                                              state.completeTrip();
+                                              await state.completeTrip();
                                             }
                                           }
                                         },
@@ -1048,20 +1077,27 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                           shadowColor: Colors.transparent,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
-                        onPressed: () async {
-                          final passId = state.activePassengerId;
-                          final navigator = Navigator.of(context);
-                          await state.submitRating(
-                            _rating,
-                            _commentController.text,
-                            targetUserId: passId,
-                            targetRole: 'rider',
-                          );
-                          navigator.pushAndRemoveUntil(
-                            SnappyPageRoute(page: const DriverHomePage()),
-                            (route) => false,
-                          );
-                        },
+                        onPressed: _isSubmittingRating
+                            ? null
+                            : () async {
+                                setState(() {
+                                  _isSubmittingRating = true;
+                                });
+                                final passId = state.activePassengerId;
+                                final navigator = Navigator.of(context);
+                                await state.submitRating(
+                                  _rating,
+                                  _commentController.text,
+                                  targetUserId: passId,
+                                  targetRole: 'rider',
+                                );
+                                if (mounted) {
+                                  navigator.pushAndRemoveUntil(
+                                    SnappyPageRoute(page: const DriverHomePage()),
+                                    (route) => false,
+                                  );
+                                }
+                              },
                         child: Text(
                           'إرسال التقييم والبحث عن رحلة أخرى',
                           style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),

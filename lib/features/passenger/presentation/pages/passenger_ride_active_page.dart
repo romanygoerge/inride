@@ -513,9 +513,33 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
                                     IconButton(
                                       icon: const Icon(Icons.call, color: AppColors.mediumBlue),
                                       onPressed: () async {
-                                        final Uri url = Uri(scheme: 'tel', path: offer.driver.phoneNumber);
-                                        if (await canLaunchUrl(url)) {
-                                          await launchUrl(url);
+                                        final messenger = ScaffoldMessenger.of(context);
+                                        String phone = offer.driver.phoneNumber;
+                                        if (phone.isEmpty && offer.driverId.isNotEmpty) {
+                                          try {
+                                            final uRes = await Supabase.instance.client.from('users').select('phone_number, phone').eq('id', offer.driverId).maybeSingle();
+                                            phone = (uRes?['phone_number'] ?? uRes?['phone'] ?? '').toString();
+                                            if (phone.isEmpty) {
+                                              final dRes = await Supabase.instance.client.from('drivers').select('phone_number, phone').eq('id', offer.driverId).maybeSingle();
+                                              phone = (dRes?['phone_number'] ?? dRes?['phone'] ?? '').toString();
+                                            }
+                                          } catch (_) {}
+                                        }
+
+                                        if (phone.isNotEmpty) {
+                                          final Uri url = Uri(scheme: 'tel', path: phone);
+                                          if (await canLaunchUrl(url)) {
+                                            await launchUrl(url);
+                                          }
+                                        } else {
+                                          if (mounted) {
+                                            messenger.showSnackBar(
+                                              SnackBar(
+                                                content: Text('رقم الكابتن غير متوفر حالياً', style: GoogleFonts.cairo()),
+                                                backgroundColor: Colors.orange,
+                                              ),
+                                            );
+                                          }
                                         }
                                       },
                                     ),

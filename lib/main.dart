@@ -19,6 +19,7 @@ import 'package:url_launcher/url_launcher.dart' as import_url;
 import 'core/DI/injection_container.dart' as di;
 import 'core/services/deep_link_service.dart';
 import 'core/services/app_notification_service.dart';
+import 'core/utils/app_logger.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -78,6 +79,19 @@ void overlayMain() {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Register global Flutter error handler
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    AppLogger.error('FlutterError', details.exceptionAsString(), details.exception, details.stack);
+  };
+
+  // Register global platform dispatcher error handler for unhandled async errors
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    AppLogger.error('AsyncPlatformError', error.toString(), error, stack);
+    return true; // Prevents app crash from unhandled async errors
+  };
+
   try {
     await SupabaseConfig.init();
   } catch (e) {

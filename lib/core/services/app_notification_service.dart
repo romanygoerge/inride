@@ -4,9 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 
-import '../repositories/notification_repository.dart';
 import 'notification_service.dart';
+import 'device_token_service.dart';
 import '../config/onesignal_config.dart';
+import '../models/notification_model.dart';
+import '../state/global_state.dart';
 import '../../main.dart' show navigatorKey;
 import '../../shared/widgets/in_app_notification.dart';
 
@@ -27,8 +29,8 @@ class AppNotificationService {
   factory AppNotificationService() => instance;
   AppNotificationService._internal();
 
-  final NotificationRepository _repository = NotificationRepository();
   bool _isInitialized = false;
+  // ignore: unused_field
   String? _currentUserId;
 
   Future<void> initialize() async {
@@ -66,16 +68,14 @@ class AppNotificationService {
     }
 
     // ── 2. OneSignal Initialization ──
-    if (!OneSignalConfig.isConfigured) {
-      debugPrint('[AppNotificationService] WARNING: OneSignal not configured yet! '
-          'Set OneSignalConfig.appId and OneSignalConfig.restApiKey.');
+    if (!OneSignalConfig.isAppConfigured) {
+      debugPrint('[AppNotificationService] WARNING: OneSignal App ID not configured!');
     }
 
     OneSignal.initialize(OneSignalConfig.appId);
     await OneSignal.Notifications.requestPermission(true);
 
     // ── 3. Foreground Notification Handler ──
-    // عندما يكون التطبيق مفتوحاً، نعرض الإشعار محلياً ونعرض بانر داخل التطبيق
     OneSignal.Notifications.addForegroundWillDisplayListener((event) {
       event.preventDefault();
 
@@ -83,8 +83,25 @@ class AppNotificationService {
       final data = Map<String, dynamic>.from(notif.additionalData ?? {});
       final title = notif.title ?? '';
       final body = notif.body ?? '';
+      final type = data['type'] ?? 'info';
 
-      // 1. عرض إشعار النظام المباشر
+      // Check role relevance before displaying banner
+      final notifModel = NotificationModel(
+        id: notif.notificationId,
+        title: title,
+        body: body,
+        type: type,
+        createdAt: DateTime.now(),
+        data: data,
+      );
+
+      final currentRole = GlobalState.instance.currentRole;
+      if (!notifModel.matchesRole(currentRole)) {
+        debugPrint('[AppNotificationService] Suppressed foreground notification (type=$type) for role mismatch ($currentRole)');
+        return;
+      }
+
+      // 1. Display system heads-up notification banner with sound & vibration
       showLocalNotification(
         id: (notif.notificationId as int?) ?? (DateTime.now().millisecondsSinceEpoch % 100000),
         title: title,
@@ -92,64 +109,46 @@ class AppNotificationService {
         data: data,
       );
 
-      // 2. عرض البانر المنبثق التفاعلي داخل التطبيق
+      // 2. Show interactive floating in-app notification banner
       final context = navigatorKey.currentContext;
       if (context != null && context.mounted) {
         InAppNotificationWidget.show(
           context,
           title: title,
           body: body,
-          onTap: () => NotificationService.instance.handleNotificationClick(data),
+          onTap: () {
+            debugPrint('[Notification] Notification opened: $data');
+            NotificationService.instance.handleNotificationClick(data);
+          },
         );
       }
 
-      debugPrint('[AppNotificationService] Foreground notification shown: $title');
+      debugPrint('[AppNotificationService] Foreground notification handled with heads-up banner: $title');
     });
 
     // ── 4. Notification Tap Handler (Background / Terminated) ──
     OneSignal.Notifications.addClickListener((event) {
       final data = Map<String, dynamic>.from(event.notification.additionalData ?? {});
-      debugPrint('[AppNotificationService] Notification tapped: $data');
-      NotificationService.instance.handleNotificationClick(data);
-    });
+      final actionId = event.result.actionId;
+      debugPrint('[Notification] Notification opened actionId=$actionId: $data');
 
-    // ── 5. Player ID Observer (تحديث تلقائي عند تغيير الـ Player ID) ──
-    OneSignal.User.pushSubscription.addObserver((state) {
-      final playerId = state.current.id;
-      if (playerId != null && playerId.isNotEmpty && _currentUserId != null) {
-        _repository.saveFCMToken(_currentUserId!, playerId);
-        debugPrint('[AppNotificationService] Player ID updated & saved: $playerId');
+      if (actionId == 'reject_trip') {
+        debugPrint('[Notification] Driver dismissed/rejected trip push notification');
+        return;
       }
+
+      NotificationService.instance.handleNotificationClick(data);
     });
 
     _isInitialized = true;
     debugPrint('[AppNotificationService] Initialized successfully with OneSignal.');
   }
 
-
-  /// يُستدعى بعد تسجيل الدخول لحفظ OneSignal Player ID في قاعدة البيانات وربط الـ External ID
+  /// Called after user logs in to register device push token in Supabase user_devices table
   Future<void> savePlayerIdForUser(String userId) async {
     if (kIsWeb) return;
     _currentUserId = userId;
-
-    try {
-      // 1. ربط الـ External ID الخاص بالمستخدم في OneSignal
-      await OneSignal.login(userId);
-      debugPrint('[AppNotificationService] OneSignal.login called with External ID: $userId');
-    } catch (e) {
-      debugPrint('[AppNotificationService] Error calling OneSignal.login: $e');
-    }
-
-    // انتظر قليلاً لحين تسجيل OneSignal
-    await Future.delayed(const Duration(milliseconds: 800));
-
-    final playerId = OneSignal.User.pushSubscription.id;
-    if (playerId != null && playerId.isNotEmpty) {
-      await _repository.saveFCMToken(userId, playerId);
-      debugPrint('[AppNotificationService] Saved Player ID: $playerId for user $userId');
-    } else {
-      debugPrint('[AppNotificationService] Player ID not ready yet, observer will save it later...');
-    }
+    await DeviceTokenService.instance.registerDeviceToken(userId);
   }
 
   /// Legacy compatibility method
@@ -157,16 +156,11 @@ class AppNotificationService {
     await savePlayerIdForUser(userId);
   }
 
+  /// Called on user logout to deactivate device token
   Future<void> clearTokenFromDatabase(String userId) async {
     _currentUserId = null;
     if (kIsWeb) return;
-    try {
-      await OneSignal.logout();
-      debugPrint('[AppNotificationService] OneSignal.logout completed for user $userId');
-    } catch (e) {
-      debugPrint('[AppNotificationService] Error logging out OneSignal: $e');
-    }
-    await _repository.clearFCMToken(userId);
+    await DeviceTokenService.instance.deactivateCurrentDeviceToken(userId);
   }
 
   /// عرض إشعار محلي (يُستخدم للـ Foreground)

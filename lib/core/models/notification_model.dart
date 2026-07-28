@@ -1,3 +1,5 @@
+import '../state/global_state.dart' show UserRole;
+
 class NotificationModel {
   final String id;
   final String title;
@@ -16,6 +18,47 @@ class NotificationModel {
     this.isRead = false,
     this.data = const {},
   });
+
+  /// Check whether this notification is relevant to the active user role (Rider vs Driver).
+  bool matchesRole(UserRole role) {
+    final t = type.trim().toLowerCase();
+
+    // Notification types intended exclusively for Drivers
+    const driverOnlyTypes = {
+      'new_ride',
+      'new_trip',
+      'delivery_request',
+      'counter_offer',
+      'driver_online',
+      'driver_offline',
+      'reject_offer',
+    };
+
+    // Notification types intended exclusively for Riders
+    const riderOnlyTypes = {
+      'new_ride_created',
+      'new_offer',
+      'driver_offer',
+      'driver_bidding',
+      'accept_trip',
+      'ride_accepted',
+      'delivery_accepted',
+      'driver_arrived',
+      'captain_arrived',
+      'trip_started',
+      'trip_finished',
+      'trip_completed',
+      'ride_expired',
+    };
+
+    if (role == UserRole.driver) {
+      if (riderOnlyTypes.contains(t)) return false;
+    } else if (role == UserRole.rider) {
+      if (driverOnlyTypes.contains(t)) return false;
+    }
+
+    return true;
+  }
 
   NotificationModel copyWith({
     String? id,

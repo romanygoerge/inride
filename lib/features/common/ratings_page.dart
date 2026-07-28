@@ -86,10 +86,10 @@ class _RatingsPageState extends State<RatingsPage> {
       body: StreamBuilder<List<Map<String, dynamic>>>(
         stream: _userStream,
         builder: (context, userSnapshot) {
-          double overallAverageRating = 5.0;
+          double overallAverageRating = 0.0;
           if (userSnapshot.hasData && userSnapshot.data!.isNotEmpty) {
             final userData = userSnapshot.data!.first;
-            overallAverageRating = ((userData['rating'] as num?) ?? 5.0).toDouble();
+            overallAverageRating = ((userData['rating'] as num?) ?? 0.0).toDouble();
           }
 
           return StreamBuilder<List<Map<String, dynamic>>>(
@@ -109,6 +109,10 @@ class _RatingsPageState extends State<RatingsPage> {
               }
 
               final allDocs = List<Map<String, dynamic>>.from(snapshot.data ?? []);
+              if (allDocs.isNotEmpty) {
+                final double sum = allDocs.fold(0.0, (acc, item) => acc + ((item['rating'] as num?)?.toDouble() ?? 0.0));
+                overallAverageRating = double.parse((sum / allDocs.length).toStringAsFixed(1));
+              }
               
               allDocs.sort((a, b) {
                 final aTime = DateTime.tryParse(a['created_at'] ?? '') ?? DateTime(1970);

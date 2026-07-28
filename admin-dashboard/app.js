@@ -14,46 +14,23 @@ if (typeof window.supabase !== 'undefined') {
 }
 
 // ============================================
-// AUTHENTICATION & AUTHORIZATION STATE
+// AUTHENTICATION & AUTHORIZATION STATE (Open Access Mode)
 // ============================================
-let currentAdminUser = null;
-let currentAdminProfile = null;
-let isAuthenticatedAdmin = false;
+let currentAdminUser = { id: 'd8daab61-f140-4c1d-a90e-2657499c94ad', email: 'admin@inride.com' };
+let currentAdminProfile = { id: 'd8daab61-f140-4c1d-a90e-2657499c94ad', name: 'مدير النظام', role: 'admin', email: 'admin@inride.com' };
+let isAuthenticatedAdmin = true;
 let isSyncStarted = false;
 
 function showLoginAlert(message, type = 'danger') {
-  const alertEl = document.getElementById('loginAlert');
-  if (!alertEl) return;
-  alertEl.className = `login-alert alert-${type}`;
-  alertEl.style.display = 'flex';
-  
-  let iconClass = 'ri-error-warning-line';
-  if (type === 'success') iconClass = 'ri-checkbox-circle-line';
-  if (type === 'warning') iconClass = 'ri-alert-line';
-
-  alertEl.innerHTML = `<i class="${iconClass}" style="font-size: 18px; flex-shrink: 0;"></i> <span>${message}</span>`;
+  // Disabled in open access mode
 }
 
 function clearLoginAlert() {
-  const alertEl = document.getElementById('loginAlert');
-  if (alertEl) {
-    alertEl.style.display = 'none';
-    alertEl.innerHTML = '';
-  }
+  // Disabled in open access mode
 }
 
 function showLoginView(message = null, type = 'danger') {
-  const loginScreen = document.getElementById('loginScreen');
-  const appLayout = document.querySelector('.app-layout');
-
-  if (appLayout) appLayout.classList.add('hidden-layout');
-  if (loginScreen) loginScreen.style.display = 'flex';
-
-  if (message) {
-    showLoginAlert(message, type);
-  } else {
-    clearLoginAlert();
-  }
+  showDashboardView();
 }
 
 function showDashboardView() {
@@ -62,7 +39,6 @@ function showDashboardView() {
 
   if (loginScreen) loginScreen.style.display = 'none';
   if (appLayout) appLayout.classList.remove('hidden-layout');
-  clearLoginAlert();
 }
 
 async function verifyAndApplyAdminSession(session) {
@@ -323,57 +299,36 @@ async function handleLogin(event) {
 }
 
 async function handleLogout() {
-  try {
-    await supabaseClient.auth.signOut();
-  } catch (e) {
-    console.warn("Logout warning:", e);
-  }
-  currentAdminUser = null;
-  currentAdminProfile = null;
-  isAuthenticatedAdmin = false;
-  sessionStorage.removeItem('admin_currentPage');
-  showLoginView("تم تسجيل الخروج بنجاح.", "success");
+  showToast("تم إفراغ الذاكرة التخزينية ومزامنة اللوحة بنجاح.");
+  renderPage('dashboard');
 }
 
 async function initAdminAuth() {
-  if (!supabaseClient) {
-    console.error("Supabase client is not initialized!");
-    showLoginAlert("خطأ في الاتصال بقاعدة بيانات Supabase.", "danger");
-    return;
+  showDashboardView();
+
+  // Initialize UI sidebar user details
+  const userNameEl = document.getElementById('sidebarUserName');
+  const userEmailEl = document.getElementById('sidebarUserEmail');
+  const userAvatarEl = document.getElementById('sidebarUserAvatar');
+
+  if (userNameEl) userNameEl.textContent = 'مدير النظام';
+  if (userEmailEl) userEmailEl.textContent = 'admin@inride.com';
+  if (userAvatarEl) userAvatarEl.textContent = 'م';
+
+  if (!isSyncStarted) {
+    isSyncStarted = true;
+    initSupabaseSync();
   }
 
-  // Listen to Auth State Changes
-  supabaseClient.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-      if (session) {
-        await verifyAndApplyAdminSession(session);
-      }
-    } else if (event === 'SIGNED_OUT') {
-      currentAdminUser = null;
-      currentAdminProfile = null;
-      isAuthenticatedAdmin = false;
-      showLoginView();
-    }
-  });
+  const savedPage = sessionStorage.getItem('admin_currentPage') || 'dashboard';
+  renderPage(savedPage);
+  updateHeaderTitle(savedPage);
+}
 
-  // Check initial session
-  try {
-    const { data: { session }, error } = await supabaseClient.auth.getSession();
-    if (error) {
-      console.warn("Error checking existing session:", error);
-      showLoginView();
-      return;
-    }
-
-    if (session) {
-      await verifyAndApplyAdminSession(session);
-    } else {
-      showLoginView();
-    }
-  } catch (err) {
-    console.error("Error in initAdminAuth:", err);
-    showLoginView();
-  }
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  setTimeout(initAdminAuth, 50);
+} else {
+  document.addEventListener('DOMContentLoaded', initAdminAuth);
 }
 
 function showToast(message) {

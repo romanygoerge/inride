@@ -26,59 +26,11 @@
   <div class="overlay" id="overlay"></div>
 
   <!-- ============================================
-       LOGIN SCREEN (Supabase Email & Password Auth)
+       LOGIN SCREEN (Disabled - Open Access)
        ============================================ -->
-  <div class="login-container" id="loginScreen">
-    <div class="login-card">
-      <div class="login-brand">
-        <div class="login-logo">
-          <span>iR</span>
-        </div>
-        <h1>inRide</h1>
-        <p class="login-subtitle">لوحة التحكم الإدارية (Admin Dashboard)</p>
-      </div>
+  <div class="login-container" id="loginScreen" style="display: none;"></div>
 
-      <div class="login-alert" id="loginAlert" style="display: none;"></div>
-
-      <form id="loginForm" onsubmit="handleLogin(event)">
-        <div class="form-group">
-          <label for="loginEmail"><i class="ri-mail-fill"></i> البريد الإلكتروني للمدير</label>
-          <input 
-            type="email" 
-            id="loginEmail" 
-            class="form-control" 
-            placeholder="admin@inride.com" 
-            required 
-            autocomplete="email" 
-          />
-        </div>
-
-        <div class="form-group">
-          <label for="loginPassword"><i class="ri-lock-2-fill"></i> كلمة المرور</label>
-          <input 
-            type="password" 
-            id="loginPassword" 
-            class="form-control" 
-            placeholder="••••••••" 
-            required 
-            autocomplete="current-password" 
-          />
-        </div>
-
-        <button type="submit" id="loginSubmitBtn" class="btn btn-primary btn-block">
-          <i class="ri-login-box-line"></i>
-          <span id="loginSubmitText">تسجيل الدخول</span>
-        </button>
-      </form>
-
-      <div class="login-footer-note">
-        <i class="ri-shield-keyhole-line"></i>
-        <span>الوصول مقتصر حصراً على الحساب الإداري المعتمد في Supabase</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="app-layout hidden-layout">
+  <div class="app-layout">
     <!-- ============================================
          SIDEBAR
          ============================================ -->

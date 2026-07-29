@@ -3781,7 +3781,8 @@ async function sendSupportReply(id) {
 
   textEl.value = '';
   const nowStr = new Date().toISOString();
-  const msgId = crypto.randomUUID ? crypto.randomUUID() : ('admin_msg_' + Date.now());
+  const msgId = generateUUID();
+  const adminSenderId = (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : id;
 
   console.log("[SupportChat Log] Support Message Sent: id=" + msgId + " to recipient=" + id);
 
@@ -3794,14 +3795,17 @@ async function sendSupportReply(id) {
       last_message: text,
       last_message_at: nowStr,
       updated_at: nowStr,
-      unread_admin_count: 0
+      unread_admin_count: 0,
+      unread_user_count: 1
     }).catch(e => console.warn('[SupportChat] Non-critical upsert warning:', e));
 
-    // 2. Insert message into support_messages
+    // 2. Insert message into support_messages with valid UUID
     const { error: insErr } = await client.from('support_messages').insert({
       id: msgId,
       conversation_id: id,
       user_id: id,
+      sender_id: adminSenderId,
+      receiver_id: id,
       sender_type: 'admin',
       message: text,
       text: text,
@@ -3811,9 +3815,10 @@ async function sendSupportReply(id) {
     });
 
     if (insErr) {
-      console.warn('[SupportChat Log] Retry inserting simplified support_message:', insErr.message);
+      console.warn('[SupportChat Log] Primary insert warning, trying fallback:', insErr.message);
       await client.from('support_messages').insert({
         id: msgId,
+        conversation_id: id,
         user_id: id,
         sender_type: 'admin',
         message: text,
@@ -3827,10 +3832,10 @@ async function sendSupportReply(id) {
       last_message: text,
       last_message_at: nowStr,
       updated_at: nowStr,
-      unread_admin_count: 0
+      unread_user_count: 1
     }).eq('id', id).catch(() => {});
 
-    const notifId = `${id}_support_${Date.now()}`;
+    const notifId = generateUUID();
     client.from('notifications').insert({
       id: notifId,
       user_id: id,
@@ -5433,7 +5438,7 @@ async function sendProfileChatMessage() {
 
   if (supabaseClient) {
     const nowStr = new Date().toISOString();
-    const msgId = crypto.randomUUID ? crypto.randomUUID() : ('admin_msg_' + Date.now());
+    const msgId = generateUUID();
     const adminSenderId = (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : uid;
 
     console.log("[SupportChat Log] Support Message Sent: id=" + msgId + " from profile to recipient=" + uid);
@@ -5477,21 +5482,11 @@ async function sendProfileChatMessage() {
           status: 'sent',
           is_admin: true,
           created_at: nowStr
-        });
+        }).catch(e => console.warn('[SupportChat] Non-critical retry warning:', e));
       }
 
-      await supabaseClient.from('support_chats').upsert({
-        id: uid,
-        user_id: uid,
-        status: 'open',
-        last_message: text,
-        last_message_at: nowStr,
-        updated_at: nowStr,
-        unread_admin_count: 0
-      }).catch(e => console.warn('[SupportChat] Non-critical upsert warning:', e));
-
       // Insert in-app notification for recipient in Supabase
-      const notifId = `${uid}_support_${Date.now()}`;
+      const notifId = generateUUID();
       await supabaseClient.from('notifications').insert({
         id: notifId,
         user_id: uid,
@@ -5507,7 +5502,9 @@ async function sendProfileChatMessage() {
         }
       }).catch(e => console.warn('[SupportChat] Non-critical notification insert warning:', e));
 
-      dispatchPushNotificationToUser(uid, "الدعم الفني", text, msgId);
+      try {
+        dispatchPushNotificationToUser(uid, "الدعم الفني", text, msgId);
+      } catch (_) {}
       renderSupabaseProfileChat(uid);
     } catch (e) {
       console.error("[SupportChat Log] Error sending profile chat message:", e);

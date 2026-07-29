@@ -48,70 +48,70 @@
       <nav class="sidebar-nav">
         <div class="nav-section-title">القائمة الرئيسية</div>
 
-        <div class="nav-item active" data-page="dashboard" id="nav-dashboard">
+        <div class="nav-item active" data-page="dashboard" id="nav-dashboard" onclick="navigateTo('dashboard')">
           <i class="ri-dashboard-3-fill"></i>
           <span>لوحة التحكم</span>
         </div>
 
-        <div class="nav-item" data-page="trips" id="nav-trips">
+        <div class="nav-item" data-page="trips" id="nav-trips" onclick="navigateTo('trips')">
           <i class="ri-route-fill"></i>
           <span>الرحلات والطلبات</span>
         </div>
 
-        <div class="nav-item" data-page="drivers" id="nav-drivers">
+        <div class="nav-item" data-page="drivers" id="nav-drivers" onclick="navigateTo('drivers')">
           <i class="ri-steering-2-fill"></i>
           <span>السائقين والتوثيق</span>
           <span class="badge" id="driversBadge">0</span>
         </div>
 
-        <div class="nav-item" data-page="passengers" id="nav-passengers">
+        <div class="nav-item" data-page="passengers" id="nav-passengers" onclick="navigateTo('passengers')">
           <i class="ri-group-fill"></i>
           <span>الركاب والمستخدمين</span>
         </div>
 
         <div class="nav-section-title">المالية والتشغيل</div>
 
-        <div class="nav-item" data-page="wallet" id="nav-wallet">
+        <div class="nav-item" data-page="wallet" id="nav-wallet" onclick="navigateTo('wallet')">
           <i class="ri-wallet-3-fill"></i>
           <span>المحفظة والمالية</span>
         </div>
 
-        <div class="nav-item" data-page="pricing" id="nav-pricing">
+        <div class="nav-item" data-page="pricing" id="nav-pricing" onclick="navigateTo('pricing')">
           <i class="ri-price-tag-3-fill"></i>
           <span>التسعير والمناطق</span>
         </div>
 
         <div class="nav-section-title">التواصل والدعم</div>
 
-        <div class="nav-item" data-page="messages" id="nav-messages">
+        <div class="nav-item" data-page="messages" id="nav-messages" onclick="navigateTo('messages')">
           <i class="ri-notification-badge-fill"></i>
           <span>الإشعارات والرسائل</span>
         </div>
 
-        <div class="nav-item" data-page="support" id="nav-support">
+        <div class="nav-item" data-page="support" id="nav-support" onclick="navigateTo('support')">
           <i class="ri-customer-service-2-fill"></i>
           <span>الدعم الفني والشكاوى</span>
           <span class="badge" id="supportBadge" style="background:var(--warning);">0</span>
         </div>
 
-        <div class="nav-item" data-page="content" id="nav-content">
+        <div class="nav-item" data-page="content" id="nav-content" onclick="navigateTo('content')">
           <i class="ri-advertisement-fill"></i>
           <span>إدارة المحتوى</span>
         </div>
 
         <div class="nav-section-title">المراقبة والأمان</div>
 
-        <div class="nav-item" data-page="monitoring" id="nav-monitoring">
+        <div class="nav-item" data-page="monitoring" id="nav-monitoring" onclick="navigateTo('monitoring')">
           <i class="ri-pulse-fill"></i>
           <span>مراقبة النظام والأداء</span>
         </div>
 
-        <div class="nav-item" data-page="logs" id="nav-logs">
+        <div class="nav-item" data-page="logs" id="nav-logs" onclick="navigateTo('logs')">
           <i class="ri-lock-2-fill"></i>
           <span>الصلاحيات وسجلات التدقيق</span>
         </div>
 
-        <div class="nav-item" data-page="settings" id="nav-settings">
+        <div class="nav-item" data-page="settings" id="nav-settings" onclick="navigateTo('settings')">
           <i class="ri-settings-4-fill"></i>
           <span>الإعدادات العامة</span>
         </div>
@@ -178,6 +178,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <!-- Dashboard JS -->
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

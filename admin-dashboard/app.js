@@ -9,33 +9,43 @@
 const SUPABASE_URL = 'https://fylruevfksmqnkykqkin.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5bHJ1ZXZma3NtcW5reWtxa2luIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NTY3NDYsImV4cCI6MjEwMDMzMjc0Nn0.u5NVng7fsptjQOnNlEYP7MzNDp8_ssN94xSxzg8VYi4';
 let supabaseClient = null;
-
-function getSupabaseClient() {
-  if (!supabaseClient && typeof window.supabase !== 'undefined' && typeof window.supabase.createClient === 'function') {
-    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  }
-  return supabaseClient;
+if (typeof window.supabase !== 'undefined') {
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 }
 
-getSupabaseClient();
-
 // ============================================
-// AUTHENTICATION & AUTHORIZATION STATE (Direct Open Access)
+// AUTHENTICATION & AUTHORIZATION STATE (Supabase Auth)
 // ============================================
-let currentAdminUser = { id: 'd8daab61-f140-4c1d-a90e-2657499c94ad', email: 'admin@inride.com' };
-let currentAdminProfile = { id: 'd8daab61-f140-4c1d-a90e-2657499c94ad', name: 'مدير النظام', role: 'admin', email: 'admin@inride.com' };
-let isAuthenticatedAdmin = true;
+let currentAdminUser = null;
+let currentAdminProfile = null;
+let isAuthenticatedAdmin = false;
 let isSyncStarted = false;
 
-function showLoginAlert(message, type = 'danger') {}
-function clearLoginAlert() {}
+function showLoginAlert(message, type = 'danger') {
+  const alertEl = document.getElementById('loginAlert');
+  if (!alertEl) return;
+  alertEl.className = `login-alert alert-${type}`;
+  alertEl.innerHTML = `<i class="ri-error-warning-line"></i> <span>${message}</span>`;
+  alertEl.style.display = 'flex';
+}
+
+function clearLoginAlert() {
+  const alertEl = document.getElementById('loginAlert');
+  if (alertEl) {
+    alertEl.style.display = 'none';
+    alertEl.innerHTML = '';
+  }
+}
 
 function showLoginView(message = null, type = 'danger') {
   showDashboardView();
 }
 
 function showDashboardView() {
+  const loginScreen = document.getElementById('loginScreen');
   const appLayout = document.querySelector('.app-layout');
+
+  if (loginScreen) loginScreen.style.display = 'none';
   if (appLayout) {
     appLayout.classList.remove('hidden-layout');
     appLayout.style.display = 'flex';
@@ -43,54 +53,75 @@ function showDashboardView() {
 }
 
 async function verifyAndApplyAdminSession(session) {
-  currentAdminUser = session ? session.user : { id: 'd8daab61-f140-4c1d-a90e-2657499c94ad', email: 'admin@inride.com' };
-  currentAdminProfile = {
-    id: currentAdminUser.id,
-    name: 'مدير النظام',
-    role: 'admin',
-    email: currentAdminUser.email || 'admin@inride.com'
-  };
-
-  isAuthenticatedAdmin = true;
-  showDashboardView();
-
-  const userNameEl = document.getElementById('sidebarUserName');
-  const userEmailEl = document.getElementById('sidebarUserEmail');
-  const userAvatarEl = document.getElementById('sidebarUserAvatar');
-
-  if (userNameEl) userNameEl.textContent = 'مدير النظام';
-  if (userEmailEl) userEmailEl.textContent = currentAdminProfile.email;
-  if (userAvatarEl) userAvatarEl.textContent = 'م';
-
-  if (!isSyncStarted) {
-    isSyncStarted = true;
-    initSupabaseSync();
+  if (!session || !session.user) {
+    showLoginView();
+    return false;
   }
 
-  const savedPage = sessionStorage.getItem('admin_currentPage') || 'dashboard';
-  renderPage(savedPage);
-  updateHeaderTitle(savedPage);
+  try {
+    const userId = session.user.id;
 
-  return true;
+    // Retrieve authenticated user profile from 'users' table
+    let { data: userProfile, error } = await supabaseClient
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Error fetching user profile:", error);
+    }
+
+    currentAdminUser = session.user;
+    currentAdminProfile = userProfile || {
+      id: userId,
+      name: session.user.email ? session.user.email.split('@')[0] : 'مدير النظام',
+      role: 'admin',
+      email: session.user.email
+    };
+
+    isAuthenticatedAdmin = true;
+    showDashboardView();
+
+    // Update UI sidebar user details
+    const userNameEl = document.getElementById('sidebarUserName');
+    const userEmailEl = document.getElementById('sidebarUserEmail');
+    const userAvatarEl = document.getElementById('sidebarUserAvatar');
+
+    if (userNameEl) userNameEl.textContent = currentAdminProfile.name || 'مدير النظام';
+    if (userEmailEl) userEmailEl.textContent = session.user.email || 'admin@inride.com';
+    if (userAvatarEl) userAvatarEl.textContent = (currentAdminProfile.name || 'م').charAt(0).toUpperCase();
+
+    if (!isSyncStarted) {
+      isSyncStarted = true;
+      initSupabaseSync();
+    }
+
+    const savedPage = sessionStorage.getItem('admin_currentPage') || 'dashboard';
+    renderPage(savedPage);
+    updateHeaderTitle(savedPage);
+
+    return true;
+  } catch (err) {
+    console.error("Session verification error:", err);
+    showLoginView("حدث خطأ أثناء التحقق من صلاحيات حسابك.");
+    return false;
+  }
 }
 
 async function initSupabaseSync() {
-  const client = getSupabaseClient();
-  if (!client) return;
+  if (!supabaseClient) return;
 
   console.log('[SupabaseSync Log] Initializing real-time database synchronization with Supabase...');
 
   const fetchRealData = async () => {
     try {
-      const client = getSupabaseClient() || supabaseClient;
-      if (!client) return;
-
       // 1. Fetch Users table
-      const { data: users, error: userError } = await client.from('users').select('*');
+      const { data: users, error: userError } = await supabaseClient.from('users').select('*');
       if (userError) console.warn('[SupabaseSync Log] Error fetching users:', userError);
 
       // 2. Fetch Drivers table
-      const { data: drivers, error: driverError } = await client.from('drivers').select('*');
+      const { data: drivers, error: driverError } = await supabaseClient.from('drivers').select('*');
       if (driverError) {
         console.warn('[SupabaseSync Log] Error fetching drivers:', driverError);
         return;
@@ -103,7 +134,7 @@ async function initSupabaseSync() {
           let vehicleObj = null;
           if (drv.vehicle_id) {
             try {
-              const { data: vData } = await client.from('vehicles').select('*').eq('id', drv.vehicle_id).maybeSingle();
+              const { data: vData } = await supabaseClient.from('vehicles').select('*').eq('id', drv.vehicle_id).maybeSingle();
               vehicleObj = vData;
             } catch (_) {}
           }
@@ -111,7 +142,7 @@ async function initSupabaseSync() {
           // Count completed trips
           let completedTripsCount = 0;
           try {
-            const { count } = await client
+            const { count } = await supabaseClient
               .from('ride_requests')
               .select('*', { count: 'exact', head: true })
               .eq('driver_id', drv.id)
@@ -123,7 +154,7 @@ async function initSupabaseSync() {
           let avgRating = 0.0;
           let ratingDisplay = "No ratings yet";
           try {
-            const { data: ratingsData } = await client
+            const { data: ratingsData } = await supabaseClient
               .from('ratings')
               .select('rating')
               .eq('receiver_id', drv.id);
@@ -188,19 +219,16 @@ async function initSupabaseSync() {
   await fetchRealData();
 
   try {
-    const client = getSupabaseClient() || supabaseClient;
-    if (client && client.channel) {
-      client.channel('admin_realtime_drivers')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, async (payload) => {
-          console.log('[SupabaseSync Log] Realtime update on drivers:', payload);
-          await fetchRealData();
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, async (payload) => {
-          console.log('[SupabaseSync Log] Realtime update on users:', payload);
-          await fetchRealData();
-        })
-        .subscribe();
-    }
+    supabaseClient.channel('admin_realtime_drivers')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, async (payload) => {
+        console.log('[SupabaseSync Log] Realtime update on drivers:', payload);
+        await fetchRealData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, async (payload) => {
+        console.log('[SupabaseSync Log] Realtime update on users:', payload);
+        await fetchRealData();
+      })
+      .subscribe();
   } catch (err) {
     console.warn('[SupabaseSync Log] Error setting up channel:', err);
   }
@@ -218,38 +246,66 @@ async function handleLogin(event) {
   const email = emailInput ? emailInput.value.trim() : '';
   const password = passwordInput ? passwordInput.value : '';
 
+  if (!email || !password) {
+    showLoginAlert("يرجى إدخال البريد الإلكتروني وكلمة المرور.");
+    return;
+  }
+
+  // Set Loading state
   if (submitBtn) submitBtn.disabled = true;
-  if (submitText) submitText.textContent = "جاري فتح لوحة التحكم...";
+  if (submitText) submitText.textContent = "جاري التحقق وتسجيل الدخول...";
 
   try {
-    const client = getSupabaseClient();
-    if (client && email && password) {
-      const { data, error } = await client.auth.signInWithPassword({ email, password });
-      if (data && data.session) {
-        await verifyAndApplyAdminSession(data.session);
-        return;
+    // Supabase Email & Password Auth
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
+      email: email,
+      password: password
+    });
+
+    if (error) {
+      console.error("Login error from Supabase Auth:", error);
+      let errorMsg = "حدث خطأ أثناء تسجيل الدخول.";
+      
+      const msg = (error.message || '').toLowerCase();
+      if (msg.includes('invalid login credentials') || msg.includes('invalid credentials') || msg.includes('user not found') || msg.includes('wrong password')) {
+        errorMsg = "بيانات الدخول غير صحيحة. يرجى التأكد من البريد الإلكتروني وكلمة المرور.";
+      } else if (msg.includes('invalid email') || msg.includes('unable to validate email address')) {
+        errorMsg = "صيغة البريد الإلكتروني غير صحيحة.";
+      } else if (msg.includes('network') || msg.includes('failed to fetch') || msg.includes('rate limit')) {
+        errorMsg = "تعذر الاتصال بالخادم. يرجى التأكد من الاتصال بالإنترنت والمحاولة مجدداً.";
+      } else {
+        errorMsg = "خطأ في تسجيل الدخول: " + error.message;
       }
+
+      showLoginAlert(errorMsg, "danger");
+      return;
+    }
+
+    if (data && data.session) {
+      await verifyAndApplyAdminSession(data.session);
+    } else {
+      showLoginAlert("لم يتم استلام جلسة دخول صالحة.", "danger");
     }
   } catch (err) {
-    console.warn("Supabase Auth login attempt warning:", err);
+    console.error("Unexpected error during login:", err);
+    showLoginAlert("حدث خطأ غير متوقع: " + err.message, "danger");
   } finally {
     if (submitBtn) submitBtn.disabled = false;
     if (submitText) submitText.textContent = "تسجيل الدخول";
   }
-
-  // Seamless fallback entry
-  await verifyAndApplyAdminSession(null);
 }
 
 async function handleLogout() {
-  const client = getSupabaseClient();
   try {
-    if (client && client.auth) {
-      await client.auth.signOut();
+    if (supabaseClient && supabaseClient.auth) {
+      await supabaseClient.auth.signOut();
     }
   } catch (e) {}
-  showToast("تم مزامنة واستعادة اللوحة بنجاح.");
-  showDashboardView();
+  isAuthenticatedAdmin = false;
+  currentAdminUser = null;
+  currentAdminProfile = null;
+  showToast("تم تسجيل الخروج بنجاح.");
+  showLoginView();
 }
 
 async function initAdminAuth() {
@@ -262,15 +318,6 @@ async function initAdminAuth() {
   if (userNameEl) userNameEl.textContent = 'مدير النظام';
   if (userEmailEl) userEmailEl.textContent = 'admin@inride.com';
   if (userAvatarEl) userAvatarEl.textContent = 'م';
-
-  // Global event delegation for sidebar navigation items
-  document.addEventListener('click', function(e) {
-    const navItem = e.target.closest('.nav-item');
-    if (navItem && navItem.dataset && navItem.dataset.page) {
-      e.preventDefault();
-      navigateTo(navItem.dataset.page);
-    }
-  });
 
   if (!isSyncStarted) {
     isSyncStarted = true;
@@ -693,6 +740,13 @@ function animateCounter(element, target, duration = 1200) {
   }
 
   requestAnimationFrame(update);
+}
+
+function initDashboardAnimations() {
+  document.querySelectorAll('.stat-card-value').forEach(el => {
+    const target = parseInt(el.dataset.target || '0', 10);
+    animateCounter(el, target);
+  });
 }
 
 // ============================================
@@ -3769,6 +3823,11 @@ async function sendSupportReply(id) {
         created_at: nowStr
       });
     }
+
+    // 2. Update or upsert support_chats
+    await supabaseClient.from('support_chats').upsert({
+      id: id,
+      user_id: id,
       status: 'open',
       last_message: text,
       last_message_at: nowStr,

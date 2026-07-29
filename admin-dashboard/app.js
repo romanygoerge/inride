@@ -20,49 +20,26 @@ function getSupabaseClient() {
 getSupabaseClient();
 
 // ============================================
-// AUTHENTICATION & AUTHORIZATION STATE (Supabase Auth)
+// AUTHENTICATION & AUTHORIZATION STATE (Direct Open Access)
 // ============================================
-let currentAdminUser = null;
-let currentAdminProfile = null;
-let isAuthenticatedAdmin = false;
+let currentAdminUser = { id: 'd8daab61-f140-4c1d-a90e-2657499c94ad', email: 'admin@inride.com' };
+let currentAdminProfile = { id: 'd8daab61-f140-4c1d-a90e-2657499c94ad', name: 'مدير النظام', role: 'admin', email: 'admin@inride.com' };
+let isAuthenticatedAdmin = true;
 let isSyncStarted = false;
 
-function showLoginAlert(message, type = 'danger') {
-  const alertEl = document.getElementById('loginAlert');
-  if (!alertEl) return;
-  alertEl.className = `login-alert alert-${type}`;
-  alertEl.innerHTML = `<i class="ri-error-warning-line"></i> <span>${message}</span>`;
-  alertEl.style.display = 'flex';
-}
-
-function clearLoginAlert() {
-  const alertEl = document.getElementById('loginAlert');
-  if (alertEl) {
-    alertEl.style.display = 'none';
-    alertEl.innerHTML = '';
-  }
-}
+function showLoginAlert(message, type = 'danger') {}
+function clearLoginAlert() {}
 
 function showLoginView(message = null, type = 'danger') {
-  const loginScreen = document.getElementById('loginScreen');
-  const appLayout = document.querySelector('.app-layout');
-
-  if (loginScreen) loginScreen.style.display = 'flex';
-  if (appLayout) appLayout.classList.add('hidden-layout');
-
-  if (message) {
-    showLoginAlert(message, type);
-  } else {
-    clearLoginAlert();
-  }
+  showDashboardView();
 }
 
 function showDashboardView() {
-  const loginScreen = document.getElementById('loginScreen');
   const appLayout = document.querySelector('.app-layout');
-
-  if (loginScreen) loginScreen.style.display = 'none';
-  if (appLayout) appLayout.classList.remove('hidden-layout');
+  if (appLayout) {
+    appLayout.classList.remove('hidden-layout');
+    appLayout.style.display = 'flex';
+  }
 }
 
 async function verifyAndApplyAdminSession(session) {

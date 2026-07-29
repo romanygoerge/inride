@@ -82,12 +82,15 @@ async function initSupabaseSync() {
 
   const fetchRealData = async () => {
     try {
+      const client = getSupabaseClient() || supabaseClient;
+      if (!client) return;
+
       // 1. Fetch Users table
-      const { data: users, error: userError } = await supabaseClient.from('users').select('*');
+      const { data: users, error: userError } = await client.from('users').select('*');
       if (userError) console.warn('[SupabaseSync Log] Error fetching users:', userError);
 
       // 2. Fetch Drivers table
-      const { data: drivers, error: driverError } = await supabaseClient.from('drivers').select('*');
+      const { data: drivers, error: driverError } = await client.from('drivers').select('*');
       if (driverError) {
         console.warn('[SupabaseSync Log] Error fetching drivers:', driverError);
         return;
@@ -100,7 +103,7 @@ async function initSupabaseSync() {
           let vehicleObj = null;
           if (drv.vehicle_id) {
             try {
-              const { data: vData } = await supabaseClient.from('vehicles').select('*').eq('id', drv.vehicle_id).maybeSingle();
+              const { data: vData } = await client.from('vehicles').select('*').eq('id', drv.vehicle_id).maybeSingle();
               vehicleObj = vData;
             } catch (_) {}
           }
@@ -108,7 +111,7 @@ async function initSupabaseSync() {
           // Count completed trips
           let completedTripsCount = 0;
           try {
-            const { count } = await supabaseClient
+            const { count } = await client
               .from('ride_requests')
               .select('*', { count: 'exact', head: true })
               .eq('driver_id', drv.id)
@@ -120,7 +123,7 @@ async function initSupabaseSync() {
           let avgRating = 0.0;
           let ratingDisplay = "No ratings yet";
           try {
-            const { data: ratingsData } = await supabaseClient
+            const { data: ratingsData } = await client
               .from('ratings')
               .select('rating')
               .eq('receiver_id', drv.id);
@@ -185,16 +188,19 @@ async function initSupabaseSync() {
   await fetchRealData();
 
   try {
-    supabaseClient.channel('admin_realtime_drivers')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, async (payload) => {
-        console.log('[SupabaseSync Log] Realtime update on drivers:', payload);
-        await fetchRealData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, async (payload) => {
-        console.log('[SupabaseSync Log] Realtime update on users:', payload);
-        await fetchRealData();
-      })
-      .subscribe();
+    const client = getSupabaseClient() || supabaseClient;
+    if (client && client.channel) {
+      client.channel('admin_realtime_drivers')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, async (payload) => {
+          console.log('[SupabaseSync Log] Realtime update on drivers:', payload);
+          await fetchRealData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, async (payload) => {
+          console.log('[SupabaseSync Log] Realtime update on users:', payload);
+          await fetchRealData();
+        })
+        .subscribe();
+    }
   } catch (err) {
     console.warn('[SupabaseSync Log] Error setting up channel:', err);
   }
@@ -257,14 +263,22 @@ async function initAdminAuth() {
   if (userEmailEl) userEmailEl.textContent = 'admin@inride.com';
   if (userAvatarEl) userAvatarEl.textContent = 'م';
 
+  // Global event delegation for sidebar navigation items
+  document.addEventListener('click', function(e) {
+    const navItem = e.target.closest('.nav-item');
+    if (navItem && navItem.dataset && navItem.dataset.page) {
+      e.preventDefault();
+      navigateTo(navItem.dataset.page);
+    }
+  });
+
   if (!isSyncStarted) {
     isSyncStarted = true;
     initSupabaseSync();
   }
 
   const savedPage = sessionStorage.getItem('admin_currentPage') || 'dashboard';
-  renderPage(savedPage);
-  updateHeaderTitle(savedPage);
+  navigateTo(savedPage);
 }
 
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
@@ -686,11 +700,6 @@ function animateCounter(element, target, duration = 1200) {
 // ============================================
 
 function navigateTo(page) {
-  if (!isAuthenticatedAdmin || !currentAdminProfile || currentAdminProfile.role !== 'admin') {
-    showLoginView("يرجى تسجيل الدخول كمدير نظام مصرح له للوصول إلى لوحة التحكم.");
-    return;
-  }
-
   currentPage = page;
   sessionStorage.setItem('admin_currentPage', page);
   if (page === 'driver-profile' || page === 'passenger-profile') {

@@ -2442,142 +2442,893 @@ function adjustWalletPrompt(uid, role) {
   }
 }
 
-// ---- WALLET ----
+// ---- WALLET & FINANCIAL SYSTEM MODULE ----
+
+let financialState = {
+  selectedPeriod: 'month', // 'all', 'today', 'week', 'month', 'year', 'custom'
+  startDate: null,
+  endDate: null,
+  transactions: [],
+  paymentMethods: [],
+  settlements: [],
+  usersList: [],
+  isLoaded: false
+};
+
+async function loadFinancialDataFromSupabase() {
+  const client = getSupabaseClient() || supabaseClient;
+  if (!client) return;
+
+  try {
+    const { data: pmData } = await client.from('payment_methods').select('*').order('created_at', { ascending: true });
+    if (pmData && pmData.length > 0) {
+      financialState.paymentMethods = pmData;
+    } else {
+      financialState.paymentMethods = [
+        { id: '1', name: 'فودافون كاش', code: 'vodafone_cash', account_details: '01000000000', is_active: true, icon_name: 'ri-smartphone-line' },
+        { id: '2', name: 'إنستا باي (InstaPay)', code: 'instapay', account_details: 'username@instapay', is_active: true, icon_name: 'ri-flashlight-line' },
+        { id: '3', name: 'تحويل بنكي', code: 'bank_transfer', account_details: 'EG00000000000000000000', is_active: true, icon_name: 'ri-bank-line' },
+        { id: '4', name: 'نقداً (كاش)', code: 'cash', account_details: 'الدفع نقداً في المقر', is_active: true, icon_name: 'ri-money-dollar-circle-line' }
+      ];
+    }
+
+    const { data: txData } = await client.from('transactions').select('*').order('created_at', { ascending: false }).limit(300);
+    if (txData) financialState.transactions = txData;
+
+    const { data: settlData } = await client.from('financial_settlements').select('*').order('created_at', { ascending: false });
+    if (settlData) financialState.settlements = settlData;
+
+    const { data: usrData } = await client.from('users').select('id, name, phone, role, wallet_balance');
+    if (usrData) financialState.usersList = usrData;
+
+    financialState.isLoaded = true;
+  } catch (err) {
+    console.warn('[Financial Log] Error loading financial data:', err);
+  }
+}
+
+function getFilteredTransactions() {
+  const allTx = financialState.transactions || [];
+  const period = financialState.selectedPeriod;
+
+  if (period === 'all') return allTx;
+
+  const now = new Date();
+  let start = new Date();
+  let end = new Date();
+
+  if (period === 'today') {
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+  } else if (period === 'week') {
+    const dayOfWeek = now.getDay();
+    start.setDate(now.getDate() - dayOfWeek);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+  } else if (period === 'month') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+    end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  } else if (period === 'year') {
+    start = new Date(now.getFullYear(), 0, 1, 0, 0, 0);
+    end = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
+  } else if (period === 'custom' && financialState.startDate && financialState.endDate) {
+    start = new Date(financialState.startDate);
+    end = new Date(financialState.endDate);
+    end.setHours(23, 59, 59, 999);
+  }
+
+  return allTx.filter(tx => {
+    const d = new Date(tx.created_at || Date.now());
+    return d >= start && d <= end;
+  });
+}
+
+function setFinancialPeriodFilter(period, startDate = null, endDate = null) {
+  financialState.selectedPeriod = period;
+  if (startDate) financialState.startDate = startDate;
+  if (endDate) financialState.endDate = endDate;
+  renderPage('wallet');
+}
+
 function renderWallet() {
-  const totalIncome = mockData.stats.totalRevenue;
-  const totalExpense = Math.round(totalIncome * 0.8);
+  if (!financialState.isLoaded) {
+    loadFinancialDataFromSupabase().then(() => {
+      const container = document.getElementById('pageContent');
+      if (container && currentPage === 'wallet') {
+        container.innerHTML = renderWalletContentHtml();
+      }
+    });
+  }
+  return renderWalletContentHtml();
+}
+
+function renderWalletContentHtml() {
+  const filteredTx = getFilteredTransactions();
+
+  let totalIncome = 0;
+  let totalExpense = 0;
+
+  filteredTx.forEach(t => {
+    const amt = parseFloat(t.amount || 0);
+    if (amt > 0) totalIncome += amt;
+    else totalExpense += Math.abs(amt);
+  });
+
   const netBalance = totalIncome - totalExpense;
+  const activeMethods = financialState.paymentMethods || [];
 
   return `
     <div class="page-section">
-      <!-- Wallet Cards -->
-      <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
+      <!-- Financial Top Action Toolbar -->
+      <div class="card" style="margin-bottom:20px;padding:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="openFinancialModal('rechargeModal')">
+              <i class="ri-add-circle-line"></i> شحن رصيد مستخدم (رفع ريسيت)
+            </button>
+            <button class="btn btn-outline" style="border-color:var(--error);color:var(--error);" onclick="openFinancialModal('payoutModal')">
+              <i class="ri-arrow-up-circle-line"></i> سحب وتسوية مستحقات سائق
+            </button>
+            <button class="btn btn-outline" onclick="openFinancialModal('paymentMethodsModal')">
+              <i class="ri-bank-card-line"></i> إدارة طرق الدفع المقبولة
+            </button>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-outline" style="border-color:var(--warning);color:#D97706;" onclick="openFinancialModal('resetPeriodModal')">
+              <i class="ri-restart-line"></i> تصفير وتصفية الأرقام
+            </button>
+            <button class="btn btn-primary" style="background:#059669;" onclick="generateFinancialReport()">
+              <i class="ri-printer-line"></i> إصدار تقرير مالي احترافي (PDF)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Financial Period Filter Tabs -->
+      <div class="card" style="margin-bottom:24px;padding:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+          <div style="font-weight:700;font-size:14px;color:var(--text-primary);">
+            <i class="ri-calendar-event-line text-blue"></i> النطاق الزمني للحسابات والإحصائيات:
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn btn-sm ${financialState.selectedPeriod === 'today' ? 'btn-primary' : 'btn-outline'}" onclick="setFinancialPeriodFilter('today')">📅 اليوم</button>
+            <button class="btn btn-sm ${financialState.selectedPeriod === 'week' ? 'btn-primary' : 'btn-outline'}" onclick="setFinancialPeriodFilter('week')">🗓️ هذا الأسبوع</button>
+            <button class="btn btn-sm ${financialState.selectedPeriod === 'month' ? 'btn-primary' : 'btn-outline'}" onclick="setFinancialPeriodFilter('month')">📊 هذا الشهر</button>
+            <button class="btn btn-sm ${financialState.selectedPeriod === 'year' ? 'btn-primary' : 'btn-outline'}" onclick="setFinancialPeriodFilter('year')">📈 هذه السنة</button>
+            <button class="btn btn-sm ${financialState.selectedPeriod === 'all' ? 'btn-primary' : 'btn-outline'}" onclick="setFinancialPeriodFilter('all')">🌐 كل الفترات</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Financial Stats Grid -->
+      <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px;">
         <div class="stat-card blue">
           <div class="stat-card-header">
             <div class="stat-card-icon"><i class="ri-wallet-3-fill"></i></div>
           </div>
           <div class="stat-card-value">${netBalance.toLocaleString()}</div>
-          <div class="stat-card-label">صافي الرصيد (ج.م)</div>
+          <div class="stat-card-label">صافي رصيد الفترة (ج.م)</div>
         </div>
         <div class="stat-card green">
           <div class="stat-card-header">
             <div class="stat-card-icon"><i class="ri-arrow-down-circle-fill"></i></div>
           </div>
           <div class="stat-card-value">${totalIncome.toLocaleString()}</div>
-          <div class="stat-card-label">إجمالي الإيرادات (ج.م)</div>
+          <div class="stat-card-label">إجمالي التحويلات والإيرادات (ج.م)</div>
         </div>
         <div class="stat-card red">
           <div class="stat-card-header">
             <div class="stat-card-icon"><i class="ri-arrow-up-circle-fill"></i></div>
           </div>
           <div class="stat-card-value">${totalExpense.toLocaleString()}</div>
-          <div class="stat-card-label">إجمالي المصروفات (ج.م)</div>
+          <div class="stat-card-label">إجمالي المسحوبات والمصروفات (ج.م)</div>
+        </div>
+        <div class="stat-card yellow">
+          <div class="stat-card-header">
+            <div class="stat-card-icon"><i class="ri-shield-check-fill"></i></div>
+          </div>
+          <div class="stat-card-value">${filteredTx.filter(t => t.is_settled).length}</div>
+          <div class="stat-card-label">المعاملات المصفاة والمغلقة</div>
         </div>
       </div>
 
-      <div class="grid-2">
-        <!-- Wallet Balance Card -->
-        <div class="wallet-card">
-          <div class="wallet-card-content">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-              <span class="wallet-label">الرصيد المتاح</span>
-              <i class="ri-wallet-3-fill" style="font-size:28px;opacity:0.7;"></i>
-            </div>
-            <div class="wallet-amount">${netBalance.toLocaleString()}</div>
-            <div class="wallet-currency">جنيه مصري</div>
-            <div style="margin-top:20px;display:flex;gap:12px;">
-              <button class="btn" style="background:rgba(255,255,255,0.2);color:white;flex:1;" onclick="showToast('تم طلب سحب الرصيد')">
-                <i class="ri-arrow-up-line"></i> سحب
-              </button>
-              <button class="btn" style="background:white;color:var(--medium-blue);flex:1;">
-                <i class="ri-bar-chart-line"></i> تقرير
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Payment Methods -->
+      <div class="grid-2" style="margin-bottom:24px;">
+        <!-- Dynamic Payment Methods Section -->
         <div class="card">
-          <div class="card-header">
-            <h3><i class="ri-bank-card-fill text-blue" style="margin-left:8px;"></i> طرق الدفع المقبولة</h3>
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h3><i class="ri-bank-card-fill text-blue" style="margin-left:8px;"></i> طرق الدفع المقبولة المكتملة (تزامن مع التطبيق)</h3>
+            <button class="btn btn-sm btn-outline" onclick="openFinancialModal('paymentMethodsModal')">+ إضافة / تعديل</button>
           </div>
           <div class="card-body">
-            <div style="display:flex;flex-direction:column;gap:12px;">
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg-primary);border-radius:var(--radius-md);border:1px solid var(--border-color);">
-                <div style="display:flex;align-items:center;gap:12px;">
-                  <i class="ri-wallet-3-line" style="font-size:20px;color:var(--medium-blue);"></i>
-                  <div>
-                    <div style="font-weight:700;font-size:13px;">المحفظة</div>
-                    <div style="font-size:11px;color:var(--text-light);">رصيد إلكتروني</div>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              ${activeMethods.length === 0 ? `<div style="text-align:center;padding:16px;color:var(--text-light);">لا توجد طرق دفع معرفة بعد</div>` : 
+                activeMethods.map(pm => `
+                  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--bg-primary);border-radius:var(--radius-md);border:1px solid var(--border-color);">
+                    <div style="display:flex;align-items:center;gap:12px;">
+                      <i class="${pm.icon_name || 'ri-bank-card-line'}" style="font-size:22px;color:var(--medium-blue);"></i>
+                      <div>
+                        <div style="font-weight:700;font-size:13px;color:var(--text-primary);">${pm.name}</div>
+                        <div style="font-size:11px;color:var(--text-light);">${pm.account_details || pm.code}</div>
+                      </div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <span class="badge ${pm.is_active ? 'badge-settled' : 'badge-active'}" style="font-size:10px;padding:3px 8px;border-radius:10px;background:${pm.is_active ? '#D1FAE5' : '#F3F4F6'};color:${pm.is_active ? '#065F46' : '#6B7280'};">
+                        ${pm.is_active ? 'مفعلة بالتطبيق' : 'معطلة'}
+                      </span>
+                      <button class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:10px;" onclick="togglePaymentMethodActive('${pm.id}', ${pm.is_active})">
+                        ${pm.is_active ? 'تعطيل' : 'تفعيل'}
+                      </button>
+                      <button class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:10px;color:var(--error);border-color:var(--error);" onclick="deletePaymentMethod('${pm.id}')">
+                        حذف
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <i class="ri-check-line" style="color:var(--success);"></i>
-              </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg-primary);border-radius:var(--radius-md);border:1px solid var(--border-color);">
-                <div style="display:flex;align-items:center;gap:12px;">
-                  <i class="ri-visa-fill" style="font-size:20px;color:var(--medium-blue);"></i>
-                  <div>
-                    <div style="font-weight:700;font-size:13px;">فيزا كارد</div>
-                    <div style="font-size:11px;color:var(--text-light);">دفع بالبطاقة</div>
-                  </div>
-                </div>
-                <i class="ri-check-line" style="color:var(--success);"></i>
-              </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg-primary);border-radius:var(--radius-md);border:1px solid var(--border-color);">
-                <div style="display:flex;align-items:center;gap:12px;">
-                  <i class="ri-money-dollar-circle-line" style="font-size:20px;color:var(--medium-blue);"></i>
-                  <div>
-                    <div style="font-weight:700;font-size:13px;">كاش</div>
-                    <div style="font-size:11px;color:var(--text-light);">الدفع نقداً</div>
-                  </div>
-                </div>
-                <i class="ri-check-line" style="color:var(--success);"></i>
-              </div>
+                `).join('')
+              }
             </div>
+          </div>
+        </div>
+
+        <!-- Period Reset & Summary Panel -->
+        <div class="card">
+          <div class="card-header">
+            <h3><i class="ri-history-line text-blue" style="margin-left:8px;"></i> أرشيف وسجل تصفير الفترات المالية</h3>
+          </div>
+          <div class="card-body" style="max-height:260px;overflow-y:auto;">
+            ${(financialState.settlements || []).length === 0 ? 
+              `<div style="text-align:center;padding:24px;color:var(--text-light);font-size:12px;">لم يتم إجراء أي تصفية أو تصفير للفترات حتى الآن. جميع الحسابات تاريخية ومسجلة بالكامل.</div>` : 
+              (financialState.settlements || []).map(st => `
+                <div style="padding:10px 12px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center;">
+                  <div>
+                    <div style="font-weight:700;font-size:12px;">تصفية فترة: ${st.period_type}</div>
+                    <div style="font-size:10px;color:var(--text-light);">${new Date(st.created_at).toLocaleString('ar-EG')} • بواسطة ${st.settled_by || 'المدير'}</div>
+                  </div>
+                  <div style="text-align:left;">
+                    <div style="font-weight:700;font-size:12px;color:var(--medium-blue);">${parseFloat(st.net_balance || 0).toLocaleString()} ج.م</div>
+                    <div style="font-size:10px;color:var(--success);">مصفاة وموثقة</div>
+                  </div>
+                </div>
+              `).join('')
+            }
           </div>
         </div>
       </div>
 
-      <!-- Transactions -->
-      <div class="card mt-20">
-        <div class="card-header">
-          <h3><i class="ri-exchange-funds-fill text-blue" style="margin-left:8px;"></i> آخر المعاملات المالية</h3>
-          <span class="text-light" style="font-size:13px;">${mockData.trips.filter(t => t.status === 'مكتملة').length} معاملة</span>
+      <!-- Financial Ledger / Transactions History Table -->
+      <div class="card">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h3><i class="ri-exchange-funds-fill text-blue" style="margin-left:8px;"></i> سجل المعاملات المالية المكتمل والريسيتات المرفقة</h3>
+          <span class="text-light" style="font-size:12px;">${filteredTx.length} معاملة بالفترة المحددة</span>
         </div>
-        <div class="card-body">
-          ${mockData.trips.filter(t => t.status === 'مكتملة').length === 0 ? `<div style="text-align:center;padding:16px;color:var(--text-light);">لا توجد معاملات مكتملة بعد</div>` : ''}
-          ${mockData.trips.filter(t => t.status === 'مكتملة').map(trip => `
-            <div class="transaction-item">
-              <div class="transaction-info">
-                <div class="transaction-icon income">
-                  <i class="ri-arrow-down-line"></i>
-                </div>
-                <div class="transaction-text">
-                  <h5>إيراد رحلة ${trip.id}</h5>
-                  <span>${trip.date}</span>
-                </div>
-              </div>
-              <div class="transaction-amount income">
-                +${trip.price} ج.م
-              </div>
-            </div>
-            <div class="transaction-item">
-              <div class="transaction-info">
-                <div class="transaction-icon expense">
-                  <i class="ri-arrow-up-line"></i>
-                </div>
-                <div class="transaction-text">
-                  <h5>مستحق سائق (${trip.driverName}) للرحلة ${trip.id}</h5>
-                  <span>${trip.date}</span>
-                </div>
-              </div>
-              <div class="transaction-amount expense">
-                -${Math.round(trip.price * 0.8)} ج.م
-              </div>
-            </div>
-          `).join('')}
+        <div class="card-body" style="padding:0;overflow-x:auto;">
+          <table class="data-table" style="width:100%;font-size:12px;">
+            <thead>
+              <tr style="background:var(--bg-primary);">
+                <th>التاريخ والوقت</th>
+                <th>تفاصيل العملية</th>
+                <th>طريقة الدفع والمرجع</th>
+                <th>صورة الريسيت والإثبات</th>
+                <th>المبلغ</th>
+                <th>الرصيد بعد</th>
+                <th>حالة التصفية</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredTx.length === 0 ? `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-light);">لا توجد معاملات مالية بالفترة المحددة</td></tr>` : 
+                filteredTx.map(tx => {
+                  const amt = parseFloat(tx.amount || 0);
+                  const isInc = amt > 0;
+                  const dateStr = new Date(tx.created_at || Date.now()).toLocaleString('ar-EG');
+                  const userObj = (financialState.usersList || []).find(u => u.id === tx.user_id) || { name: 'مستخدم', phone: '' };
+
+                  return `
+                    <tr>
+                      <td style="white-space:nowrap;">${dateStr}</td>
+                      <td>
+                        <div style="font-weight:700;color:var(--text-primary);">${tx.title || 'معاملة مالية'}</div>
+                        <div style="font-size:10px;color:var(--text-light);">${userObj.name || ''} ${userObj.phone ? `(${userObj.phone})` : ''}</div>
+                      </td>
+                      <td>
+                        <span class="badge" style="background:#EBF8FF;color:#2B6CB0;padding:2px 6px;border-radius:6px;font-size:10px;">
+                          ${tx.payment_method || 'عادي'}
+                        </span>
+                        ${tx.reference_code ? `<div style="font-size:10px;color:var(--text-light);margin-top:2px;">مرجع: ${tx.reference_code}</div>` : ''}
+                      </td>
+                      <td>
+                        ${tx.receipt_url ? 
+                          `<button class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:10px;" onclick="viewReceiptModal('${tx.receipt_url}', '${tx.reference_code || ''}', '${userObj.name}', ${amt}, '${dateStr}', '${tx.payment_method || ''}')">
+                             📷 معاينة الريسيت
+                           </button>` : 
+                          `<span style="color:var(--text-light);font-size:10px;">بدون ريسيت</span>`
+                        }
+                      </td>
+                      <td style="font-weight:700;color:${isInc ? 'var(--success)' : 'var(--error)'};white-space:nowrap;">
+                        ${isInc ? '+' : ''}${amt.toLocaleString()} ج.م
+                      </td>
+                      <td style="font-weight:600;white-space:nowrap;">
+                        ${parseFloat(tx.balance_after || 0).toLocaleString()} ج.م
+                      </td>
+                      <td>
+                        <span class="badge" style="padding:2px 7px;border-radius:10px;font-size:10px;background:${tx.is_settled ? '#E0E7FF' : '#D1FAE5'};color:${tx.is_settled ? '#3730A3' : '#065F46'};">
+                          ${tx.is_settled ? 'مصفاة ومغلقة' : 'نشطة/جارية'}
+                        </span>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')
+              }
+            </tbody>
+          </table>
         </div>
       </div>
+  `;
+}
+
+// ---- FINANCIAL ACTIONS & MODALS ----
+
+function openFinancialModal(modalId) {
+  let modalEl = document.getElementById(modalId);
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = modalId;
+    modalEl.className = 'modal-backdrop';
+    document.body.appendChild(modalEl);
+  }
+
+  const users = financialState.usersList || [];
+  const pms = financialState.paymentMethods || [];
+
+  if (modalId === 'rechargeModal') {
+    modalEl.innerHTML = `
+      <div class="modal-content" style="max-width:500px;width:90%;border-radius:12px;padding:24px;background:white;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #E5E7EB;padding-bottom:12px;margin-bottom:16px;">
+          <h3 style="margin:0;font-size:16px;color:var(--text-primary);">💳 شحن رصيد مستخدم (مع رفع الريسيت)</h3>
+          <button class="btn btn-outline btn-sm" onclick="closeFinancialModal('rechargeModal')">✕</button>
+        </div>
+        <form onsubmit="handleRechargeFormSubmit(event)">
+          <div style="margin-bottom:12px;">
+            <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">اختر المستخدم / السائق:</label>
+            <select id="rechargeUserSelect" required style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;">
+              <option value="">-- اختر من القائمة --</option>
+              ${users.map(u => `<option value="${u.id}">${u.name || 'بدون اسم'} (${u.phone || ''}) - ${u.role === 'driver' ? 'سائق' : 'راكب'} [رصيده الحالي: ${u.wallet_balance || 0} ج.م]</option>`).join('')}
+            </select>
+          </div>
+          <div style="margin-bottom:12px;">
+            <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">المبلغ للشحن (ج.م):</label>
+            <input type="number" step="0.01" id="rechargeAmountInput" placeholder="مثال: 250" required style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;" />
+          </div>
+          <div style="margin-bottom:12px;">
+            <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">طريقة الدفع:</label>
+            <select id="rechargeMethodSelect" required style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;">
+              ${pms.map(p => `<option value="${p.code}">${p.name} (${p.account_details || ''})</option>`).join('')}
+            </select>
+          </div>
+          <div style="margin-bottom:12px;">
+            <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">رقم مرجع التحويل / المعاملة:</label>
+            <input type="text" id="rechargeRefInput" placeholder="مثال: TXN-984210" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;" />
+          </div>
+          <div style="margin-bottom:12px;">
+            <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">رفع صورة الريسيت / إيصال التحويل:</label>
+            <input type="file" id="rechargeReceiptInput" accept="image/*" style="width:100%;padding:6px;border:1px solid var(--border-color);border-radius:6px;font-size:11px;" />
+          </div>
+          <div style="margin-bottom:16px;">
+            <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">ملاحظات الإدارة:</label>
+            <input type="text" id="rechargeNotesInput" placeholder="أي ملاحظات إضافية..." style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;" />
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;">
+            <button type="button" class="btn btn-outline" onclick="closeFinancialModal('rechargeModal')">إلغاء</button>
+            <button type="submit" class="btn btn-primary">تأكيد شحن الرصيد والريسيت</button>
+          </div>
+        </form>
+      </div>
+    `;
+  } else if (modalId === 'payoutModal') {
+    modalEl.innerHTML = `
+      <div class="modal-content" style="max-width:500px;width:90%;border-radius:12px;padding:24px;background:white;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #E5E7EB;padding-bottom:12px;margin-bottom:16px;">
+          <h3 style="margin:0;font-size:16px;color:var(--error);">💸 سحب وتسوية مستحقات سائق</h3>
+          <button class="btn btn-outline btn-sm" onclick="closeFinancialModal('payoutModal')">✕</button>
+        </div>
+        <form onsubmit="handlePayoutFormSubmit(event)">
+          <div style="margin-bottom:12px;">
+            <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">اختر السائق:</label>
+            <select id="payoutUserSelect" required style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;">
+              <option value="">-- اختر السائق --</option>
+              ${users.filter(u => u.role === 'driver').map(u => `<option value="${u.id}">${u.name || 'سائق'} (${u.phone || ''}) [رصيده: ${u.wallet_balance || 0} ج.م]</option>`).join('')}
+            </select>
+          </div>
+          <div style="margin-bottom:12px;">
+            <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">المبلغ المسحوب / المحول للسائق (ج.م):</label>
+            <input type="number" step="0.01" id="payoutAmountInput" placeholder="مثال: 500" required style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;" />
+          </div>
+          <div style="margin-bottom:12px;">
+            <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">طريقة التحويل السريع:</label>
+            <select id="payoutMethodSelect" required style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;">
+              ${pms.map(p => `<option value="${p.code}">${p.name}</option>`).join('')}
+            </select>
+          </div>
+          <div style="margin-bottom:12px;">
+            <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">رقم مرجع التحويل المالي:</label>
+            <input type="text" id="payoutRefInput" placeholder="مثال: PAYOUT-77182" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;" />
+          </div>
+          <div style="margin-bottom:12px;">
+            <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">رفع إثبات ورقة التحويل (الريسيت):</label>
+            <input type="file" id="payoutReceiptInput" accept="image/*" style="width:100%;padding:6px;border:1px solid var(--border-color);border-radius:6px;font-size:11px;" />
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;">
+            <button type="button" class="btn btn-outline" onclick="closeFinancialModal('payoutModal')">إلغاء</button>
+            <button type="submit" class="btn btn-primary" style="background:var(--error);border-color:var(--error);">خصم وتسوية المسحوبات</button>
+          </div>
+        </form>
+      </div>
+    `;
+  } else if (modalId === 'paymentMethodsModal') {
+    modalEl.innerHTML = `
+      <div class="modal-content" style="max-width:550px;width:90%;border-radius:12px;padding:24px;background:white;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #E5E7EB;padding-bottom:12px;margin-bottom:16px;">
+          <h3 style="margin:0;font-size:16px;">⚙️ إدارة طرق الدفع الديناميكية</h3>
+          <button class="btn btn-outline btn-sm" onclick="closeFinancialModal('paymentMethodsModal')">✕</button>
+        </div>
+        <form onsubmit="handleSavePaymentMethodSubmit(event)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+            <div>
+              <label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px;">اسم طريقة الدفع:</label>
+              <input type="text" id="pmNameInput" placeholder="مثال: محفظة اتصالات كاش" required style="width:100%;padding:8px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;" />
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px;">رمز التعريف (Code):</label>
+              <input type="text" id="pmCodeInput" placeholder="مثال: etisalat_cash" required style="width:100%;padding:8px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;" />
+            </div>
+          </div>
+          <div style="margin-bottom:12px;">
+            <label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px;">رقم الحساب / المحفظة / IBAN (يظهر للعميل):</label>
+            <input type="text" id="pmAccountInput" placeholder="مثال: 01100000000" style="width:100%;padding:8px;border:1px solid var(--border-color);border-radius:6px;font-size:12px;" />
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+            <button type="submit" class="btn btn-primary btn-sm">+ إضافة طريقة الدفع للسيستم والتطبيق</button>
+          </div>
+        </form>
+      </div>
+    `;
+  } else if (modalId === 'resetPeriodModal') {
+    modalEl.innerHTML = `
+      <div class="modal-content" style="max-width:480px;width:90%;border-radius:12px;padding:24px;background:white;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #E5E7EB;padding-bottom:12px;margin-bottom:16px;">
+          <h3 style="margin:0;font-size:16px;color:#D97706;">🔄 تصفير الأرقام وتصفية الحسابات المالية</h3>
+          <button class="btn btn-outline btn-sm" onclick="closeFinancialModal('resetPeriodModal')">✕</button>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;line-height:1.6;">
+          ملاحظة هامة: عملية التصفير تقوم بإغلاق وتأكيد حسابات الفترة المختارة وحصر المصاريف، مع <strong>الحفاظ الكامل على السجل التاريخي</strong> للمعاملات في التقارير وقاعدة البيانات بدون حذف.
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <button class="btn btn-outline" style="padding:12px;text-align:right;" onclick="confirmAndResetPeriod('اليوم')">
+            <strong>📅 تصفير وإغلاق حسابات اليوم</strong>
+            <div style="font-size:11px;color:var(--text-light);">حصر مصروفات وإيرادات اليوم وتصفير العداد لليوم الجديد</div>
+          </button>
+          <button class="btn btn-outline" style="padding:12px;text-align:right;" onclick="confirmAndResetPeriod('الأسبوع')">
+            <strong>🗓️ تصفير وإغلاق حسابات الأسبوع</strong>
+            <div style="font-size:11px;color:var(--text-light);">تصفية حسابات الأسبوع المالي بالكامل</div>
+          </button>
+          <button class="btn btn-outline" style="padding:12px;text-align:right;" onclick="confirmAndResetPeriod('الشهر')">
+            <strong>📊 تصفير وإغلاق حسابات الشهر</strong>
+            <div style="font-size:11px;color:var(--text-light);">تصفية واعتماد ميزانية الشهر الحالي</div>
+          </button>
+        </div>
+        <div style="margin-top:16px;text-align:left;">
+          <button class="btn btn-outline btn-sm" onclick="closeFinancialModal('resetPeriodModal')">إلغاء</button>
+        </div>
+      </div>
+    `;
+  }
+
+  modalEl.style.display = 'flex';
+}
+
+function closeFinancialModal(modalId) {
+  const modalEl = document.getElementById(modalId);
+  if (modalEl) modalEl.style.display = 'none';
+}
+
+async function handleRechargeFormSubmit(event) {
+  if (event) event.preventDefault();
+  const userId = document.getElementById('rechargeUserSelect').value;
+  const amount = document.getElementById('rechargeAmountInput').value;
+  const method = document.getElementById('rechargeMethodSelect').value;
+  const refCode = document.getElementById('rechargeRefInput').value;
+  const notes = document.getElementById('rechargeNotesInput').value;
+  const fileInput = document.getElementById('rechargeReceiptInput');
+
+  let receiptBase64 = null;
+  if (fileInput && fileInput.files && fileInput.files[0]) {
+    receiptBase64 = await readFileAsBase64(fileInput.files[0]);
+  }
+
+  processTopupWithReceipt(userId, amount, method, refCode, receiptBase64, notes);
+}
+
+async function handlePayoutFormSubmit(event) {
+  if (event) event.preventDefault();
+  const userId = document.getElementById('payoutUserSelect').value;
+  const amount = document.getElementById('payoutAmountInput').value;
+  const method = document.getElementById('payoutMethodSelect').value;
+  const refCode = document.getElementById('payoutRefInput').value;
+  const fileInput = document.getElementById('payoutReceiptInput');
+
+  let receiptBase64 = null;
+  if (fileInput && fileInput.files && fileInput.files[0]) {
+    receiptBase64 = await readFileAsBase64(fileInput.files[0]);
+  }
+
+  processDriverPayout(userId, amount, method, refCode, receiptBase64, 'سحب وتصفية مستحقات');
+}
+
+async function handleSavePaymentMethodSubmit(event) {
+  if (event) event.preventDefault();
+  const name = document.getElementById('pmNameInput').value;
+  const code = document.getElementById('pmCodeInput').value;
+  const account = document.getElementById('pmAccountInput').value;
+
+  addOrUpdatePaymentMethod(null, name, code, account, 'ri-bank-card-line');
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = error => reject(error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function confirmAndResetPeriod(periodName) {
+  if (confirm(`هل أنت تأكد من تصفير وإغلاق حسابات (${periodName})؟ سيتم حفظ التقرير في الأرشيف وتصفية أرقام الفترة.`)) {
+    closeFinancialModal('resetPeriodModal');
+    executePeriodReset(periodName);
+  }
+}
+
+async function executePeriodReset(periodType) {
+  const client = getSupabaseClient() || supabaseClient;
+  if (!client) return;
+
+  const filteredTx = getFilteredTransactions();
+  const unsettleTx = filteredTx.filter(t => !t.is_settled);
+
+  let totalIncome = 0;
+  let totalPayouts = 0;
+
+  unsettleTx.forEach(tx => {
+    const amt = parseFloat(tx.amount || 0);
+    if (amt > 0) totalIncome += amt;
+    else totalPayouts += Math.abs(amt);
+  });
+
+  const netBalance = totalIncome - totalPayouts;
+  const nowStr = new Date().toISOString();
+  const settlementId = generateUUID();
+
+  try {
+    await client.from('financial_settlements').insert({
+      id: settlementId,
+      period_type: periodType,
+      start_date: nowStr,
+      end_date: nowStr,
+      total_income: totalIncome,
+      total_payouts: totalPayouts,
+      net_balance: netBalance,
+      settled_by: currentAdminUser ? currentAdminUser.email : 'مدير النظام',
+      notes: `تصفير الأرقام وتصفية الحسابات للفترة: ${periodType}`
+    });
+
+    const txIds = unsettleTx.map(t => t.id).filter(Boolean);
+    if (txIds.length > 0) {
+      await client.from('transactions').update({
+        is_settled: true,
+        settlement_id: settlementId
+      }).in('id', txIds);
+    }
+
+    showToast(`✅ تم تصفير الأرقام وتصفية حسابات الفترة (${periodType}) بنجاح`);
+    await loadFinancialDataFromSupabase();
+    renderPage('wallet');
+  } catch (err) {
+    showToast(`❌ فشل التصفير: ${err.message}`);
+  }
+}
+
+async function processTopupWithReceipt(userId, amount, methodCode, refCode, receiptBase64, notes) {
+  const client = getSupabaseClient() || supabaseClient;
+  if (!client || !userId || !amount) return;
+
+  try {
+    const { data: usr } = await client.from('users').select('wallet_balance, name').eq('id', userId).maybeSingle();
+    const currentBal = parseFloat(usr ? usr.wallet_balance || 0 : 0);
+    const newBal = currentBal + parseFloat(amount);
+
+    await client.from('users').update({ wallet_balance: newBal }).eq('id', userId);
+
+    const txId = generateUUID();
+    await client.from('transactions').insert({
+      id: txId,
+      user_id: userId,
+      title: `شحن رصيد بواسطة ${methodCode || 'الإدارة'}`,
+      amount: parseFloat(amount),
+      type: 'charge',
+      balance_after: newBal,
+      payment_method: methodCode,
+      reference_code: refCode || '',
+      receipt_url: receiptBase64 || '',
+      notes: notes || 'شحن رصيد وإرفاق إيصال التحويل',
+      performed_by: currentAdminUser ? currentAdminUser.email : 'مدير النظام',
+      created_at: new Date().toISOString()
+    });
+
+    showToast('✅ تم شحن الرصيد وتوثيق الريسيت بنجاح');
+    closeFinancialModal('rechargeModal');
+    await loadFinancialDataFromSupabase();
+    renderPage('wallet');
+  } catch (err) {
+    showToast(`❌ خطأ في عملية الشحن: ${err.message}`);
+  }
+}
+
+async function processDriverPayout(userId, amount, methodCode, refCode, receiptBase64, notes) {
+  const client = getSupabaseClient() || supabaseClient;
+  if (!client || !userId || !amount) return;
+
+  try {
+    const { data: usr } = await client.from('users').select('wallet_balance, name').eq('id', userId).maybeSingle();
+    const currentBal = parseFloat(usr ? usr.wallet_balance || 0 : 0);
+    const payoutAmount = Math.abs(parseFloat(amount));
+    const newBal = currentBal - payoutAmount;
+
+    await client.from('users').update({ wallet_balance: newBal }).eq('id', userId);
+
+    const txId = generateUUID();
+    await client.from('transactions').insert({
+      id: txId,
+      user_id: userId,
+      title: `سحب وتصفية مستحقات لسائق (${usr ? usr.name : ''})`,
+      amount: -payoutAmount,
+      type: 'deduction',
+      balance_after: newBal,
+      payment_method: methodCode,
+      reference_code: refCode || '',
+      receipt_url: receiptBase64 || '',
+      notes: notes || 'تسوية وسحب مستحقات وإرفاق إثبات التحويل',
+      performed_by: currentAdminUser ? currentAdminUser.email : 'مدير النظام',
+      created_at: new Date().toISOString()
+    });
+
+    showToast('✅ تم سحب المبلغ وتسوية المستحقات بنجاح');
+    closeFinancialModal('payoutModal');
+    await loadFinancialDataFromSupabase();
+    renderPage('wallet');
+  } catch (err) {
+    showToast(`❌ خطأ في عملية السحب والتسوية: ${err.message}`);
+  }
+}
+
+async function addOrUpdatePaymentMethod(id, name, code, accountDetails, iconName) {
+  const client = getSupabaseClient() || supabaseClient;
+  if (!client) return;
+
+  try {
+    if (id) {
+      await client.from('payment_methods').update({
+        name: name,
+        account_details: accountDetails,
+        icon_name: iconName,
+        updated_at: new Date().toISOString()
+      }).eq('id', id);
+    } else {
+      await client.from('payment_methods').insert({
+        name: name,
+        code: code || ('pm_' + Date.now()),
+        account_details: accountDetails,
+        icon_name: iconName || 'ri-bank-card-line',
+        is_active: true
+      });
+    }
+
+    showToast('✅ تم تحديث طريقة الدفع بنجاح');
+    closeFinancialModal('paymentMethodsModal');
+    await loadFinancialDataFromSupabase();
+    renderPage('wallet');
+  } catch (err) {
+    showToast(`❌ خطأ في حفظ طريقة الدفع: ${err.message}`);
+  }
+}
+
+async function togglePaymentMethodActive(id, currentStatus) {
+  const client = getSupabaseClient() || supabaseClient;
+  if (!client) return;
+  try {
+    await client.from('payment_methods').update({ is_active: !currentStatus }).eq('id', id);
+    showToast('✅ تم تغيير حالة طريقة الدفع بالتطبيق');
+    await loadFinancialDataFromSupabase();
+    renderPage('wallet');
+  } catch (err) {}
+}
+
+async function deletePaymentMethod(id) {
+  const client = getSupabaseClient() || supabaseClient;
+  if (!client) return;
+  if (!confirm('هل أنت تأكد من حذف طريقة الدفع هذه؟')) return;
+  try {
+    await client.from('payment_methods').delete().eq('id', id);
+    showToast('✅ تم حذف طريقة الدفع');
+    await loadFinancialDataFromSupabase();
+    renderPage('wallet');
+  } catch (err) {}
+}
+
+function generateFinancialReport() {
+  const periodTx = getFilteredTransactions();
+  let totalIncome = 0;
+  let totalExpense = 0;
+
+  periodTx.forEach(t => {
+    const amt = parseFloat(t.amount || 0);
+    if (amt > 0) totalIncome += amt;
+    else totalExpense += Math.abs(amt);
+  });
+
+  const netBalance = totalIncome - totalExpense;
+  const periodNameMap = {
+    'all': 'جميع الفترات الكلية',
+    'today': 'تقرير اليوم المالي',
+    'week': 'تقرير الأسبوع المالي',
+    'month': 'تقرير الشهر المالي',
+    'year': 'تقرير السنة المالية',
+    'custom': 'تقرير الفترة المخصصة'
+  };
+
+  const reportTitle = periodNameMap[financialState.selectedPeriod] || 'التقرير المالي';
+  const nowFormatted = new Date().toLocaleString('ar-EG');
+
+  const printWindow = window.open('', '_blank', 'width=900,height=700');
+  if (!printWindow) {
+    showToast('⚠️ يرجى السماح بالنوافذ المنبثقة لإصدار التقرير');
+    return;
+  }
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+      <meta charset="UTF-8">
+      <title>${reportTitle} - inRide App</title>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 24px; color: #111827; background: #fff; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1E88E5; padding-bottom: 16px; margin-bottom: 24px; }
+        .logo { font-size: 24px; font-weight: bold; color: #1E88E5; }
+        .title { font-size: 20px; font-weight: bold; text-align: center; margin-bottom: 20px; }
+        .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+        .summary-box { border: 1px solid #E5E7EB; border-radius: 8px; padding: 16px; text-align: center; }
+        .summary-box.income { background: #ECFDF5; border-color: #10B981; }
+        .summary-box.expense { background: #FEF2F2; border-color: #EF4444; }
+        .summary-box.net { background: #EFF6FF; border-color: #3B82F6; }
+        .summary-val { font-size: 20px; font-weight: bold; margin-top: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }
+        th, td { border: 1px solid #E5E7EB; padding: 10px; text-align: right; }
+        th { background: #F9FAFB; font-weight: bold; }
+        .badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; }
+        .badge-settled { background: #E0E7FF; color: #3730A3; }
+        .badge-active { background: #D1FAE5; color: #065F46; }
+        .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #6B7280; border-top: 1px solid #E5E7EB; padding-top: 16px; }
+        @media print { .no-print { display: none; } }
+      </style>
+    </head>
+    <body>
+      <div class="no-print" style="margin-bottom:20px;text-align:left;">
+        <button onclick="window.print()" style="padding:10px 20px;background:#1E88E5;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">🖨️ طباعة التقرير / حفظ كـ PDF</button>
+      </div>
+      <div class="header">
+        <div class="logo">inRide Financial Statement</div>
+        <div>تاريخ الإصدار: ${nowFormatted}</div>
+      </div>
+      <div class="title">${reportTitle}</div>
+      <div class="summary-grid">
+        <div class="summary-box income">
+          <div>إجمالي التحويلات والإيرادات</div>
+          <div class="summary-val">${totalIncome.toLocaleString()} ج.م</div>
+        </div>
+        <div class="summary-box expense">
+          <div>إجمالي السحوبات والمصروفات</div>
+          <div class="summary-val">${totalExpense.toLocaleString()} ج.م</div>
+        </div>
+        <div class="summary-box net">
+          <div>صافي الرصيد للفترة</div>
+          <div class="summary-val">${netBalance.toLocaleString()} ج.م</div>
+        </div>
+      </div>
+      <h3>تفاصيل وحركات المعاملات المالية</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>التاريخ والوقت</th>
+            <th>البيان والتفاصيل</th>
+            <th>طريقة الدفع والمرجع</th>
+            <th>المبلغ</th>
+            <th>الرصيد بعد</th>
+            <th>حالة التصفية</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${periodTx.length === 0 ? '<tr><td colspan="6" style="text-align:center;">لا توجد معاملات مسجلة لهذه الفترة</td></tr>' : 
+            periodTx.map(tx => {
+              const amt = parseFloat(tx.amount || 0);
+              const isInc = amt > 0;
+              const dateStr = new Date(tx.created_at || Date.now()).toLocaleString('ar-EG');
+              return `
+                <tr>
+                  <td>${dateStr}</td>
+                  <td>
+                    <strong>${tx.title || 'معاملة مالية'}</strong>
+                    ${tx.notes ? `<div style="font-size:11px;color:#6B7280;">${tx.notes}</div>` : ''}
+                  </td>
+                  <td>${tx.payment_method || 'عادي'} ${tx.reference_code ? `(${tx.reference_code})` : ''}</td>
+                  <td style="color:${isInc ? '#10B981' : '#EF4444'};font-weight:bold;">${isInc ? '+' : ''}${amt.toLocaleString()} ج.م</td>
+                  <td>${parseFloat(tx.balance_after || 0).toLocaleString()} ج.م</td>
+                  <td>
+                    <span class="badge ${tx.is_settled ? 'badge-settled' : 'badge-active'}">
+                      ${tx.is_settled ? 'مصفاة ومغلقة' : 'نشطة/جارية'}
+                    </span>
+                  </td>
+                </tr>
+              `;
+            }).join('')
+          }
+        </tbody>
+      </table>
+      <div class="footer">
+        تم استخراج هذا التقرير تلقائياً من نظام inRide Admin Dashboard - جميع الحقوق محفوظة © ${new Date().getFullYear()}
+      </div>
+    </body>
+    </html>
+  `;
+
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
+function viewReceiptModal(receiptUrl, refCode, userName, amount, dateStr, pmName) {
+  let modalEl = document.getElementById('receiptViewModal');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'receiptViewModal';
+    modalEl.className = 'modal-backdrop';
+    document.body.appendChild(modalEl);
+  }
+
+  modalEl.style.display = 'flex';
+  modalEl.innerHTML = `
+    <div class="modal-content" style="max-width:550px;width:90%;border-radius:12px;padding:24px;background:white;position:relative;">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #E5E7EB;padding-bottom:12px;margin-bottom:16px;">
+        <h3 style="margin:0;font-size:16px;">إيصال التحويل والريسيت الرقمي</h3>
+        <button class="btn btn-outline btn-sm" onclick="closeFinancialModal('receiptViewModal')">✕ إغلاق</button>
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><strong>العميل / المستفيد:</strong> ${userName || 'غير محدد'}</div>
+        <div><strong>المبلغ:</strong> ${amount || 0} ج.م</div>
+        <div><strong>طريقة الدفع:</strong> ${pmName || 'تحويل'}</div>
+        <div><strong>رقم المرجع:</strong> ${refCode || 'بدون مرجع'}</div>
+        <div style="grid-column:span 2;"><strong>تاريخ التحويل:</strong> ${dateStr || ''}</div>
+      </div>
+      <div style="text-align:center;background:#F9FAFB;padding:16px;border-radius:8px;border:1px dashed #D1D5DB;max-height:380px;overflow:auto;">
+        ${receiptUrl ? 
+          `<img src="${receiptUrl}" style="max-width:100%;max-height:340px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);" alt="الريسيت" />` : 
+          `<div style="padding:32px;color:#9CA3AF;"><i class="ri-file-unknow-line" style="font-size:48px;"></i><p>لا توجد صورة ريسيت مرفقة لهذه المعاملة</p></div>`
+        }
+      </div>
+      ${receiptUrl ? `
+        <div style="margin-top:16px;text-align:center;">
+          <a href="${receiptUrl}" download="receipt_${refCode || 'transfer'}.png" target="_blank" class="btn btn-primary btn-sm" style="text-decoration:none;">
+            <i class="ri-download-line"></i> تنزيل صورة الريسيت
+          </a>
+        </div>
+      ` : ''}
     </div>
   `;
 }

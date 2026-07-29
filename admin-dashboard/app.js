@@ -266,10 +266,6 @@ async function initAdminAuth() {
   renderPage(savedPage);
   updateHeaderTitle(savedPage);
 }
-    console.warn("Session check error:", e);
-    showLoginView();
-  }
-}
 
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
   setTimeout(initAdminAuth, 50);

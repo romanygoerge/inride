@@ -3572,20 +3572,20 @@ function renderSupport() {
 
   return `
     <div class="page-section">
-      <div style="display:grid;grid-template-columns: 340px 1fr; gap:24px;">
+      <div style="display:grid;grid-template-columns: 380px 1fr; gap:20px;">
         <!-- Complaints / Conversations list -->
-        <div class="card" style="max-height:680px;display:flex;flex-direction:column;">
-          <div class="card-header" style="padding:16px;border-bottom:1px solid var(--border-light);">
-            <h3 style="margin-bottom:10px;">تذاكر الدعم والشكاوى</h3>
+        <div class="card" style="max-height:720px;display:flex;flex-direction:column;">
+          <div class="card-header" style="padding:16px;border-bottom:1px solid var(--border-light);display:flex;flex-direction:column;gap:10px;">
+            <h3 style="margin:0;font-size:16px;font-weight:700;">تذاكر الدعم والشكاوى</h3>
             <input type="text" id="supportSearchInput" placeholder="بحث باسم العميل أو رقم الهاتف..." 
                    value="${supportSearchQuery}" 
                    oninput="onSupportSearchInput(this.value)" 
                    style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-size:12px;" />
-            <div style="display:flex;gap:6px;margin-top:10px;">
-              <button class="btn btn-sm ${supportFilterStatus === 'all' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('all')">الكل</button>
-              <button class="btn btn-sm ${supportFilterStatus === 'open' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('open')">مفتوحة</button>
-              <button class="btn btn-sm ${supportFilterStatus === 'pending' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('pending')">قيد المتابعة</button>
-              <button class="btn btn-sm ${supportFilterStatus === 'resolved' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('resolved')">تم الحل</button>
+            <div style="display:flex;gap:4px;background:var(--bg-primary);padding:4px;border-radius:var(--radius-md);">
+              <button class="btn btn-sm ${supportFilterStatus === 'all' ? 'btn-primary' : 'btn-outline'}" style="flex:1;padding:5px 4px;font-size:11px;text-align:center;" onclick="setSupportFilter('all')">الكل</button>
+              <button class="btn btn-sm ${supportFilterStatus === 'open' ? 'btn-primary' : 'btn-outline'}" style="flex:1;padding:5px 4px;font-size:11px;text-align:center;" onclick="setSupportFilter('open')">مفتوحة</button>
+              <button class="btn btn-sm ${supportFilterStatus === 'pending' ? 'btn-primary' : 'btn-outline'}" style="flex:1;padding:5px 4px;font-size:11px;text-align:center;" onclick="setSupportFilter('pending')">متابعة</button>
+              <button class="btn btn-sm ${supportFilterStatus === 'resolved' ? 'btn-primary' : 'btn-outline'}" style="flex:1;padding:5px 4px;font-size:11px;text-align:center;" onclick="setSupportFilter('resolved')">تم الحل</button>
             </div>
           </div>
           <div id="supportConversationsList" class="card-body" style="padding:0;overflow-y:auto;flex:1;">
@@ -3594,7 +3594,7 @@ function renderSupport() {
         </div>
 
         <!-- Ticket details and active chat -->
-        <div class="card" id="activeSupportChatContainer" style="display:flex;flex-direction:column;min-height:550px;">
+        <div class="card" id="activeSupportChatContainer" style="display:flex;flex-direction:column;min-height:580px;">
           ${activeTicketId ? renderTicketChatHtml() : `
             <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-light);">
               <i class="ri-customer-service-2-line" style="font-size:64px;margin-bottom:16px;color:var(--medium-blue);"></i>
@@ -3612,9 +3612,9 @@ function renderConversationsListHtml() {
     if (supportFilterStatus !== 'all' && c.status !== supportFilterStatus) return false;
     if (supportSearchQuery.trim()) {
       const q = supportSearchQuery.toLowerCase();
-      const matchName = c.user_name.toLowerCase().includes(q);
+      const matchName = (c.user_name || '').toLowerCase().includes(q);
       const matchPhone = (c.phone || '').includes(q);
-      const matchId = c.id.toLowerCase().includes(q);
+      const matchId = (c.id || '').toLowerCase().includes(q);
       return matchName || matchPhone || matchId;
     }
     return true;
@@ -3635,17 +3635,20 @@ function renderConversationsListHtml() {
     else if (tkt.status === 'pending') { statusBadgeClass = 'active'; statusAr = 'قيد المتابعة'; }
 
     return `
-      <div onclick="selectTicket('${tkt.id}')" style="padding:14px;border-bottom:1px solid var(--border-light);cursor:pointer;background:${isSelected ? 'rgba(30,136,229,0.08)' : 'transparent'};transition:all 0.2s;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-          <span style="font-weight:700;font-size:13px;color:var(--text-primary);">${tkt.user_name}</span>
+      <div onclick="selectTicket('${tkt.id}')" style="padding:14px 16px;border-bottom:1px solid var(--border-light);cursor:pointer;background:${isSelected ? 'rgba(30,136,229,0.08)' : 'transparent'};transition:all 0.2s;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-weight:700;font-size:13px;color:var(--text-primary);">${tkt.user_name || 'عميل'}</span>
+            <span style="font-size:10px;padding:2px 6px;border-radius:10px;background:var(--bg-primary);color:var(--text-secondary);font-weight:600;">${userRoleAr}</span>
+          </div>
           <span class="status-badge ${statusBadgeClass}">${statusAr}</span>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text-light);margin-bottom:4px;">
-          <span>${userRoleAr} • ${tkt.phone || ''}</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text-light);margin-bottom:6px;">
+          <span>${tkt.phone || ''}</span>
           <span>${timeStr}</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px;">${tkt.last_message || 'لا توجد رسائل'}</div>
+          <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;">${tkt.last_message || 'لا توجد رسائل'}</div>
           ${tkt.unread_admin_count > 0 ? `<span style="background:var(--error);color:white;border-radius:10px;padding:2px 7px;font-size:10px;font-weight:bold;">${tkt.unread_admin_count}</span>` : ''}
         </div>
       </div>
@@ -3773,18 +3776,18 @@ async function sendSupportReply(id) {
   const textEl = document.getElementById('replyText');
   if (!textEl) return;
   const text = textEl.value.trim();
-  if (!text || !supabaseClient) return;
+  const client = getSupabaseClient() || supabaseClient;
+  if (!text || !client) return;
 
   textEl.value = '';
   const nowStr = new Date().toISOString();
   const msgId = crypto.randomUUID ? crypto.randomUUID() : ('admin_msg_' + Date.now());
-  const adminSenderId = (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : id;
 
   console.log("[SupportChat Log] Support Message Sent: id=" + msgId + " to recipient=" + id);
 
   try {
     // 1. Ensure support_chats conversation entry exists
-    await supabaseClient.from('support_chats').upsert({
+    await client.from('support_chats').upsert({
       id: id,
       user_id: id,
       status: 'open',
@@ -3794,13 +3797,11 @@ async function sendSupportReply(id) {
       unread_admin_count: 0
     }).catch(e => console.warn('[SupportChat] Non-critical upsert warning:', e));
 
-    // 2. Insert support_message
-    const { error: insErr } = await supabaseClient.from('support_messages').insert({
+    // 2. Insert message into support_messages
+    const { error: insErr } = await client.from('support_messages').insert({
       id: msgId,
       conversation_id: id,
       user_id: id,
-      sender_id: adminSenderId,
-      receiver_id: id,
       sender_type: 'admin',
       message: text,
       text: text,
@@ -3811,33 +3812,26 @@ async function sendSupportReply(id) {
 
     if (insErr) {
       console.warn('[SupportChat Log] Retry inserting simplified support_message:', insErr.message);
-      await supabaseClient.from('support_messages').insert({
+      await client.from('support_messages').insert({
         id: msgId,
-        conversation_id: id,
         user_id: id,
         sender_type: 'admin',
         message: text,
         text: text,
-        status: 'sent',
-        is_admin: true,
         created_at: nowStr
-      });
+      }).catch(e => console.warn('[SupportChat] Non-critical retry insert warning:', e));
     }
 
-    // 2. Update or upsert support_chats
-    await supabaseClient.from('support_chats').upsert({
-      id: id,
-      user_id: id,
-      status: 'open',
+    // 3. Non-critical secondary updates (chat summary, notifications, push)
+    client.from('support_chats').update({
       last_message: text,
       last_message_at: nowStr,
       updated_at: nowStr,
       unread_admin_count: 0
-    });
+    }).eq('id', id).catch(() => {});
 
-    // 3. Insert in-app notification for recipient in Supabase
     const notifId = `${id}_support_${Date.now()}`;
-    await supabaseClient.from('notifications').insert({
+    client.from('notifications').insert({
       id: notifId,
       user_id: id,
       title: 'الدعم الفني',
@@ -3852,11 +3846,13 @@ async function sendSupportReply(id) {
       }
     }).catch(e => console.warn('[SupportChat] Non-critical notification insert warning:', e));
 
-    // 4. Dispatch Push Notification via OneSignal Backend Endpoint & Direct Fallback
-    dispatchPushNotificationToUser(id, "الدعم الفني", text, msgId);
+    try {
+      dispatchPushNotificationToUser(id, "الدعم الفني", text, msgId);
+    } catch (_) {}
 
     refreshActiveTicketChat();
     loadSupportChatsFromSupabase();
+    showToast("✅ تم إرسال الرد بنجاح");
   } catch (e) {
     console.error("[SupportChat Log] Error sending admin reply:", e);
     showToast("❌ حدث خطأ أثناء إرسال الرسالة");

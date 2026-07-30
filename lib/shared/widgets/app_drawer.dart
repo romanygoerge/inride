@@ -13,6 +13,7 @@ import '../../features/passenger/presentation/pages/passenger_home_page.dart';
 import '../../features/common/support_page.dart';
 import '../../features/common/legal_pages.dart';
 import '../../features/chat/presentation/pages/messages_center_page.dart';
+import '../../core/localization/locale_controller.dart';
 
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -332,6 +333,15 @@ class AppDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const SupportPage()));
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.language_outlined,
+                  title: LocaleController.instance.isArabic ? 'تغيير اللغة (English)' : 'Change Language (العربية)',
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await LocaleController.instance.toggleLanguage();
                   },
                 ),
                 const Divider(height: 16, color: AppColors.border),

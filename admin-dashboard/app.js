@@ -2534,6 +2534,123 @@ function setFinancialPeriodFilter(period, startDate = null, endDate = null) {
   renderPage('wallet');
 }
 
+async function approvePendingRecharge(txId, userId, amount) {
+  if (!confirm(`هل تريد تأكيد قبول طلب الشحن بمبلغ ${amount} ج.م وإضافته لحساب المستخدم؟`)) return;
+
+  const client = getSupabaseClient() || supabaseClient;
+  if (!client) return;
+
+  try {
+    const numericAmount = parseFloat(amount || 0);
+
+    // 1. Fetch current user balance
+    const { data: userRecord, error: userFetchErr } = await client
+      .from('users')
+      .select('wallet_balance, name')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (userFetchErr) throw userFetchErr;
+
+    const currentBalance = parseFloat(userRecord?.wallet_balance || 0);
+    const newBalance = currentBalance + numericAmount;
+
+    // 2. Update user wallet balance in users table
+    const { error: userUpdateErr } = await client
+      .from('users')
+      .update({ wallet_balance: newBalance })
+      .eq('id', userId);
+
+    if (userUpdateErr) throw userUpdateErr;
+
+    // 3. Update wallets table if exists
+    try {
+      await client.from('wallets').upsert({
+        user_id: userId,
+        balance: newBalance,
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('wallets table update warning:', e);
+    }
+
+    // 4. Update transaction record
+    const { error: txErr } = await client
+      .from('transactions')
+      .update({
+        type: 'charge',
+        title: 'شحن رصيد مقبول',
+        balance_after: newBalance,
+        notes: 'تم قبول طلب الشحن وتفعيل الرصيد بواسطة إدارة inRide'
+      })
+      .eq('id', txId);
+
+    if (txErr) throw txErr;
+
+    // 5. Send notification to user
+    try {
+      await client.from('admin_notifications').insert({
+        user_id: userId,
+        user_name: userRecord?.name || 'مستخدم',
+        title: '✅ تم شحن رصيد محفظتك',
+        body: `تمت مراجعة إيصال تحويل InstaPay وقبول طلب الشحن بمبلغ ${numericAmount} ج.م بنجاح. رصيدك الحالي: ${newBalance} ج.م`,
+        type: 'wallet'
+      });
+    } catch (e) {
+      console.warn('admin_notifications insert error:', e);
+    }
+
+    showToast(`✅ تم قبول طلب الشحن وإضافة ${numericAmount} ج.م إلى محفظة ${userRecord?.name || 'المستخدم'} بنجاح!`);
+    loadFinancialDataFromSupabase().then(() => {
+      renderPage('wallet');
+    });
+  } catch (e) {
+    console.error('approvePendingRecharge error:', e);
+    showToast('❌ فشل قبول طلب الشحن: ' + e.message);
+  }
+}
+
+async function rejectPendingRecharge(txId, userId) {
+  const reason = prompt('ادخل سبب رفض طلب الشحن (أو اتركه فارغاً):', 'إيصال تحويل غير واضح أو غير مكتمل');
+  if (reason === null) return; // User cancelled
+
+  const client = getSupabaseClient() || supabaseClient;
+  if (!client) return;
+
+  try {
+    const { error: txErr } = await client
+      .from('transactions')
+      .update({
+        type: 'rejected',
+        title: 'طلب شحن مرفوض',
+        notes: `مرفوض: ${reason}`
+      })
+      .eq('id', txId);
+
+    if (txErr) throw txErr;
+
+    // Send notification
+    try {
+      await client.from('admin_notifications').insert({
+        user_id: userId,
+        title: '❌ تم رفض طلب الشحن',
+        body: `نأسف، تعذر قبول طلب الشحن الخاص بك. السبب: ${reason}`,
+        type: 'wallet'
+      });
+    } catch (e) {
+      console.warn('admin_notifications insert error:', e);
+    }
+
+    showToast('❌ تم رفض طلب الشحن وإبلاغ المستخدم.');
+    loadFinancialDataFromSupabase().then(() => {
+      renderPage('wallet');
+    });
+  } catch (e) {
+    console.error('rejectPendingRecharge error:', e);
+    showToast('❌ فشل رفض طلب الشحن: ' + e.message);
+  }
+}
+
 function renderWallet() {
   if (!financialState.isLoaded) {
     loadFinancialDataFromSupabase().then(() => {
@@ -2548,6 +2665,14 @@ function renderWallet() {
 
 function renderWalletContentHtml() {
   const filteredTx = getFilteredTransactions();
+  const pendingRechargeList = (financialState.transactions || []).filter(t => t.type === 'charge_pending');
+
+  // Update sidebar badge if exists
+  const badgeEl = document.getElementById('pendingRechargeBadge');
+  if (badgeEl) {
+    badgeEl.textContent = pendingRechargeList.length;
+    badgeEl.style.display = pendingRechargeList.length > 0 ? 'inline-block' : 'none';
+  }
 
   let totalIncome = 0;
   let totalExpense = 0;
@@ -2633,6 +2758,87 @@ function renderWalletContentHtml() {
           </div>
           <div class="stat-card-value">${filteredTx.filter(t => t.is_settled).length}</div>
           <div class="stat-card-label">المعاملات المصفاة والمغلقة</div>
+        </div>
+      </div>
+
+      <!-- Dedicated Pending Top-up Requests Section -->
+      <div class="card" style="margin-bottom:24px;border:2px solid #F59E0B;box-shadow:0 4px 14px rgba(245,158,11,0.18);">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;background:#FEF3C7;padding:14px 18px;border-bottom:1px solid #FDE68A;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <i class="ri-time-line" style="font-size:24px;color:#D97706;"></i>
+            <div>
+              <h3 style="color:#92400E;margin:0;font-size:15px;font-weight:800;">طلبات الشحن المعلقة (مراجعة إيصالات التحويل) 📥</h3>
+              <p style="color:#B45309;margin:0;font-size:11px;margin-top:2px;">مراجعة وقبول/رفض طلبات شحن المحفظة عبر InstaPay المرفقة من العملاء والكبائن</p>
+            </div>
+          </div>
+          <span class="badge" style="background:#D97706;color:white;font-size:12px;padding:6px 14px;border-radius:20px;font-weight:700;">
+            ${pendingRechargeList.length} طلبات معلقة
+          </span>
+        </div>
+        <div class="card-body" style="padding:0;overflow-x:auto;">
+          <table class="data-table" style="width:100%;font-size:12px;">
+            <thead>
+              <tr style="background:#FFFBEB;color:#78350F;border-bottom:2px solid #FDE68A;">
+                <th style="padding:10px 14px;">تاريخ الطلب</th>
+                <th style="padding:10px 14px;">بيانات الراكب / الكابتن</th>
+                <th style="padding:10px 14px;">طريقة التحويل</th>
+                <th style="padding:10px 14px;">المبلغ المطلوب</th>
+                <th style="padding:10px 14px;">إيصال التحويل (صورة)</th>
+                <th style="padding:10px 14px;text-align:center;">إجراء الإدارة</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pendingRechargeList.length === 0 ? 
+                `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-light);font-size:12.5px;">✨ لا توجد طلبات شحن معلقة حالياً. جميع إيصالات التحويل تم مراجعتها بالكامل!</td></tr>` : 
+                pendingRechargeList.map(tx => {
+                  const amt = parseFloat(tx.amount || 0);
+                  const dateStr = new Date(tx.created_at || Date.now()).toLocaleString('ar-EG');
+                  const userObj = (financialState.usersList || []).find(u => u.id === tx.user_id) || { name: 'مستخدم inRide', phone: '', role: 'راكب' };
+                  const userRoleBadge = userObj.role === 'driver' ? 'كابتن 🚗' : 'راكب 👤';
+                  const receiptUrl = tx.receipt_url || '';
+
+                  return `
+                    <tr style="border-bottom:1px solid #FEF3C7;background:white;">
+                      <td style="white-space:nowrap;padding:12px 14px;font-weight:600;">${dateStr}</td>
+                      <td style="padding:12px 14px;">
+                        <div style="font-weight:800;color:var(--text-primary);">${userObj.name}</div>
+                        <div style="font-size:11px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;margin-top:2px;">
+                          <span>📱 ${userObj.phone || 'بدون هاتف'}</span>
+                          <span class="badge" style="background:#EBF8FF;color:#2B6CB0;font-size:9.5px;padding:1px 6px;">${userRoleBadge}</span>
+                        </div>
+                      </td>
+                      <td style="padding:12px 14px;">
+                        <span class="badge" style="background:#F3E8FF;color:#6B21A8;padding:4px 10px;border-radius:8px;font-weight:700;font-size:11px;">
+                          💳 ${tx.payment_method || 'InstaPay'}
+                        </span>
+                      </td>
+                      <td style="padding:12px 14px;font-weight:900;color:#059669;font-size:14px;white-space:nowrap;">
+                        +${amt.toLocaleString()} ج.م
+                      </td>
+                      <td style="padding:12px 14px;">
+                        ${receiptUrl ? 
+                          `<button class="btn btn-sm btn-outline" style="background:#EFF6FF;border-color:#3B82F6;color:#1D4ED8;font-weight:700;padding:5px 12px;border-radius:8px;" onclick="viewReceiptModal('${receiptUrl}', 'إيصال شحن معلق', '${userObj.name}', ${amt}, '${dateStr}', '${tx.payment_method || 'InstaPay'}')">
+                             📸 معاينة الإيصال
+                           </button>` : 
+                          `<span style="color:var(--error);font-weight:bold;font-size:11px;">❌ بدون صورة إيصال</span>`
+                        }
+                      </td>
+                      <td style="padding:12px 14px;text-align:center;">
+                        <div style="display:flex;gap:8px;justify-content:center;">
+                          <button class="btn btn-sm btn-primary" style="background:#059669;border-color:#059669;font-weight:700;padding:6px 14px;border-radius:8px;" onclick="approvePendingRecharge('${tx.id}', '${tx.user_id}', ${amt})">
+                            <i class="ri-check-line"></i> قبول وشحن الرصيد
+                          </button>
+                          <button class="btn btn-sm btn-outline" style="border-color:#DC2626;color:#DC2626;font-weight:700;padding:6px 14px;border-radius:8px;" onclick="rejectPendingRecharge('${tx.id}', '${tx.user_id}')">
+                            <i class="ri-close-line"></i> رفض
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')
+              }
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -6983,19 +7189,43 @@ async function sendCommReply() {
   cancelCommReply();
 
   try {
-    const adminId = currentAdminUser?.id;
-    if (!adminId) throw new Error('يرجى تسجيل الدخول كمسؤول أولاً');
+    const adminId = currentAdminUser?.id || 'fbf9e43e-3ca0-4950-ab0e-11367a24c162';
+    const room = (commRooms || []).find(r => r.id === selectedCommRoomId);
 
-    const { error } = await supabaseClient.from('messages').insert({
+    // 1. Insert into messages table (Trip/Room chat)
+    const { error: msgErr } = await supabaseClient.from('messages').insert({
       room_id: selectedCommRoomId,
       sender_id: adminId,
       text: text,
       reply_to_message_id: replyingId || null
     });
 
-    if (error) throw error;
+    // 2. Also insert into support_messages (Support ticket chat)
+    const targetUserId = room?.passenger_id || room?.user_id || room?.passenger?.id;
+    try {
+      await supabaseClient.from('support_messages').insert({
+        conversation_id: selectedCommRoomId,
+        sender_id: adminId,
+        receiver_id: targetUserId || null,
+        sender_type: 'admin',
+        is_admin: true,
+        message: text,
+        text: text
+      });
+
+      await supabaseClient.from('support_chats').update({
+        last_message: text,
+        last_message_at: new Date().toISOString(),
+        status: 'open'
+      }).eq('id', selectedCommRoomId);
+    } catch (suppErr) {
+      console.warn('support_messages insert warning:', suppErr);
+    }
+
     showToast('✅ تم إرسال الرد بنجاح');
+    loadCommMessages(selectedCommRoomId);
   } catch (e) {
+    console.error('sendCommReply error:', e);
     showToast('❌ فشل الإرسال: ' + e.message);
   }
 }

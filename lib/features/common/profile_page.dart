@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
+import '../../core/localization/locale_controller.dart';
 import '../../shared/widgets/profile_image_editor.dart';
 import '../../core/utils/snappy_page_route.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -574,7 +575,8 @@ class _ProfilePageState extends State<ProfilePage> {
                     _buildSettingsTile(
                       icon: Icons.language_outlined,
                       title: 'لغة التطبيق',
-                      trailing: 'العربية',
+                      trailing: LocaleController.instance.isArabic ? 'العربية (مصر)' : 'English (US)',
+                      onTap: () => _showLanguageDialog(context),
                     ),
                     const Divider(color: AppColors.border, height: 1),
                     _buildSettingsTile(
@@ -690,10 +692,53 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  void _showLanguageDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(
+            'تغيير لغة التطبيق / Change Language',
+            style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16),
+            textAlign: TextAlign.center,
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Text('🇪🇬', style: TextStyle(fontSize: 22)),
+                title: Text('العربية (مصر)', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                trailing: LocaleController.instance.isArabic ? const Icon(Icons.check_circle, color: AppColors.mediumBlue) : null,
+                onTap: () async {
+                  await LocaleController.instance.setLocale(const Locale('ar', 'EG'));
+                  if (mounted) setState(() {});
+                  if (context.mounted) Navigator.pop(context);
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Text('🇺🇸', style: TextStyle(fontSize: 22)),
+                title: Text('English (US)', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                trailing: LocaleController.instance.isEnglish ? const Icon(Icons.check_circle, color: AppColors.mediumBlue) : null,
+                onTap: () async {
+                  await LocaleController.instance.setLocale(const Locale('en', 'US'));
+                  if (mounted) setState(() {});
+                  if (context.mounted) Navigator.pop(context);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSettingsTile({
     required IconData icon,
     required String title,
     String? trailing,
+    VoidCallback? onTap,
   }) {
     return ListTile(
       leading: Icon(icon, color: AppColors.textSecondary, size: 20),
@@ -715,7 +760,7 @@ class _ProfilePageState extends State<ProfilePage> {
         ],
       ),
       dense: true,
-      onTap: () {},
+      onTap: onTap ?? () {},
     );
   }
 

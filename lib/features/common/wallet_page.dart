@@ -434,55 +434,67 @@ class _WalletPageState extends State<WalletPage> {
                               );
 
                               // Submit pending
-                              await state.chargeWalletPending(finalAmt, receiptImagePath!, 'InstaPay');
+                              try {
+                                await state.chargeWalletPending(finalAmt, receiptImagePath!, 'InstaPay');
 
-                              if (context.mounted) {
-                                Navigator.pop(context); // Close loading spinner
-                                
-                                // Show Success Overlay
-                                showDialog(
-                                  context: context,
-                                  builder: (context) {
-                                    return AlertDialog(
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                      title: const Icon(Icons.check_circle_outline, color: Colors.green, size: 64),
-                                      content: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            'تم تقديم طلب الشحن بنجاح!',
-                                            style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textPrimary),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                          const SizedBox(height: 10),
-                                          Text(
-                                            'لقد استلمنا إيصال تحويل InstaPay الخاص بك بقيمة $finalAmt ج.م. سيتم مراجعة الطلب وتفعيل الرصيد في محفظتك خلال دقائق قليلة.',
-                                            style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
-                                            textAlign: TextAlign.center,
+                                if (context.mounted) {
+                                  Navigator.pop(context); // Close loading spinner
+                                  
+                                  // Show Success Overlay
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) {
+                                      return AlertDialog(
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                        title: const Icon(Icons.check_circle_outline, color: Colors.green, size: 64),
+                                        content: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'تم تقديم طلب الشحن بنجاح!',
+                                              style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textPrimary),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                            const SizedBox(height: 10),
+                                            Text(
+                                              'لقد استلمنا إيصال تحويل InstaPay الخاص بك بقيمة $finalAmt ج.م. سيتم مراجعة الطلب وتفعيل الرصيد في محفظتك خلال دقائق قليلة.',
+                                              style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          ],
+                                        ),
+                                        actions: [
+                                          Center(
+                                            child: ElevatedButton(
+                                              onPressed: () {
+                                                Navigator.pop(context);
+                                              },
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: AppColors.mediumBlue,
+                                                foregroundColor: Colors.white,
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                              ),
+                                              child: Text('حسناً', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                                            ),
                                           ),
                                         ],
-                                      ),
-                                      actions: [
-                                        Center(
-                                          child: ElevatedButton(
-                                            onPressed: () {
-                                              Navigator.pop(context);
-                                            },
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: AppColors.mediumBlue,
-                                              foregroundColor: Colors.white,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                            ),
-                                            child: Text('حسناً', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                );
+                                      );
+                                    },
+                                  );
 
-                                // Reload history
-                                _loadTransactions();
+                                  // Reload history
+                                  _loadTransactions();
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  Navigator.pop(context); // Close loading spinner
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('فشل تقديم طلب الشحن: $e', style: GoogleFonts.cairo()),
+                                      backgroundColor: AppColors.error,
+                                    ),
+                                  );
+                                }
                               }
                             }
                           },

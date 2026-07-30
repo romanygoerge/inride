@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -2472,38 +2473,51 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       );
     } catch (e) {
       debugPrint('Uploading to receipts bucket failed, trying documents bucket: $e');
-      return await _uploadToSupabaseStorage(
-        localPath: localPath,
-        bucketName: 'documents',
-        pathInBucket: pathInBucket,
-      );
+      try {
+        return await _uploadToSupabaseStorage(
+          localPath: localPath,
+          bucketName: 'documents',
+          pathInBucket: pathInBucket,
+        );
+      } catch (e2) {
+        debugPrint('Uploading to storage failed, using base64 encoding fallback: $e2');
+        final file = File(localPath);
+        if (await file.exists()) {
+          final bytes = await file.readAsBytes();
+          final b64 = base64Encode(bytes);
+          return 'data:image/png;base64,$b64';
+        }
+        rethrow;
+      }
     }
   }
 
-  Future<void> chargeWalletPending(double amount, String receiptUrl, String method) async {
-    if (userUid != null) {
-      try {
-        String finalReceiptUrl = receiptUrl;
-        if (!receiptUrl.startsWith('http') && !receiptUrl.startsWith('data:')) {
-          finalReceiptUrl = await uploadReceiptImage(receiptUrl);
-        }
+  Future<bool> chargeWalletPending(double amount, String receiptUrl, String method) async {
+    if (userUid == null) throw Exception("يجب تسجيل الدخول أولاً لشحن المحفظة");
 
-        await _supabase.from('transactions').insert({
-          'user_id': userUid!,
-          'title': 'شحن رصيد معلق',
-          'amount': amount,
-          'type': 'charge_pending',
-          'balance_after': walletBalance,
-          'payment_method': method,
-          'receipt_url': finalReceiptUrl,
-          'notes': 'طلب شحن محفظة عبر $method',
-          'created_at': DateTime.now().toIso8601String(),
-        });
-      } catch (e) {
-        debugPrint('Error writing pending transaction: $e');
+    try {
+      String finalReceiptUrl = receiptUrl;
+      if (!receiptUrl.startsWith('http') && !receiptUrl.startsWith('data:')) {
+        finalReceiptUrl = await uploadReceiptImage(receiptUrl);
       }
+
+      await _supabase.from('transactions').insert({
+        'user_id': userUid!,
+        'title': 'شحن رصيد معلق',
+        'amount': amount,
+        'type': 'charge_pending',
+        'balance_after': walletBalance,
+        'payment_method': method,
+        'receipt_url': finalReceiptUrl,
+        'notes': 'طلب شحن محفظة عبر $method',
+        'created_at': DateTime.now().toIso8601String(),
+      });
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Error writing pending transaction: $e');
+      rethrow;
     }
-    notifyListeners();
   }
 
   Future<void> updateName(String newName) async {

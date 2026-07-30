@@ -1,0 +1,115 @@
+{
+  "@@locale": "ar",
+  "appTitle": "inRide",
+  "ok": "موافق",
+  "cancel": "إلغاء",
+  "save": "حفظ",
+  "edit": "تعديل",
+  "delete": "حذف",
+  "back": "رجوع",
+  "loading": "جاري التحميل...",
+  "success": "نجاح",
+  "error": "خطأ",
+  "warning": "تنبيه",
+  "done": "تم",
+  "confirm": "تأكيد",
+  "retry": "إعادة المحاولة",
+  "search": "بحث",
+  "filter": "تصفية",
+  "share": "مشاركة",
+  "close": "إغلاق",
+
+  "authTitle": "تسجيل الدخول",
+  "welcomeMessage": "مرحباً بك في inRide",
+  "loginWithGoogle": "المتابعة باستخدام Google",
+  "phoneNumber": "رقم الهاتف",
+  "enterPhoneNumber": "أدخل رقم الهاتف",
+  "fullName": "الاسم بالكامل",
+  "enterFullName": "أدخل اسمك بالكامل",
+  "acceptTerms": "أوافق على الشروط والأحكام",
+  "logout": "تسجيل الخروج",
+
+  "passengerRole": "راكب",
+  "driverRole": "كابتن",
+  "selectService": "اختر الخدمة",
+  "rideService": "رحلة توصيل",
+  "deliveryService": "توصيل طلبات (ديلفري)",
+
+  "pickupLocation": "مكان الانطلاق",
+  "destinationLocation": "مكان الوصول",
+  "selectDestination": "حدد وجهتك على الخريطة",
+  "offeredFare": "السعر المقترح",
+  "egp": "ج.م",
+  "requestRide": "اطلب رحلتك الآن",
+  "searchingForDrivers": "جاري البحث عن كباتن...",
+  "offersReceived": "العروض المقدمة",
+  "acceptOffer": "قبول العرض",
+  "declineOffer": "رفض العرض",
+
+  "packageDescription": "وصف الطرد",
+  "deliveryNotes": "ملاحظات التوصيل",
+  "recipientPhone": "رقم هاتف المستلم",
+  "recipientRegion": "المنطقة / الشارع",
+  "orderDeliveryNow": "اطلب ديلفري الآن",
+  "shareLocationLink": "مشاركة رابط تحديد الموقع",
+  "linkCopied": "تم نسخ رابط التحديد بنجاح! 📋",
+
+  "driverOnline": "أنت الآن متصل (جاهز لاستقبال الطلبات)",
+  "driverOffline": "أنت الآن غير متصل",
+  "newRequestAvailable": "طلب رحلة جديد قادم!",
+  "acceptRequest": "قبول الطلب",
+  "rejectRequest": "تجاهل",
+  "arrivedAtPickup": "أنا وصلت للراكب",
+  "startTrip": "بدء الرحلة",
+  "completeTrip": "إنهاء الرحلة",
+  "passengerPhone": "رقم هاتف الراكب",
+
+  "chatTitle": "المحادثة الفورية",
+  "typeMessage": "اكتب رسالتك هنا...",
+  "send": "إرسال",
+  "partnerTyping": "يكتب الآن...",
+  "supportChat": "الدعم الفني المباشر",
+  "messagesCenter": "مركز الرسائل",
+
+  "ratingsAndReviews": "المراجعات والتقييمات",
+  "overallRating": "التقييم العام",
+  "totalReviews": "إجمالي الآراء",
+  "submitRating": "إرسال التقييم",
+  "writeComment": "اكتب تعليقك هنا...",
+  "noRatingsYet": "لا توجد تقييمات أو مراجعات حالياً",
+
+  "notificationsCenter": "مركز الإشعارات",
+  "markAllRead": "تعليم الكل كمقروء",
+  "deleteAllNotifications": "حذف الكل",
+  "noNotifications": "لا توجد إشعارات حالياً",
+
+  "emergencySos": "طوارئ SOS (122)",
+  "shareLiveLocation": "مشاركة الموقع المباشر",
+  "emergencyError": "تعذر إجراء اتصال الطوارئ بالرقم 122",
+
+  "settings": "الإعدادات",
+  "language": "لغة التطبيق",
+  "arabic": "العربية",
+  "english": "English",
+  "changeLanguage": "تغيير لغة التطبيق",
+  "profile": "الملف الشخصي",
+  "wallet": "المحفظة والدفع",
+  "walletBalance": "رصيد المحفظة",
+
+  "welcomeUser": "مرحباً بك، {name}",
+  "@welcomeUser": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "notificationsCount": "{count, plural, =0{لا توجد إشعارات} =1{إشعار واحد} =2{إشعاران} few{{count} إشعارات} many{{count} إشعاراً} other{{count} إشعار}}",
+  "@notificationsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

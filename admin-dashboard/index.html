@@ -83,15 +83,15 @@
 
         <div class="nav-section-title">التواصل والدعم</div>
 
-        <div class="nav-item" data-page="messages" id="nav-messages" onclick="navigateTo('messages')">
-          <i class="ri-notification-badge-fill"></i>
-          <span>الإشعارات والرسائل</span>
+        <div class="nav-item" data-page="communication" id="nav-communication" onclick="navigateTo('communication')">
+          <i class="ri-chat-smile-2-fill"></i>
+          <span>مركز التواصل والمحادثات</span>
+          <span class="badge" id="communicationBadge" style="background:var(--warning); display:none;">0</span>
         </div>
 
-        <div class="nav-item" data-page="support" id="nav-support" onclick="navigateTo('support')">
-          <i class="ri-customer-service-2-fill"></i>
-          <span>الدعم الفني والشكاوى</span>
-          <span class="badge" id="supportBadge" style="background:var(--warning);">0</span>
+        <div class="nav-item" data-page="messages" id="nav-messages" onclick="navigateTo('messages')">
+          <i class="ri-notification-badge-fill"></i>
+          <span>الإشعارات الجماعية</span>
         </div>
 
         <div class="nav-item" data-page="content" id="nav-content" onclick="navigateTo('content')">
@@ -156,10 +156,22 @@
             <i class="ri-search-line"></i>
           </div>
 
-          <button class="header-icon-btn" onclick="showToast('لا توجد إشعارات جديدة')">
-            <i class="ri-notification-3-line"></i>
-            <span class="notification-dot"></span>
-          </button>
+          <div style="position:relative; display:inline-block;">
+            <button class="header-icon-btn" onclick="toggleDashboardNotificationsDropdown(event)">
+              <i class="ri-notification-3-line"></i>
+              <span class="notification-dot" id="dashboardNotifDot" style="display:none;"></span>
+            </button>
+            <!-- Dropdown Menu -->
+            <div id="dashboardNotifDropdown" class="dropdown-menu" style="display:none; position:absolute; left:0; top:45px; width:340px; background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-lg); box-shadow:0 8px 30px rgba(0,0,0,0.15); z-index:1000; padding:12px; direction:rtl; text-align:right;">
+              <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:8px; margin-bottom:8px;">
+                <h4 style="font-size:13px; font-weight:700; margin:0; color:var(--text-primary);">تنبيهات النظام اللحظية</h4>
+                <button onclick="clearDashboardNotifications(event)" style="background:none; border:none; color:var(--text-light); font-size:11px; cursor:pointer;">مسح الكل</button>
+              </div>
+              <div id="dashboardNotifList" style="max-height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;">
+                <div style="text-align:center; color:var(--text-light); padding:16px; font-size:11px;">لا توجد تنبيهات جديدة حالياً.</div>
+              </div>
+            </div>
+          </div>
 
           <button class="header-icon-btn" onclick="showToast('الوضع الليلي قريباً')">
             <i class="ri-moon-line"></i>

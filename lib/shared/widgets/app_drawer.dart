@@ -11,7 +11,9 @@ import '../../features/driver_registration/presentation/pages/review_pending_pag
 import '../../features/driver/presentation/pages/driver_home_page.dart';
 import '../../features/passenger/presentation/pages/passenger_home_page.dart';
 import '../../features/common/support_page.dart';
-import '../../features/common/notifications_page.dart';
+import '../../features/common/legal_pages.dart';
+import '../../features/chat/presentation/pages/messages_center_page.dart';
+
 
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/utils/snappy_page_route.dart';
@@ -316,11 +318,11 @@ class AppDrawer extends StatelessWidget {
                 ),
                 _buildDrawerItem(
                   context,
-                  icon: Icons.notifications_none_outlined,
-                  title: 'مركز الإشعارات',
+                  icon: Icons.forum_outlined,
+                  title: 'الرسائل',
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.push(context, SnappyPageRoute(page: const NotificationsPage()));
+                    Navigator.push(context, SnappyPageRoute(page: const MessagesCenterPage()));
                   },
                 ),
                 _buildDrawerItem(
@@ -330,6 +332,34 @@ class AppDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const SupportPage()));
+                  },
+                ),
+                const Divider(height: 16, color: AppColors.border),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.description_outlined,
+                  title: 'شروط الاستخدام',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, SnappyPageRoute(page: const TermsOfUsePage()));
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.assignment_outlined,
+                  title: 'الشروط والأحكام',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, SnappyPageRoute(page: const TermsAndConditionsPage()));
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.privacy_tip_outlined,
+                  title: 'سياسة الخصوصية',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, SnappyPageRoute(page: const PrivacyPolicyPage()));
                   },
                 ),
               ],

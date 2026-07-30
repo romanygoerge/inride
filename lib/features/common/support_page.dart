@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
-import 'support_chat_page.dart';
+import '../../core/state/global_state.dart';
+import '../../core/services/support_chat_service.dart';
 
 class SupportPage extends StatefulWidget {
   const SupportPage({super.key});
@@ -13,6 +14,7 @@ class SupportPage extends StatefulWidget {
 class _SupportPageState extends State<SupportPage> {
   final TextEditingController _complaintController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -20,20 +22,36 @@ class _SupportPageState extends State<SupportPage> {
     super.dispose();
   }
 
-  void _submitComplaint() {
+  Future<void> _submitComplaint() async {
     if (_formKey.currentState!.validate()) {
-      // Mock submitting to Supabase Support table
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'تم إرسال شكواك/استفسارك بنجاح. سيقوم فريق الدعم الفني بمراجعتها والتواصل معك في أقرب وقت.',
-            style: GoogleFonts.cairo(),
+      setState(() {
+        _isSubmitting = true;
+      });
+
+      final userId = GlobalState.instance.userUid ?? 'anonymous_user';
+      final text = _complaintController.text.trim();
+
+      if (userId != 'anonymous_user') {
+        await SupportChatService.instance.initializeForUser(userId);
+        await SupportChatService.instance.sendMessage('بلاغ/استفسار من مركز المساعدة: $text');
+      }
+
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'تم إرسال شكواك/استفسارك بنجاح إلى الدعم الفني وسيقوم الفريق بالرد عليك عبر المحادثات.',
+              style: GoogleFonts.cairo(),
+            ),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 4),
           ),
-          backgroundColor: AppColors.success,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-      _complaintController.clear();
+        );
+        _complaintController.clear();
+      }
     }
   }
 
@@ -132,16 +150,22 @@ class _SupportPageState extends State<SupportPage> {
                     ),
                   ),
                   child: ElevatedButton(
-                    onPressed: _submitComplaint,
+                    onPressed: _isSubmitting ? null : _submitComplaint,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.transparent,
                       shadowColor: Colors.transparent,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
-                    child: Text(
-                      'إرسال البلاغ الآن',
-                      style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
-                    ),
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Text(
+                            'إرسال البلاغ الآن',
+                            style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                          ),
                   ),
                 ),
                 const SizedBox(height: 32),
@@ -165,18 +189,6 @@ class _SupportPageState extends State<SupportPage> {
                         title: Text('الأسئلة الشائعة FAQ', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600)),
                         trailing: const Icon(Icons.arrow_forward_ios_outlined, size: 12),
                         onTap: () {},
-                      ),
-                      const Divider(height: 1, color: AppColors.border),
-                      ListTile(
-                        leading: const Icon(Icons.chat_bubble_outline_outlined, color: AppColors.mediumBlue),
-                        title: Text('محادثة حية مع الدعم الفني', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600)),
-                        trailing: const Icon(Icons.arrow_forward_ios_outlined, size: 12),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => const SupportChatPage()),
-                          );
-                        },
                       ),
                     ],
                   ),

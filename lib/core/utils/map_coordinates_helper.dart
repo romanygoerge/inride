@@ -18,64 +18,65 @@ class MapCoordinatesHelper {
 
   /// Resolves the address Arabic text into approximate Cairo/Giza coordinates
   static LatLng getLatLngForAddress(String? address) {
-    if (address == null || address.isEmpty) {
-      return deviceLocation ?? const LatLng(30.0130, 31.2080); // Default to device location or Nile Street
+    if (address == null || address.trim().isEmpty) {
+      return deviceLocation ?? const LatLng(30.0130, 31.2080);
     }
 
     final addr = address.toLowerCase().trim();
 
-    // Check dynamic coordinates cache first
+    // 1. Try to parse coordinates if they exist in the string (e.g. "30.0130, 31.2080" or "موقعي الحالي (30.0130, 31.2080)")
+    final regExp = RegExp(r'([-+]?[0-9]+\.?[0-9]+),\s*([-+]?[0-9]+\.?[0-9]+)');
+    final match = regExp.firstMatch(address);
+    if (match != null) {
+      final lat = double.tryParse(match.group(1)!);
+      final lng = double.tryParse(match.group(2)!);
+      if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+        return LatLng(lat, lng);
+      }
+    }
+
+    // 2. Check dynamic coordinates cache first
     if (_dynamicCoordinatesCache.containsKey(addr)) {
       return _dynamicCoordinatesCache[addr]!;
     }
 
-    // Resolve "my location" / "موقعي الحالي" to actual cached GPS coordinates
-    if (addr.contains('موقعي الحالي') || 
-        addr.contains('موقعي') || 
-        addr.contains('current location') || 
-        addr.contains('my location')) {
+    // 3. Resolve "my location" / "الموقع الحالي" / "موقعي الحالي" to actual cached GPS coordinates
+    if (addr.contains('موقع') || 
+        addr.contains('location') || 
+        addr.contains('موقعي الحالي') || 
+        addr.contains('الموقع الحالي') ||
+        addr.contains('موقعي')) {
       if (deviceLocation != null) {
         return deviceLocation!;
       }
     }
 
-    // Try to parse coordinates if they exist in the string (e.g. "30.0130, 31.2080")
-    final regExp = RegExp(r'([-+]?[0-9]*\.?[0-9]+),\s*([-+]?[0-9]*\.?[0-9]+)');
-    final match = regExp.firstMatch(address);
-    if (match != null) {
-      final lat = double.tryParse(match.group(1)!);
-      final lng = double.tryParse(match.group(2)!);
-      if (lat != null && lng != null) {
-        return LatLng(lat, lng);
-      }
-    }
-    
-    
+    // 4. Landmark coordinate mapping
     if (addr.contains('نيل') || addr.contains('nile') || addr.contains('جيزة') || addr.contains('giza')) {
-      return const LatLng(30.0130, 31.2080); // Nile Street, Giza
+      return const LatLng(30.0130, 31.2080);
     } else if (addr.contains('جامعة القاهرة') || addr.contains('cairo university')) {
-      return const LatLng(30.0276, 31.2101); // Cairo University
+      return const LatLng(30.0276, 31.2101);
     } else if (addr.contains('جامعة الدول') || addr.contains('مهندسين') || addr.contains('mohandessin')) {
-      return const LatLng(30.0526, 31.2014); // Mohandessin
+      return const LatLng(30.0526, 31.2014);
     } else if (addr.contains('تحرير') || addr.contains('tahrir') || addr.contains('وسط البلد')) {
-      return const LatLng(30.0444, 31.2357); // Tahrir Square
+      return const LatLng(30.0444, 31.2357);
     } else if (addr.contains('مول مصر') || addr.contains('mall of egypt')) {
-      return const LatLng(29.9722, 31.0152); // Mall of Egypt
+      return const LatLng(29.9722, 31.0152);
     } else if (addr.contains('مطار') || addr.contains('airport') || addr.contains('الدولي')) {
-      return const LatLng(30.1219, 31.4056); // Cairo International Airport
+      return const LatLng(30.1219, 31.4056);
     } else if (addr.contains('أكتوبر') || addr.contains('october') || addr.contains('الواحات')) {
-      return const LatLng(29.9730, 30.9520); // 6th of October City
+      return const LatLng(29.9730, 30.9520);
     } else if (addr.contains('لبنان') || addr.contains('libnan')) {
-      return const LatLng(30.0620, 31.1980); // Lebanon Square
+      return const LatLng(30.0620, 31.1980);
     } else if (addr.contains('السيدة زينب') || addr.contains('sayeda')) {
-      return const LatLng(30.0290, 31.2420); // Sayeda Zeinab
+      return const LatLng(30.0290, 31.2420);
     } else if (addr.contains('العجوزة') || addr.contains('agouza')) {
-      return const LatLng(30.0550, 31.2100); // Agouza
+      return const LatLng(30.0550, 31.2100);
     } else if (addr.contains('جامعة الأمريكية') || addr.contains('auc') || addr.contains('جديدة') || addr.contains('تجمع')) {
-      return const LatLng(30.0263, 31.4913); // New Cairo / AUC
+      return const LatLng(30.0263, 31.4913);
     }
 
-    return const LatLng(30.0444, 31.2357); // Default to Tahrir Square, Cairo
+    return deviceLocation ?? const LatLng(30.0444, 31.2357);
   }
 
   /// Interpolates coordinates between a start and end LatLng based on a progress [0.0 - 1.0]

@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
+import '../../core/localization/locale_controller.dart';
+import '../../core/extensions/l10n_extension.dart';
+import 'legal_pages.dart';
+import '../../core/utils/snappy_page_route.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -14,7 +18,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _pushNotifications = true;
   bool _soundEffects = true;
   bool _darkMode = false;
-  String _language = 'ar';
 
   @override
   Widget build(BuildContext context) {
@@ -105,11 +108,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: ListTile(
                   leading: const Icon(Icons.language_outlined, color: AppColors.textSecondary),
                   title: Text(
-                    'لغة التطبيق الافتراضية',
+                    context.l10n.language,
                     style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                   ),
                   subtitle: Text(
-                    _language == 'ar' ? 'العربية (مصر)' : 'English',
+                    LocaleController.instance.isArabic ? 'العربية (مصر)' : 'English (US)',
                     style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
                   ),
                   trailing: const Icon(Icons.arrow_forward_ios_outlined, color: AppColors.textLight, size: 14),
@@ -118,24 +121,24 @@ class _SettingsPageState extends State<SettingsPage> {
                       context: context,
                       builder: (context) {
                         return AlertDialog(
-                          title: Text('اختر اللغة', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                          title: Text(context.l10n.changeLanguage, style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
                           content: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               ListTile(
                                 title: const Text('العربية'),
-                                trailing: _language == 'ar' ? const Icon(Icons.check, color: AppColors.mediumBlue) : null,
-                                onTap: () {
-                                  setState(() => _language = 'ar');
-                                  Navigator.pop(context);
+                                trailing: LocaleController.instance.isArabic ? const Icon(Icons.check, color: AppColors.mediumBlue) : null,
+                                onTap: () async {
+                                  await LocaleController.instance.setLocale(const Locale('ar', 'EG'));
+                                  if (context.mounted) Navigator.pop(context);
                                 },
                               ),
                               ListTile(
                                 title: const Text('English'),
-                                trailing: _language == 'en' ? const Icon(Icons.check, color: AppColors.mediumBlue) : null,
-                                onTap: () {
-                                  setState(() => _language = 'en');
-                                  Navigator.pop(context);
+                                trailing: LocaleController.instance.isEnglish ? const Icon(Icons.check, color: AppColors.mediumBlue) : null,
+                                onTap: () async {
+                                  await LocaleController.instance.setLocale(const Locale('en', 'US'));
+                                  if (context.mounted) Navigator.pop(context);
                                 },
                               ),
                             ],
@@ -146,9 +149,48 @@ class _SettingsPageState extends State<SettingsPage> {
                   },
                 ),
               ),
+              const SizedBox(height: 24),
+
+              // 3. Legal & Policy Information
+              Text(
+                'الشروط والسياسات',
+                style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              ),
+              const SizedBox(height: 10),
+              Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: const BorderSide(color: AppColors.border),
+                ),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.description_outlined, color: AppColors.mediumBlue),
+                      title: Text('شروط الاستخدام', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: const Icon(Icons.arrow_forward_ios_outlined, color: AppColors.textLight, size: 14),
+                      onTap: () => Navigator.push(context, SnappyPageRoute(page: const TermsOfUsePage())),
+                    ),
+                    const Divider(color: AppColors.border, height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.assignment_outlined, color: AppColors.mediumBlue),
+                      title: Text('الشروط والأحكام', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: const Icon(Icons.arrow_forward_ios_outlined, color: AppColors.textLight, size: 14),
+                      onTap: () => Navigator.push(context, SnappyPageRoute(page: const TermsAndConditionsPage())),
+                    ),
+                    const Divider(color: AppColors.border, height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.mediumBlue),
+                      title: Text('سياسة الخصوصية', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600)),
+                      trailing: const Icon(Icons.arrow_forward_ios_outlined, color: AppColors.textLight, size: 14),
+                      onTap: () => Navigator.push(context, SnappyPageRoute(page: const PrivacyPolicyPage())),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 32),
 
-              // 3. Danger Zone / Actions
+              // 4. Danger Zone / Actions
               ElevatedButton(
                 onPressed: () {
                   GlobalState.instance.reset();

@@ -1,0 +1,115 @@
+{
+  "@@locale": "en",
+  "appTitle": "inRide",
+  "ok": "OK",
+  "cancel": "Cancel",
+  "save": "Save",
+  "edit": "Edit",
+  "delete": "Delete",
+  "back": "Back",
+  "loading": "Loading...",
+  "success": "Success",
+  "error": "Error",
+  "warning": "Warning",
+  "done": "Done",
+  "confirm": "Confirm",
+  "retry": "Retry",
+  "search": "Search",
+  "filter": "Filter",
+  "share": "Share",
+  "close": "Close",
+
+  "authTitle": "Sign In",
+  "welcomeMessage": "Welcome to inRide",
+  "loginWithGoogle": "Continue with Google",
+  "phoneNumber": "Phone Number",
+  "enterPhoneNumber": "Enter your phone number",
+  "fullName": "Full Name",
+  "enterFullName": "Enter your full name",
+  "acceptTerms": "I agree to Terms & Conditions",
+  "logout": "Log Out",
+
+  "passengerRole": "Passenger",
+  "driverRole": "Driver",
+  "selectService": "Select Service",
+  "rideService": "Ride Share",
+  "deliveryService": "Package Delivery",
+
+  "pickupLocation": "Pickup Location",
+  "destinationLocation": "Destination Location",
+  "selectDestination": "Set destination on map",
+  "offeredFare": "Offered Fare",
+  "egp": "EGP",
+  "requestRide": "Request Ride Now",
+  "searchingForDrivers": "Searching for drivers...",
+  "offersReceived": "Received Offers",
+  "acceptOffer": "Accept Offer",
+  "declineOffer": "Decline Offer",
+
+  "packageDescription": "Package Description",
+  "deliveryNotes": "Delivery Notes",
+  "recipientPhone": "Recipient Phone Number",
+  "recipientRegion": "Region / Street",
+  "orderDeliveryNow": "Order Delivery Now",
+  "shareLocationLink": "Share Location Link",
+  "linkCopied": "Location link copied successfully! 📋",
+
+  "driverOnline": "You are Online (Ready for requests)",
+  "driverOffline": "You are Offline",
+  "newRequestAvailable": "New ride request incoming!",
+  "acceptRequest": "Accept Request",
+  "rejectRequest": "Ignore",
+  "arrivedAtPickup": "I've arrived at pickup",
+  "startTrip": "Start Trip",
+  "completeTrip": "Complete Trip",
+  "passengerPhone": "Passenger Phone Number",
+
+  "chatTitle": "Instant Chat",
+  "typeMessage": "Type your message here...",
+  "send": "Send",
+  "partnerTyping": "Typing...",
+  "supportChat": "Live Technical Support",
+  "messagesCenter": "Messages Center",
+
+  "ratingsAndReviews": "Ratings & Reviews",
+  "overallRating": "Overall Rating",
+  "totalReviews": "Total Reviews",
+  "submitRating": "Submit Rating",
+  "writeComment": "Write your feedback here...",
+  "noRatingsYet": "No ratings or reviews yet",
+
+  "notificationsCenter": "Notification Center",
+  "markAllRead": "Mark All Read",
+  "deleteAllNotifications": "Delete All",
+  "noNotifications": "No notifications right now",
+
+  "emergencySos": "Emergency SOS (122)",
+  "shareLiveLocation": "Share Live Location",
+  "emergencyError": "Unable to place emergency call to 122",
+
+  "settings": "Settings",
+  "language": "App Language",
+  "arabic": "العربية",
+  "english": "English",
+  "changeLanguage": "Change App Language",
+  "profile": "Profile",
+  "wallet": "Wallet & Payment",
+  "walletBalance": "Wallet Balance",
+
+  "welcomeUser": "Welcome, {name}",
+  "@welcomeUser": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "notificationsCount": "{count, plural, =0{No notifications} =1{1 notification} other{{count} notifications}}",
+  "@notificationsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

@@ -26,6 +26,10 @@ import '../../features/ride_matching/presentation/cubit/ride_matching_cubit.dart
 import '../../features/active_trip/presentation/cubit/active_trip_cubit.dart';
 import '../../features/chat/presentation/cubit/chat_cubit.dart';
 import '../../features/wallet/presentation/cubit/wallet_cubit.dart';
+import '../../features/chat/domain/repositories/chat_repository.dart';
+import '../../features/chat/domain/usecases/chat_usecases.dart';
+import '../../features/chat/data/repositories/chat_repository_impl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 final sl = GetIt.instance;
 
@@ -111,6 +115,27 @@ Future<void> init() async {
   sl.registerFactory<AuthCubit>(() => AuthCubit(sl()));
   sl.registerFactory<RideMatchingCubit>(() => RideMatchingCubit(sl()));
   sl.registerFactory<ActiveTripCubit>(() => ActiveTripCubit(sl()));
-  sl.registerFactory<ChatCubit>(() => ChatCubit());
+  // Chat Feature Injection
+  sl.registerLazySingleton<ChatRepository>(() => ChatRepositoryImpl(Supabase.instance.client));
+  sl.registerLazySingleton<GetChatRooms>(() => GetChatRooms(sl()));
+  sl.registerLazySingleton<GetMessagesStream>(() => GetMessagesStream(sl()));
+  sl.registerLazySingleton<GetOrCreateSupportRoom>(() => GetOrCreateSupportRoom(sl()));
+  sl.registerLazySingleton<SendChatMessage>(() => SendChatMessage(sl()));
+  sl.registerLazySingleton<SendChatAttachment>(() => SendChatAttachment(sl()));
+  sl.registerLazySingleton<MarkMessagesAsRead>(() => MarkMessagesAsRead(sl()));
+  sl.registerLazySingleton<UpdateTypingStatus>(() => UpdateTypingStatus(sl()));
+  sl.registerLazySingleton<GetTypingIndicator>(() => GetTypingIndicator(sl()));
+  sl.registerLazySingleton<DeleteChatMessage>(() => DeleteChatMessage(sl()));
+
+  sl.registerFactory<ChatCubit>(
+    () => ChatCubit(
+      getMessagesStream: sl(),
+      sendChatMessage: sl(),
+      sendChatAttachment: sl(),
+      markMessagesAsRead: sl(),
+      updateTypingStatus: sl(),
+      getTypingIndicator: sl(),
+    ),
+  );
   sl.registerFactory<WalletCubit>(() => WalletCubit());
 }

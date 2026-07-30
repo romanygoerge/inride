@@ -259,8 +259,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
               _controller.markAsRead(notif.id);
             }
             // 2. Route redirection or details page
-            final routingTypes = ['new_trip', 'accept_trip', 'driver_arrived', 'cancel_trip', 'new_message'];
-            if (routingTypes.contains(notif.type)) {
+            final routingTypes = [
+              'new_trip', 'new_ride', 'delivery_request', 'new_offer', 'driver_offer', 'counter_offer',
+              'accept_trip', 'ride_accepted', 'delivery_accepted', 'driver_arrived', 'captain_arrived', 'trip_started',
+              'cancel_trip', 'trip_finished', 'trip_completed', 'payment',
+              'new_message', 'chat_message', 'support_chat', 'support',
+              'offers', 'wallet', 'charge', 'charge_pending', 'payout', 'deposit'
+            ];
+            final hasUrl = notif.data['url'] != null || notif.data['link'] != null;
+            final hasTrip = notif.data['tripId'] != null || notif.data['trip_id'] != null || notif.data['requestId'] != null;
+
+            if (routingTypes.contains(notif.type) || hasUrl || hasTrip) {
               NotificationService.instance.handleNotificationClick(notif.data);
             } else {
               Navigator.push(

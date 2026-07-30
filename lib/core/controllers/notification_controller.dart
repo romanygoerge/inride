@@ -82,6 +82,11 @@ class NotificationController extends ChangeNotifier {
 
   Future<void> markAsRead(String notificationId) async {
     if (_userId == null) return;
+    final index = _notifications.indexWhere((n) => n.id == notificationId);
+    if (index != -1) {
+      _notifications[index] = _notifications[index].copyWith(isRead: true);
+      notifyListeners();
+    }
     try {
       await _repository.markAsRead(_userId!, notificationId);
     } catch (e) {
@@ -91,6 +96,10 @@ class NotificationController extends ChangeNotifier {
 
   Future<void> markAllAsRead() async {
     if (_userId == null) return;
+    for (int i = 0; i < _notifications.length; i++) {
+      _notifications[i] = _notifications[i].copyWith(isRead: true);
+    }
+    notifyListeners();
     try {
       await _repository.markAllAsRead(_userId!);
     } catch (e) {
@@ -100,6 +109,8 @@ class NotificationController extends ChangeNotifier {
 
   Future<void> deleteNotification(String notificationId) async {
     if (_userId == null) return;
+    _notifications.removeWhere((n) => n.id == notificationId);
+    notifyListeners();
     try {
       await _repository.deleteNotification(_userId!, notificationId);
     } catch (e) {
@@ -109,6 +120,8 @@ class NotificationController extends ChangeNotifier {
 
   Future<void> deleteAllNotifications() async {
     if (_userId == null) return;
+    _notifications.clear();
+    notifyListeners();
     try {
       await _repository.deleteAllNotifications(_userId!);
     } catch (e) {

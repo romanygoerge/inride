@@ -12,6 +12,8 @@ import '../../../../features/driver_registration/presentation/pages/doc_upload_p
 import '../../../../features/driver_registration/presentation/pages/review_pending_page.dart';
 import '../../../../features/driver/presentation/pages/driver_home_page.dart';
 import '../../../../shared/widgets/app_logo.dart';
+import '../../../../features/common/legal_pages.dart';
+import '../../../../core/utils/snappy_page_route.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -576,14 +578,54 @@ class _LoginPageState extends State<LoginPage> {
 
 
                 const SizedBox(height: 24),
-                // Footer
-                Text(
-                  'بدخولك للتطبيق أنت توافق على شروط الخدمة وسياسة الخصوصية الخاصة بنا',
-                  style: GoogleFonts.cairo(
-                    fontSize: 11,
-                    color: AppColors.textSecondary.withValues(alpha: 0.8),
-                  ),
-                  textAlign: TextAlign.center,
+                // Footer with interactive legal links
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      'بدخولك للتطبيق أنت توافق على ',
+                      style: GoogleFonts.cairo(
+                        fontSize: 11,
+                        color: AppColors.textSecondary.withValues(alpha: 0.8),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(context, SnappyPageRoute(page: const TermsOfUsePage()));
+                      },
+                      child: Text(
+                        'شروط الاستخدام',
+                        style: GoogleFonts.cairo(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.mediumBlue,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      ' و ',
+                      style: GoogleFonts.cairo(
+                        fontSize: 11,
+                        color: AppColors.textSecondary.withValues(alpha: 0.8),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(context, SnappyPageRoute(page: const PrivacyPolicyPage()));
+                      },
+                      child: Text(
+                        'سياسة الخصوصية',
+                        style: GoogleFonts.cairo(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.mediumBlue,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

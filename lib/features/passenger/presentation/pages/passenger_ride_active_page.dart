@@ -1,3 +1,4 @@
+import 'package:share_plus/share_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -28,6 +29,59 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
   void initState() {
     super.initState();
     GlobalState.instance.addListener(_onStateChange);
+  }
+
+  void _callEmergency() async {
+    final Uri url = Uri(scheme: 'tel', path: '122');
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url);
+      } else {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذر إجراء اتصال الطوارئ بالرقم 122', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  void _shareLiveLocation() async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('جاري جلب إحداثيات موقعك الجغرافي لمشاركته لايف... 📍', style: GoogleFonts.cairo()),
+        backgroundColor: AppColors.mediumBlue,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+
+    try {
+      final pos = await LocationService.instance.getCurrentLocation();
+      if (pos != null) {
+        final shareUrl = 'https://www.google.com/maps/search/?api=1&query=${pos.latitude},${pos.longitude}';
+        final message = 'أنا في رحلة حالياً عبر تطبيق inRide. يمكنك تتبع موقعي المباشر على الخريطة من هنا: $shareUrl';
+        await SharePlus.instance.share(
+          ShareParams(text: message),
+        );
+      } else {
+        throw 'تعذر الحصول على الموقع الجغرافي الحالي. تأكد من تشغيل الـ GPS.';
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(e.toString(), style: GoogleFonts.cairo()),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   void _safeNavigateBack({String? message}) {
@@ -560,6 +614,16 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
                                           );
                                         }
                                       },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.share_location_outlined, color: Colors.green),
+                                      tooltip: 'مشاركة موقعي المباشر',
+                                      onPressed: _shareLiveLocation,
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.warning_amber_rounded, color: Colors.red),
+                                      tooltip: 'طوارئ النجدة ١٢٢',
+                                      onPressed: _callEmergency,
                                     ),
                                   ],
                                 ),

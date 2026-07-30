@@ -37,6 +37,7 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
   final _formKey = GlobalKey<FormState>();
   
   bool _isReviewMode = false;
+  bool _isSubmitting = false;
   DeliveryLocationMode _deliveryLocationMode = DeliveryLocationMode.map;
   bool get _recipientWillSpecifyLocation => _deliveryLocationMode == DeliveryLocationMode.recipient;
   String _selectedPaymentMethod = 'كاش'; // كاش, انستا باي
@@ -152,7 +153,6 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
     );
 
     final message = 'لتحديد موقعك بسهولة، يُرجى التأكد من تثبيت التطبيق على جهازك.\n\nمن فضلك اضغط على هذا الرابط لتحديد موقع تسليم الطرد الخاص بك على الخريطة لتسهيل التوصيل: $link';
-    final navigator = Navigator.of(context);
     
     await showModalBottomSheet(
       context: context,
@@ -224,8 +224,9 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
                     label: 'مشاركة أخرى',
                     onTap: () async {
                       Navigator.pop(context);
-                      // ignore: deprecated_member_use
-                      await Share.share(message);
+                      await SharePlus.instance.share(
+                        ShareParams(text: message),
+                      );
                     },
                   ),
                 ],
@@ -234,10 +235,6 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
           ),
         );
       },
-    );
-
-    navigator.push(
-      MaterialPageRoute(builder: (context) => const PassengerRideMatchingPage()),
     );
   }
 
@@ -284,13 +281,9 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
       _packageController.text = 'طرد ديلفري';
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: AppColors.mediumBlue),
-      ),
-    );
+    setState(() {
+      _isSubmitting = true;
+    });
 
     final double fare = _getDeliveryFare();
     final String packageDesc = _packageController.text.trim();
@@ -316,10 +309,17 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
     );
 
     if (!mounted) return;
-    Navigator.pop(context); // Close loading dialog
+    setState(() {
+      _isSubmitting = false;
+    });
 
     final token = GlobalState.instance.currentRecipientToken ?? '';
     final shareLink = 'https://inride.app/confirm-delivery-location?requestId=${GlobalState.instance.currentRequestId}&token=$token';
+
+    final navigator = Navigator.of(context);
+    navigator.push(
+      MaterialPageRoute(builder: (context) => const PassengerRideMatchingPage()),
+    );
     _shareLink(context, shareLink);
   }
 
@@ -439,11 +439,24 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
           ],
         ),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          child: _isReviewMode 
-              ? _buildReviewView(distance, fare)
-              : _buildFormView(distance),
+        child: Stack(
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: _isReviewMode 
+                  ? _buildReviewView(distance, fare)
+                  : _buildFormView(distance),
+            ),
+            if (_isSubmitting)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  child: const Center(
+                    child: CircularProgressIndicator(color: AppColors.mediumBlue),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

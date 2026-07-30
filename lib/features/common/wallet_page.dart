@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -299,22 +300,39 @@ class _WalletPageState extends State<WalletPage> {
                                 child: Stack(
                                   fit: StackFit.expand,
                                   children: [
-                                    Image.network(
-                                      receiptImagePath!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return Container(
-                                          color: AppColors.mediumBlue.withValues(alpha: 0.1),
-                                          alignment: Alignment.center,
-                                          child: const Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              Icon(Icons.receipt_long_rounded, color: AppColors.mediumBlue, size: 40),
-                                            ],
+                                    receiptImagePath!.startsWith('http')
+                                        ? Image.network(
+                                            receiptImagePath!,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, error, stackTrace) {
+                                              return Container(
+                                                color: AppColors.mediumBlue.withValues(alpha: 0.1),
+                                                alignment: Alignment.center,
+                                                child: const Column(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    Icon(Icons.receipt_long_rounded, color: AppColors.mediumBlue, size: 40),
+                                                  ],
+                                                ),
+                                              );
+                                            },
+                                          )
+                                        : Image.file(
+                                            File(receiptImagePath!),
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, error, stackTrace) {
+                                              return Container(
+                                                color: AppColors.mediumBlue.withValues(alpha: 0.1),
+                                                alignment: Alignment.center,
+                                                child: const Column(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    Icon(Icons.receipt_long_rounded, color: AppColors.mediumBlue, size: 40),
+                                                  ],
+                                                ),
+                                              );
+                                            },
                                           ),
-                                        );
-                                      },
-                                    ),
                                     Container(color: Colors.black26),
                                     const Center(
                                       child: Icon(Icons.check_circle, color: Colors.green, size: 36),

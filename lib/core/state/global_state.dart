@@ -1501,10 +1501,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     final endLatLng = MapCoordinatesHelper.getLatLngForAddress(to);
     
     String finalPickupAddress = from;
-    if (from.startsWith('موقعي الحالي')) {
+    if (from.contains('موقع') || from.contains('location')) {
       final reverseGeocoded = await MapCoordinatesHelper.reverseGeocode(startLatLng.latitude, startLatLng.longitude);
       if (reverseGeocoded.isNotEmpty) {
         finalPickupAddress = reverseGeocoded;
+        fromAddress = finalPickupAddress;
       }
     }
 
@@ -1946,16 +1947,40 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> submitPickupPhoto(String photoUrl) async {
     if (currentRequestId != null) {
-      await RideRepository.instance.updatePickupPhoto(currentRequestId!, photoUrl);
-      currentPickupPhotoUrl = photoUrl;
+      String finalUrl = photoUrl;
+      if (!photoUrl.startsWith('http') && !photoUrl.startsWith('data:')) {
+        try {
+          finalUrl = await _uploadToSupabaseStorage(
+            localPath: photoUrl,
+            bucketName: 'deliveries',
+            pathInBucket: 'pickup_${currentRequestId}_${DateTime.now().millisecondsSinceEpoch}.png',
+          );
+        } catch (e) {
+          debugPrint('Error uploading pickup photo: $e');
+        }
+      }
+      await RideRepository.instance.updatePickupPhoto(currentRequestId!, finalUrl);
+      currentPickupPhotoUrl = finalUrl;
       notifyListeners();
     }
   }
 
   Future<void> submitDeliveryPhoto(String photoUrl) async {
     if (currentRequestId != null) {
-      await RideRepository.instance.updateDeliveryPhoto(currentRequestId!, photoUrl);
-      currentDeliveryPhotoUrl = photoUrl;
+      String finalUrl = photoUrl;
+      if (!photoUrl.startsWith('http') && !photoUrl.startsWith('data:')) {
+        try {
+          finalUrl = await _uploadToSupabaseStorage(
+            localPath: photoUrl,
+            bucketName: 'deliveries',
+            pathInBucket: 'delivery_${currentRequestId}_${DateTime.now().millisecondsSinceEpoch}.png',
+          );
+        } catch (e) {
+          debugPrint('Error uploading delivery photo: $e');
+        }
+      }
+      await RideRepository.instance.updateDeliveryPhoto(currentRequestId!, finalUrl);
+      currentDeliveryPhotoUrl = finalUrl;
       notifyListeners();
     }
   }
@@ -2434,15 +2459,45 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  Future<String> uploadReceiptImage(String localPath) async {
+    final uid = userUid ?? '00000000-0000-4000-a000-000000000000';
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final pathInBucket = '$uid/receipt_$timestamp.png';
+
+    try {
+      return await _uploadToSupabaseStorage(
+        localPath: localPath,
+        bucketName: 'receipts',
+        pathInBucket: pathInBucket,
+      );
+    } catch (e) {
+      debugPrint('Uploading to receipts bucket failed, trying documents bucket: $e');
+      return await _uploadToSupabaseStorage(
+        localPath: localPath,
+        bucketName: 'documents',
+        pathInBucket: pathInBucket,
+      );
+    }
+  }
+
   Future<void> chargeWalletPending(double amount, String receiptUrl, String method) async {
     if (userUid != null) {
       try {
+        String finalReceiptUrl = receiptUrl;
+        if (!receiptUrl.startsWith('http') && !receiptUrl.startsWith('data:')) {
+          finalReceiptUrl = await uploadReceiptImage(receiptUrl);
+        }
+
         await _supabase.from('transactions').insert({
           'user_id': userUid!,
           'title': 'شحن رصيد معلق',
           'amount': amount,
           'type': 'charge_pending',
           'balance_after': walletBalance,
+          'payment_method': method,
+          'receipt_url': finalReceiptUrl,
+          'notes': 'طلب شحن محفظة عبر $method',
+          'created_at': DateTime.now().toIso8601String(),
         });
       } catch (e) {
         debugPrint('Error writing pending transaction: $e');

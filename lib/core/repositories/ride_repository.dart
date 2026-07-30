@@ -47,12 +47,24 @@ class RideRepository {
   }) async {
     final requestId = UuidGenerator.v4();
 
+    String finalPickupAddress = pickupAddress;
+    if (pickupAddress.contains('موقع') || pickupAddress.contains('location')) {
+      try {
+        final geocoded = await MapCoordinatesHelper.reverseGeocode(pickupLat, pickupLng);
+        if (geocoded.isNotEmpty) {
+          finalPickupAddress = geocoded;
+        }
+      } catch (e) {
+        debugPrint("[RideRepository] Error reverse geocoding pickupAddress: $e");
+      }
+    }
+
     final newRequest = RideRequestModel(
       requestId: requestId,
       passengerId: passengerId,
       pickupLatitude: pickupLat,
       pickupLongitude: pickupLng,
-      pickupAddress: pickupAddress,
+      pickupAddress: finalPickupAddress,
       destinationLatitude: destLat,
       destinationLongitude: destLng,
       destinationAddress: destAddress,

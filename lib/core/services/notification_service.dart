@@ -10,8 +10,8 @@ import '../../features/chat/presentation/pages/chat_page.dart';
 import '../../features/passenger/presentation/pages/passenger_ride_active_page.dart';
 import '../../features/driver/presentation/pages/driver_home_page.dart';
 import '../utils/snappy_page_route.dart';
-import '../../features/common/notifications_page.dart';
 import '../../features/common/support_chat_page.dart';
+import '../../features/common/wallet_page.dart';
 import '../config/onesignal_config.dart';
 
 class NotificationService {
@@ -33,34 +33,56 @@ class NotificationService {
   // Notification Click Handler — يوجّه المستخدم للشاشة المناسبة
   // ────────────────────────────────────────────────────────────────────
   Future<void> handleNotificationClick(Map<String, dynamic> data) async {
-    final String type = data['type'] ?? 'admin_notifications';
+    final String type = (data['type'] ?? 'admin_notifications').toString();
     debugPrint('[NotificationService] Handling tap type: $type, data: $data');
 
-    // 1. رحلة جديدة / طلب توصيل
-    if (type == 'new_trip' ||
-        type == 'new_ride' ||
-        type == 'delivery_request' ||
-        type == 'new_offer' ||
-        type == 'driver_offer') {
-      if (GlobalState.instance.currentRole == UserRole.driver) {
-        final context = navigatorKey.currentContext;
-        if (context != null && context.mounted) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => const DriverHomePage()),
-            (route) => false,
-          );
-        }
-      } else if (GlobalState.instance.currentRole == UserRole.rider) {
-        final context = navigatorKey.currentContext;
-        if (context != null && context.mounted) {
-          Navigator.of(context).popUntil((route) => route.isFirst);
-        }
-      }
+    final context = navigatorKey.currentContext;
+    if (context == null || !context.mounted) {
+      debugPrint('[NotificationService] Context not available');
       return;
     }
 
-    // 2. قبول الرحلة / وصول السائق / بدء الرحلة
+    // 1. رسالة دردشة بين الركاب والسائقين
+    if (type == 'new_message' || type == 'chat_message') {
+      final tripId = data['tripId'] ?? data['trip_id'] ?? data['requestId'] ?? GlobalState.instance.currentRequestId;
+      String partnerId = (data['partnerId'] ?? data['partner_id'] ?? data['senderId'] ?? '').toString();
+      String partnerName = (data['partnerName'] ?? data['partner_name'] ?? 'مستخدم inRide').toString();
+      final myId = GlobalState.instance.userUid;
+
+      if (partnerId.isEmpty) {
+        if (GlobalState.instance.currentRole == UserRole.driver) {
+          partnerId = GlobalState.instance.currentRideRequest?.passengerId ?? GlobalState.instance.activePassengerId ?? '';
+        } else {
+          partnerId = GlobalState.instance.acceptedOffer?.driverId ?? '';
+        }
+      }
+
+      if (tripId != null && tripId.toString().isNotEmpty && myId != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatPage(
+              tripId: tripId.toString(),
+              myId: myId,
+              partnerId: partnerId,
+              partnerName: partnerName,
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    // 2. محادثة الدعم الفني
+    if (type == 'support_chat' || type == 'support') {
+      Navigator.push(
+        context,
+        SnappyPageRoute(page: const SupportChatPage()),
+      );
+      return;
+    }
+
+    // 3. رحلة حالية للراكب أو الكابتن
     if (type == 'accept_trip' ||
         type == 'ride_accepted' ||
         type == 'delivery_accepted' ||
@@ -68,86 +90,80 @@ class NotificationService {
         type == 'captain_arrived' ||
         type == 'trip_started') {
       if (GlobalState.instance.currentRole == UserRole.rider) {
-        final context = navigatorKey.currentContext;
-        if (context != null && context.mounted) {
-          Navigator.push(
-            context,
-            SnappyPageRoute(page: const PassengerRideActivePage()),
-          );
-        }
-      }
-      return;
-    }
-
-    // 3. إلغاء / إنهاء / دفع
-    if (type == 'cancel_trip' ||
-        type == 'trip_finished' ||
-        type == 'trip_completed' ||
-        type == 'payment') {
-      final context = navigatorKey.currentContext;
-      if (context != null && context.mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      }
-      return;
-    }
-
-    // 4. رسالة دردشة
-    if (type == 'new_message' || type == 'chat_message') {
-      final tripId = data['tripId'];
-      final partnerId = data['partnerId'];
-      final partnerName = data['partnerName'] ?? 'inRide Partner';
-      final myId = GlobalState.instance.userUid;
-
-      if (tripId != null && partnerId != null && myId != null) {
-        final context = navigatorKey.currentContext;
-        if (context != null && context.mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ChatPage(
-                tripId: tripId,
-                myId: myId,
-                partnerId: partnerId,
-                partnerName: partnerName,
-              ),
-            ),
-          );
-        }
-      }
-      return;
-    }
-
-    // 4b. رسالة دعم فني
-    if (type == 'support_chat') {
-      final context = navigatorKey.currentContext;
-      if (context != null && context.mounted) {
         Navigator.push(
           context,
-          SnappyPageRoute(page: const SupportChatPage()),
+          SnappyPageRoute(page: const PassengerRideActivePage()),
+        );
+      } else {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const DriverHomePage()),
+          (route) => false,
         );
       }
       return;
     }
 
-    // 5. عروض (url إن وُجد)
-    if (type == 'offers') {
-      final urlStr = data['url'];
-      if (urlStr != null && urlStr.isNotEmpty) {
-        final url = Uri.parse(urlStr);
-        if (await canLaunchUrl(url)) {
-          await launchUrl(url);
-          return;
-        }
+    // 4. طلب رحلة / عرض جديد للكابتن
+    if (type == 'new_trip' ||
+        type == 'new_ride' ||
+        type == 'delivery_request' ||
+        type == 'new_offer' ||
+        type == 'driver_offer' ||
+        type == 'counter_offer') {
+      if (GlobalState.instance.currentRole == UserRole.driver) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const DriverHomePage()),
+          (route) => false,
+        );
+      } else {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+      return;
+    }
+
+    // 5. المحفظة والعمليات المالية
+    if (type == 'wallet' ||
+        type == 'charge' ||
+        type == 'charge_pending' ||
+        type == 'payout' ||
+        type == 'payment' ||
+        type == 'deposit') {
+      Navigator.push(
+        context,
+        SnappyPageRoute(page: const WalletPage()),
+      );
+      return;
+    }
+
+    // 6. روابط خارجية أو عروض
+    final urlStr = data['url'] ?? data['link'];
+    if (urlStr != null && urlStr.toString().isNotEmpty) {
+      final url = Uri.parse(urlStr.toString());
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url);
+        return;
       }
     }
 
-    // افتراضي: صفحة الإشعارات
-    final context = navigatorKey.currentContext;
-    if (context != null && context.mounted) {
-      Navigator.push(
-        context,
-        SnappyPageRoute(page: const NotificationsPage()),
-      );
+    if (!context.mounted) return;
+
+    // 7. إذا كان فيه tripId بالبيانات المرفقة -> افتح الرحلة
+    if (data['tripId'] != null || data['requestId'] != null) {
+      if (GlobalState.instance.currentRole == UserRole.rider) {
+        Navigator.push(
+          context,
+          SnappyPageRoute(page: const PassengerRideActivePage()),
+        );
+      } else {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const DriverHomePage()),
+          (route) => false,
+        );
+      }
+      return;
     }
   }
 

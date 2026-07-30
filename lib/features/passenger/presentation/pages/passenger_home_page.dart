@@ -61,7 +61,14 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
   void _initializeLocation() async {
     final hasPermission = await LocationService.instance.checkPermission();
     if (hasPermission) {
-      await LocationService.instance.getCurrentLocation();
+      final pos = await LocationService.instance.getCurrentLocation();
+      if (pos != null) {
+        MapCoordinatesHelper.deviceLocation = LatLng(pos.latitude, pos.longitude);
+        final geocoded = await MapCoordinatesHelper.reverseGeocode(pos.latitude, pos.longitude);
+        if (geocoded.isNotEmpty && (GlobalState.instance.fromAddress == null || GlobalState.instance.fromAddress == 'موقعي الحالي' || GlobalState.instance.fromAddress == 'الموقع الحالي')) {
+          GlobalState.instance.fromAddress = geocoded;
+        }
+      }
       if (mounted) {
         setState(() {});
       }
@@ -428,9 +435,6 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                               child: Builder(
                                 builder: (context) {
                                   String displayText = _fromText;
-                                  if (displayText.startsWith('موقعي الحالي')) {
-                                    displayText = 'موقعي الحالي';
-                                  }
                                   return Text(
                                     displayText.isEmpty ? 'من أين تريد الركوب؟' : displayText,
                                     style: GoogleFonts.cairo(
@@ -1434,17 +1438,20 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).hideCurrentSnackBar();
                         if (pos != null) {
-                          final addressString = 'موقعي الحالي (${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)})';
+                          MapCoordinatesHelper.deviceLocation = LatLng(pos.latitude, pos.longitude);
+                          final geocodedName = await MapCoordinatesHelper.reverseGeocode(pos.latitude, pos.longitude);
+                          if (!context.mounted) return;
+                          final addressString = geocodedName.isNotEmpty ? geocodedName : 'موقعي الحالي (${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)})';
                           MapCoordinatesHelper.registerCoordinate(addressString, LatLng(pos.latitude, pos.longitude));
                           Navigator.pop(context, addressString);
                         } else {
-                          Navigator.pop(context, 'موقعي الحالي');
+                          Navigator.pop(context, 'الموقع الحالي');
                         }
                       }
                     } catch (_) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                        Navigator.pop(context, 'موقعي الحالي');
+                        Navigator.pop(context, 'الموقع الحالي');
                       }
                     }
                   },

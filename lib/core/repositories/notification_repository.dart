@@ -211,15 +211,31 @@ class NotificationRepository {
 
         if (!isTarget) continue;
 
+        // Check if user already received/processed this admin notification
+        final receiptCheck = await _supabase
+            .from('admin_notification_receipts')
+            .select()
+            .eq('notification_id', notifId)
+            .eq('user_id', userId)
+            .maybeSingle();
+
+        if (receiptCheck != null) {
+          // Already delivered to this user in the past
+          continue;
+        }
+
+        final userNotifId = 'admin_${notifId}_$userId';
+
         final checkRes = await _supabase
             .from('notifications')
             .select()
-            .eq('id', notifId)
+            .eq('id', userNotifId)
+            .eq('user_id', userId)
             .maybeSingle();
 
         if (checkRes == null) {
-          await _supabase.from('notifications').insert({
-            'id': notifId,
+          await _supabase.from('notifications').upsert({
+            'id': userNotifId,
             'user_id': userId,
             'title': data['title'] ?? '',
             'body': data['body'] ?? '',

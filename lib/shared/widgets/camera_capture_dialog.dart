@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_theme.dart';
 
 class CameraCaptureDialog extends StatefulWidget {
@@ -23,39 +25,43 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
   bool _flashOn = false;
   bool _showGrid = true;
   bool _triggerFlashOverlay = false;
+  String? _capturedPath;
 
-  String get _mockImageUrl {
-    if (widget.isReceipt) {
-      return 'https://images.unsplash.com/photo-1554415707-6e8cfc93fe23?auto=format&fit=crop&q=80&w=600';
-    }
-    return widget.isPickup
-        ? 'https://images.unsplash.com/photo-1566576912321-d58edd7a2858?auto=format&fit=crop&q=80&w=600'
-        : 'https://images.unsplash.com/photo-1595079676339-1534801ad6cf?auto=format&fit=crop&q=80&w=600';
-  }
-
-  void _capturePhoto() {
-    setState(() {
-      _triggerFlashOverlay = true;
-    });
-
-    Future.delayed(const Duration(milliseconds: 150), () {
-      if (mounted) {
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: source, imageQuality: 85);
+      if (image != null) {
         setState(() {
-          _triggerFlashOverlay = false;
-          _isCaptured = true;
+          _triggerFlashOverlay = true;
+        });
+
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (mounted) {
+            setState(() {
+              _triggerFlashOverlay = false;
+              _capturedPath = image.path;
+              _isCaptured = true;
+            });
+          }
         });
       }
-    });
+    } catch (e) {
+      debugPrint('Error picking image: $e');
+    }
   }
 
   void _retakePhoto() {
     setState(() {
       _isCaptured = false;
+      _capturedPath = null;
     });
   }
 
   void _confirmPhoto() {
-    Navigator.of(context).pop(_mockImageUrl);
+    if (_capturedPath != null) {
+      Navigator.of(context).pop(_capturedPath);
+    }
   }
 
   @override
@@ -74,43 +80,43 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
             children: [
               // 1. Camera Viewfinder or Captured Preview
               Positioned.fill(
-                child: _isCaptured
-                    ? Image.network(
-                        _mockImageUrl,
-                        fit: BoxFit.cover,
-                        loadingBuilder: (context, child, progress) {
-                          if (progress == null) return child;
-                          return const Center(
-                            child: CircularProgressIndicator(color: Colors.white),
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            color: Colors.grey[900],
-                            alignment: Alignment.center,
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  widget.isReceipt ? Icons.receipt_long : Icons.image_not_supported,
-                                  color: Colors.white70,
-                                  size: 64,
+                child: _isCaptured && _capturedPath != null
+                    ? (_capturedPath!.startsWith('http')
+                        ? Image.network(
+                            _capturedPath!,
+                            fit: BoxFit.cover,
+                            loadingBuilder: (context, child, progress) {
+                              if (progress == null) return child;
+                              return const Center(
+                                child: CircularProgressIndicator(color: Colors.white),
+                              );
+                            },
+                          )
+                        : Image.file(
+                            File(_capturedPath!),
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: Colors.grey[900],
+                                alignment: Alignment.center,
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      widget.isReceipt ? Icons.receipt_long : Icons.image_not_supported,
+                                      color: Colors.white70,
+                                      size: 64,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      widget.isReceipt ? 'تم اختيار الإيصال بنجاح' : 'تم اختيار الصورة بنجاح',
+                                      style: GoogleFonts.cairo(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  widget.isReceipt ? 'تم التقاط الإيصال بنجاح' : 'تم التقاط الصورة بنجاح',
-                                  style: GoogleFonts.cairo(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'انقر على "تأكيد الصورة" للمتابعة',
-                                  style: GoogleFonts.cairo(color: Colors.white70, fontSize: 12),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      )
+                              );
+                            },
+                          ))
                     : Container(
                         color: Colors.grey[900],
                         child: Stack(
@@ -145,7 +151,7 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                                   const SizedBox(height: 12),
                                   Text(
                                     widget.isReceipt
-                                        ? 'ضع الإيصال في منتصف الكاميرا'
+                                        ? 'التقاط أو اختيار صورة إيصال التحويل'
                                         : (widget.isPickup
                                             ? 'ضع الطرد في المنتصف للاستلام'
                                             : 'صوّر الطرد عند مكان التسليم'),
@@ -234,7 +240,7 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                 ),
               ),
 
-              // 4. Bottom Controls (Shutter Button / Action confirmation)
+              // 4. Bottom Controls (Shutter / Gallery / Confirmation)
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -296,36 +302,64 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                             ),
                           ],
                         )
-                      : Center(
-                          child: GestureDetector(
-                            onTap: _capturePhoto,
-                            child: Container(
-                              width: 72,
-                              height: 72,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                              padding: const EdgeInsets.all(4),
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            // Pick from Gallery
+                            InkWell(
+                              onTap: () => _pickImage(ImageSource.gallery),
+                              borderRadius: BorderRadius.circular(30),
                               child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: Colors.black,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white, width: 2),
+                                  color: Colors.white24,
+                                  borderRadius: BorderRadius.circular(20),
                                 ),
-                                child: Center(
-                                  child: Container(
-                                    width: 52,
-                                    height: 52,
-                                    decoration: const BoxDecoration(
-                                      color: Colors.white,
-                                      shape: BoxShape.circle,
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.photo_library_outlined, color: Colors.white, size: 20),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'المعرض',
+                                      style: GoogleFonts.cairo(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                            // Camera Shutter Button
+                            GestureDetector(
+                              onTap: () => _pickImage(ImageSource.camera),
+                              child: Container(
+                                width: 72,
+                                height: 72,
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                ),
+                                padding: const EdgeInsets.all(4),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 2),
+                                  ),
+                                  child: Center(
+                                    child: Container(
+                                      width: 52,
+                                      height: 52,
+                                      decoration: const BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.camera_alt, color: Colors.black87),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
                 ),
               ),

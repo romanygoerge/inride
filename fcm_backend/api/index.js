@@ -27,13 +27,13 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const { recipientId, playerId, tokens, title, body, type, data } = req.body || {};
+  const { recipientId, playerId, tokens, title, body, type, data, target, targetCity } = req.body || {};
 
-  console.log(`[Notification] Event created: type=${type || 'general'}, recipientId=${recipientId || 'unknown'}`);
+  console.log(`[Notification] Event created: type=${type || 'general'}, recipientId=${recipientId || 'unknown'}, target=${target || 'none'}`);
 
-  if (!recipientId && !playerId && (!tokens || !tokens.length)) {
-    console.log("[Notification] Delivery error: Missing recipientId, playerId, and tokens");
-    return res.status(400).json({ error: "Missing 'recipientId', 'playerId', or 'tokens'" });
+  if (!recipientId && !playerId && (!tokens || !tokens.length) && !target) {
+    console.log("[Notification] Delivery error: Missing recipientId, playerId, tokens, and target");
+    return res.status(400).json({ error: "Missing 'recipientId', 'playerId', 'tokens', or 'target'" });
   }
 
   const appId = process.env.ONESIGNAL_APP_ID || '388d1944-0b83-4942-8f80-b12584def7d7';
@@ -46,6 +46,31 @@ module.exports = async function handler(req, res) {
   }
 
   console.log(`[Notification] Using OneSignal App ID: ${appId.substring(0, 8)}...`);
+
+  let targetExternalIds = [];
+  if (target && supabase) {
+    try {
+      if (target === 'drivers') {
+        const { data: drivers, error } = await supabase.from('drivers').select('id');
+        if (!error && drivers) {
+          targetExternalIds = drivers.map(d => d.id);
+        }
+      } else if (target === 'riders') {
+        const { data: users, error } = await supabase.from('users').select('id');
+        if (!error && users) {
+          targetExternalIds = users.map(u => u.id);
+        }
+      } else if (target === 'city' && targetCity) {
+        const { data: users, error: uErr } = await supabase.from('users').select('id').eq('city', targetCity);
+        const { data: drivers, error: dErr } = await supabase.from('drivers').select('id').eq('city', targetCity);
+        if (!uErr && users) targetExternalIds.push(...users.map(u => u.id));
+        if (!dErr && drivers) targetExternalIds.push(...drivers.map(d => d.id));
+      }
+    } catch (err) {
+      console.error(`[Notification] Error fetching target users from DB: ${err.message}`);
+    }
+    console.log(`[Notification] Resolved target external IDs count: ${targetExternalIds.length}`);
+  }
 
   let activeTokens = [];
   if (Array.isArray(tokens) && tokens.length > 0) {
@@ -133,7 +158,11 @@ module.exports = async function handler(req, res) {
     small_icon: 'ic_launcher',
   };
 
-  if (recipientId) {
+  if (target === 'all') {
+    payload.included_segments = ['Subscribed Users'];
+  } else if (targetExternalIds.length > 0) {
+    payload.include_aliases = { external_id: targetExternalIds };
+  } else if (recipientId) {
     payload.include_aliases = { external_id: [recipientId] };
   }
 

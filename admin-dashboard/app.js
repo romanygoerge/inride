@@ -792,6 +792,7 @@ function updateHeaderTitle(page) {
     'passenger-profile': { title: 'الملف الشخصي للراكب', sub: 'عرض بيانات الراكب ورحلاته والدعم المباشر' },
     wallet: { title: 'المحفظة والمالية', sub: 'مراجعة عمليات الشحن والسحب وإدارة الرصيد المالي' },
     pricing: { title: 'التسعير والمناطق', sub: 'إدارة تسعير الرحلات والعمولات ونسبة الـ Surge' },
+    communication: { title: 'مركز التواصل والمحادثات', sub: 'عرض وإدارة محادثات العملاء والكباتن والدعم الفني والتحكم بالتذاكر' },
     messages: { title: 'الإشعارات والرسائل', sub: 'إرسال الإشعارات الجماعية والمستهدفة وجدولة التنبيهات' },
     support: { title: 'الدعم الفني والشكاوى', sub: 'استقبال شكاوى المستخدمين والرد عليها وإغلاق التذاكر' },
     content: { title: 'إدارة المحتوى', sub: 'التحكم في البانرات، الإعلانات، الكوبونات والأسئلة الشائعة' },
@@ -858,6 +859,9 @@ function renderPage(page) {
       break;
     case 'pricing':
       container.innerHTML = renderPricing();
+      break;
+    case 'communication':
+      container.innerHTML = renderCommunication();
       break;
     case 'messages':
       container.innerHTML = renderMessages();
@@ -2478,7 +2482,7 @@ async function loadFinancialDataFromSupabase() {
     const { data: settlData } = await client.from('financial_settlements').select('*').order('created_at', { ascending: false });
     if (settlData) financialState.settlements = settlData;
 
-    const { data: usrData } = await client.from('users').select('id, name, phone, role, wallet_balance');
+    const { data: usrData } = await client.from('users').select('id, name, phone:phone_number, role, wallet_balance');
     if (usrData) financialState.usersList = usrData;
 
     financialState.isLoaded = true;
@@ -4075,6 +4079,32 @@ function sendCustomNotification() {
           if (userNotifError) throw userNotifError;
         }
 
+        // Send Push Notification in real-time if not scheduled
+        if (!scheduleTime) {
+          try {
+            const pushEndpoint = 'https://inride-push-backend.vercel.app/api';
+            await fetch(pushEndpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: title,
+                body: body,
+                type: type,
+                target: target,
+                targetCity: targetCity,
+                recipientId: target === 'specific' ? targetUid : null,
+                data: {
+                  adminNotificationId: notifId,
+                  type: type
+                }
+              })
+            });
+            console.log("[PushNotificationLog] Dispatched custom push notification successfully.");
+          } catch (e) {
+            console.warn("[PushNotificationLog] Failed to dispatch push notification:", e.message);
+          }
+        }
+
         showToast(scheduleTime ? '✅ تم جدولة الإشعار بنجاح' : '✅ تم إرسال الإشعار لجميع الأجهزة النشطة بنجاح');
         
         document.getElementById('notifTitle').value = '';
@@ -4182,6 +4212,15 @@ let supportSearchQuery = '';
 let supportFilterStatus = 'all';
 let supportRealtimeSubscribed = false;
 
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function playNotificationChime() {
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -4259,15 +4298,44 @@ async function loadSupportChatsFromSupabase() {
   if (!supabaseClient) return;
 
   try {
-    const { data: chats, error } = await supabaseClient
+    const { data: chats, error: chatsErr } = await supabaseClient
       .from('support_chats')
       .select('*')
       .order('updated_at', { ascending: false });
 
-    if (error) throw error;
+    let rawChats = chats || [];
+
+    // Fallback: Also check support_messages for any user conversations missing in support_chats
+    const { data: recentMsgs } = await supabaseClient
+      .from('support_messages')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (recentMsgs && recentMsgs.length > 0) {
+      const existingIds = new Set(rawChats.map(c => c.id || c.user_id));
+      const discoveredMap = {};
+
+      recentMsgs.forEach(msg => {
+        const uId = msg.conversation_id || msg.user_id;
+        if (uId && uId !== 'admin' && !existingIds.has(uId) && !discoveredMap[uId]) {
+          discoveredMap[uId] = {
+            id: uId,
+            user_id: uId,
+            user_type: msg.sender_type || 'rider',
+            user_name: 'عميل inRide',
+            status: 'open',
+            last_message: msg.message || msg.text || '',
+            last_message_at: msg.created_at,
+            unread_admin_count: (msg.sender_type !== 'admin' && !msg.is_admin && msg.status !== 'read') ? 1 : 0,
+          };
+        }
+      });
+
+      rawChats = [...rawChats, ...Object.values(discoveredMap)];
+    }
 
     // Fetch user details for names and roles
-    const userIds = (chats || []).map(c => c.id || c.user_id).filter(Boolean);
+    const userIds = rawChats.map(c => c.id || c.user_id).filter(Boolean);
     let userMap = {};
     if (userIds.length > 0) {
       const { data: users } = await supabaseClient.from('users').select('id, name, phone_number, role').in('id', userIds);
@@ -4283,7 +4351,7 @@ async function loadSupportChatsFromSupabase() {
       });
     }
 
-    liveSupportChats = (chats || []).map(c => {
+    liveSupportChats = rawChats.map(c => {
       const uId = c.id || c.user_id;
       const uInfo = userMap[uId] || {};
       return {
@@ -4389,17 +4457,17 @@ function renderConversationsListHtml() {
       <div onclick="selectTicket('${tkt.id}')" style="padding:14px 16px;border-bottom:1px solid var(--border-light);cursor:pointer;background:${isSelected ? 'rgba(30,136,229,0.08)' : 'transparent'};transition:all 0.2s;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <div style="display:flex;align-items:center;gap:6px;">
-            <span style="font-weight:700;font-size:13px;color:var(--text-primary);">${tkt.user_name || 'عميل'}</span>
+            <span style="font-weight:700;font-size:13px;color:var(--text-primary);">${escapeHtml(tkt.user_name || 'عميل')}</span>
             <span style="font-size:10px;padding:2px 6px;border-radius:10px;background:var(--bg-primary);color:var(--text-secondary);font-weight:600;">${userRoleAr}</span>
           </div>
           <span class="status-badge ${statusBadgeClass}">${statusAr}</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text-light);margin-bottom:6px;">
-          <span>${tkt.phone || ''}</span>
+          <span>${escapeHtml(tkt.phone || '')}</span>
           <span>${timeStr}</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;">${tkt.last_message || 'لا توجد رسائل'}</div>
+          <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;">${escapeHtml(tkt.last_message || 'لا توجد رسائل')}</div>
           ${tkt.unread_admin_count > 0 ? `<span style="background:var(--error);color:white;border-radius:10px;padding:2px 7px;font-size:10px;font-weight:bold;">${tkt.unread_admin_count}</span>` : ''}
         </div>
       </div>
@@ -4436,19 +4504,49 @@ async function markConversationAsReadByAdmin(id) {
   }
 }
 
+async function setConversationStatus(id, newStatus) {
+  if (!supabaseClient || !id) return;
+  try {
+    const { error } = await supabaseClient
+      .from('support_chats')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+
+    const tkt = liveSupportChats.find(t => t.id === id);
+    if (tkt) tkt.status = newStatus;
+
+    const statusNames = { resolved: 'تم الحل', pending: 'قيد المتابعة', open: 'مفتوحة' };
+    showToast(`✅ تم تحديث حالة الشكوى إلى: ${statusNames[newStatus] || newStatus}`);
+    
+    refreshActiveTicketChat();
+    const container = document.getElementById('supportConversationsList');
+    if (container) container.innerHTML = renderConversationsListHtml();
+  } catch (e) {
+    console.error("[SupportChat Log] Error setting conversation status:", e);
+    showToast("❌ فشل تغيير حالة الشكوى");
+  }
+}
+
 async function refreshActiveTicketChat() {
   const container = document.getElementById('activeSupportChatContainer');
   if (!container || !activeTicketId) return;
   container.innerHTML = await renderTicketChatHtmlAsync();
+  const scrollArea = document.getElementById('chatMessagesScrollArea');
+  if (scrollArea) scrollArea.scrollTop = scrollArea.scrollHeight;
 }
 
 function renderTicketChatHtml() {
-  // Return skeleton while loading messages asynchronously
   renderTicketChatHtmlAsync().then(html => {
     const container = document.getElementById('activeSupportChatContainer');
-    if (container) container.innerHTML = html;
+    if (container) {
+      container.innerHTML = html;
+      const scrollArea = document.getElementById('chatMessagesScrollArea');
+      if (scrollArea) scrollArea.scrollTop = scrollArea.scrollHeight;
+    }
   });
-  return `<div style="flex:1;display:flex;align-items:center;center;justify-content:center;"><i class="ri-loader-4-line ri-spin" style="font-size:32px;color:var(--medium-blue);"></i></div>`;
+  return `<div style="flex:1;display:flex;align-items:center;justify-content:center;"><i class="ri-loader-4-line ri-spin" style="font-size:32px;color:var(--medium-blue);"></i></div>`;
 }
 
 async function renderTicketChatHtmlAsync() {
@@ -4471,17 +4569,17 @@ async function renderTicketChatHtmlAsync() {
   return `
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-color);padding:16px 20px;">
       <div>
-        <h3 style="margin-bottom:2px;">محادثة: ${tkt.user_name}</h3>
-        <p style="font-size:12px;color:var(--text-secondary);">النوع: ${userRoleAr} • الحالة: ${tkt.status}</p>
+        <h3 style="margin-bottom:2px;font-size:16px;font-weight:700;">محادثة: ${escapeHtml(tkt.user_name)}</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin:0;">النوع: ${userRoleAr} • الحالة: ${tkt.status === 'resolved' ? 'محلولة' : (tkt.status === 'pending' ? 'قيد المتابعة' : 'مفتوحة')}</p>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-outline btn-sm" onclick="setConversationStatus('${tkt.id}', 'pending')"><i class="ri-time-line"></i> قيد المتابعة</button>
-        <button class="btn btn-primary btn-sm" style="background:var(--success);" onclick="setConversationStatus('${tkt.id}', 'resolved')"><i class="ri-check-line"></i> إغلاق وحل الشكوى</button>
+        <button class="btn btn-primary btn-sm" style="background:var(--success);border-color:var(--success);" onclick="setConversationStatus('${tkt.id}', 'resolved')"><i class="ri-check-line"></i> إغلاق وحل الشكوى</button>
       </div>
     </div>
     
-    <div id="chatMessagesScrollArea" style="flex:1;padding:20px;overflow-y:auto;background:var(--bg-primary);display:flex;flex-direction:column;gap:14px;max-height:420px;">
-      ${messages.length === 0 ? `<div style="text-align:center;padding:32px;color:var(--text-light);">لا توجد رسائل سابقة في هذه المحادثة.</div>` : 
+    <div id="chatMessagesScrollArea" style="flex:1;padding:20px;overflow-y:auto;background:var(--bg-primary);display:flex;flex-direction:column;gap:14px;max-height:450px;">
+      ${messages.length === 0 ? `<div style="text-align:center;padding:32px;color:var(--text-light);font-size:13px;">لا توجد رسائل سابقة في هذه المحادثة.</div>` : 
         messages.map(msg => {
           const isAdmin = msg.sender_type === 'admin' || msg.is_admin === true;
           const text = msg.message || msg.text || '';
@@ -4502,10 +4600,10 @@ async function renderTicketChatHtmlAsync() {
           return `
             <div style="align-self:${isAdmin ? 'flex-end' : 'flex-start'};max-width:75%;">
               <div style="padding:10px 16px;border-radius:var(--radius-md);background:${isAdmin ? 'var(--medium-blue)' : 'white'};color:${isAdmin ? 'white' : 'var(--text-primary)'};box-shadow:var(--shadow-sm);font-size:13px;border:${isAdmin ? 'none' : '1px solid var(--border-color)'};">
-                ${text}
+                ${escapeHtml(text)}
               </div>
               <div style="font-size:10px;color:var(--text-light);text-align:${isAdmin ? 'left' : 'right'};margin-top:4px;display:flex;align-items:center;justify-content:${isAdmin ? 'flex-start' : 'flex-end'};gap:4px;">
-                <span>${isAdmin ? 'الدعم الفني' : tkt.user_name} • ${timeStr}</span>
+                <span>${isAdmin ? 'الدعم الفني' : escapeHtml(tkt.user_name)} • ${timeStr}</span>
                 ${statusIcon}
               </div>
             </div>
@@ -4514,10 +4612,10 @@ async function renderTicketChatHtmlAsync() {
       }
     </div>
 
-    <div style="padding:16px;border-top:1px solid var(--border-color);display:flex;gap:12px;align-items:center;">
+    <div style="padding:16px;border-top:1px solid var(--border-color);display:flex;gap:12px;align-items:center;background:white;">
       <textarea id="replyText" placeholder="اكتب ردك هنا..." rows="1" 
                 onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); sendSupportReply('${tkt.id}'); }"
-                style="flex:1;padding:12px;border:1px solid var(--border-color);border-radius:var(--radius-md);resize:none;font-family:inherit;"></textarea>
+                style="flex:1;padding:12px;border:1px solid var(--border-color);border-radius:var(--radius-md);resize:none;font-family:inherit;font-size:13px;"></textarea>
       <button class="btn btn-primary" style="padding:12px 20px;" onclick="sendSupportReply('${tkt.id}')"><i class="ri-send-plane-fill"></i> رد</button>
     </div>
   `;
@@ -4530,15 +4628,37 @@ async function sendSupportReply(id) {
   const client = getSupabaseClient() || supabaseClient;
   if (!text || !client) return;
 
-  textEl.value = '';
   const nowStr = new Date().toISOString();
   const msgId = generateUUID();
-  const adminSenderId = (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : id;
+  const adminSenderId = (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : 'fbf9e43e-3ca0-4950-ab0e-11367a24c162';
 
-  console.log("[SupportChat Log] Support Message Sent: id=" + msgId + " to recipient=" + id);
+  // Clear text input immediately for responsive feel
+  textEl.value = '';
+
+  // 1. Optimistic UI update in the chat scroll area
+  const scrollArea = document.getElementById('chatMessagesScrollArea');
+  if (scrollArea) {
+    const emptyNotice = scrollArea.querySelector('div[style*="text-align:center"]');
+    if (emptyNotice) emptyNotice.remove();
+
+    const timeStr = new Date().toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'});
+    const tempMsgHtml = `
+      <div id="msg-${msgId}" style="align-self:flex-end;max-width:75%;transition:opacity 0.3s;">
+        <div style="padding:10px 16px;border-radius:var(--radius-md);background:var(--medium-blue);color:white;box-shadow:var(--shadow-sm);font-size:13px;border:none;">
+          ${escapeHtml(text)}
+        </div>
+        <div style="font-size:10px;color:var(--text-light);text-align:left;margin-top:4px;display:flex;align-items:center;justify-content:flex-start;gap:4px;">
+          <span>الدعم الفني • ${timeStr}</span>
+          <i class="ri-check-line" style="color:rgba(255,255,255,0.7);font-size:13px;margin-right:4px;" title="جاري الإرسال"></i>
+        </div>
+      </div>
+    `;
+    scrollArea.insertAdjacentHTML('beforeend', tempMsgHtml);
+    scrollArea.scrollTop = scrollArea.scrollHeight;
+  }
 
   try {
-    // 1. Ensure support_chats conversation entry exists
+    // 2. Ensure support_chats conversation metadata exists first
     await client.from('support_chats').upsert({
       id: id,
       user_id: id,
@@ -4550,7 +4670,7 @@ async function sendSupportReply(id) {
       unread_user_count: 1
     }).catch(e => console.warn('[SupportChat] Non-critical upsert warning:', e));
 
-    // 2. Insert message into support_messages with valid UUID
+    // 3. Primary insert into support_messages
     const { error: insErr } = await client.from('support_messages').insert({
       id: msgId,
       conversation_id: id,
@@ -4566,19 +4686,25 @@ async function sendSupportReply(id) {
     });
 
     if (insErr) {
-      console.warn('[SupportChat Log] Primary insert warning, trying fallback:', insErr.message);
-      await client.from('support_messages').insert({
+      console.warn('[SupportChat Log] Primary insert failed, trying fallback insert:', insErr.message);
+      const { error: fallbackErr } = await client.from('support_messages').insert({
         id: msgId,
         conversation_id: id,
         user_id: id,
+        sender_id: id,
         sender_type: 'admin',
         message: text,
         text: text,
+        status: 'sent',
+        is_admin: true,
         created_at: nowStr
-      }).catch(e => console.warn('[SupportChat] Non-critical retry insert warning:', e));
+      });
+      if (fallbackErr) {
+        throw new Error('فشل إرسال الرسالة إلى قاعدة البيانات: ' + fallbackErr.message);
+      }
     }
 
-    // 3. Non-critical secondary updates (chat summary, notifications, push)
+    // 4. Non-critical secondary updates (chat summary, notifications, push)
     client.from('support_chats').update({
       last_message: text,
       last_message_at: nowStr,
@@ -4587,31 +4713,37 @@ async function sendSupportReply(id) {
     }).eq('id', id).catch(() => {});
 
     const notifId = generateUUID();
-    client.from('notifications').insert({
+    client.from('admin_notifications').insert({
       id: notifId,
       user_id: id,
       title: 'الدعم الفني',
       body: text,
       type: 'support_chat',
       is_read: false,
-      created_at: nowStr,
-      data: {
-        conversation_id: id,
-        message_id: msgId,
-        type: 'support_chat'
-      }
-    }).catch(e => console.warn('[SupportChat] Non-critical notification insert warning:', e));
+      created_at: nowStr
+    }).catch(() => {});
 
     try {
       dispatchPushNotificationToUser(id, "الدعم الفني", text, msgId);
     } catch (_) {}
 
-    refreshActiveTicketChat();
-    loadSupportChatsFromSupabase();
+    // Update ticket last_message in local state list
+    const localTkt = liveSupportChats.find(t => t.id === id);
+    if (localTkt) {
+      localTkt.last_message = text;
+      localTkt.last_message_at = nowStr;
+    }
+
+    const container = document.getElementById('supportConversationsList');
+    if (container) container.innerHTML = renderConversationsListHtml();
+
     showToast("✅ تم إرسال الرد بنجاح");
   } catch (e) {
     console.error("[SupportChat Log] Error sending admin reply:", e);
-    showToast("❌ حدث خطأ أثناء إرسال الرسالة");
+    if (textEl) textEl.value = text;
+    const tempMsgEl = document.getElementById(`msg-${msgId}`);
+    if (tempMsgEl) tempMsgEl.remove();
+    showToast("❌ " + (e.message || "حدث خطأ أثناء إرسال الرسالة"));
   }
 }
 
@@ -4636,7 +4768,7 @@ async function dispatchPushNotificationToUser(recipientId, title, body, messageI
   };
 
   try {
-    const pushEndpoint = '/api/push-notification';
+    const pushEndpoint = 'https://inride-push-backend.vercel.app/api';
     const response = await fetch(pushEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -6279,6 +6411,749 @@ function addLocalProfileChatMessage(uid, text) {
 
   renderLocalProfileChat(uid);
   logAction(`إرسال رسالة دعم محلياً للمستخدم: ${uid}`);
+}
+
+// ---- REALTIME DASHBOARD SYSTEM NOTIFICATIONS ----
+let dashboardNotifications = [];
+
+function addDashboardNotification(title, body, type, iconClass, targetPage) {
+  const notif = {
+    id: generateUUID(),
+    title: title,
+    body: body,
+    type: type,
+    icon: iconClass || 'ri-notification-3-line',
+    targetPage: targetPage || 'dashboard',
+    timestamp: new Date()
+  };
+
+  dashboardNotifications.unshift(notif);
+  if (dashboardNotifications.length > 50) {
+    dashboardNotifications.pop();
+  }
+
+  // Update UI badge & list
+  const dot = document.getElementById('dashboardNotifDot');
+  if (dot) dot.style.display = 'block';
+
+  renderDashboardNotifications();
+  playNotificationChime();
+  showToast(`🔔 تنبيه جديد: ${title}`);
+}
+
+function toggleDashboardNotificationsDropdown(event) {
+  if (event) event.stopPropagation();
+  const dropdown = document.getElementById('dashboardNotifDropdown');
+  if (!dropdown) return;
+  const isHidden = dropdown.style.display === 'none';
+  dropdown.style.display = isHidden ? 'block' : 'none';
+
+  // Dismiss dot when opened
+  if (isHidden) {
+    const dot = document.getElementById('dashboardNotifDot');
+    if (dot) dot.style.display = 'none';
+  }
+}
+
+function clearDashboardNotifications(event) {
+  if (event) event.stopPropagation();
+  dashboardNotifications = [];
+  renderDashboardNotifications();
+  const dot = document.getElementById('dashboardNotifDot');
+  if (dot) dot.style.display = 'none';
+}
+
+function renderDashboardNotifications() {
+  const container = document.getElementById('dashboardNotifList');
+  if (!container) return;
+
+  if (dashboardNotifications.length === 0) {
+    container.innerHTML = '<div style="text-align:center; color:var(--text-light); padding:16px; font-size:11px;">لا توجد تنبيهات جديدة حالياً.</div>';
+    return;
+  }
+
+  let html = '';
+  dashboardNotifications.forEach(notif => {
+    const timeStr = notif.timestamp.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    html += `
+      <div onclick="clickDashboardNotification('${notif.targetPage}', '${notif.id}')" style="display:flex; gap:10px; padding:10px; border-bottom:1px solid var(--border-color); cursor:pointer; align-items:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(30,136,229,0.05)'" onmouseout="this.style.background='transparent'">
+        <div style="background:rgba(30,136,229,0.1); width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--medium-blue); flex-shrink:0;">
+          <i class="${notif.icon}"></i>
+        </div>
+        <div style="flex:1;">
+          <h5 style="margin:0; font-size:12px; font-weight:700; color:var(--text-primary);">${notif.title}</h5>
+          <p style="margin:2px 0 0 0; font-size:11px; color:var(--text-secondary); max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${notif.body}</p>
+        </div>
+        <span style="font-size:10px; color:var(--text-light); flex-shrink:0;">${timeStr}</span>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+function clickDashboardNotification(page, notifId) {
+  // Hide dropdown
+  const dropdown = document.getElementById('dashboardNotifDropdown');
+  if (dropdown) dropdown.style.display = 'none';
+
+  // Navigate to target page if renderPage function exists
+  if (typeof renderPage === 'function') {
+    renderPage(page);
+  } else {
+    showToast(`الانتقال إلى صفحة: ${page}`);
+  }
+}
+
+// Close dropdown on clicking outside
+document.addEventListener('click', () => {
+  const dropdown = document.getElementById('dashboardNotifDropdown');
+  if (dropdown) dropdown.style.display = 'none';
+});
+
+// Setup realtime triggers for admin notifications
+function initDashboardRealtimeTriggers() {
+  if (!supabaseClient) return;
+
+  // 1. Subscribe to new ride requests
+  supabaseClient.channel('realtime_dashboard_rides')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ride_requests' }, payload => {
+      const ride = payload.new;
+      if (ride) {
+        const fare = ride.offered_fare || ride.offeredFare || 0;
+        addDashboardNotification(
+          'طلب رحلة جديد 🚗',
+          `رحلة جديدة من ${ride.pickup_address || 'الموقع الحالي'} بقيمة ${fare} ج.م`,
+          'ride',
+          'ri-car-fill',
+          'rides'
+        );
+      }
+    })
+    .subscribe();
+
+  // 2. Subscribe to new support chat messages
+  supabaseClient.channel('realtime_dashboard_support')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_messages' }, payload => {
+      const msg = payload.new;
+      if (msg && !msg.is_admin && msg.sender_type !== 'admin') {
+        addDashboardNotification(
+          'رسالة دعم جديدة 💬',
+          msg.message || msg.text || 'رسالة جديدة من مستخدم',
+          'support',
+          'ri-message-3-fill',
+          'support'
+        );
+      }
+    })
+    .subscribe();
+
+  // 3. Subscribe to new driver registrations (waiting for activation)
+  supabaseClient.channel('realtime_dashboard_drivers')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'drivers' }, payload => {
+      const driver = payload.new;
+      if (driver) {
+        addDashboardNotification(
+          'تسجيل سائق جديد 👤',
+          `الكابتن ${driver.name || 'جديد'} سجل في التطبيق وبانتظار التفعيل`,
+          'driver',
+          'ri-user-add-fill',
+          'drivers'
+        );
+      }
+    })
+    .subscribe();
+
+  // 4. Subscribe to new wallet charge receipts pending review
+  supabaseClient.channel('realtime_dashboard_transactions')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, payload => {
+      const tx = payload.new;
+      if (tx && tx.status === 'pending') {
+        addDashboardNotification(
+          'إيصال شحن معلق 💰',
+          `طلب شحن محفظة بقيمة ${tx.amount} ج.م بانتظار المراجعة والقبول`,
+          'transaction',
+          'ri-bank-card-fill',
+          'financial'
+        );
+      }
+    })
+    .subscribe();
+}
+
+// Hook dashboard realtime triggers into startup
+if (typeof supabaseClient !== 'undefined' && supabaseClient) {
+  setTimeout(initDashboardRealtimeTriggers, 2000);
+}
+
+// ====================================================================
+// 15. COMMUNICATION CENTER (REALTIME CHAT ROOMS & SUPPORT)
+// ====================================================================
+let commRooms = [];
+let commMessages = [];
+let selectedCommRoomId = null;
+let commFilter = 'all'; // 'all', 'trip', 'support', 'archived'
+let commSearchQuery = '';
+let commRoomsSubscription = null;
+let commMessagesSubscription = null;
+let replyReplyingToId = null;
+
+function renderCommunication() {
+  setTimeout(initCommunicationSystem, 50);
+
+  return `
+    <div class="page-section">
+      <!-- Layout: Rooms List | Chat Box | Details Panel -->
+      <div style="display:grid; grid-template-columns: 360px 1.2fr 300px; gap:20px; height: calc(100vh - 160px); min-height: 600px;">
+        
+        <!-- Column 1: Rooms List -->
+        <div class="card" style="display:flex; flex-direction:column; height:100%; max-height: 720px; overflow:hidden;">
+          <div class="card-header" style="padding:16px; border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; gap:10px;">
+            <h3 style="margin:0; font-size:16px; font-weight:700;"><i class="ri-chat-smile-2-line text-blue" style="margin-left:6px;"></i>مركز التواصل والمحادثات</h3>
+            <input type="text" id="commSearchInput" placeholder="البحث بالاسم، السائق، رمز الرحلة..." 
+                   value="${commSearchQuery}" 
+                   oninput="onCommSearch(this.value)"
+                   style="width:100%; padding:8px 12px; border:1px solid var(--border-color); border-radius:var(--radius-md); font-size:12px;" />
+            
+            <div style="display:flex; gap:4px; background:var(--bg-primary); padding:4px; border-radius:var(--radius-md);">
+              <button class="btn btn-sm ${commFilter === 'all' ? 'btn-primary' : 'btn-outline'}" style="flex:1; padding:6px 2px; font-size:10.5px; text-align:center;" onclick="setCommFilter('all')">الكل</button>
+              <button class="btn btn-sm ${commFilter === 'trip' ? 'btn-primary' : 'btn-outline'}" style="flex:1; padding:6px 2px; font-size:10.5px; text-align:center;" onclick="setCommFilter('trip')">الرحلات</button>
+              <button class="btn btn-sm ${commFilter === 'support' ? 'btn-primary' : 'btn-outline'}" style="flex:1; padding:6px 2px; font-size:10.5px; text-align:center;" onclick="setCommFilter('support')">الدعم</button>
+              <button class="btn btn-sm ${commFilter === 'archived' ? 'btn-primary' : 'btn-outline'}" style="flex:1; padding:6px 2px; font-size:10.5px; text-align:center;" onclick="setCommFilter('archived')">الأرشيف</button>
+            </div>
+          </div>
+          <div id="commRoomsContainer" style="flex:1; overflow-y:auto; padding:0;">
+            <div style="text-align:center; color:var(--text-light); padding:32px;"><i class="ri-loader-4-line ri-spin" style="font-size:24px; color:var(--medium-blue);"></i> جاري تحميل المحادثات...</div>
+          </div>
+        </div>
+
+        <!-- Column 2: Live Chat Box -->
+        <div class="card" style="display:flex; flex-direction:column; height:100%; max-height: 720px; overflow:hidden;">
+          <div id="commChatBoxHeader" style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:white;">
+            <h3 style="margin:0; font-size:15px; font-weight:700; color:var(--text-light);">لا توجد محادثة محددة</h3>
+          </div>
+          
+          <div id="commChatMessagesScroll" style="flex:1; overflow-y:auto; padding:20px; background:var(--bg-primary); display:flex; flex-direction:column; gap:12px; max-height:480px;">
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--text-light);">
+              <i class="ri-wechat-line" style="font-size:64px; margin-bottom:16px; color:var(--medium-blue);"></i>
+              <p style="font-weight:600; font-size:13px;">يرجى اختيار محادثة من القائمة لعرض الرسائل المتبادلة والرد عليها</p>
+            </div>
+          </div>
+
+          <!-- Input area -->
+          <div id="commInputArea" style="padding:16px; border-top:1px solid var(--border-color); background:white; display:none; flex-direction:column; gap:8px;">
+            <div id="commReplyBar" style="display:none; align-items:center; justify-content:space-between; padding:6px 12px; background:var(--bg-primary); border-radius:6px; font-size:11px; border-right:3px solid var(--medium-blue);">
+              <span id="commReplyText" style="color:var(--text-secondary);"></span>
+              <i class="ri-close-line" style="cursor:pointer;" onclick="cancelCommReply()"></i>
+            </div>
+            <div style="display:flex; gap:12px; align-items:center;">
+              <textarea id="commReplyInput" placeholder="اكتب ردك هنا..." rows="1" 
+                        onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); sendCommReply(); }"
+                        style="flex:1; padding:12px; border:1px solid var(--border-color); border-radius:var(--radius-md); resize:none; font-family:inherit; font-size:13px;"></textarea>
+              <button class="btn btn-primary" style="padding:12px 24px;" onclick="sendCommReply()"><i class="ri-send-plane-fill"></i> إرسال</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Column 3: Detailed Info Panel -->
+        <div class="card" id="commDetailsPanel" style="padding:20px; display:flex; flex-direction:column; gap:20px; height:100%; max-height:720px; overflow-y:auto;">
+          <div style="text-align:center; color:var(--text-light); margin-top:40px;">
+            <i class="ri-contacts-book-2-line" style="font-size:48px; display:block; margin-bottom:12px; color:var(--text-light);"></i>
+            <span style="font-size:12px;">اختر محادثة لعرض تفاصيل الرحلة وبيانات المستخدمين</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  `;
+}
+
+async function initCommunicationSystem() {
+  if (!supabaseClient) return;
+
+  await loadCommRooms();
+
+  // Listen to realtime changes on chat_rooms
+  if (commRoomsSubscription) commRoomsSubscription.unsubscribe();
+  commRoomsSubscription = supabaseClient
+    .channel('dashboard_comm_rooms')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_rooms' }, payload => {
+      console.log('[DashboardComm] Realtime updates on chat rooms table.');
+      loadCommRooms();
+    })
+    .subscribe();
+}
+
+async function loadCommRooms() {
+  if (!supabaseClient) return;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('chat_rooms')
+      .select('*, passenger:passenger_id(id, name, phone_number, avatar_url), driver:driver_id(id, name, phone_number, avatar_url), trip:trip_id(*)')
+      .order('is_pinned', { ascending: false })
+      .order('updated_at', { ascending: false });
+
+    if (error) throw error;
+
+    commRooms = data || [];
+    renderCommRoomsList();
+    
+    // Update active badges globally
+    const unreadCount = commRooms.filter(r => r.type === 'support' && r.status === 'active').length; // or calculate total unread
+    const badgeEl = document.getElementById('communicationBadge');
+    if (badgeEl) {
+      badgeEl.innerText = unreadCount;
+      badgeEl.style.display = unreadCount > 0 ? 'inline-block' : 'none';
+    }
+
+    if (selectedCommRoomId) {
+      updateCommDetailsPanel();
+    }
+  } catch (e) {
+    console.error('[DashboardComm] Error fetching rooms:', e);
+  }
+}
+
+function renderCommRoomsList() {
+  const container = document.getElementById('commRoomsContainer');
+  if (!container) return;
+
+  let filtered = commRooms.filter(r => {
+    // 1. Status Filter
+    if (commFilter === 'archived' && r.status !== 'archived') return false;
+    if (commFilter !== 'archived' && r.status === 'archived') return false;
+    if (commFilter === 'trip' && r.type !== 'trip') return false;
+    if (commFilter === 'support' && r.type !== 'support') return false;
+
+    // 2. Search Query
+    if (commSearchQuery.trim()) {
+      const q = commSearchQuery.toLowerCase();
+      const matchPassenger = (r.passenger?.name || '').toLowerCase().includes(q);
+      const matchDriver = (r.driver?.name || '').toLowerCase().includes(q);
+      const matchTripId = (r.trip_id || '').toLowerCase().includes(q);
+      return matchPassenger || matchDriver || matchTripId;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div style="text-align:center; padding:32px; color:var(--text-light); font-size:12px;">لا توجد محادثات مطابقة للفلاتر.</div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(room => {
+    const isSelected = selectedCommRoomId === room.id;
+    const timeStr = room.updated_at ? new Date(room.updated_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'}) : '';
+    const roomTitle = room.type === 'support' ? `دعم: ${room.passenger?.name || 'مستخدم'}` : `رحلة: ${room.passenger?.name} ↔ ${room.driver?.name || 'سائق'}`;
+    const roomSub = room.type === 'support' ? 'محادثة دعم فني مع العميل' : `رقم الرحلة: ${room.trip_id?.substring(0, 8)}...`;
+    
+    return `
+      <div style="padding:14px 16px; border-bottom:1px solid var(--border-light); cursor:pointer; background:${isSelected ? 'rgba(30,136,229,0.08)' : 'transparent'}; transition:all 0.2s; position:relative;"
+           onclick="selectCommRoom('${room.id}')">
+        
+        <!-- Top bar details -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <div style="display:flex; align-items:center; gap:6px;">
+            ${room.is_pinned ? `<i class="ri-pushpin-2-fill text-blue" style="font-size:14px;" title="محادثة مثبتة"></i>` : ''}
+            <span style="font-weight:700; font-size:12.5px; color:var(--text-primary);">${roomTitle}</span>
+          </div>
+          <span class="status-badge ${room.type === 'support' ? 'active' : 'completed'}" style="font-size:9.5px; padding:2px 6px;">
+            ${room.type === 'support' ? 'دعم فني' : 'رحلة مشوار'}
+          </span>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--text-light); margin-bottom:6px;">
+          <span>${roomSub}</span>
+          <span>${timeStr}</span>
+        </div>
+
+        <!-- Last message detail -->
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-size:11px; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px;">
+            ${room.last_message || 'لا توجد رسائل بعد'}
+          </div>
+          
+          <!-- Actions: Pin, Archive, Close -->
+          <div style="display:flex; gap:6px; align-items:center;" onclick="event.stopPropagation();">
+            <button onclick="togglePinRoom('${room.id}', ${room.is_pinned})" style="background:none; border:none; color:var(--text-light); cursor:pointer; font-size:13px;" title="تثبيت/إلغاء التثبيت">
+              <i class="${room.is_pinned ? 'ri-pushpin-2-fill text-blue' : 'ri-pushpin-2-line'}"></i>
+            </button>
+            <button onclick="toggleArchiveRoom('${room.id}', '${room.status}')" style="background:none; border:none; color:var(--text-light); cursor:pointer; font-size:13px;" title="أرشفة/تنشيط">
+              <i class="${room.status === 'archived' ? 'ri-inbox-unarchive-line text-blue' : 'ri-inbox-archive-line'}"></i>
+            </button>
+            ${room.type === 'support' && room.status !== 'closed' ? `
+              <button onclick="closeSupportTicketRoom('${room.id}')" style="background:none; border:none; color:var(--error); cursor:pointer; font-size:13px;" title="إغلاق التذكرة">
+                <i class="ri-checkbox-circle-fill"></i>
+              </button>
+            ` : ''}
+          </div>
+        </div>
+
+      </div>
+    `;
+  }).join('');
+}
+
+function onCommSearch(val) {
+  commSearchQuery = val;
+  renderCommRoomsList();
+}
+
+function setCommFilter(filter) {
+  commFilter = filter;
+  renderCommRoomsList();
+}
+
+async function selectCommRoom(roomId) {
+  selectedCommRoomId = roomId;
+  renderCommRoomsList();
+
+  // Load chat box controls
+  const inputArea = document.getElementById('commInputArea');
+  if (inputArea) inputArea.style.display = 'flex';
+
+  // Mark all messages as read by admin in this room
+  try {
+    const myAdminId = currentAdminUser?.id;
+    if (myAdminId) {
+      await supabaseClient.rpc('execute_sql', {
+        query: `INSERT INTO public.message_reads (message_id, user_id) 
+                SELECT id, '${myAdminId}'::uuid FROM public.messages 
+                WHERE room_id = '${roomId}' AND sender_id <> '${myAdminId}'
+                ON CONFLICT DO NOTHING;`
+      });
+    }
+  } catch (_) {}
+
+  // Fetch messages and subscribe to room
+  await loadCommMessages(roomId);
+  setupMessagesRealtime(roomId);
+
+  // Update detail panels
+  updateCommChatBoxHeader();
+  updateCommDetailsPanel();
+}
+
+async function loadCommMessages(roomId) {
+  if (!supabaseClient) return;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('messages')
+      .select('*, reply_to:reply_to_message_id(*), attachments(*)')
+      .eq('room_id', roomId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    commMessages = data || [];
+    renderCommChatArea();
+  } catch (e) {
+    console.error('[DashboardComm] Error fetching messages:', e);
+  }
+}
+
+function setupMessagesRealtime(roomId) {
+  if (commMessagesSubscription) commMessagesSubscription.unsubscribe();
+
+  commMessagesSubscription = supabaseClient
+    .channel(`room_msgs_${roomId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` }, () => {
+      loadCommMessages(roomId);
+    })
+    .subscribe();
+}
+
+function updateCommChatBoxHeader() {
+  const header = document.getElementById('commChatBoxHeader');
+  if (!header) return;
+
+  const room = commRooms.find(r => r.id === selectedCommRoomId);
+  if (!room) return;
+
+  const title = room.type === 'support' ? `محادثة دعم: ${room.passenger?.name || 'مستخدم'}` : `تواصل رحلة: ${room.passenger?.name} ↔ ${room.driver?.name || 'سائق'}`;
+  const statusStr = room.status === 'archived' ? 'مؤرشفة' : (room.status === 'closed' ? 'مغلقة' : 'نشطة');
+
+  header.innerHTML = `
+    <div>
+      <h3 style="margin-bottom:2px; font-size:14px; font-weight:700;">${title}</h3>
+      <p style="font-size:11px; color:var(--text-secondary); margin:0;">الحالة: ${statusStr} • النوع: ${room.type === 'support' ? 'دعم فني' : 'تنسيق رحلة'}</p>
+    </div>
+    <div style="display:flex; gap:6px;">
+      ${room.type === 'support' && room.status !== 'closed' ? `
+        <button class="btn btn-success btn-sm" style="background:var(--success);" onclick="closeSupportTicketRoom('${room.id}')"><i class="ri-check-line"></i> إغلاق وحل الشكوى</button>
+      ` : ''}
+      <button class="btn btn-outline btn-sm" onclick="toggleArchiveRoom('${room.id}', '${room.status}')">
+        <i class="ri-inbox-archive-line"></i> ${room.status === 'archived' ? 'إلغاء الأرشفة' : 'نقل للأرشيف'}
+      </button>
+    </div>
+  `;
+}
+
+function renderCommChatArea() {
+  const container = document.getElementById('commChatMessagesScroll');
+  if (!container) return;
+
+  if (commMessages.length === 0) {
+    container.innerHTML = `<div style="text-align:center; padding:32px; color:var(--text-light); font-size:12px;">لا توجد رسائل في هذه المحادثة بعد.</div>`;
+    return;
+  }
+
+  container.innerHTML = commMessages.map(msg => {
+    const isMe = msg.sender_id === currentAdminUser?.id || msg.sender_id === selectedCommRoomId; // simplified logic or matches role admin
+    const text = msg.text || '';
+    const dateObj = new Date(msg.created_at || Date.now());
+    const timeStr = dateObj.toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'});
+    
+    // Check attachments
+    let attachmentHtml = '';
+    if (msg.attachments && msg.attachments.length > 0) {
+      const att = msg.attachments[0];
+      if (att.file_path) {
+        attachmentHtml = `
+          <div style="margin-bottom:6px; border-radius:6px; overflow:hidden; max-width:200px;">
+            <img src="${att.file_path}" style="width:100%; max-height:150px; object-fit:cover; cursor:pointer;" onclick="window.open('${att.file_path}')">
+          </div>
+        `;
+      }
+    }
+
+    // Check replies
+    let replyHtml = '';
+    if (msg.reply_to) {
+      replyHtml = `
+        <div style="background:rgba(0,0,0,0.05); padding:6px 10px; border-radius:4px; font-size:10.5px; border-right:3px solid var(--medium-blue); margin-bottom:6px;">
+          <strong style="font-size:9.5px; display:block; color:var(--medium-blue);">رد على:</strong>
+          <span>${msg.reply_to.text || ''}</span>
+        </div>
+      `;
+    }
+
+    return `
+      <div style="align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:72%; position:relative; group;">
+        <div style="padding:10px 14px; border-radius:var(--radius-md); background:${isMe ? 'var(--medium-blue)' : 'white'}; color:${isMe ? 'white' : 'var(--text-primary)'}; box-shadow:var(--shadow-sm); font-size:12.5px; border:${isMe ? 'none' : '1px solid var(--border-color)'};">
+          ${replyHtml}
+          ${attachmentHtml}
+          <div>${text}</div>
+        </div>
+        <div style="font-size:9.5px; color:var(--text-light); text-align:${isMe ? 'left' : 'right'}; margin-top:4px; display:flex; align-items:center; justify-content:${isMe ? 'flex-start' : 'flex-end'}; gap:6px;">
+          <span>${timeStr}</span>
+          <!-- Options: Delete, Reply -->
+          <span style="display:inline-flex; gap:6px;">
+            <button onclick="replyCommMessage('${msg.id}', '${text}')" style="background:none; border:none; color:var(--text-light); cursor:pointer; font-size:11px;" title="رد"><i class="ri-reply-line"></i></button>
+            <button onclick="deleteCommMessage('${msg.id}')" style="background:none; border:none; color:var(--error); cursor:pointer; font-size:11px;" title="حذف رسالة غير لائقة"><i class="ri-delete-bin-6-line"></i></button>
+          </span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Scroll to bottom
+  setTimeout(() => {
+    container.scrollTop = container.scrollHeight;
+  }, 100);
+}
+
+function replyCommMessage(msgId, text) {
+  replyReplyingToId = msgId;
+  const replyBar = document.getElementById('commReplyBar');
+  const replyText = document.getElementById('commReplyText');
+  if (replyBar && replyText) {
+    replyText.innerText = `رد على: ${text.substring(0, 30)}...`;
+    replyBar.style.display = 'flex';
+  }
+}
+
+function cancelCommReply() {
+  replyReplyingToId = null;
+  const replyBar = document.getElementById('commReplyBar');
+  if (replyBar) replyBar.style.display = 'none';
+}
+
+async function sendCommReply() {
+  const input = document.getElementById('commReplyInput');
+  if (!input || !selectedCommRoomId) return;
+
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  const replyingId = replyReplyingToId;
+  cancelCommReply();
+
+  try {
+    const adminId = currentAdminUser?.id;
+    if (!adminId) throw new Error('يرجى تسجيل الدخول كمسؤول أولاً');
+
+    const { error } = await supabaseClient.from('messages').insert({
+      room_id: selectedCommRoomId,
+      sender_id: adminId,
+      text: text,
+      reply_to_message_id: replyingId || null
+    });
+
+    if (error) throw error;
+    showToast('✅ تم إرسال الرد بنجاح');
+  } catch (e) {
+    showToast('❌ فشل الإرسال: ' + e.message);
+  }
+}
+
+async function deleteCommMessage(messageId) {
+  if (!confirm('هل أنت متأكد من رغبتك في حذف هذه الرسالة لكونها غير لائقة؟')) return;
+
+  try {
+    const { error } = await supabaseClient
+      .from('messages')
+      .update({
+        is_deleted: true,
+        text: 'هذه الرسالة تم حذفها من قبل المشرف لمخالفتها الشروط 🗑️'
+      })
+      .eq('id', messageId);
+
+    if (error) throw error;
+    showToast('🗑️ تم حذف الرسالة بنجاح');
+  } catch (e) {
+    showToast('❌ فشل الحذف: ' + e.message);
+  }
+}
+
+async function togglePinRoom(roomId, isPinned) {
+  try {
+    const { error } = await supabaseClient
+      .from('chat_rooms')
+      .update({ is_pinned: !isPinned })
+      .eq('id', roomId);
+
+    if (error) throw error;
+    showToast(isPinned ? '📌 تم إلغاء تثبيت المحادثة' : '📌 تم تثبيت المحادثة في الأعلى');
+    loadCommRooms();
+  } catch (e) {
+    showToast('❌ فشل الإجراء: ' + e.message);
+  }
+}
+
+async function toggleArchiveRoom(roomId, status) {
+  const nextStatus = status === 'archived' ? 'active' : 'archived';
+  try {
+    const { error } = await supabaseClient
+      .from('chat_rooms')
+      .update({ status: nextStatus })
+      .eq('id', roomId);
+
+    if (error) throw error;
+    showToast(nextStatus === 'archived' ? '📥 تم أرشفة المحادثة' : '📥 تم تنشيط المحادثة مجدداً');
+    loadCommRooms();
+  } catch (e) {
+    showToast('❌ فشل الإجراء: ' + e.message);
+  }
+}
+
+async function closeSupportTicketRoom(roomId) {
+  if (!confirm('هل تريد إغلاق تذكرة الدعم الفني هذه وحلها؟')) return;
+
+  try {
+    const { error: roomErr } = await supabaseClient
+      .from('chat_rooms')
+      .update({ status: 'closed' })
+      .eq('id', roomId);
+
+    if (roomErr) throw roomErr;
+
+    await supabaseClient
+      .from('support_tickets')
+      .update({ status: 'resolved' })
+      .eq('chat_room_id', roomId);
+
+    showToast('✅ تم إغلاق وحل تذكرة الدعم بنجاح');
+    loadCommRooms();
+  } catch (e) {
+    showToast('❌ فشل الإجراء: ' + e.message);
+  }
+}
+
+function updateCommDetailsPanel() {
+  const panel = document.getElementById('commDetailsPanel');
+  if (!panel) return;
+
+  const room = commRooms.find(r => r.id === selectedCommRoomId);
+  if (!room) return;
+
+  // Passenger Detail
+  const passengerHtml = `
+    <div style="border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+      <h4 style="font-size:12px; color:var(--text-light); margin-bottom:8px;">بيانات الراكب / العميل</h4>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div style="width:36px; height:36px; border-radius:50%; background:var(--bg-primary); display:flex; align-items:center; justify-content:center; font-weight:700;">
+          ${(room.passenger?.name || 'ع').charAt(0)}
+        </div>
+        <div>
+          <div style="font-weight:700; font-size:12.5px;">${room.passenger?.name || 'مستخدم inRide'}</div>
+          <div style="font-size:11px; color:var(--text-secondary);">${room.passenger?.phone_number || 'بدون هاتف'}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Driver Detail (if Trip room)
+  let driverHtml = '';
+  if (room.type === 'trip' && room.driver) {
+    driverHtml = `
+      <div style="border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+        <h4 style="font-size:12px; color:var(--text-light); margin-bottom:8px;">بيانات الكابتن / السائق</h4>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div style="width:36px; height:36px; border-radius:50%; background:var(--bg-primary); display:flex; align-items:center; justify-content:center; font-weight:700;">
+            ${(room.driver?.name || 'س').charAt(0)}
+          </div>
+          <div>
+            <div style="font-weight:700; font-size:12.5px;">${room.driver?.name || 'كابتن'}</div>
+            <div style="font-size:11px; color:var(--text-secondary);">${room.driver?.phone_number || ''}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Trip details (Requirement 4)
+  let tripHtml = '';
+  if (room.type === 'trip' && room.trip) {
+    const trip = room.trip;
+    const dateStr = trip.created_at ? new Date(trip.created_at).toLocaleString('ar-EG') : '';
+    tripHtml = `
+      <div>
+        <h4 style="font-size:12px; color:var(--text-light); margin-bottom:8px;">تفاصيل الرحلة</h4>
+        <div style="display:flex; flex-direction:column; gap:8px; font-size:11.5px; line-height:1.4;">
+          <div><strong>كود الرحلة:</strong> <span class="font-outfit" style="font-weight:bold; color:var(--medium-blue);">${trip.id}</span></div>
+          <div><strong>سعر المشوار:</strong> <span class="font-outfit">${trip.offered_fare} ج.م</span></div>
+          <div><strong>حالة الرحلة:</strong> <span class="status-badge active" style="font-size:10px; padding:1px 5px;">${trip.status}</span></div>
+          <div><strong>تاريخ الطلب:</strong> <span>${dateStr}</span></div>
+          <div style="margin-top:6px;">
+            <div style="color:var(--success); font-weight:bold;"><i class="ri-map-pin-user-fill"></i> البداية:</div>
+            <div style="color:var(--text-secondary); margin-right:12px;">${trip.pickup_address || 'عنوان البداية'}</div>
+          </div>
+          <div style="margin-top:4px;">
+            <div style="color:var(--error); font-weight:bold;"><i class="ri-map-pin-fill"></i> الوجهة:</div>
+            <div style="color:var(--text-secondary); margin-right:12px;">${trip.destination_address || 'عنوان النهاية'}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  } else if (room.type === 'support') {
+    tripHtml = `
+      <div style="text-align:center; padding:16px; background:var(--bg-primary); border-radius:var(--radius-md); font-size:12px; color:var(--text-secondary);">
+        <i class="ri-service-line" style="font-size:24px; display:block; margin-bottom:4px; color:var(--medium-blue);"></i>
+        محادثة تذكرة دعم فني عامة خارج الرحلات النشطة.
+      </div>
+    `;
+  }
+
+  panel.innerHTML = `
+    <h3 style="font-size:14px; font-weight:700; margin:0; border-bottom:1px solid var(--border-color); padding-bottom:8px;">معلومات المحادثة</h3>
+    ${passengerHtml}
+    ${driverHtml}
+    ${tripHtml}
+  `;
 }
 
 

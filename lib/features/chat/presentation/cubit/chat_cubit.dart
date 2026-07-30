@@ -1,131 +1,196 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../domain/entities/chat_message.dart';
+import '../../domain/usecases/chat_usecases.dart';
 import 'chat_state.dart';
-import 'package:flutter/foundation.dart';
-import '../../../../core/services/notification_service.dart';
 
 class ChatCubit extends Cubit<ChatState> {
-  final SupabaseClient _supabase = Supabase.instance.client;
+  final GetMessagesStream _getMessagesStream;
+  final SendChatMessage _sendChatMessage;
+  final SendChatAttachment _sendChatAttachment;
+  final MarkMessagesAsRead _markMessagesAsRead;
+  final UpdateTypingStatus _updateTypingStatus;
+  final GetTypingIndicator _getTypingIndicator;
+
   StreamSubscription? _messagesSubscription;
   StreamSubscription? _typingSubscription;
 
-  ChatCubit() : super(ChatInitial());
+  ChatCubit({
+    required GetMessagesStream getMessagesStream,
+    required SendChatMessage sendChatMessage,
+    required SendChatAttachment sendChatAttachment,
+    required MarkMessagesAsRead markMessagesAsRead,
+    required UpdateTypingStatus updateTypingStatus,
+    required GetTypingIndicator getTypingIndicator,
+  })  : _getMessagesStream = getMessagesStream,
+        _sendChatMessage = sendChatMessage,
+        _sendChatAttachment = sendChatAttachment,
+        _markMessagesAsRead = markMessagesAsRead,
+        _updateTypingStatus = updateTypingStatus,
+        _getTypingIndicator = getTypingIndicator,
+        super(ChatInitial());
 
-  void loadChatRoom(String tripId, String myId, String partnerId) {
+  void loadChatRoom(String roomId, String myId, String partnerId) {
     emit(ChatLoading());
     _messagesSubscription?.cancel();
     _typingSubscription?.cancel();
 
-    // 1. Listen to messages stream
-    _messagesSubscription = _supabase
-        .from('chat_messages')
-        .stream(primaryKey: ['id'])
-        .eq('request_id', tripId)
-        .listen((msgList) {
-      final sortedDocs = List<Map<String, dynamic>>.from(msgList);
-      sortedDocs.sort((a, b) {
-        final aTime = DateTime.tryParse(a['created_at'] ?? '') ?? DateTime(1970);
-        final bTime = DateTime.tryParse(b['created_at'] ?? '') ?? DateTime(1970);
-        return bTime.compareTo(aTime);
-      });
+    // 1. Mark existing messages as read
+    _markMessagesAsRead(roomId, myId);
 
-      final List<Map<String, dynamic>> messages = sortedDocs.map((data) {
-        return {
-          'id': data['id'],
-          'text': data['text'] ?? '',
-          'senderId': data['sender_id'] ?? data['senderId'] ?? '',
-          'isSeen': data['is_seen'] ?? data['isSeen'] ?? false,
-          'isDelivered': data['is_delivered'] ?? data['isDelivered'] ?? true,
-          'createdAt': DateTime.tryParse(data['created_at'] ?? '') ?? DateTime.now(),
-        };
-      }).toList();
+    // 2. Subscribe to messages stream
+    _messagesSubscription = _getMessagesStream(roomId).listen(
+      (msgList) {
+        final isPartnerTyping = state is ChatLoaded ? (state as ChatLoaded).partnerIsTyping : false;
+        emit(ChatLoaded(messages: msgList, partnerIsTyping: isPartnerTyping));
+        
+        // Auto mark new messages as read when they arrive and chat page is open
+        _markMessagesAsRead(roomId, myId);
+      },
+      onError: (e) {
+        emit(ChatError(e.toString()));
+      },
+    );
 
-      final isPartnerTyping = state is ChatLoaded ? (state as ChatLoaded).partnerIsTyping : false;
-      emit(ChatLoaded(messages: messages, partnerIsTyping: isPartnerTyping));
-    }, onError: (e) {
-      emit(ChatError(e.toString()));
-    });
-
-    // 2. Listen to partner's typing status
-    _typingSubscription = _supabase
-        .from('typing_indicators')
-        .stream(primaryKey: ['id'])
-        .eq('request_id', tripId)
-        .listen((list) {
-      bool partnerTyping = false;
-      for (var row in list) {
-        if ((row['user_id'] == partnerId || row['userId'] == partnerId) && row['is_typing'] == true) {
-          partnerTyping = true;
-          break;
+    // 3. Subscribe to partner's typing status
+    _typingSubscription = _getTypingIndicator(roomId, partnerId).listen(
+      (isTyping) {
+        if (state is ChatLoaded) {
+          final current = state as ChatLoaded;
+          emit(ChatLoaded(messages: current.messages, partnerIsTyping: isTyping));
         }
-      }
+      },
+    );
+  }
 
+  Future<void> sendMessage({
+    required String roomId,
+    required String senderId,
+    required String text,
+    String? replyToMessageId,
+    String? replyToText,
+  }) async {
+    final String tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    final now = DateTime.now();
+
+    // Optimistic UI Update (Requirement 10)
+    final optimisticMsg = ChatMessage(
+      id: tempId,
+      roomId: roomId,
+      senderId: senderId,
+      text: text,
+      replyToMessageId: replyToMessageId,
+      replyToText: replyToText,
+      createdAt: now,
+      updatedAt: now,
+      isSending: true,
+    );
+
+    List<ChatMessage> currentMessages = [];
+    if (state is ChatLoaded) {
+      currentMessages = List<ChatMessage>.from((state as ChatLoaded).messages);
+    }
+    
+    emit(ChatLoaded(
+      messages: [optimisticMsg, ...currentMessages],
+      partnerIsTyping: state is ChatLoaded ? (state as ChatLoaded).partnerIsTyping : false,
+    ));
+
+    try {
+      await _sendChatMessage(
+        roomId: roomId,
+        senderId: senderId,
+        text: text,
+        replyToMessageId: replyToMessageId,
+      );
+    } catch (e) {
+      // Mark optimistic message as failed
       if (state is ChatLoaded) {
-        final current = state as ChatLoaded;
-        emit(ChatLoaded(messages: current.messages, partnerIsTyping: partnerTyping));
-      }
-    });
-  }
-
-  Future<void> sendMessage(String tripId, String senderId, String text) async {
-    try {
-      final msgRes = await _supabase.from('chat_messages').insert({
-        'request_id': tripId,
-        'sender_id': senderId,
-        'text': text,
-        'created_at': DateTime.now().toIso8601String(),
-      }).select('id').single();
-
-      final messageId = msgRes['id'];
-
-      try {
-        final reqRes = await _supabase.from('ride_requests').select().eq('id', tripId).maybeSingle();
-        if (reqRes != null) {
-          final reqData = Map<String, dynamic>.from(reqRes);
-          final String passengerId = reqData['passenger_id'] ?? reqData['passengerId'] ?? '';
-          final String driverId = reqData['driver_id'] ?? reqData['driverId'] ?? '';
-          final String partnerId = senderId == passengerId ? driverId : passengerId;
-          
-          if (partnerId.isNotEmpty) {
-            final senderRes = await _supabase.from('users').select('name').eq('id', senderId).maybeSingle();
-            final senderName = senderRes != null ? (senderRes['name'] ?? 'مستخدم') : 'مستخدم';
-            
-            unawaited(NotificationService.instance.sendNotification(
-              recipientId: partnerId,
-              title: 'رسالة جديدة من $senderName 💬',
-              body: text,
-              type: 'chat_message',
-              data: {
-                'id': messageId,
-                'tripId': tripId,
-                'partnerId': senderId,
-                'partnerName': senderName,
-              },
-            ));
+        final updatedMsgs = (state as ChatLoaded).messages.map((msg) {
+          if (msg.id == tempId) {
+            return msg.copyWith(isSending: false, isError: true);
           }
-        }
-      } catch (e) {
-        debugPrint("Failed to send chat notification: $e");
+          return msg;
+        }).toList();
+        emit(ChatLoaded(
+          messages: updatedMsgs,
+          partnerIsTyping: (state as ChatLoaded).partnerIsTyping,
+        ));
       }
-    } catch (_) {}
+    }
   }
 
-  Future<void> updateTypingStatus(String tripId, String myId, bool isTyping) async {
+  Future<void> sendAttachment({
+    required String roomId,
+    required String senderId,
+    required String text,
+    required String filePath,
+    required String fileName,
+    String? replyToMessageId,
+    String? replyToText,
+  }) async {
+    final String tempId = 'temp_file_${DateTime.now().millisecondsSinceEpoch}';
+    final now = DateTime.now();
+
+    // Optimistic UI update with attachment placeholder
+    final optimisticMsg = ChatMessage(
+      id: tempId,
+      roomId: roomId,
+      senderId: senderId,
+      text: text,
+      replyToMessageId: replyToMessageId,
+      replyToText: replyToText,
+      createdAt: now,
+      updatedAt: now,
+      isSending: true,
+      attachmentUrl: filePath, // local file path for immediate preview
+      attachmentName: fileName,
+      attachmentType: 'image',
+    );
+
+    List<ChatMessage> currentMessages = [];
+    if (state is ChatLoaded) {
+      currentMessages = List<ChatMessage>.from((state as ChatLoaded).messages);
+    }
+
+    emit(ChatLoaded(
+      messages: [optimisticMsg, ...currentMessages],
+      partnerIsTyping: state is ChatLoaded ? (state as ChatLoaded).partnerIsTyping : false,
+    ));
+
     try {
-      await _supabase.from('typing_indicators').upsert({
-        'request_id': tripId,
-        'user_id': myId,
-        'is_typing': isTyping,
-        'updated_at': DateTime.now().toIso8601String(),
-      });
-    } catch (_) {}
+      await _sendChatAttachment(
+        roomId: roomId,
+        senderId: senderId,
+        text: text,
+        filePath: filePath,
+        fileName: fileName,
+        replyToMessageId: replyToMessageId,
+      );
+    } catch (e) {
+      if (state is ChatLoaded) {
+        final updatedMsgs = (state as ChatLoaded).messages.map((msg) {
+          if (msg.id == tempId) {
+            return msg.copyWith(isSending: false, isError: true);
+          }
+          return msg;
+        }).toList();
+        emit(ChatLoaded(
+          messages: updatedMsgs,
+          partnerIsTyping: (state as ChatLoaded).partnerIsTyping,
+        ));
+      }
+    }
   }
 
-  void leaveChatRoom(String tripId, String myId) {
+  void updateTyping(String roomId, String myId, bool isTyping) {
+    _updateTypingStatus(roomId, myId, isTyping);
+  }
+
+  void leaveChatRoom(String roomId, String myId) {
     _messagesSubscription?.cancel();
     _typingSubscription?.cancel();
-    updateTypingStatus(tripId, myId, false);
+    updateTyping(roomId, myId, false);
     emit(ChatInitial());
   }
 

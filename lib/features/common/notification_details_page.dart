@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/models/notification_model.dart';
+import '../../core/services/notification_service.dart';
 
 class NotificationDetailsPage extends StatelessWidget {
   final NotificationModel notification;
@@ -131,6 +132,31 @@ class NotificationDetailsPage extends StatelessWidget {
                       ),
                     ),
                   ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Action Button if applicable
+              Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  gradient: const LinearGradient(colors: AppColors.blueGradient),
+                ),
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                  label: Text(
+                    'الانتقال إلى الصفحة المربوطة',
+                    style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                  onPressed: () {
+                    NotificationService.instance.handleNotificationClick(notification.data);
+                  },
                 ),
               ),
             ],

@@ -4,6 +4,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/utils/snappy_page_route.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
+import '../../../../core/services/location_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
 import '../../../../core/utils/map_coordinates_helper.dart';
@@ -37,12 +39,17 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
   bool _isCompleting = false;
   bool _isSubmittingRating = false;
 
+  String? _passengerName;
+  String? _passengerPhone;
+  String? _lastPassengerId;
+
   @override
   void initState() {
     super.initState();
     GlobalState.instance.addListener(_onStateChange);
     sl<NavigationController>().addListener(_onNavigationUpdate);
     _lastRideStatus = GlobalState.instance.rideStatus;
+    _fetchPassengerDetails();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAndStartNavigation();
@@ -88,8 +95,102 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
     }
   }
 
+  void _fetchPassengerDetails() async {
+    final state = GlobalState.instance;
+    final pId = state.activePassengerId ?? state.currentRideRequest?.passengerId;
+    if (pId != null && pId.isNotEmpty) {
+      try {
+        final uRes = await Supabase.instance.client
+            .from('users')
+            .select('name, phone_number, phone')
+            .eq('id', pId)
+            .maybeSingle();
+        if (uRes != null && mounted) {
+          setState(() {
+            _passengerName = (uRes['name'] ?? '').toString();
+            final phone = (uRes['phone_number'] ?? uRes['phone'] ?? '').toString();
+            if (phone.isNotEmpty) {
+              _passengerPhone = phone;
+            }
+          });
+        }
+      } catch (e) {
+        debugPrint('[DriverPage] Error fetching passenger details: $e');
+      }
+    }
+    
+    if ((_passengerPhone == null || _passengerPhone!.isEmpty) && state.currentRideRequest != null) {
+      final reqPhone = state.currentRideRequest?.recipientPhone;
+      if (reqPhone != null && reqPhone.isNotEmpty && mounted) {
+        setState(() {
+          _passengerPhone = reqPhone;
+        });
+      }
+    }
+  }
+
+  void _callEmergency() async {
+    final Uri url = Uri(scheme: 'tel', path: '122');
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url);
+      } else {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذر إجراء اتصال الطوارئ بالرقم 122', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  void _shareLiveLocation() async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('جاري جلب إحداثيات موقعك الجغرافي لمشاركته لايف... 📍', style: GoogleFonts.cairo()),
+        backgroundColor: AppColors.mediumBlue,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+
+    try {
+      final pos = await LocationService.instance.getCurrentLocation();
+      if (pos != null) {
+        final shareUrl = 'https://www.google.com/maps/search/?api=1&query=${pos.latitude},${pos.longitude}';
+        final message = 'أنا كابتن في تطبيق inRide وعلى الطريق حالياً. يمكنك تتبع موقعي المباشر على الخريطة من هنا: $shareUrl';
+        await SharePlus.instance.share(
+          ShareParams(text: message),
+        );
+      } else {
+        throw 'تعذر الحصول على الموقع الجغرافي الحالي. تأكد من تشغيل الـ GPS.';
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(e.toString(), style: GoogleFonts.cairo()),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   void _onStateChange() {
     final state = GlobalState.instance;
+
+    // Refetch passenger details if ID changes
+    final pId = state.activePassengerId ?? state.currentRideRequest?.passengerId;
+    if (pId != _lastPassengerId) {
+      _lastPassengerId = pId;
+      _fetchPassengerDetails();
+    }
     if (state.rideStatus == RideStatus.cancelled) {
       final msg = state.lastCancelReason ?? 'تم إلغاء الرحلة بواسطة العميل';
       _safeNavigateBack(message: msg);
@@ -453,27 +554,53 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            '${state.acceptedOffer?.driver.name ?? (state.currentServiceType == 'delivery' ? "العميل" : "الراكب")} (${state.currentServiceType == 'delivery' ? "طلب توصيل" : "راكب"})',
+                                            '${_passengerName ?? (state.currentServiceType == 'delivery' ? "العميل" : "الراكب")} (${state.currentServiceType == 'delivery' ? "طلب توصيل" : "راكب"})',
                                             style: GoogleFonts.cairo(
                                               fontSize: 14,
                                               fontWeight: FontWeight.bold,
                                               color: AppColors.textPrimary,
                                             ),
                                           ),
-                                          Row(
-                                            children: [
-                                              const Icon(Icons.star, color: Colors.orange, size: 12),
-                                              const SizedBox(width: 2),
-                                              Text(
-                                                state.acceptedOffer?.driver.rating.toStringAsFixed(1) ?? '5.0',
-                                                style: GoogleFonts.outfit(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: AppColors.textSecondary,
-                                                ),
+                                          if (_passengerPhone != null && _passengerPhone!.isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            GestureDetector(
+                                              onTap: () async {
+                                                final Uri url = Uri(scheme: 'tel', path: _passengerPhone);
+                                                if (await canLaunchUrl(url)) {
+                                                  await launchUrl(url);
+                                                }
+                                              },
+                                              child: Row(
+                                                children: [
+                                                  const Icon(Icons.phone_iphone, size: 14, color: AppColors.mediumBlue),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    _passengerPhone!,
+                                                    style: GoogleFonts.outfit(
+                                                      fontSize: 13,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: AppColors.mediumBlue,
+                                                      decoration: TextDecoration.underline,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
-                                            ],
-                                          ),
+                                            ),
+                                          ] else
+                                            Row(
+                                              children: [
+                                                const Icon(Icons.star, color: Colors.orange, size: 12),
+                                                const SizedBox(width: 2),
+                                                Text(
+                                                  state.acceptedOffer?.driver.rating.toStringAsFixed(1) ?? '5.0',
+                                                  style: GoogleFonts.outfit(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: AppColors.textSecondary,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                         ],
                                       ),
                                     ),
@@ -521,13 +648,23 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                                 tripId: state.currentRequestId!,
                                                 myId: state.userUid!,
                                                 partnerId: state.activePassengerId!,
-                                                partnerName: state.acceptedOffer?.driver.name ?? 'الراكب',
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      },
-                                    ),
+                                                 partnerName: _passengerName ?? 'الراكب',
+                                               ),
+                                             ),
+                                           );
+                                         }
+                                       },
+                                     ),
+                                     IconButton(
+                                       icon: const Icon(Icons.share_location_outlined, color: Colors.green),
+                                       tooltip: 'مشاركة موقعي المباشر',
+                                       onPressed: _shareLiveLocation,
+                                     ),
+                                     IconButton(
+                                       icon: const Icon(Icons.warning_amber_rounded, color: Colors.red),
+                                       tooltip: 'طوارئ النجدة ١٢٢',
+                                       onPressed: _callEmergency,
+                                     ),
                                   ],
                                 ),
                                 const Divider(height: 20, color: AppColors.border),

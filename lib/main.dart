@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/config/supabase_config.dart';
+import 'core/localization/locale_controller.dart';
+import 'generated/app_localizations.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/pages/login_page.dart';
 
@@ -79,6 +81,7 @@ void overlayMain() {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await LocaleController.instance.init();
 
   // Register global Flutter error handler
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -108,32 +111,34 @@ void main() async {
   runApp(const InRideApp());
 }
 
-
 class InRideApp extends StatelessWidget {
   const InRideApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: navigatorKey,
-      title: 'inRide',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      
-      // Arabic Language & Right-To-Left Config
-      locale: const Locale('ar', 'EG'),
-      supportedLocales: const [
-        Locale('ar', 'EG'),
-      ],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      
-      initialRoute: '/',
-      routes: {
-        '/': (context) => const AuthGate(),
+    return ListenableBuilder(
+      listenable: LocaleController.instance,
+      builder: (context, _) {
+        return MaterialApp(
+          navigatorKey: navigatorKey,
+          title: 'inRide',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          
+          locale: LocaleController.instance.locale,
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          
+          initialRoute: '/',
+          routes: {
+            '/': (context) => const AuthGate(),
+          },
+        );
       },
     );
   }

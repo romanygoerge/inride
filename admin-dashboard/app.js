@@ -95,6 +95,7 @@ async function verifyAndApplyAdminSession(session) {
     if (!isSyncStarted) {
       isSyncStarted = true;
       initSupabaseSync();
+      initDriversRealtimeSync();
     }
 
     const savedPage = sessionStorage.getItem('admin_currentPage') || 'dashboard';
@@ -109,7 +110,7 @@ async function verifyAndApplyAdminSession(session) {
   }
 }
 
-async function initSupabaseSync() {
+async function initDriversRealtimeSync() {
   if (!supabaseClient) return;
 
   console.log('[SupabaseSync Log] Initializing real-time database synchronization with Supabase...');
@@ -322,6 +323,7 @@ async function initAdminAuth() {
   if (!isSyncStarted) {
     isSyncStarted = true;
     initSupabaseSync();
+    initDriversRealtimeSync();
   }
 
   const savedPage = sessionStorage.getItem('admin_currentPage') || 'dashboard';

@@ -1,0 +1,15 @@
+# Ignore Flutter mobile & desktop app files
+android/
+ios/
+lib/
+linux/
+macos/
+windows/
+test/
+scripts/
+build/
+.dart_tool/
+
+# Ignore local server scripts
+server.js
+local_dev_server.js

@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
-        android:label="inride_app"
+        android:label="inRide"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 

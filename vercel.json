@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/admin-dashboard/api/$1"
+    },
+    {
+      "source": "/app.js",
+      "destination": "/admin-dashboard/app.js"
+    },
+    {
+      "source": "/style.css",
+      "destination": "/admin-dashboard/style.css"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/admin-dashboard/index.html"
+    }
+  ]
+}

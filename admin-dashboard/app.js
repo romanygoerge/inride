@@ -745,10 +745,14 @@ function animateCounter(element, target, duration = 1200) {
 }
 
 function initDashboardAnimations() {
-  document.querySelectorAll('.stat-card-value').forEach(el => {
-    const target = parseInt(el.dataset.target || '0', 10);
-    animateCounter(el, target);
-  });
+  setTimeout(() => {
+    document.querySelectorAll('.stat-card-value[data-target]').forEach(el => {
+      const target = parseInt(el.dataset.target || '0', 10);
+      if (!isNaN(target)) {
+        animateCounter(el, target);
+      }
+    });
+  }, 300);
 }
 
 // ============================================
@@ -1090,14 +1094,7 @@ function renderDashboard() {
   `;
 }
 
-function initDashboardAnimations() {
-  setTimeout(() => {
-    document.querySelectorAll('.stat-card-value[data-target]').forEach(el => {
-      const target = parseInt(el.dataset.target);
-      animateCounter(el, target);
-    });
-  }, 300);
-}
+
 
 // ---- TRIPS ----
 function formatTime(timestamp) {
@@ -1727,53 +1724,94 @@ function reviewDriverDocs(driverUidOrId) {
     showToast('❌ تعذر تحميل وثائق السائق');
     return;
   }
+  const uid = driver.uid || driver.id || driverUidOrId;
 
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
-  modal.style.display = 'flex';
+  modal.style.cssText = `
+    position: fixed; top:0; left:0; width:100%; height:100%;
+    background: rgba(0,0,0,0.5); z-index:10000;
+    display:flex; align-items:center; justify-content:center;
+    font-family: 'Cairo', sans-serif;
+  `;
+
   modal.innerHTML = `
-    <div class="modal-card" style="max-width:720px;width:95%;max-height:90vh;overflow-y:auto;">
-      <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border-color);">
-        <h3 style="font-size:16px;font-weight:700;"><i class="ri-file-search-line text-blue" style="margin-left:8px;"></i> مراجعة مستندات السائق: ${driver.name}</h3>
-        <button class="modal-close-btn" onclick="this.closest('.modal-backdrop').remove()">&times;</button>
+    <div style="background:white; padding:24px; border-radius:var(--radius-lg); width:650px; max-width:95%; max-height:85vh; overflow-y:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px; position:sticky; top:0; background:white; z-index:10;">
+        <h3 style="font-weight:700; margin:0;">📋 مراجعة مستندات الكابتن: ${driver.name}</h3>
+        <button onclick="this.closest('.modal-backdrop').remove()" style="font-size:24px;color:var(--text-light);background:none;border:none;cursor:pointer;"><i class="ri-close-line"></i></button>
       </div>
-      <div class="modal-body" style="padding:20px;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;font-size:13px;">
-          <div><strong>الاسم:</strong> ${driver.name}</div>
-          <div><strong>الهاتف:</strong> ${driver.phone}</div>
-          <div><strong>العنوان:</strong> ${driver.address || 'غير مدخل'}</div>
-          <div><strong>المركبة:</strong> ${driver.vehicleName || '—'} (${driver.licensePlate || '—'})</div>
-          <div><strong>حالة الحساب:</strong> <span class="status-badge ${driver.status}">${driver.statusAr}</span></div>
-          <div><strong>التقييم:</strong> ${driver.rating} ⭐</div>
+
+      <div style="display:flex; flex-direction:column; gap:20px; margin-bottom:24px;">
+        <!-- National ID -->
+        <div style="background:var(--bg-primary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">
+          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-profile-line"></i> صورة بطاقة الرقم القومي (وجهين)</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الوجه الرئيسي</div>
+              ${(driver.idCardFrontUrl || driver.nationalIdUrl) ? `<img src="${driver.idCardFrontUrl || driver.nationalIdUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الظهر الخلفي</div>
+              ${(driver.idCardBackUrl || driver.nationalIdBackUrl) ? `<img src="${driver.idCardBackUrl || driver.nationalIdBackUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
+            </div>
+          </div>
         </div>
 
-        <h4 style="font-size:14px;font-weight:700;margin-bottom:12px;border-top:1px solid var(--border-light);padding-top:12px;">المستندات والتراخيص الرسمية:</h4>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-          <div style="background:#f9f9f9;padding:10px;border-radius:8px;border:1px solid #eee;">
-            <div style="font-size:12px;font-weight:700;margin-bottom:6px;">بطاقة الرقم القومي (وجه أمامي)</div>
-            ${driver.nationalIdUrl ? `<a href="${driver.nationalIdUrl}" target="_blank"><img src="${driver.nationalIdUrl}" style="width:100%;height:140px;object-fit:cover;border-radius:6px;"></a>` : '<div style="color:var(--text-light);font-size:12px;padding:20px;text-align:center;">غير متوفر</div>'}
+        <!-- Driver License -->
+        <div style="background:var(--bg-primary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">
+          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-steering-line"></i> رخصة القيادة السارية (وجهين)</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الوجه</div>
+              ${(driver.driverLicenseFrontUrl || driver.licenseUrl) ? `<img src="${driver.driverLicenseFrontUrl || driver.licenseUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الظهر</div>
+              ${(driver.driverLicenseBackUrl || driver.licenseBackUrl) ? `<img src="${driver.driverLicenseBackUrl || driver.licenseBackUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
+            </div>
           </div>
-          <div style="background:#f9f9f9;padding:10px;border-radius:8px;border:1px solid #eee;">
-            <div style="font-size:12px;font-weight:700;margin-bottom:6px;">رخصة القيادة (وجه أمامي)</div>
-            ${driver.licenseUrl ? `<a href="${driver.licenseUrl}" target="_blank"><img src="${driver.licenseUrl}" style="width:100%;height:140px;object-fit:cover;border-radius:6px;"></a>` : '<div style="color:var(--text-light);font-size:12px;padding:20px;text-align:center;">غير متوفر</div>'}
+        </div>
+
+        <!-- Vehicle/Motorcycle License -->
+        <div style="background:var(--bg-primary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">
+          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-file-text-line"></i> رخصة السيارة أو الدراجة النارية (وجهين)</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الوجه</div>
+              ${(driver.vehicleLicenseFrontUrl || driver.vehicleFrontUrl || driver.vehicleLicenseUrl) ? `<img src="${driver.vehicleLicenseFrontUrl || driver.vehicleFrontUrl || driver.vehicleLicenseUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الظهر</div>
+              ${(driver.vehicleLicenseBackUrl) ? `<img src="${driver.vehicleLicenseBackUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
+            </div>
           </div>
-          <div style="background:#f9f9f9;padding:10px;border-radius:8px;border:1px solid #eee;">
-            <div style="font-size:12px;font-weight:700;margin-bottom:6px;">رخصة المركبة (وجه أمامي)</div>
-            ${driver.vehicleFrontUrl || driver.vehicleLicenseUrl ? `<a href="${driver.vehicleFrontUrl || driver.vehicleLicenseUrl}" target="_blank"><img src="${driver.vehicleFrontUrl || driver.vehicleLicenseUrl}" style="width:100%;height:140px;object-fit:cover;border-radius:6px;"></a>` : '<div style="color:var(--text-light);font-size:12px;padding:20px;text-align:center;">غير متوفر</div>'}
-          </div>
-          <div style="background:#f9f9f9;padding:10px;border-radius:8px;border:1px solid #eee;">
-            <div style="font-size:12px;font-weight:700;margin-bottom:6px;">رخصة القيادة / المركبة (خلفي)</div>
-            ${driver.licenseBackUrl || driver.nationalIdBackUrl ? `<a href="${driver.licenseBackUrl || driver.nationalIdBackUrl}" target="_blank"><img src="${driver.licenseBackUrl || driver.nationalIdBackUrl}" style="width:100%;height:140px;object-fit:cover;border-radius:6px;"></a>` : '<div style="color:var(--text-light);font-size:12px;padding:20px;text-align:center;">غير متوفر</div>'}
+        </div>
+
+        <!-- Vehicle Images (outside/inside) -->
+        <div style="background:var(--bg-primary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">
+          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-car-fill"></i> صور المركبة من الداخل والخارج (4 صور)</div>
+          <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;">
+            ${[0, 1, 2, 3].map(i => {
+              const imgUrl = (driver.vehicleImages && driver.vehicleImages.length > i) ? driver.vehicleImages[i] : null;
+              return `
+                <div>
+                  ${imgUrl ? `<img src="${imgUrl}" style="width:100%; height:90px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:90px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-secondary);text-align:center;padding:4px;">لم يتم الرفع</div>`}
+                </div>
+              `;
+            }).join('')}
           </div>
         </div>
       </div>
-      <div class="modal-footer" style="display:flex;justify-content:space-between;padding:16px 20px;background:var(--bg-primary);border-top:1px solid var(--border-color);">
-        <button class="btn btn-outline" style="color:var(--error);border-color:var(--error);" onclick="rejectDriverPrompt('${driver.uid}')">
-          <i class="ri-close-circle-line"></i> رفض الطلب مع السبب
-        </button>
-        <button class="btn btn-success" style="background:var(--success);" onclick="approveDriver('${driver.uid}')">
-          <i class="ri-checkbox-circle-line"></i> اعتماد الحساب وإرسال الإشعار
-        </button>
+
+      <div style="margin-bottom:20px;">
+        <label style="display:block;margin-bottom:8px;font-weight:700;font-size:12px;color:var(--text-primary);">سبب الرفض (في حالة الرفض فقط)</label>
+        <input type="text" id="rejectReason" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" placeholder="مثال: رخصة القيادة منتهية...">
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:10px; border-top:1px solid var(--border-color); padding-top:16px; position:sticky; bottom:0; background:white; z-index:10;">
+        <button class="btn btn-outline" style="color:var(--error);border-color:var(--error);" onclick="submitDocApproval('${uid}', 'reject')">رفض المستندات</button>
+        <button class="btn btn-primary" onclick="submitDocApproval('${uid}', 'approve')">قبول واعتماد الكابتن</button>
       </div>
     </div>
   `;
@@ -5012,17 +5050,7 @@ async function dispatchPushNotificationToUser(recipientId, title, body, messageI
   }
 }
 
-async function setConversationStatus(id, newStatus) {
-  if (!supabaseClient || !id) return;
-  try {
-    await supabaseClient.from('support_chats').update({ status: newStatus }).eq('id', id);
-    showToast(`✅ تم تحديث حالة المحادثة إلى: ${newStatus === 'resolved' ? 'تم الحل' : 'قيد المتابعة'}`);
-    loadSupportChatsFromSupabase();
-    refreshActiveTicketChat();
-  } catch (e) {
-    console.error("Error setting status:", e);
-  }
-}
+
 
 
 // ---- CONTENT MANAGER (Banners, Coupons, FAQs) ----
@@ -5465,102 +5493,7 @@ function adjustUserWallet(uid, amountStr, role) {
   }
 }
 
-// Modal helper to review documents
-function reviewDriverDocs(uid) {
-  const driver = mockData.drivers.find(d => d.uid === uid);
-  if (!driver) return;
-  
-  const modal = document.createElement('div');
-  modal.className = 'modal-backdrop';
-  modal.style.cssText = `
-    position: fixed; top:0; left:0; width:100%; height:100%;
-    background: rgba(0,0,0,0.5); z-index:10000;
-    display:flex; align-items:center; justify-content:center;
-    font-family: 'Cairo', sans-serif;
-  `;
-  
-  modal.innerHTML = `
-    <div style="background:white; padding:24px; border-radius:var(--radius-lg); width:650px; max-width:95%; max-height:85vh; overflow-y:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px; position:sticky; top:0; background:white; z-index:10;">
-        <h3 style="font-weight:700; margin:0;">📋 مراجعة مستندات الكابتن: ${driver.name}</h3>
-        <button onclick="this.closest('.modal-backdrop').remove()" style="font-size:24px;color:var(--text-light);background:none;border:none;cursor:pointer;"><i class="ri-close-line"></i></button>
-      </div>
-      
-      <div style="display:flex; flex-direction:column; gap:20px; margin-bottom:24px;">
-        <!-- National ID -->
-        <div style="background:var(--bg-primary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">
-          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-profile-line"></i> صورة بطاقة الرقم القومي (وجهين)</div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-            <div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الوجه الرئيسي</div>
-              ${driver.idCardFrontUrl ? `<img src="${driver.idCardFrontUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
-            </div>
-            <div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الظهر الخلفي</div>
-              ${driver.idCardBackUrl ? `<img src="${driver.idCardBackUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
-            </div>
-          </div>
-        </div>
-        
-        <!-- Driver License -->
-        <div style="background:var(--bg-primary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">
-          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-steering-line"></i> رخصة القيادة السارية (وجهين)</div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-            <div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الوجه</div>
-              ${driver.driverLicenseFrontUrl ? `<img src="${driver.driverLicenseFrontUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
-            </div>
-            <div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الظهر</div>
-              ${driver.driverLicenseBackUrl ? `<img src="${driver.driverLicenseBackUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
-            </div>
-          </div>
-        </div>
 
-        <!-- Vehicle/Motorcycle License -->
-        <div style="background:var(--bg-primary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">
-          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-file-text-line"></i> رخصة السيارة أو الدراجة النارية (وجهين)</div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-            <div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الوجه</div>
-              ${driver.vehicleLicenseFrontUrl ? `<img src="${driver.vehicleLicenseFrontUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
-            </div>
-            <div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الظهر</div>
-              ${driver.vehicleLicenseBackUrl ? `<img src="${driver.vehicleLicenseBackUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
-            </div>
-          </div>
-        </div>
-
-        <!-- Vehicle Images (outside/inside) -->
-        <div style="background:var(--bg-primary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">
-          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-car-fill"></i> صور المركبة من الداخل والخارج (4 صور)</div>
-          <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;">
-            ${[0, 1, 2, 3].map(i => {
-              const imgUrl = (driver.vehicleImages && driver.vehicleImages.length > i) ? driver.vehicleImages[i] : null;
-              return `
-                <div>
-                  ${imgUrl ? `<img src="${imgUrl}" style="width:100%; height:90px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:90px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-secondary);text-align:center;padding:4px;">لم يتم الرفع</div>`}
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      </div>
-      
-      <div style="margin-bottom:20px;">
-        <label style="display:block;margin-bottom:8px;font-weight:700;font-size:12px;color:var(--text-primary);">سبب الرفض (في حالة الرفض فقط)</label>
-        <input type="text" id="rejectReason" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" placeholder="مثال: رخصة القيادة منتهية...">
-      </div>
-
-      <div style="display:flex; justify-content:flex-end; gap:10px; border-top:1px solid var(--border-color); padding-top:16px; position:sticky; bottom:0; background:white; z-index:10;">
-        <button class="btn btn-outline" style="color:var(--error);border-color:var(--error);" onclick="submitDocApproval('${uid}', 'reject')">رفض المستندات</button>
-        <button class="btn btn-primary" onclick="submitDocApproval('${uid}', 'approve')">قبول واعتماد الكابتن</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
-}
 
 function submitDocApproval(uid, decision) {
   const modal = document.querySelector('.modal-backdrop');

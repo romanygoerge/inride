@@ -152,8 +152,7 @@ async function initDriversRealtimeSync() {
           } catch (_) {}
 
           // Compute average rating from real ratings table
-          let avgRating = 0.0;
-          let ratingDisplay = "No ratings yet";
+          let avgRating = 5.0;
           try {
             const { data: ratingsData } = await supabaseClient
               .from('ratings')
@@ -163,9 +162,14 @@ async function initDriversRealtimeSync() {
             if (ratingsData && ratingsData.length > 0) {
               const total = ratingsData.reduce((acc, r) => acc + (parseFloat(r.rating) || 0), 0);
               avgRating = parseFloat((total / ratingsData.length).toFixed(1));
-              ratingDisplay = avgRating.toFixed(1);
+            } else {
+              const dbRating = drv.rating || userObj?.rating;
+              if (dbRating !== undefined && dbRating !== null && !isNaN(parseFloat(dbRating)) && parseFloat(dbRating) > 0) {
+                avgRating = parseFloat(parseFloat(dbRating).toFixed(1));
+              }
             }
           } catch (_) {}
+          let ratingDisplay = avgRating.toFixed(1);
 
           let statusAr = 'قيد المراجعة';
           if (drv.verification_status === 'verified') statusAr = 'معتمد';

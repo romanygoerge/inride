@@ -6892,6 +6892,7 @@ function filterRatingsPage() {
             <th>التقييم بالنجوم</th>
             <th>التعليق والملاحظات</th>
             <th>التاريخ والوقت</th>
+            <th>إجراءات الإشراف الإداري</th>
           </tr>
         </thead>
         <tbody>
@@ -6904,6 +6905,7 @@ function filterRatingsPage() {
     const senderName = r.sender_name || 'مستخدم';
     const senderRoleBadge = r.sender_role === 'driver' ? '<span class="status-badge active" style="font-size:10px;">كابتن</span>' : '<span class="status-badge pending" style="font-size:10px;">راكب</span>';
     const receiverRoleBadge = (r.receiver_role === 'driver') ? '<span class="status-badge active" style="font-size:10px;">كابتن</span>' : '<span class="status-badge pending" style="font-size:10px;">راكب</span>';
+    const isHidden = r.is_hidden === true;
 
     // Find receiver name if possible
     let receiverName = 'مستخدم (' + (r.receiver_id ? r.receiver_id.substring(0, 6) : '') + ')';
@@ -6924,7 +6926,7 @@ function filterRatingsPage() {
     }
 
     html += `
-      <tr>
+      <tr style="${isHidden ? 'opacity:0.5;background:var(--bg-secondary);' : ''}">
         <td>
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="font-weight:700;font-size:13px;color:var(--medium-blue);cursor:pointer;" onclick="${r.receiver_role === 'driver' ? `viewUserProfile('${r.receiver_id}', 'driver')` : `viewUserProfile('${r.receiver_id}', 'rider')`}">${receiverName}</div>
@@ -6947,9 +6949,22 @@ function filterRatingsPage() {
           <span style="font-size:13px;color:${commentText === 'بدون تعليق' ? 'var(--text-light)' : 'var(--text-primary)'};">
             ${commentText}
           </span>
+          ${isHidden ? '<span class="status-badge" style="font-size:10px;color:var(--error);background:#fee2e2;margin-right:6px;">مخفي من العرض العامة</span>' : ''}
         </td>
         <td style="font-size:12px;color:var(--text-secondary);direction:ltr;text-align:right;">
           ${dateStr}
+        </td>
+        <td>
+          <div style="display:flex;gap:6px;align-items:center;">
+            ${!r.id.startsWith('synth_') ? `
+              <button class="btn btn-outline btn-sm" onclick="toggleRatingHidden('${r.id}', ${!isHidden})">
+                <i class="${isHidden ? 'ri-eye-line' : 'ri-eye-off-line'}"></i> ${isHidden ? 'إظهار' : 'إخفاء'}
+              </button>
+              <button class="btn btn-outline btn-sm" style="color:var(--error);border-color:var(--error);" onclick="deleteRatingAdmin('${r.id}')">
+                <i class="ri-delete-bin-line"></i> حذف
+              </button>
+            ` : '<span style="font-size:11px;color:var(--text-light);">حساب أساسي</span>'}
+          </div>
         </td>
       </tr>
     `;
@@ -6962,6 +6977,37 @@ function filterRatingsPage() {
   `;
 
   container.innerHTML = html;
+}
+
+async function toggleRatingHidden(ratingId, hideState) {
+  try {
+    const { error } = await supabaseClient
+      .from('ratings')
+      .update({ is_hidden: hideState })
+      .eq('id', ratingId);
+
+    if (error) throw error;
+    showToast(hideState ? 'تم إخفاء المراجعة بنجاح' : 'تمت إعادة إظهار المراجعة', 'success');
+    loadRatingsPageData();
+  } catch (err) {
+    alert('حدث خطأ أثناء تغيير حالة التقييم: ' + (err.message || err));
+  }
+}
+
+async function deleteRatingAdmin(ratingId) {
+  if (!confirm('هل أنت تأكد من حذف هذا التقييم نهائياً من النظام؟')) return;
+  try {
+    const { error } = await supabaseClient
+      .from('ratings')
+      .delete()
+      .eq('id', ratingId);
+
+    if (error) throw error;
+    showToast('تم حذف التقييم بنجاح', 'success');
+    loadRatingsPageData();
+  } catch (err) {
+    alert('حدث خطأ أثناء حذف التقييم: ' + (err.message || err));
+  }
 }
 
 let activeProfileChatChannel = null;

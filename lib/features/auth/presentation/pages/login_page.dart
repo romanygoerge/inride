@@ -14,6 +14,8 @@ import '../../../../features/driver/presentation/pages/driver_home_page.dart';
 import '../../../../shared/widgets/app_logo.dart';
 import '../../../../features/common/legal_pages.dart';
 import '../../../../core/utils/snappy_page_route.dart';
+import '../../../../generated/app_localizations.dart';
+
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -44,10 +46,11 @@ class _LoginPageState extends State<LoginPage> {
     if (_isPhoneLoading || _isLoading) return;
 
     final rawInput = _phoneController.text.trim();
+    final l10n = AppLocalizations.of(context)!;
     if (rawInput.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('يرجى إدخال رقم الهاتف', style: GoogleFonts.cairo()),
+          content: Text(l10n.enterPhonePrompt, style: GoogleFonts.cairo()),
           backgroundColor: AppColors.error,
         ),
       );
@@ -66,7 +69,7 @@ class _LoginPageState extends State<LoginPage> {
     if (cleaned.length < 10) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('يرجى إدخال رقم هاتف صحيح (مثال: 1012345678)', style: GoogleFonts.cairo()),
+          content: Text(l10n.invalidPhoneFormat, style: GoogleFonts.cairo()),
           backgroundColor: AppColors.error,
         ),
       );
@@ -99,10 +102,10 @@ class _LoginPageState extends State<LoginPage> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'تم إرسال كود التحقق عبر الواتساب',
+            l10n.otpSent,
             style: GoogleFonts.cairo(),
           ),
-          backgroundColor: AppColors.mediumBlue,
+          backgroundColor: AppColors.success,
           duration: const Duration(seconds: 4),
         ),
       );
@@ -250,7 +253,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          'سائق / كابتن',
+                          AppLocalizations.of(context)?.driverRole ?? 'سائق / كابتن',
                           style: GoogleFonts.cairo(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -282,7 +285,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          'راكب / Passenger',
+                          AppLocalizations.of(context)?.passengerRole ?? 'راكب / Passenger',
                           style: GoogleFonts.cairo(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -303,6 +306,7 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -334,7 +338,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'إن رايد .. من مكانك لأي مكان',
+                        l10n.welcomeMessage,
                         style: GoogleFonts.cairo(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
@@ -348,7 +352,7 @@ class _LoginPageState extends State<LoginPage> {
 
                 // Role Selector Label
                 Text(
-                  'سجل دخولك بصفتك:',
+                  l10n.authTitle,
                   style: GoogleFonts.cairo(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -377,7 +381,7 @@ class _LoginPageState extends State<LoginPage> {
                           const Icon(Icons.chat_bubble_outline, color: Color(0xFF25D366), size: 20),
                           const SizedBox(width: 8),
                           Text(
-                            'التسجيل برقم الهاتف (الواتساب)',
+                            l10n.enterPhoneNumber,
                             style: GoogleFonts.cairo(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
@@ -388,10 +392,6 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Phone Input Field
-                      // The +20 prefix is shown separately — user enters the local number
-                      // WITHOUT the leading zero. E.g., type "1012345678" not "01012345678".
-                      // The app cleans the number before sending to Supabase.
                       Directionality(
                         textDirection: TextDirection.ltr,
                         child: TextFormField(
@@ -404,7 +404,6 @@ class _LoginPageState extends State<LoginPage> {
                             color: AppColors.textPrimary,
                           ),
                           decoration: InputDecoration(
-                            // Hint shows number WITHOUT leading zero (since +20 is the prefix)
                             hintText: '1012345678',
                             hintStyle: GoogleFonts.outfit(color: Colors.grey[400]),
                             prefixIcon: Container(
@@ -487,7 +486,7 @@ class _LoginPageState extends State<LoginPage> {
                                     const Icon(Icons.send_rounded, color: Colors.white, size: 18),
                                     const SizedBox(width: 8),
                                     Text(
-                                      'إرسال كود التحقق عبر الواتساب',
+                                      l10n.verifyOtp,
                                       style: GoogleFonts.cairo(
                                         fontSize: 14.5,
                                         fontWeight: FontWeight.bold,
@@ -511,7 +510,7 @@ class _LoginPageState extends State<LoginPage> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 14.0),
                       child: Text(
-                        'أو',
+                        l10n.orSeparator,
                         style: GoogleFonts.cairo(
                           fontSize: 13,
                           color: AppColors.textSecondary,
@@ -561,7 +560,7 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                               const SizedBox(width: 12),
                               Text(
-                                'متابعة باستخدام Google',
+                                l10n.loginWithGoogle,
                                 style: GoogleFonts.cairo(
                                   fontSize: 14.5,
                                   fontWeight: FontWeight.bold,
@@ -575,8 +574,6 @@ class _LoginPageState extends State<LoginPage> {
 
                 const SizedBox(height: 16),
 
-
-
                 const SizedBox(height: 24),
                 // Footer with interactive legal links
                 Wrap(
@@ -584,7 +581,7 @@ class _LoginPageState extends State<LoginPage> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      'بدخولك للتطبيق أنت توافق على ',
+                      l10n.acceptTerms,
                       style: GoogleFonts.cairo(
                         fontSize: 11,
                         color: AppColors.textSecondary.withValues(alpha: 0.8),
@@ -595,7 +592,7 @@ class _LoginPageState extends State<LoginPage> {
                         Navigator.push(context, SnappyPageRoute(page: const TermsOfUsePage()));
                       },
                       child: Text(
-                        'شروط الاستخدام',
+                        ' ${l10n.termsAndConditionsText}',
                         style: GoogleFonts.cairo(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
@@ -605,7 +602,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                     Text(
-                      ' و ',
+                      ' & ',
                       style: GoogleFonts.cairo(
                         fontSize: 11,
                         color: AppColors.textSecondary.withValues(alpha: 0.8),
@@ -616,7 +613,7 @@ class _LoginPageState extends State<LoginPage> {
                         Navigator.push(context, SnappyPageRoute(page: const PrivacyPolicyPage()));
                       },
                       child: Text(
-                        'سياسة الخصوصية',
+                        l10n.privacyPolicyText,
                         style: GoogleFonts.cairo(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
@@ -635,3 +632,4 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 }
+

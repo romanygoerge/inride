@@ -14,7 +14,7 @@ import '../../features/common/support_page.dart';
 import '../../features/common/legal_pages.dart';
 import '../../features/chat/presentation/pages/messages_center_page.dart';
 import '../../core/localization/locale_controller.dart';
-
+import '../../generated/app_localizations.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/utils/snappy_page_route.dart';
@@ -95,9 +95,10 @@ class AppDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final state = GlobalState.instance;
     final isRider = state.currentRole == UserRole.rider;
-    final otherRoleText = isRider ? 'كابتن' : 'راكب';
+    final otherRoleText = isRider ? l10n.driverRole : l10n.passengerRole;
 
     return Drawer(
       backgroundColor: Colors.white,
@@ -128,7 +129,7 @@ class AppDrawer extends StatelessWidget {
                               radius: 30,
                               backgroundColor: AppColors.mediumBlue.withValues(alpha: 0.1),
                               child: Text(
-                                (state.userName ?? (isRider ? (state.passengerName ?? '') : 'كابتن'))
+                                (state.userName ?? (isRider ? (state.passengerName ?? '') : l10n.driverRole))
                                     .trim()
                                     .characters
                                     .firstOrNull
@@ -146,7 +147,7 @@ class AppDrawer extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              state.userName ?? (isRider ? (state.passengerName ?? 'راكب') : 'كابتن'),
+                              state.userName ?? (isRider ? (state.passengerName ?? l10n.passengerRole) : l10n.driverRole),
                               style: GoogleFonts.cairo(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -160,7 +161,7 @@ class AppDrawer extends StatelessWidget {
                                 const Icon(Icons.star, color: Colors.orange, size: 14),
                                 const SizedBox(width: 4),
                                 Text(
-                                  isRider ? '4.8 (راكب)' : '4.9 (كابتن)',
+                                  isRider ? '4.8 (${l10n.passengerRole})' : '4.9 (${l10n.driverRole})',
                                   style: GoogleFonts.cairo(
                                     fontSize: 12,
                                     color: AppColors.textSecondary,
@@ -178,7 +179,7 @@ class AppDrawer extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
-                                  '⭐ حساب مزدوج (كابتن وراكب)',
+                                  '⭐ ${l10n.driverRole} & ${l10n.passengerRole}',
                                   style: GoogleFonts.cairo(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
@@ -224,14 +225,14 @@ class AppDrawer extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'المحفظة',
+                        l10n.wallet,
                         style: GoogleFonts.cairo(
                           fontSize: 12,
                           color: Colors.white70,
                         ),
                       ),
                       Text(
-                        '${state.walletBalance.toStringAsFixed(2)} ج.م',
+                        '${state.walletBalance.toStringAsFixed(2)} ${l10n.egp}',
                         style: GoogleFonts.outfit(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -253,7 +254,7 @@ class AppDrawer extends StatelessWidget {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     child: Text(
-                      'شحن',
+                      l10n.addFunds,
                       style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -286,7 +287,7 @@ class AppDrawer extends StatelessWidget {
                     const SizedBox(width: 16),
                     Expanded(
                       child: Text(
-                        'التبديل إلى وضع $otherRoleText',
+                        l10n.switchToRole(otherRoleText),
                         style: GoogleFonts.cairo(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
@@ -311,7 +312,7 @@ class AppDrawer extends StatelessWidget {
                 _buildDrawerItem(
                   context,
                   icon: Icons.history_outlined,
-                  title: 'رحلاتي',
+                  title: l10n.historyTitle,
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const HistoryPage()));
@@ -320,7 +321,7 @@ class AppDrawer extends StatelessWidget {
                 _buildDrawerItem(
                   context,
                   icon: Icons.forum_outlined,
-                  title: 'الرسائل',
+                  title: l10n.messagesCenter,
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const MessagesCenterPage()));
@@ -329,7 +330,7 @@ class AppDrawer extends StatelessWidget {
                 _buildDrawerItem(
                   context,
                   icon: Icons.help_outline_outlined,
-                  title: 'مركز المساعدة',
+                  title: l10n.supportTitle,
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const SupportPage()));
@@ -338,7 +339,7 @@ class AppDrawer extends StatelessWidget {
                 _buildDrawerItem(
                   context,
                   icon: Icons.language_outlined,
-                  title: LocaleController.instance.isArabic ? 'تغيير اللغة (English)' : 'Change Language (العربية)',
+                  title: l10n.switchLanguage,
                   onTap: () async {
                     Navigator.pop(context);
                     await LocaleController.instance.toggleLanguage();
@@ -348,7 +349,7 @@ class AppDrawer extends StatelessWidget {
                 _buildDrawerItem(
                   context,
                   icon: Icons.description_outlined,
-                  title: 'شروط الاستخدام',
+                  title: l10n.legalTerms,
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const TermsOfUsePage()));
@@ -357,7 +358,7 @@ class AppDrawer extends StatelessWidget {
                 _buildDrawerItem(
                   context,
                   icon: Icons.assignment_outlined,
-                  title: 'الشروط والأحكام',
+                  title: l10n.termsAndConditionsText,
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const TermsAndConditionsPage()));
@@ -366,7 +367,7 @@ class AppDrawer extends StatelessWidget {
                 _buildDrawerItem(
                   context,
                   icon: Icons.privacy_tip_outlined,
-                  title: 'سياسة الخصوصية',
+                  title: l10n.privacyPolicyText,
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const PrivacyPolicyPage()));
@@ -415,14 +416,12 @@ class AppDrawer extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-
-
           // Logout Item
           const Divider(color: AppColors.border),
           _buildDrawerItem(
             context,
             icon: Icons.logout_outlined,
-            title: 'تسجيل الخروج',
+            title: l10n.logout,
             textColor: AppColors.error,
             iconColor: AppColors.error,
             onTap: () async {
@@ -480,3 +479,4 @@ class AppDrawer extends StatelessWidget {
     );
   }
 }
+

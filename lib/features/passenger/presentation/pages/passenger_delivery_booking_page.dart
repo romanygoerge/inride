@@ -7,8 +7,11 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/utils/map_coordinates_helper.dart';
+import '../../../../core/models/place_location.dart';
+import 'package:latlong2/latlong.dart';
 import 'passenger_ride_matching_page.dart';
 import 'passenger_home_page.dart';
+
 
 class PassengerDeliveryBookingPage extends StatefulWidget {
   final VoidCallback onCancel;
@@ -112,10 +115,36 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
       ),
     );
 
-    if (result != null && result is String) {
+    if (result != null) {
+      PlaceLocation loc;
+      if (result is SearchResultItem) {
+        loc = result.location;
+      } else if (result is PlaceLocation) {
+        loc = result;
+      } else if (result is String && result.isNotEmpty) {
+        final geocoded = MapCoordinatesHelper.getLatLngForAddress(result);
+        loc = PlaceLocation(
+          latitude: geocoded.latitude,
+          longitude: geocoded.longitude,
+          placeName: result,
+          formattedAddress: result,
+          timestamp: DateTime.now(),
+        );
+      } else {
+        return;
+      }
+
       setState(() {
-        GlobalState.instance.fromAddress = result;
+        GlobalState.instance.fromAddress = loc.formattedAddress;
+        GlobalState.instance.fromLat = loc.latitude;
+        GlobalState.instance.fromLng = loc.longitude;
       });
+      MapCoordinatesHelper.registerCoordinate(loc.formattedAddress, LatLng(loc.latitude, loc.longitude));
+
+      if (GlobalState.instance.selectedDestinationLocation != null) {
+        final source = GlobalState.instance.selectedDestinationLocation!.placeId != null ? 'Search History' : 'Fresh Search';
+        await GlobalState.instance.selectDestination(GlobalState.instance.selectedDestinationLocation!, selectionSource: source);
+      }
       GlobalState.instance.update();
     }
   }
@@ -131,13 +160,34 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
       ),
     );
 
-    if (result != null && result is String) {
-      setState(() {
-        GlobalState.instance.toAddress = result;
-      });
+    if (result != null) {
+      PlaceLocation place;
+      String source = 'Fresh Search';
+
+      if (result is SearchResultItem) {
+        place = result.location;
+        source = result.isHistory ? 'Search History' : 'Fresh Search';
+      } else if (result is PlaceLocation) {
+        place = result;
+      } else if (result is String && result.isNotEmpty) {
+        final geocoded = MapCoordinatesHelper.getLatLngForAddress(result);
+        place = PlaceLocation(
+          latitude: geocoded.latitude,
+          longitude: geocoded.longitude,
+          placeName: result,
+          formattedAddress: result,
+          timestamp: DateTime.now(),
+        );
+      } else {
+        return;
+      }
+
+      await GlobalState.instance.selectDestination(place, selectionSource: source);
+      setState(() {});
       GlobalState.instance.update();
     }
   }
+
 
   void _shareLink(BuildContext context, String link) async {
     // Show user-friendly warning SnackBar to encourage app installation

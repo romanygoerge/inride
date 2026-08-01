@@ -139,4 +139,32 @@ class MapCoordinatesHelper {
 
     return closestName;
   }
+
+  /// Performs a fresh geocoding lookup for an address string (Requirement 4)
+  static Future<LatLng?> geocodeAddress(String query) async {
+    if (query.trim().isEmpty) return null;
+
+    try {
+      final url = Uri.parse(
+        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&format=json&accept-language=ar&countrycodes=eg&limit=1',
+      );
+      final response = await http.get(url, headers: {'User-Agent': 'inRideApp/1.0'}).timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        if (data.isNotEmpty) {
+          final lat = double.tryParse(data[0]['lat']?.toString() ?? '');
+          final lon = double.tryParse(data[0]['lon']?.toString() ?? '');
+          if (lat != null && lon != null && lat != 0.0 && lon != 0.0) {
+            final latLng = LatLng(lat, lon);
+            registerCoordinate(query, latLng);
+            return latLng;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[MapCoordinatesHelper] Geocoding failed for "$query": $e');
+    }
+    return null;
+  }
 }
+

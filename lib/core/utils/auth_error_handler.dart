@@ -1,18 +1,26 @@
 import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../localization/locale_controller.dart';
 
 class AuthErrorHandler {
   static String getErrorMessage(dynamic error) {
-    if (error == null) return 'حدث خطأ غير معروف، يرجى المحاولة لاحقاً.';
+    final isAr = LocaleController.instance.isArabic;
+    if (error == null) {
+      return isAr ? 'حدث خطأ غير معروف، يرجى المحاولة لاحقاً.' : 'An unknown error occurred, please try again later.';
+    }
 
     if (error is SocketException) {
-      return 'لا يوجد اتصال بالإنترنت. يرجى التحقق من الشبكة وإعادة المحاولة.';
+      return isAr
+          ? 'لا يوجد اتصال بالإنترنت. يرجى التحقق من الشبكة وإعادة المحاولة.'
+          : 'No internet connection. Please check your network and try again.';
     }
 
     final errorStr = error.toString().toLowerCase();
 
     if (errorStr.contains('network') || errorStr.contains('socketexception') || errorStr.contains('failed to host lookup')) {
-      return 'تعذر الاتصال بالسيرفر. يرجى التأكد من الاتصال بالإنترنت.';
+      return isAr
+          ? 'تعذر الاتصال بالسيرفر. يرجى التأكد من الاتصال بالإنترنت.'
+          : 'Unable to connect to server. Please check internet connection.';
     }
 
     if (error is AuthException) {
@@ -20,36 +28,36 @@ class AuthErrorHandler {
       final code = error.statusCode;
 
       if (message.contains('invalid login credentials') || message.contains('invalid_credentials')) {
-        return 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';
+        return isAr ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة.' : 'Invalid login credentials.';
       }
       if (message.contains('user already registered') || message.contains('user_already_exists')) {
-        return 'هذا الحساب مسجل بالفعل، يرجى تسجيل الدخول.';
+        return isAr ? 'هذا الحساب مسجل بالفعل، يرجى تسجيل الدخول.' : 'This account is already registered, please log in.';
       }
       if (message.contains('email not confirmed')) {
-        return 'البريد الإلكتروني غير مفعل، يرجى مراجعة بريدك الإلكتروني لتأكيده.';
+        return isAr ? 'البريد الإلكتروني غير مفعل، يرجى مراجعة بريدك الإلكتروني لتأكيده.' : 'Email not confirmed, please check your inbox.';
       }
       if (message.contains('password should be at least')) {
-        return 'كلمة المرور ضعيفة. يجب أن تتكون من 6 أحرف على الأقل.';
+        return isAr ? 'كلمة المرور ضعيفة. يجب أن تتكون من 6 أحرف على الأقل.' : 'Password should be at least 6 characters.';
       }
       if (message.contains('invalid email')) {
-        return 'البريد الإلكتروني غير صالح.';
+        return isAr ? 'البريد الإلكتروني غير صالح.' : 'Invalid email address.';
       }
       if (message.contains('rate limit') || code == '429') {
-        return 'تم تجاوز عدد المحاولات المسموح بها. يرجى الانتظار قليلاً ثم المحاولة لاحقاً.';
+        return isAr ? 'تم تجاوز عدد المحاولات المسموح بها. يرجى الانتظار قليلاً ثم المحاولة لاحقاً.' : 'Rate limit exceeded. Please wait and try again later.';
       }
       if (message.contains('token is expired') || message.contains('otp_expired')) {
-        return 'رمز التحقق منتهي الصلاحية، يرجى طلب رمز جديد.';
+        return isAr ? 'رمز التحقق منتهي الصلاحية، يرجى طلب رمز جديد.' : 'Verification code expired, please request a new one.';
       }
       if (message.contains('invalid otp') || message.contains('otp_invalid')) {
-        return 'رمز التحقق غير صحيح.';
+        return isAr ? 'رمز التحقق غير صحيح.' : 'Invalid verification code.';
       }
       return error.message;
     }
 
     if (errorStr.contains('canceled') || errorStr.contains('aborted')) {
-      return 'تم إلغاء العملية بواسطة المستخدم.';
+      return isAr ? 'تم إلغاء العملية بواسطة المستخدم.' : 'Operation canceled by user.';
     }
 
-    return 'حدث خطأ: ${error.toString()}';
+    return isAr ? 'حدث خطأ: ${error.toString()}' : 'An error occurred: ${error.toString()}';
   }
 }

@@ -18,6 +18,17 @@
   "filter": "Filter",
   "share": "Share",
   "close": "Close",
+  "next": "Next",
+  "previous": "Previous",
+  "submit": "Submit",
+  "continueText": "Continue",
+  "skip": "Skip",
+  "apply": "Apply",
+  "refresh": "Refresh",
+  "copy": "Copy",
+  "viewDetails": "View Details",
+  "yes": "Yes",
+  "no": "No",
 
   "authTitle": "Sign In",
   "welcomeMessage": "Welcome to inRide",
@@ -28,23 +39,73 @@
   "enterFullName": "Enter your full name",
   "acceptTerms": "I agree to Terms & Conditions",
   "logout": "Log Out",
+  "login": "Sign In",
+  "register": "Create New Account",
+  "enterPhonePrompt": "Please enter your phone number",
+  "invalidPhoneFormat": "Please enter a valid phone number (e.g. 1012345678)",
+  "sendingOtp": "Sending verification code...",
+  "otpSent": "Verification code sent successfully 📲",
+  "enterOtpCode": "Enter Verification Code (OTP)",
+  "resendCode": "Resend Code",
+  "resendCodeTimer": "Resend in {seconds} seconds",
+  "@resendCodeTimer": {
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "verifyOtp": "Verify Code",
+  "invalidOtp": "Invalid verification code. Please try again",
+  "termsAndConditionsText": "Terms & Conditions",
+  "privacyPolicyText": "Privacy Policy",
+  "forgotPassword": "Forgot Password?",
+  "resetPassword": "Reset Password",
+  "sendResetLink": "Send Reset Link",
+  "emailAddress": "Email Address",
+  "enterEmail": "Enter your email address",
+  "passwordsDoNotMatch": "Passwords do not match",
+  "driverRegistrationPrompt": "Want to register as a Captain? Click here",
 
   "passengerRole": "Passenger",
   "driverRole": "Driver",
   "selectService": "Select Service",
   "rideService": "Ride Share",
   "deliveryService": "Package Delivery",
+  "heavyDeliveryService": "Heavy Cargo",
+  "scooterService": "Scooter Delivery",
 
   "pickupLocation": "Pickup Location",
   "destinationLocation": "Destination Location",
   "selectDestination": "Set destination on map",
+  "selectPickupOnMap": "Set pickup location on map",
   "offeredFare": "Offered Fare",
   "egp": "EGP",
   "requestRide": "Request Ride Now",
-  "searchingForDrivers": "Searching for drivers...",
+  "searchingForDrivers": "Searching for nearby drivers...",
   "offersReceived": "Received Offers",
   "acceptOffer": "Accept Offer",
   "declineOffer": "Decline Offer",
+  "offerDetails": "Offer Details",
+  "counterOffer": "Make Counter Offer",
+  "driverIsOnTheWay": "Driver is on the way 🚗",
+  "driverArrived": "Driver arrived at pickup 📍",
+  "tripInProgress": "Trip is currently in progress...",
+  "tripCompleted": "Trip completed successfully 🎉",
+  "tripCanceled": "Trip Canceled",
+  "cancelRide": "Cancel Ride",
+  "cancelReason": "Cancellation Reason",
+  "enterCounterOffer": "Enter new offered fare",
+  "estimatedTime": "Estimated Time",
+  "estimatedDistance": "Estimated Distance",
+  "fareBreakdown": "Fare Breakdown",
+  "baseFare": "Base Fare",
+  "totalFare": "Total Fare",
+  "driverDistance": "Driver Distance",
+  "vehicleCategory": "Vehicle Type",
+  "selectVehicleCategory": "Select Vehicle Category",
+  "standardCar": "Economy",
+  "comfortCar": "Comfort",
+  "scooter": "Scooter",
+  "deliveryTruck": "Delivery Truck",
 
   "packageDescription": "Package Description",
   "deliveryNotes": "Delivery Notes",
@@ -53,6 +114,12 @@
   "orderDeliveryNow": "Order Delivery Now",
   "shareLocationLink": "Share Location Link",
   "linkCopied": "Location link copied successfully! 📋",
+  "recipientName": "Recipient Name",
+  "enterRecipientName": "Enter recipient name",
+  "enterPackageDetails": "Enter package details and specifications",
+  "fragilePackage": "Fragile Package",
+  "packageSize": "Package Size",
+  "confirmRecipientLocation": "Confirm Recipient Location",
 
   "driverOnline": "You are Online (Ready for requests)",
   "driverOffline": "You are Offline",
@@ -63,6 +130,59 @@
   "startTrip": "Start Trip",
   "completeTrip": "Complete Trip",
   "passengerPhone": "Passenger Phone Number",
+  "incomingOffer": "New Offer from Driver",
+  "earningsToday": "Today's Earnings",
+  "totalTrips": "Total Trips",
+  "captainDashboard": "Captain Dashboard",
+  "docUploadTitle": "Upload Driver Documents",
+  "docUploadSubtitle": "Please upload required documents to activate your account",
+  "driverLicense": "Driver's License",
+  "vehicleLicense": "Vehicle License",
+  "nationalId": "National ID (Both Sides)",
+  "takePhoto": "Take Photo with Camera",
+  "uploadFromGallery": "Choose from Gallery",
+  "docSubmitted": "Documents uploaded successfully!",
+  "reviewPendingTitle": "Account Under Review",
+  "reviewPendingMessage": "Our team is reviewing your documents. Your account will be activated within 24 hours.",
+  "underReview": "Under Review",
+  "docPendingNote": "Please wait for account approval by administration",
+
+  "profile": "Profile",
+  "editProfile": "Edit Profile",
+  "settings": "Settings",
+  "language": "App Language",
+  "arabic": "العربية",
+  "english": "English",
+  "changeLanguage": "Change App Language",
+  "appLanguage": "App Language",
+  "theme": "Appearance",
+  "darkMode": "Dark Mode",
+  "lightMode": "Light Mode",
+  "accountSettings": "Account Settings",
+  "changePhoneNumber": "Change Phone Number",
+  "emergencyContacts": "Emergency Contacts",
+  "savedAddresses": "Saved Addresses",
+  "homeAddress": "Home",
+  "workAddress": "Work",
+
+  "wallet": "Wallet & Payment",
+  "walletBalance": "Wallet Balance",
+  "addFunds": "Top Up Wallet",
+  "withdrawFunds": "Withdraw Funds",
+  "transactionHistory": "Transaction History",
+  "paymentMethods": "Payment Methods",
+  "cashPayment": "Cash Payment",
+  "walletPayment": "Pay via Wallet",
+  "cardPayment": "Credit Card",
+  "depositSuccess": "Wallet topped up successfully!",
+  "insufficientBalance": "Insufficient wallet balance",
+  "amount": "Amount",
+  "enterAmount": "Enter required amount",
+
+  "notificationsCenter": "Notification Center",
+  "markAllRead": "Mark All Read",
+  "deleteAllNotifications": "Delete All",
+  "noNotifications": "No notifications right now",
 
   "chatTitle": "Instant Chat",
   "typeMessage": "Type your message here...",
@@ -70,6 +190,12 @@
   "partnerTyping": "Typing...",
   "supportChat": "Live Technical Support",
   "messagesCenter": "Messages Center",
+  "callPartner": "Phone Call",
+
+  "emergencySos": "Emergency SOS (122)",
+  "shareLiveLocation": "Share Live Location",
+  "emergencyError": "Unable to place emergency call to 122",
+  "emergencyDialNote": "Direct emergency call will be made to 122",
 
   "ratingsAndReviews": "Ratings & Reviews",
   "overallRating": "Overall Rating",
@@ -77,39 +203,371 @@
   "submitRating": "Submit Rating",
   "writeComment": "Write your feedback here...",
   "noRatingsYet": "No ratings or reviews yet",
+  "rateDriver": "Rate Driver",
+  "ratePassenger": "Rate Passenger",
+  "howWasYourTrip": "How was your trip experience?",
+  "starRating": "Star Rating",
 
-  "notificationsCenter": "Notification Center",
-  "markAllRead": "Mark All Read",
-  "deleteAllNotifications": "Delete All",
-  "noNotifications": "No notifications right now",
+  "loadingMap": "Loading map...",
+  "gpsDisabled": "Location service (GPS) is disabled",
+  "permissionDenied": "Location permission denied",
+  "locationPermissionTitle": "Location Permission Required",
+  "locationPermissionMsg": "The app requires location access to set pickup and destination points accurately.",
+  "grantPermission": "Grant Permission",
+  "turnLeft": "Turn Left",
+  "turnRight": "Turn Right",
+  "goStraight": "Continue Straight",
+  "arriveAtDestination": "You will arrive at destination soon",
+  "recalculatingRoute": "Recalculating route...",
+  "recenterMap": "Recenter Map",
+  "simulationController": "Simulation Panel",
 
-  "emergencySos": "Emergency SOS (122)",
-  "shareLiveLocation": "Share Live Location",
-  "emergencyError": "Unable to place emergency call to 122",
-
-  "settings": "Settings",
-  "language": "App Language",
-  "arabic": "العربية",
-  "english": "English",
-  "changeLanguage": "Change App Language",
-  "profile": "Profile",
-  "wallet": "Wallet & Payment",
-  "walletBalance": "Wallet Balance",
+  "requiredField": "This field is required",
+  "invalidEmail": "Please enter a valid email address",
+  "invalidPhone": "Please enter a valid phone number",
+  "passwordTooShort": "Password must be at least 6 characters",
+  "networkError": "Network error, please check your internet connection",
+  "serverError": "Server error occurred, please try again later",
+  "unknownError": "An unexpected error occurred",
+  "sessionExpired": "Session expired, please sign in again",
+  "tryAgainLater": "Please try again later",
+  "locationRequired": "Please select a location on the map first",
+  "exitAppConfirmation": "Confirm Exit",
+  "exitAppPrompt": "Are you sure you want to exit the application?",
+  "areYouSureExit": "Do you really want to exit?",
 
   "welcomeUser": "Welcome, {name}",
   "@welcomeUser": {
     "placeholders": {
-      "name": {
-        "type": "String"
-      }
+      "name": { "type": "String" }
     }
   },
   "notificationsCount": "{count, plural, =0{No notifications} =1{1 notification} other{{count} notifications}}",
   "@notificationsCount": {
     "placeholders": {
-      "count": {
-        "type": "int"
-      }
+      "count": { "type": "int" }
+    }
+  },
+  "distanceKm": "{value} km",
+  "@distanceKm": {
+    "placeholders": {
+      "value": { "type": "String" }
+    }
+  },
+  "distanceMeters": "{value} m",
+  "@distanceMeters": {
+    "placeholders": {
+      "value": { "type": "String" }
+    }
+  },
+  "durationMinutes": "{value} min",
+  "@durationMinutes": {
+    "placeholders": {
+      "value": { "type": "int" }
+    }
+  },
+  "durationHours": "{value} hr",
+  "@durationHours": {
+    "placeholders": {
+      "value": { "type": "int" }
+    }
+  },
+
+  "returnToApp": "Return to App",
+  "captainOverlayTitle": "inRide Captain",
+  "historyTitle": "Trip History",
+  "noHistoryTrips": "No previous trips found",
+  "tripDetails": "Trip Details",
+  "rideHistory": "Driver / Passenger Trips",
+  "supportTitle": "Support & Help",
+  "supportSubtitle": "We are here to help you 24/7",
+  "faqTitle": "Frequently Asked Questions",
+  "contactUs": "Contact Us",
+  "callSupport": "Call Support",
+  "emailSupport": "Email Support",
+  "version": "Version",
+  "legalTerms": "Terms & Policies",
+  "aboutApp": "About App",
+
+  "orSeparator": "OR",
+  "switchToRole": "Switch to {role}",
+  "@switchToRole": {
+    "placeholders": {
+      "role": { "type": "String" }
+    }
+  },
+  "switchLanguage": "اللغة العربية",
+
+  "exitPreventionRider": "You have an active trip. Please complete or cancel it first before exiting.",
+  "exitPreventionDriver": "You are currently online or have an active trip. Please go offline or finish the trip first before exiting.",
+
+  "navDepart": "Start moving",
+  "navArriveLeft": "Destination on your left",
+  "navArriveRight": "Destination on your right",
+  "navArrived": "You have arrived",
+  "navContinue": "Continue ahead",
+  "navRoundaboutExit": "Enter roundabout - Exit {exit}",
+  "@navRoundaboutExit": {
+    "placeholders": {
+      "exit": { "type": "String" }
+    }
+  },
+  "navRoundabout": "Enter roundabout",
+  "navMerge": "Merge onto road",
+  "navTurnLeft": "Turn left",
+  "navTurnRight": "Turn right",
+  "navSlightLeft": "Keep slightly left",
+  "navSlightRight": "Keep slightly right",
+  "navSharpLeft": "Sharp left turn",
+  "navSharpRight": "Sharp right turn",
+  "navUturn": "Make a U-turn",
+  "navStraight": "Continue straight",
+  "navAfterDistance": "In {distance}",
+  "@navAfterDistance": {
+    "placeholders": {
+      "distance": { "type": "String" }
+    }
+  },
+  "navTowards": "Towards: {street}",
+  "@navTowards": {
+    "placeholders": {
+      "street": { "type": "String" }
+    }
+  },
+  "navUnnamedRoad": "Unnamed road",
+  "navExitFirst": "1st",
+  "navExitSecond": "2nd",
+  "navExitThird": "3rd",
+  "navExitFourth": "4th",
+  "navExitFifth": "5th",
+  "navExitNumber": "No. {n}",
+  "@navExitNumber": {
+    "placeholders": {
+      "n": { "type": "int" }
+    }
+  },
+
+  "editProfileImage": "Edit Profile Photo",
+  "resetAction": "Reset",
+  "zoomLevel": "Zoom: {scale}x",
+  "@zoomLevel": {
+    "placeholders": {
+      "scale": { "type": "String" }
+    }
+  },
+  "rotate90": "Rotate 90°",
+  "savingImage": "Saving...",
+  "saveCircularImage": "Save Circular Photo",
+  "imageProcessingError": "An error occurred while processing the image. Please try again.",
+
+  "simClosePanel": "Close Simulator",
+  "simPanelTitle": "Interactive Simulation Panel",
+  "simToolsHeader": "🎛️ Instant Simulation Tools (Testing)",
+  "simStatus": "Status: {status}",
+  "@simStatus": {
+    "placeholders": {
+      "status": { "type": "String" }
+    }
+  },
+  "simSwitchToPassenger": "Switch to Passenger 🚶",
+  "simSwitchToDriver": "Switch to Driver 🚗",
+  "simApproveDriver": "Approve Driver Instantly ✅",
+  "simDriverApproved": "Driver account verified and approved!",
+  "simRevokeVerification": "Revoke Verification ❌",
+  "simDriverRevoked": "Driver verification revoked (unregistered)",
+  "simGenerateOffers": "Generate Nearby Driver Offers ⚡",
+  "simDriverArrival": "Simulate Driver Arrival 🏁",
+  "simStartTrip": "Simulate Trip Start 🚀",
+  "simCompleteTrip": "Simulate Trip Completion 💳",
+  "simResetRides": "Reset Rides 🔄",
+  "simRidesReset": "All active requests have been reset.",
+  "simNote": "Note: This panel allows you to test the full ride scenario (request, bidding, accept, tracking, arrival, payment) directly without additional devices.",
+
+  "myCurrentLocation": "My Current Location",
+  "currentLocation": "Current Location",
+  "whereFrom": "From where?",
+  "whereTo": "Where to?",
+  "setPickupHint": "Set pickup location...",
+  "searchDestinationHint": "Search for destination or place...",
+  "whereToGo": "Where do you want to go?",
+  "whereToRide": "Where would you like to be picked up?",
+  "whereToGoShort": "Where are you going?",
+  "locationPermissionRide": "Please allow location access to book a ride.",
+  "selectDestinationFirst": "Please select a destination first",
+  "scooterComingSoon": "Sorry, scooter service is coming soon! Please choose motorcycle or car for now.",
+  "noInternetOffline": "No internet connection - Offline mode",
+  "requestCarRide": "Request Car Ride",
+  "requestBikeRide": "Request Bike Ride",
+  "setDestinationToStart": "Set your destination to request a ride",
+  "chooseDestinationFromSearch": "Choose a place from the search field above to see the cost and start booking your ride.",
+  "chooseFare": "Choose your offered fare",
+  "privateCar": "Private Car",
+  "motorcycleBike": "Motorcycle / Bike",
+  "motorcycle": "Motorcycle",
+  "passengerCount": "Number of Passengers",
+  "requestRideNow": "Request Ride Now",
+  "dearCustomer": "Dear Customer",
+  "selectVehicleForRide": "Select vehicle type for ride",
+  "selectVehicleToStart": "Select vehicle type to start your ride",
+  "privateCarOption": "Private Car",
+  "privateCarDesc": "Comfortable and safe ride in a private car",
+  "bikeOption": "Motorcycle",
+  "bikeDesc": "Fast and safe ride to avoid traffic jams",
+  "chooseServiceToStart": "Choose service to get started",
+  "rideOption": "Ride",
+  "rideDesc": "Your car or bike ride is fast and safe at your suggested price",
+  "deliveryOption": "Delivery",
+  "deliveryDesc": "Send your packages with a quick biker at the tap of a button",
+  "setPickupAuto": "Set pickup location automatically based on your location",
+  "detectingLocation": "Detecting your location...",
+  "noResultsFor": "No results found for \"{query}\"",
+  "@noResultsFor": {
+    "placeholders": {
+      "query": { "type": "String" }
+    }
+  },
+  "scooterComingSoonShort": "Scooter (Coming Soon)",
+
+  "enableLocationToWork": "Please enable location permissions to start working.",
+  "creditLimitReached": "Sorry, you have reached your credit limit. Please top up your wallet to continue receiving requests.",
+  "errorSendingOffer": "Error sending offer: {error}",
+  "@errorSendingOffer": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "bookingRide": "Booking ride and confirming acceptance...",
+  "customPriceOffer": "Custom Price Offer",
+  "sendOffer": "Send Offer",
+  "onlineForWork": "Online for Work",
+  "offlineStatus": "Offline",
+  "availableRequestsAround": "Available Requests Around You",
+  "offlineMode": "Offline Mode",
+  "youAreInactive": "You are currently inactive",
+  "activateToReceive": "Activate the button above to receive ride notifications and start working.",
+  "requestsPaused": "Receiving requests is temporarily paused",
+  "debtLimitMessage": "You have reached the maximum debt limit (-100 EGP) due to commission rates from previous trips. Please top up your wallet to reactivate your account and receive passenger requests again.",
+  "goToWallet": "Go to Wallet to Top Up",
+  "noRequestsInArea": "No ride requests in your area right now...",
+  "packageSender": "Package Sender",
+  "passenger": "Passenger",
+  "walletPaymentShort": "💳 Wallet",
+  "cashPaymentShort": "💵 Cash",
+  "timeRemaining": "{seconds}s left",
+  "@timeRemaining": {
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "expired": "Expired",
+  "newUser": "New User",
+  "distanceToPassenger": "Distance to passenger: {distText}  •  Trip distance: {tripDist} km\nTime to customer: {etaMin} min",
+  "@distanceToPassenger": {
+    "placeholders": {
+      "distText": { "type": "String" },
+      "tripDist": { "type": "String" },
+      "etaMin": { "type": "String" }
+    }
+  },
+  "packageDetails": "Sent Package Details:",
+  "packageContent": "Package content: {content}",
+  "@packageContent": {
+    "placeholders": {
+      "content": { "type": "String" }
+    }
+  },
+  "notSpecified": "Not specified",
+  "deliveryInstructions": "Delivery instructions: {notes}",
+  "@deliveryInstructions": {
+    "placeholders": {
+      "notes": { "type": "String" }
+    }
+  },
+  "customerCounterOffer": "Customer's Counter Offer",
+  "suggestedFare": "Suggested Fare",
+  "customerSuggestedFare": "Customer suggested a new fare: {fare} EGP",
+  "@customerSuggestedFare": {
+    "placeholders": {
+      "fare": { "type": "int" }
+    }
+  },
+  "skipAction": "Skip",
+  "acceptNegotiation": "Accept Negotiation",
+  "offerSentWaiting": "Price offer sent successfully... Waiting for customer",
+  "acceptFare": "Accept Fare",
+
+  "cash": "Cash",
+  "walletTopUpTitle": "Wallet Top Up",
+
+  "cancelledByCustomer": "Cancelled by customer",
+  "rideCancelled": "Ride Cancelled",
+  "rideExpiredNoDrivers": "Ride request expired due to no driver response. Please try again.",
+  "requestCancelledSuccess": "Request cancelled successfully",
+  "shareLocationInstall": "To easily locate you, please make sure the app is installed on your device.",
+  "shareLocationMessage": "To easily locate you, please make sure the app is installed on your device.\n\nPlease click this link to set your delivery location on the map: {link}",
+  "@shareLocationMessage": {
+    "placeholders": {
+      "link": { "type": "String" }
+    }
+  },
+
+  "recipientLocationTitle": "Set Delivery Pickup Location",
+  "recipientLocationGps": "Recipient Location (GPS)",
+  "loadingCoordinates": "Determining location coordinates... 📍",
+  "invalidLink": "This link is invalid or you are not authorized ❌",
+  "linkExpired": "This link has expired because the order is inactive or already completed ⚠️",
+  "locationAlreadyConfirmed": "Location has already been confirmed for this order ✅",
+  "orderNotFound": "Sorry, order details not found ❌",
+  "loadingError": "An error occurred while loading order data. Please check your internet connection.",
+  "locationPermissionDenied": "Location permission denied. Please enable it to continue ⚠️",
+  "gpsAccuracyError": "Unable to get your location with high accuracy. Please check GPS settings or select manually.",
+  "gpsAccuracyErrorAlt": "Failed to get your location with high accuracy. Please check GPS settings or select manually.",
+  "saveLocationError": "An error occurred while saving your location. Please try again.",
+  "savingAndNotifying": "Updating system and notifying driver...",
+  "connectingToSystem": "Connecting to system...",
+  "unexpectedError": "An unexpected error occurred. Please try again.",
+  "retryAction": "Retry",
+  "closePage": "Close Page",
+  "senderWantsToSend": "({sender}) wants to send you a package. Press the button below to share your location and help the driver.",
+  "@senderWantsToSend": {
+    "placeholders": {
+      "sender": { "type": "String" }
+    }
+  },
+  "packageDescLabel": "Package description: {desc}",
+  "@packageDescLabel": {
+    "placeholders": {
+      "desc": { "type": "String" }
+    }
+  },
+  "useMyCurrentLocation": "Use My Current Location 📍",
+  "selectLocationManually": "Select location manually on map",
+  "confirmLocation": "Confirm Location 📌",
+  "locationConfirmedSuccess": "Location confirmed successfully! 🎉",
+  "locationConfirmedMessage": "Thank you! Delivery coordinates saved and driver has been notified. The driver is on the way.",
+
+  "driver": "Driver",
+  "car": "Car",
+  "vehicleMotorcycleBike": "Motorcycle / Bike",
+  "vehicleScooter": "Scooter",
+  "vehiclePrivateCar": "Private Car",
+
+  "authUnknownError": "An unknown error occurred, please try again later.",
+  "authNoInternet": "No internet connection. Please check your network and try again.",
+  "authServerConnect": "Unable to connect to server. Please check internet connection.",
+  "authInvalidCredentials": "Invalid login credentials.",
+  "authAlreadyRegistered": "This account is already registered, please log in.",
+  "authEmailNotConfirmed": "Email not confirmed, please check your inbox.",
+  "authWeakPassword": "Password should be at least 6 characters.",
+  "authInvalidEmail": "Invalid email address.",
+  "authRateLimit": "Rate limit exceeded. Please wait and try again later.",
+  "authOtpExpired": "Verification code expired, please request a new one.",
+  "authInvalidOtp": "Invalid verification code.",
+  "authCancelled": "Operation canceled by user.",
+  "authErrorPrefix": "An error occurred: {error}",
+  "@authErrorPrefix": {
+    "placeholders": {
+      "error": { "type": "String" }
     }
   }
 }

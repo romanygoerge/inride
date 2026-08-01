@@ -922,7 +922,13 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
                             ),
                             child: ElevatedButton(
                               onPressed: () {
-                                state.submitRating(_rating, _commentController.text);
+                                final driverId = state.acceptedOffer?.driverId ?? state.currentRideRequest?.driverId;
+                                state.submitRating(
+                                  _rating,
+                                  _commentController.text,
+                                  targetUserId: driverId,
+                                  targetRole: 'driver',
+                                );
                                 Navigator.pop(context);
                               },
                               style: ElevatedButton.styleFrom(

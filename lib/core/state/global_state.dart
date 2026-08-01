@@ -10,12 +10,20 @@ import 'package:geolocator/geolocator.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_map/flutter_map.dart' as fm;
+import 'package:latlong2/latlong.dart';
+import '../models/place_location.dart';
+import '../models/route_model.dart';
+import '../repositories/route_repository.dart';
+import '../services/search_history_service.dart';
+import '../controllers/map_controller.dart';
 import '../models/ride_request_model.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/ride_repository.dart';
 import '../services/location_service.dart';
 import '../services/route_service.dart';
 import '../utils/map_coordinates_helper.dart';
+import '../utils/uuid_generator.dart';
 import '../utils/app_logger.dart';
 import '../../main.dart' show navigatorKey;
 import '../../shared/widgets/in_app_notification.dart';
@@ -28,6 +36,7 @@ import '../services/driver_location_service.dart';
 import '../controllers/notification_controller.dart';
 
 enum UserRole { rider, driver }
+
 
 enum DriverVerificationStatus { unregistered, submitted, verified, rejected }
 
@@ -211,6 +220,16 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   // Rider Request States
   String? fromAddress;
   String? toAddress;
+  PlaceLocation? selectedDestinationLocation;
+  double? toLat;
+  double? toLng;
+  double? fromLat;
+  double? fromLng;
+  RouteModel? currentRouteModel;
+  double? calculatedRouteDistanceKm;
+  double? calculatedRouteDurationMin;
+  double? calculatedRouteFare;
+
   double offeredFare = 0.0;
   String selectedVehicleType = 'car';
   RideStatus _rideStatus = RideStatus.idle;
@@ -221,6 +240,145 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     _syncSessionToNative();
     _handleRideStatusSound(val);
   }
+
+  /// Unified Destination Selection Workflow (Mandatory Requirements 2, 3, 4, 5, 6, 7, 8)
+  Future<void> selectDestination(PlaceLocation location, {required String selectionSource}) async {
+    // 1. Clear route cache and stale state (Requirements 2, 7, 8)
+    try {
+      if (sl.isRegistered<RouteRepository>()) {
+        sl<RouteRepository>().clearCache();
+      }
+      if (sl.isRegistered<MapController>()) {
+        sl<MapController>().clearOverlays();
+      }
+    } catch (e) {
+      debugPrint('[GlobalState] Clear overlays warning: $e');
+    }
+    
+    currentRouteModel = null;
+    calculatedRouteDistanceKm = null;
+    calculatedRouteDurationMin = null;
+    calculatedRouteFare = null;
+
+    // 2. Validate coordinates (Requirement 4)
+    PlaceLocation activeLocation = location;
+    if (!activeLocation.isValid) {
+      final geocoded = await MapCoordinatesHelper.geocodeAddress(activeLocation.formattedAddress);
+      if (geocoded != null) {
+        activeLocation = activeLocation.copyWith(
+          latitude: geocoded.latitude,
+          longitude: geocoded.longitude,
+        );
+      } else {
+        final fallback = MapCoordinatesHelper.getLatLngForAddress(activeLocation.formattedAddress);
+        activeLocation = activeLocation.copyWith(
+          latitude: fallback.latitude,
+          longitude: fallback.longitude,
+        );
+      }
+    }
+
+    // Determine pickup coordinates accurately using actual stored GPS coordinates first
+    final LatLng originLatLng = (fromLat != null && fromLng != null && fromLat != 0.0 && fromLng != 0.0)
+        ? LatLng(fromLat!, fromLng!)
+        : MapCoordinatesHelper.getLatLngForAddress(fromAddress ?? 'موقعي الحالي');
+    final destLatLng = LatLng(activeLocation.latitude, activeLocation.longitude);
+
+    // 3. Log coordinates and selection source (Requirement 6)
+    AppLogger.rideLog(
+      'DestinationSelection',
+      'Selection Source: $selectionSource | '
+      'Origin: (${originLatLng.latitude}, ${originLatLng.longitude}) | '
+      'Destination: (${destLatLng.latitude}, ${destLatLng.longitude}) | '
+      'Place: ${activeLocation.placeName} (${activeLocation.formattedAddress})',
+    );
+
+
+    // 4. Update active destination state (Requirement 3)
+    toAddress = activeLocation.formattedAddress.isNotEmpty ? activeLocation.formattedAddress : activeLocation.placeName;
+    toLat = activeLocation.latitude;
+    toLng = activeLocation.longitude;
+    fromLat = originLatLng.latitude;
+    fromLng = originLatLng.longitude;
+    selectedDestinationLocation = activeLocation;
+
+    // Register coordinate in helper cache
+    MapCoordinatesHelper.registerCoordinate(toAddress!, destLatLng);
+    if (activeLocation.placeName.isNotEmpty) {
+      MapCoordinatesHelper.registerCoordinate(activeLocation.placeName, destLatLng);
+    }
+
+    // 5. Request completely new route from routing engine (Requirements 2 & 5)
+    try {
+      if (sl.isRegistered<RouteService>()) {
+        final routeService = sl<RouteService>();
+        final routeModel = await routeService.getRoute(originLatLng, destLatLng);
+        currentRouteModel = routeModel;
+
+        // 6. Calculate distance, duration, ETA, and fare
+        final distanceKm = routeModel.distance / 1000.0;
+        final durationMin = routeModel.duration / 60.0;
+        
+        calculatedRouteDistanceKm = distanceKm;
+        calculatedRouteDurationMin = durationMin;
+        calculatedRouteFare = calculateEstimatedFare(
+          distanceInKm: distanceKm,
+          vehicleType: selectedVehicleType,
+        );
+
+        // 7. Update Map polylines & camera
+        if (sl.isRegistered<MapController>()) {
+          final mapCtrl = sl<MapController>();
+          if (routeModel.points.isNotEmpty) {
+            mapCtrl.updatePolylines([
+              fm.Polyline(
+                points: routeModel.points,
+                color: const Color(0xFF1976D2),
+                strokeWidth: 5.0,
+              ),
+            ]);
+            mapCtrl.fitBounds(originLatLng, destLatLng);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[GlobalState] Route request failed: $e');
+      final distKm = LocationService.instance.calculateDistance(
+        originLatLng.latitude, originLatLng.longitude,
+        destLatLng.latitude, destLatLng.longitude,
+      );
+      calculatedRouteDistanceKm = distKm;
+      calculatedRouteDurationMin = distKm * 2.0;
+      calculatedRouteFare = calculateEstimatedFare(distanceInKm: distKm, vehicleType: selectedVehicleType);
+    }
+
+    // 8. Save/Update Search History (Requirements 1, 9, 10)
+    await SearchHistoryService.instance.saveLocation(activeLocation);
+
+    notifyListeners();
+  }
+
+  /// Clears active destination and route state (Requirement 7 & 8)
+  void clearDestination() {
+    toAddress = null;
+    toLat = null;
+    toLng = null;
+    selectedDestinationLocation = null;
+    currentRouteModel = null;
+    calculatedRouteDistanceKm = null;
+    calculatedRouteDurationMin = null;
+    calculatedRouteFare = null;
+    try {
+      if (sl.isRegistered<RouteRepository>()) {
+        sl<RouteRepository>().clearCache();
+      }
+      if (sl.isRegistered<MapController>()) {
+        sl<MapController>().clearOverlays();
+      }
+    } catch (_) {}
+    notifyListeners();
+  }
+
 
   void _handleRideStatusSound(RideStatus status) {
     try {
@@ -258,6 +416,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   RideRequestModel? currentRideRequest;
   String? lastCancelReason;
   String? lastCancelledBy;
+  String? lastCompletedRequestId;
 
   List<DriverOffer> driverOffers = [];
   DriverOffer? acceptedOffer;
@@ -1066,6 +1225,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     driverLatitude = null;
     driverLongitude = null;
     driverBearing = 0.0;
+    if (currentRequestId != null && currentRequestId!.isNotEmpty) {
+      lastCompletedRequestId = currentRequestId;
+    }
     currentRequestId = null;
     currentRecipientToken = null;
     activePassengerId = null;
@@ -1137,7 +1299,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         pathInBucket,
         fileBytes,
         fileOptions: const FileOptions(upsert: true, contentType: 'image/png'),
-      );
+      ).timeout(const Duration(seconds: 10));
       final publicUrl = _supabase.storage.from(bucketName).getPublicUrl(pathInBucket);
       return publicUrl;
     } catch (e) {
@@ -2138,31 +2300,71 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> submitRating(double rating, String comment, {String? targetUserId, String? targetRole}) async {
-    final String? receiverId = targetUserId ?? acceptedOffer?.driverId;
-    final String receiverRole = targetRole ?? 'driver';
+    final String? reqId = currentRequestId ?? lastCompletedRequestId;
+    String? resolvedReceiverId = targetUserId;
+    String resolvedReceiverRole = targetRole ?? (currentRole == UserRole.rider ? 'driver' : 'rider');
 
-    if (currentRequestId != null && userUid != null && receiverId != null) {
+    if (resolvedReceiverId == null || resolvedReceiverId.isEmpty) {
+      if (currentRole == UserRole.rider) {
+        resolvedReceiverId = acceptedOffer?.driverId ?? currentRideRequest?.driverId;
+        resolvedReceiverRole = 'driver';
+      } else {
+        resolvedReceiverId = activePassengerId ?? currentRideRequest?.passengerId;
+        resolvedReceiverRole = 'rider';
+      }
+    }
+
+    if (reqId != null && (resolvedReceiverId == null || resolvedReceiverId.isEmpty)) {
       try {
-        final ratingId = '${currentRequestId}_$userUid';
-        final String senderName = currentRole == UserRole.rider
-            ? (passengerName ?? 'راكب')
-            : (userName ?? 'كابتن');
+        final reqDoc = await _supabase.from('ride_requests').select('driver_id, passenger_id').eq('id', reqId).maybeSingle();
+        if (reqDoc != null) {
+          if (currentRole == UserRole.rider) {
+            resolvedReceiverId = reqDoc['driver_id'] as String?;
+          } else {
+            resolvedReceiverId = reqDoc['passenger_id'] as String?;
+          }
+        }
+      } catch (e) {
+        debugPrint('[submitRating] Error fetching request fallback info: $e');
+      }
+    }
+
+    if (userUid != null && resolvedReceiverId != null && resolvedReceiverId.isNotEmpty) {
+      try {
+        final ratingId = reqId != null ? '${reqId}_$userUid' : UuidGenerator.v4();
+        
+        String senderName = userName ?? passengerName ?? '';
+        if (senderName.trim().isEmpty || senderName == 'راكب' || senderName == 'كابتن') {
+          try {
+            final userDoc = await _supabase.from('users').select('name').eq('id', userUid!).maybeSingle();
+            if (userDoc != null && userDoc['name'] != null && (userDoc['name'] as String).trim().isNotEmpty) {
+              senderName = (userDoc['name'] as String).trim();
+            }
+          } catch (_) {}
+        }
+        if (senderName.trim().isEmpty) {
+          senderName = currentRole == UserRole.rider ? 'راكب' : 'كابتن';
+        }
 
         await _supabase.from('ratings').upsert({
           'id': ratingId,
-          'request_id': currentRequestId!,
+          'request_id': reqId ?? '',
           'sender_id': userUid!,
           'sender_name': senderName,
-          'receiver_id': receiverId,
-          'receiver_role': receiverRole,
+          'receiver_id': resolvedReceiverId,
+          'receiver_role': resolvedReceiverRole,
           'rating': rating,
           'comment': comment.trim().isEmpty ? 'بدون تعليق' : comment,
+          'created_at': DateTime.now().toIso8601String(),
         });
 
-        await _updateAverageRating(receiverId);
+        debugPrint('[submitRating] Rating submitted successfully: rating=$rating, receiver=$resolvedReceiverId, role=$resolvedReceiverRole');
+        await _updateAverageRating(resolvedReceiverId);
       } catch (e) {
-        debugPrint('[submitRating] Error: $e');
+        debugPrint('[submitRating] Error submitting rating: $e');
       }
+    } else {
+      debugPrint('[submitRating] Notice: Skipped submitting rating. userUid=$userUid, resolvedReceiverId=$resolvedReceiverId');
     }
     resetRide();
   }
@@ -2170,15 +2372,23 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _updateAverageRating(String userId) async {
     try {
       final ratingsRes = await _supabase.from('ratings').select('rating').eq('receiver_id', userId);
-      if ((ratingsRes as List).isNotEmpty) {
+      final list = List<Map<String, dynamic>>.from(ratingsRes as List);
+      if (list.isNotEmpty) {
         double total = 0;
-        for (var row in (ratingsRes as List)) {
+        for (var row in list) {
           total += (row['rating'] as num? ?? 0.0).toDouble();
         }
-        double avg = double.parse((total / ratingsRes.length).toStringAsFixed(1));
+        double avg = double.parse((total / list.length).toStringAsFixed(1));
+
         await _supabase.from('users').update({'rating': avg}).eq('id', userId);
+
+        try {
+          await _supabase.from('drivers').update({'rating': avg}).eq('id', userId);
+        } catch (_) {}
+
         if (userId == userUid) {
           userRating = avg;
+          userTotalRatingsCount = list.length;
           notifyListeners();
         }
       }
@@ -2468,17 +2678,17 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     try {
       return await _uploadToSupabaseStorage(
         localPath: localPath,
-        bucketName: 'receipts',
+        bucketName: 'wallet_receipts',
         pathInBucket: pathInBucket,
-      );
+      ).timeout(const Duration(seconds: 10));
     } catch (e) {
-      debugPrint('Uploading to receipts bucket failed, trying documents bucket: $e');
+      debugPrint('Uploading to wallet_receipts bucket failed, trying receipts bucket: $e');
       try {
         return await _uploadToSupabaseStorage(
           localPath: localPath,
-          bucketName: 'documents',
+          bucketName: 'receipts',
           pathInBucket: pathInBucket,
-        );
+        ).timeout(const Duration(seconds: 10));
       } catch (e2) {
         debugPrint('Uploading to storage failed, using base64 encoding fallback: $e2');
         final file = File(localPath);
@@ -2498,20 +2708,64 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     try {
       String finalReceiptUrl = receiptUrl;
       if (!receiptUrl.startsWith('http') && !receiptUrl.startsWith('data:')) {
-        finalReceiptUrl = await uploadReceiptImage(receiptUrl);
+        try {
+          finalReceiptUrl = await uploadReceiptImage(receiptUrl);
+        } catch (uploadError) {
+          debugPrint('[GlobalState] Receipt upload failed completely: $uploadError');
+          finalReceiptUrl = 'file_upload_failed';
+        }
       }
 
-      await _supabase.from('transactions').insert({
-        'user_id': userUid!,
-        'title': 'شحن رصيد معلق',
-        'amount': amount,
-        'type': 'charge_pending',
-        'balance_after': walletBalance,
-        'payment_method': method,
-        'receipt_url': finalReceiptUrl,
-        'notes': 'طلب شحن محفظة عبر $method',
-        'created_at': DateTime.now().toIso8601String(),
-      });
+      final roleStr = currentRole == UserRole.driver ? 'driver' : 'rider';
+      final nameStr = userName ?? passengerName ?? 'مستخدم';
+      final phoneStr = _supabase.auth.currentUser?.phone ?? '';
+
+      // 1. Insert into wallet_recharge_requests for Admin Dashboard Review
+      try {
+        await _supabase.from('wallet_recharge_requests').insert({
+          'user_id': userUid!,
+          'user_type': roleStr,
+          'user_name': nameStr,
+          'user_phone': phoneStr,
+          'amount': amount,
+          'payment_method': method,
+          'receipt_url': finalReceiptUrl,
+          'status': 'pending',
+          'created_at': DateTime.now().toIso8601String(),
+        }).timeout(const Duration(seconds: 10));
+      } catch (e) {
+        debugPrint('[GlobalState] Error writing to wallet_recharge_requests: $e');
+      }
+
+      // 2. Insert into transactions for user history
+      try {
+        await _supabase.from('transactions').insert({
+          'user_id': userUid!,
+          'title': 'شحن رصيد معلق',
+          'amount': amount,
+          'type': 'charge_pending',
+          'balance_after': walletBalance,
+          'payment_method': method,
+          'receipt_url': finalReceiptUrl,
+          'notes': 'طلب شحن محفظة عبر $method',
+          'created_at': DateTime.now().toIso8601String(),
+        }).timeout(const Duration(seconds: 10));
+      } catch (e) {
+        debugPrint('[GlobalState] Full transactions insert failed, trying minimal fields: $e');
+        try {
+          await _supabase.from('transactions').insert({
+            'user_id': userUid!,
+            'title': 'شحن رصيد معلق',
+            'amount': amount,
+            'type': 'charge_pending',
+            'balance_after': walletBalance,
+            'created_at': DateTime.now().toIso8601String(),
+          }).timeout(const Duration(seconds: 10));
+        } catch (e2) {
+          debugPrint('[GlobalState] Minimal transactions insert also failed: $e2');
+        }
+      }
+
       notifyListeners();
       return true;
     } catch (e) {
@@ -2519,6 +2773,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       rethrow;
     }
   }
+
 
   Future<void> updateName(String newName) async {
     if (userUid != null) {

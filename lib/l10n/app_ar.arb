@@ -18,6 +18,17 @@
   "filter": "تصفية",
   "share": "مشاركة",
   "close": "إغلاق",
+  "next": "التالي",
+  "previous": "السابق",
+  "submit": "إرسال",
+  "continueText": "متابعة",
+  "skip": "تخطي",
+  "apply": "تطبيق",
+  "refresh": "تحديث",
+  "copy": "نسخ",
+  "viewDetails": "عرض التفاصيل",
+  "yes": "نعم",
+  "no": "لا",
 
   "authTitle": "تسجيل الدخول",
   "welcomeMessage": "مرحباً بك في inRide",
@@ -28,23 +39,73 @@
   "enterFullName": "أدخل اسمك بالكامل",
   "acceptTerms": "أوافق على الشروط والأحكام",
   "logout": "تسجيل الخروج",
+  "login": "تسجيل الدخول",
+  "register": "إنشاء حساب جديد",
+  "enterPhonePrompt": "يرجى إدخال رقم الهاتف",
+  "invalidPhoneFormat": "يرجى إدخال رقم هاتف صحيح (مثال: 1012345678)",
+  "sendingOtp": "جاري إرسال رمز التحقق...",
+  "otpSent": "تم إرسال رمز التحقق بنجاح 📲",
+  "enterOtpCode": "أدخل رمز التحقق (OTP)",
+  "resendCode": "إعادة إرسال الرمز",
+  "resendCodeTimer": "إعادة الإرسال خلال {seconds} ثانية",
+  "@resendCodeTimer": {
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "verifyOtp": "تأكيد الرمز",
+  "invalidOtp": "رمز التحقق غير صحيح، حاول مرة أخرى",
+  "termsAndConditionsText": "الشروط والأحكام",
+  "privacyPolicyText": "سياسة الخصوصية",
+  "forgotPassword": "هل نسيت كلمة المرور؟",
+  "resetPassword": "إعادة ضبط كلمة المرور",
+  "sendResetLink": "إرسال رابط الضبط",
+  "emailAddress": "البريد الإلكتروني",
+  "enterEmail": "أدخل بريدك الإلكتروني",
+  "passwordsDoNotMatch": "كلمتا المرور غير متطابقتين",
+  "driverRegistrationPrompt": "هل تريد التسجيل ككابتن؟ اضغط هنا",
 
   "passengerRole": "راكب",
   "driverRole": "كابتن",
   "selectService": "اختر الخدمة",
   "rideService": "رحلة توصيل",
   "deliveryService": "توصيل طلبات (ديلفري)",
+  "heavyDeliveryService": "نقل ثقيل",
+  "scooterService": "توصيل سكوتر",
 
   "pickupLocation": "مكان الانطلاق",
   "destinationLocation": "مكان الوصول",
   "selectDestination": "حدد وجهتك على الخريطة",
+  "selectPickupOnMap": "حدد نقطة الانطلاق على الخريطة",
   "offeredFare": "السعر المقترح",
   "egp": "ج.م",
   "requestRide": "اطلب رحلتك الآن",
-  "searchingForDrivers": "جاري البحث عن كباتن...",
+  "searchingForDrivers": "جاري البحث عن كباتن بالقرب منك...",
   "offersReceived": "العروض المقدمة",
   "acceptOffer": "قبول العرض",
   "declineOffer": "رفض العرض",
+  "offerDetails": "تفاصيل العرض",
+  "counterOffer": "تقديم عرض مضاد",
+  "driverIsOnTheWay": "الكابتن في طريقه إليك 🚗",
+  "driverArrived": "وصل الكابتن إلى نقطة الانطلاق 📍",
+  "tripInProgress": "الرحلة قيد التنفيذ الآن...",
+  "tripCompleted": "تم إنهاء الرحلة بنجاح 🎉",
+  "tripCanceled": "تم إلغاء الرحلة",
+  "cancelRide": "إلغاء الرحلة",
+  "cancelReason": "سبب الإلغاء",
+  "enterCounterOffer": "أدخل السعر المقترح الجديد",
+  "estimatedTime": "الوقت المتوقع",
+  "estimatedDistance": "المسافة المتوقعة",
+  "fareBreakdown": "تفاصيل الأجرة",
+  "baseFare": "الأجرة الأساسية",
+  "totalFare": "إجمالي الأجرة",
+  "driverDistance": "المسافة عن الكابتن",
+  "vehicleCategory": "نوع المركبة",
+  "selectVehicleCategory": "اختر فئة السيارة",
+  "standardCar": "اقتصادي",
+  "comfortCar": "راحة",
+  "scooter": "سكوتر",
+  "deliveryTruck": "سيارة نقل",
 
   "packageDescription": "وصف الطرد",
   "deliveryNotes": "ملاحظات التوصيل",
@@ -53,6 +114,12 @@
   "orderDeliveryNow": "اطلب ديلفري الآن",
   "shareLocationLink": "مشاركة رابط تحديد الموقع",
   "linkCopied": "تم نسخ رابط التحديد بنجاح! 📋",
+  "recipientName": "اسم المستلم",
+  "enterRecipientName": "أدخل اسم المستلم",
+  "enterPackageDetails": "أدخل تفاصيل ومواصفات الشحنة",
+  "fragilePackage": "طرد قابل للكسر",
+  "packageSize": "حجم الطرد",
+  "confirmRecipientLocation": "تأكيد موقع المستلم",
 
   "driverOnline": "أنت الآن متصل (جاهز لاستقبال الطلبات)",
   "driverOffline": "أنت الآن غير متصل",
@@ -63,6 +130,59 @@
   "startTrip": "بدء الرحلة",
   "completeTrip": "إنهاء الرحلة",
   "passengerPhone": "رقم هاتف الراكب",
+  "incomingOffer": "عرض جديد من كابتن",
+  "earningsToday": "أرباح اليوم",
+  "totalTrips": "إجمالي الرحلات",
+  "captainDashboard": "لوحة تحكم الكابتن",
+  "docUploadTitle": "رفع مستندات الكابتن",
+  "docUploadSubtitle": "يرجى رفع المستندات المطلوبة لتفعيل حسابك",
+  "driverLicense": "رخصة القيادة",
+  "vehicleLicense": "رخصة المركبة",
+  "nationalId": "الرقم القومي (وجهان)",
+  "takePhoto": "التقاط صورة بالكاميرا",
+  "uploadFromGallery": "اختيار من معرض الصور",
+  "docSubmitted": "تم رفع المستندات بنجاح!",
+  "reviewPendingTitle": "حسابك قيد المراجعة",
+  "reviewPendingMessage": "يقوم فريقنا بمراجعة مستنداتك حالياً. سيتم تفعيل حسابك خلال 24 ساعة.",
+  "underReview": "قيد المراجعة",
+  "docPendingNote": "يرجى الانتظار لحين اعتماد حسابك من قبل الإدارة",
+
+  "profile": "الملف الشخصي",
+  "editProfile": "تعديل الملف الشخصي",
+  "settings": "الإعدادات",
+  "language": "لغة التطبيق",
+  "arabic": "العربية",
+  "english": "English",
+  "changeLanguage": "تغيير لغة التطبيق",
+  "appLanguage": "لغة التطبيق",
+  "theme": "المظهر",
+  "darkMode": "الوضع الداكن",
+  "lightMode": "الوضع الفاتح",
+  "accountSettings": "إعدادات الحساب",
+  "changePhoneNumber": "تغيير رقم الهاتف",
+  "emergencyContacts": "جهات اتصال الطوارئ",
+  "savedAddresses": "العناوين المحفوظة",
+  "homeAddress": "المنزل",
+  "workAddress": "العمل",
+
+  "wallet": "المحفظة والدفع",
+  "walletBalance": "رصيد المحفظة",
+  "addFunds": "شحن المحفظة",
+  "withdrawFunds": "سحب الرصيد",
+  "transactionHistory": "سجل المعاملات",
+  "paymentMethods": "طرق الدفع",
+  "cashPayment": "دفع نقدي (كاش)",
+  "walletPayment": "دفع بواسطة المحفظة",
+  "cardPayment": "بطاقة ائتمان",
+  "depositSuccess": "تم شحن المحفظة بنجاح!",
+  "insufficientBalance": "رصيد المحفظة غير كافٍ",
+  "amount": "المبلغ",
+  "enterAmount": "أدخل المبلغ المطلوب",
+
+  "notificationsCenter": "مركز الإشعارات",
+  "markAllRead": "تعليم الكل كمقروء",
+  "deleteAllNotifications": "حذف الكل",
+  "noNotifications": "لا توجد إشعارات حالياً",
 
   "chatTitle": "المحادثة الفورية",
   "typeMessage": "اكتب رسالتك هنا...",
@@ -70,6 +190,12 @@
   "partnerTyping": "يكتب الآن...",
   "supportChat": "الدعم الفني المباشر",
   "messagesCenter": "مركز الرسائل",
+  "callPartner": "الاتصال الهاتفي",
+
+  "emergencySos": "طوارئ SOS (122)",
+  "shareLiveLocation": "مشاركة الموقع المباشر",
+  "emergencyError": "تعذر إجراء اتصال الطوارئ بالرقم 122",
+  "emergencyDialNote": "سيتم الاتصال مباشرة بشرطة النجدة 122",
 
   "ratingsAndReviews": "المراجعات والتقييمات",
   "overallRating": "التقييم العام",
@@ -77,39 +203,371 @@
   "submitRating": "إرسال التقييم",
   "writeComment": "اكتب تعليقك هنا...",
   "noRatingsYet": "لا توجد تقييمات أو مراجعات حالياً",
+  "rateDriver": "تقييم الكابتن",
+  "ratePassenger": "تقييم الراكب",
+  "howWasYourTrip": "كيف كانت تجربتك في هذه الرحلة؟",
+  "starRating": "التقييم بالنجوم",
 
-  "notificationsCenter": "مركز الإشعارات",
-  "markAllRead": "تعليم الكل كمقروء",
-  "deleteAllNotifications": "حذف الكل",
-  "noNotifications": "لا توجد إشعارات حالياً",
+  "loadingMap": "جاري تحميل الخريطة...",
+  "gpsDisabled": "خدمة تحديد الموقع (GPS) غير مفعلة",
+  "permissionDenied": "تم رفض إذن الوصول للموقع",
+  "locationPermissionTitle": "إذن الوصول للموقع مطلوب",
+  "locationPermissionMsg": "يحتاج التطبيق لاستخدام موقعك لتحديد نقطة الانطلاق والوصول بدقة.",
+  "grantPermission": "منح الإذن",
+  "turnLeft": "اتجه يساراً",
+  "turnRight": "اتجه يميناً",
+  "goStraight": "واصل السير مباشرة",
+  "arriveAtDestination": "ستصل إلى وجهتك قريباً",
+  "recalculatingRoute": "جاري إعادة حساب المسار...",
+  "recenterMap": "إعادة ضبط الخريطة",
+  "simulationController": "لوحة المحاكاة",
 
-  "emergencySos": "طوارئ SOS (122)",
-  "shareLiveLocation": "مشاركة الموقع المباشر",
-  "emergencyError": "تعذر إجراء اتصال الطوارئ بالرقم 122",
-
-  "settings": "الإعدادات",
-  "language": "لغة التطبيق",
-  "arabic": "العربية",
-  "english": "English",
-  "changeLanguage": "تغيير لغة التطبيق",
-  "profile": "الملف الشخصي",
-  "wallet": "المحفظة والدفع",
-  "walletBalance": "رصيد المحفظة",
+  "requiredField": "هذا الحقل مطلوب",
+  "invalidEmail": "يرجى إدخال بريد إلكتروني صحيح",
+  "invalidPhone": "يرجى إدخال رقم هاتف صحيح",
+  "passwordTooShort": "كلمة المرور يجب ألا تقل عن 6 أحرف",
+  "networkError": "خطأ في الاتصال بالشبكة، يرجى التحقق من الإنترنت",
+  "serverError": "حدث خطأ في الخادم، يرجى المحاولة لاحقاً",
+  "unknownError": "حدث خطأ غير متوقع",
+  "sessionExpired": "انتهت الجلسة، يرجى تسجيل الدخول مجدداً",
+  "tryAgainLater": "يرجى المحاولة مرة أخرى لاحقاً",
+  "locationRequired": "يرجى تحديد الموقع على الخريطة أولاً",
+  "exitAppConfirmation": "تأكيد الخروج",
+  "exitAppPrompt": "هل أنت تأكد من رغبتك في الخروج من التطبيق؟",
+  "areYouSureExit": "هل تريد الخروج حقاً؟",
 
   "welcomeUser": "مرحباً بك، {name}",
   "@welcomeUser": {
     "placeholders": {
-      "name": {
-        "type": "String"
-      }
+      "name": { "type": "String" }
     }
   },
   "notificationsCount": "{count, plural, =0{لا توجد إشعارات} =1{إشعار واحد} =2{إشعاران} few{{count} إشعارات} many{{count} إشعاراً} other{{count} إشعار}}",
   "@notificationsCount": {
     "placeholders": {
-      "count": {
-        "type": "int"
-      }
+      "count": { "type": "int" }
+    }
+  },
+  "distanceKm": "{value} كم",
+  "@distanceKm": {
+    "placeholders": {
+      "value": { "type": "String" }
+    }
+  },
+  "distanceMeters": "{value} متر",
+  "@distanceMeters": {
+    "placeholders": {
+      "value": { "type": "String" }
+    }
+  },
+  "durationMinutes": "{value} دقيقة",
+  "@durationMinutes": {
+    "placeholders": {
+      "value": { "type": "int" }
+    }
+  },
+  "durationHours": "{value} ساعة",
+  "@durationHours": {
+    "placeholders": {
+      "value": { "type": "int" }
+    }
+  },
+
+  "returnToApp": "الرجوع للتطبيق",
+  "captainOverlayTitle": "inRide الكابتن",
+  "historyTitle": "سجل الرحلات",
+  "noHistoryTrips": "لا توجد رحلات سابقة",
+  "tripDetails": "تفاصيل الرحلة",
+  "rideHistory": "رحلات السائق / الراكب",
+  "supportTitle": "الدعم والمساعدة",
+  "supportSubtitle": "نحن هنا لمساعدتك على مدار 24 ساعة",
+  "faqTitle": "الأسئلة الشائعة",
+  "contactUs": "تواصل معنا",
+  "callSupport": "الاتصال بالدعم",
+  "emailSupport": "مراسلة الدعم",
+  "version": "الإصدار",
+  "legalTerms": "الشروط والسياسات",
+  "aboutApp": "عن التطبيق",
+
+  "orSeparator": "أو",
+  "switchToRole": "التبديل إلى وضع {role}",
+  "@switchToRole": {
+    "placeholders": {
+      "role": { "type": "String" }
+    }
+  },
+  "switchLanguage": "English Language",
+
+  "exitPreventionRider": "لديك رحلة نشطة، يجب إلغاء الرحلة أو إنهاؤها أولاً قبل الخروج من التطبيق.",
+  "exitPreventionDriver": "أنت في وضع الأونلاين أو لديك رحلة نشطة، يرجى إيقاف الأونلاين أو إنهاء الرحلة أولاً قبل الخروج من التطبيق.",
+
+  "navDepart": "ابدأ التحرك",
+  "navArriveLeft": "وجهتك على اليسار",
+  "navArriveRight": "وجهتك على اليمين",
+  "navArrived": "وصلت إلى وجهتك",
+  "navContinue": "استمر للأمام",
+  "navRoundaboutExit": "ادخل الدوار - المخرج {exit}",
+  "@navRoundaboutExit": {
+    "placeholders": {
+      "exit": { "type": "String" }
+    }
+  },
+  "navRoundabout": "ادخل الدوار",
+  "navMerge": "اندمج في الطريق",
+  "navTurnLeft": "انعطف يساراً",
+  "navTurnRight": "انعطف يميناً",
+  "navSlightLeft": "انحرف قليلاً لليسار",
+  "navSlightRight": "انحرف قليلاً لليمين",
+  "navSharpLeft": "انعطف بحدة لليسار",
+  "navSharpRight": "انعطف بحدة لليمين",
+  "navUturn": "قم بالدوران",
+  "navStraight": "استمر مباشرة",
+  "navAfterDistance": "بعد {distance}",
+  "@navAfterDistance": {
+    "placeholders": {
+      "distance": { "type": "String" }
+    }
+  },
+  "navTowards": "نحو: {street}",
+  "@navTowards": {
+    "placeholders": {
+      "street": { "type": "String" }
+    }
+  },
+  "navUnnamedRoad": "طريق غير مسمى",
+  "navExitFirst": "الأول",
+  "navExitSecond": "الثاني",
+  "navExitThird": "الثالث",
+  "navExitFourth": "الرابع",
+  "navExitFifth": "الخامس",
+  "navExitNumber": "رقم {n}",
+  "@navExitNumber": {
+    "placeholders": {
+      "n": { "type": "int" }
+    }
+  },
+
+  "editProfileImage": "تعديل الصورة الشخصية",
+  "resetAction": "إعادة ضبط",
+  "zoomLevel": "التكبير: {scale}x",
+  "@zoomLevel": {
+    "placeholders": {
+      "scale": { "type": "String" }
+    }
+  },
+  "rotate90": "تدوير 90°",
+  "savingImage": "جاري الحفظ...",
+  "saveCircularImage": "حفظ الصورة الكروية",
+  "imageProcessingError": "حدث خطأ أثناء معالجة الصورة. يرجى المحاولة مرة أخرى.",
+
+  "simClosePanel": "إغلاق المحاكي",
+  "simPanelTitle": "لوحة المحاكاة التفاعلية",
+  "simToolsHeader": "🎛️ أدوات المحاكاة الفورية (للاختبار)",
+  "simStatus": "الحالة: {status}",
+  "@simStatus": {
+    "placeholders": {
+      "status": { "type": "String" }
+    }
+  },
+  "simSwitchToPassenger": "التبديل لراكب 🚶",
+  "simSwitchToDriver": "التبديل لسائق 🚗",
+  "simApproveDriver": "اعتماد السائق فوراً ✅",
+  "simDriverApproved": "تم تفعيل واعتماد حساب السائق بنجاح!",
+  "simRevokeVerification": "إلغاء التوثيق ❌",
+  "simDriverRevoked": "تم إلغاء اعتماد السائق (غير مسجل)",
+  "simGenerateOffers": "توليد عروض أسائقين قريبة ⚡",
+  "simDriverArrival": "محاكاة وصول السائق 🏁",
+  "simStartTrip": "محاكاة بدء الرحلة 🚀",
+  "simCompleteTrip": "محاكاة إنهاء الرحلة الدفع 💳",
+  "simResetRides": "إعادة ضبط الرحلات 🔄",
+  "simRidesReset": "تم إعادة تعيين كافة الطلبات النشطة.",
+  "simNote": "ملاحظة: تتيح لك هذه اللوحة اختبار سيناريو الرحلة كاملاً (الطلب، المزايدة، القبول، التتبع، الوصول، الدفع) مباشرة دون الحاجة لأجهزة إضافية.",
+
+  "myCurrentLocation": "موقعي الحالي",
+  "currentLocation": "الموقع الحالي",
+  "whereFrom": "من أين؟",
+  "whereTo": "إلى أين؟",
+  "setPickupHint": "حدد موقع الركوب...",
+  "searchDestinationHint": "ابحث عن وجهة أو موقع...",
+  "whereToGo": "إلى أين تريد الذهاب؟",
+  "whereToRide": "من أين تريد الركوب؟",
+  "whereToGoShort": "أين تريد الذهاب؟",
+  "locationPermissionRide": "يرجى السماح بالوصول لموقعك الجغرافي لتتمكن من حجز رحلة.",
+  "selectDestinationFirst": "يرجى تحديد وجهة أولاً للبدء",
+  "scooterComingSoon": "عذراً، خدمة الاسكوتر ستتوفر قريباً! يرجى اختيار الموتوسيكل أو السيارة حالياً.",
+  "noInternetOffline": "لا يوجد اتصال بالإنترنت - الوضع غير المتصل",
+  "requestCarRide": "طلب رحلة ملاكي",
+  "requestBikeRide": "طلب رحلة بايك",
+  "setDestinationToStart": "حدد وجهتك للبدء في طلب رحلة",
+  "chooseDestinationFromSearch": "اختر مكاناً تود الذهاب إليه من حقل البحث في الأعلى لمعرفة التكلفة والبدء في طلب الرحلة.",
+  "chooseFare": "اختر سعر الرحلة المقترح",
+  "privateCar": "سيارة ملاكي",
+  "motorcycleBike": "موتوسيكل / بايك",
+  "motorcycle": "موتوسيكل",
+  "passengerCount": "عدد الأفراد / الركاب",
+  "requestRideNow": "طلب رحلة الآن",
+  "dearCustomer": "عميلنا العزيز",
+  "selectVehicleForRide": "اختر نوع المركبة للرحلة",
+  "selectVehicleToStart": "حدد نوع المركبة لبدء رحلتك",
+  "privateCarOption": "سيارة ملاكي (Car)",
+  "privateCarDesc": "رحلة مريحة وآمنة بالسيارة الملاكي الخاصة",
+  "bikeOption": "بايك (Motorcycle)",
+  "bikeDesc": "رحلة سريعة وآمنة لتفادي زحام المرور بالدراجة",
+  "chooseServiceToStart": "اختر الخدمة للبدء فوراً",
+  "rideOption": "رحلة (Ride)",
+  "rideDesc": "رحلتك بالسيارة أو البايك سريعة وآمنة بأسعارك المقترحة",
+  "deliveryOption": "ديلفري (Delivery)",
+  "deliveryDesc": "أرسل طرودك وهداياك بضغطة زر مع بايكر سريع",
+  "setPickupAuto": "تحديد موقع الركوب تلقائياً بناءً على موقعك",
+  "detectingLocation": "جاري تحديد موقعك...",
+  "noResultsFor": "لم نتمكن من العثور على \"{query}\"",
+  "@noResultsFor": {
+    "placeholders": {
+      "query": { "type": "String" }
+    }
+  },
+  "scooterComingSoonShort": "اسكوتر (قريباً)",
+
+  "enableLocationToWork": "يرجى تفعيل صلاحيات الموقع للبدء بالعمل.",
+  "creditLimitReached": "عفواً، لقد وصلت للحد الائتماني المسموح به. يرجى شحن محفظتك للاستمرار في استقبال الطلبات.",
+  "errorSendingOffer": "خطأ في إرسال العرض: {error}",
+  "@errorSendingOffer": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "bookingRide": "جاري حجز الرحلة وتأكيد القبول...",
+  "customPriceOffer": "عرض سعر مخصص",
+  "sendOffer": "إرسال العرض",
+  "onlineForWork": "متصل للعمل",
+  "offlineStatus": "غير متصل",
+  "availableRequestsAround": "الطلبات المتاحة حولك",
+  "offlineMode": "وضع عدم الاتصال",
+  "youAreInactive": "أنت غير نشط حالياً",
+  "activateToReceive": "قم بتفعيل الزر بالأعلى لتلقي إشعارات رحلات الركاب والبدء بالعمل.",
+  "requestsPaused": "تم إيقاف تلقي الطلبات مؤقتاً",
+  "debtLimitMessage": "لقد وصلت إلى الحد الأقصى للمديونية (-100 ج.م) بسبب نسب عمولة الرحلات السابقة. يرجى شحن رصيد المحفظة لتفعيل حسابك وتلقي طلبات الركاب مرة أخرى.",
+  "goToWallet": "الانتقال للمحفظة للشحن",
+  "noRequestsInArea": "لا توجد طلبات رحلات حالياً في منطقتك...",
+  "packageSender": "مرسل الطرد",
+  "passenger": "راكب",
+  "walletPaymentShort": "💳 المحفظة",
+  "cashPaymentShort": "💵 كاش",
+  "timeRemaining": "باقي {seconds} ث",
+  "@timeRemaining": {
+    "placeholders": {
+      "seconds": { "type": "int" }
+    }
+  },
+  "expired": "منتهي",
+  "newUser": "مستخدم جديد",
+  "distanceToPassenger": "المسافة إلى الراكب: {distText}  •  مسافة الرحلة: {tripDist} كم\nالوقت للوصول للعميل: {etaMin} دقائق",
+  "@distanceToPassenger": {
+    "placeholders": {
+      "distText": { "type": "String" },
+      "tripDist": { "type": "String" },
+      "etaMin": { "type": "String" }
+    }
+  },
+  "packageDetails": "تفاصيل الطرد المرسل:",
+  "packageContent": "محتوى الطرد: {content}",
+  "@packageContent": {
+    "placeholders": {
+      "content": { "type": "String" }
+    }
+  },
+  "notSpecified": "غير محدد",
+  "deliveryInstructions": "تعليمات التوصيل: {notes}",
+  "@deliveryInstructions": {
+    "placeholders": {
+      "notes": { "type": "String" }
+    }
+  },
+  "customerCounterOffer": "عرض العميل المقترح",
+  "suggestedFare": "الأجرة المقترحة",
+  "customerSuggestedFare": "اقترح العميل أجرة جديدة: {fare} ج.م",
+  "@customerSuggestedFare": {
+    "placeholders": {
+      "fare": { "type": "int" }
+    }
+  },
+  "skipAction": "تخطى",
+  "acceptNegotiation": "قبول التفاوض",
+  "offerSentWaiting": "تم إرسال عرض السعر بنجاح... بانتظار العميل",
+  "acceptFare": "قبول الأجرة",
+
+  "cash": "كاش",
+  "walletTopUpTitle": "شحن رصيد المحفظة",
+
+  "cancelledByCustomer": "تم الإلغاء بواسطة العميل",
+  "rideCancelled": "تم إلغاء الرحلة",
+  "rideExpiredNoDrivers": "انتهت صلاحية طلب التوصيل لعدم استجابة السائقين. يرجى إعادة المحاولة.",
+  "requestCancelledSuccess": "تم إلغاء الطلب بنجاح",
+  "shareLocationInstall": "لتحديد موقعك بسهولة، يُرجى التأكد من تثبيت التطبيق على جهازك.",
+  "shareLocationMessage": "لتحديد موقعك بسهولة، يُرجى التأكد من تثبيت التطبيق على جهازك.\n\nمن فضلك اضغط على هذا الرابط لتحديد موقع تسليم الطرد الخاص بك على الخريطة لتسهيل التوصيل: {link}",
+  "@shareLocationMessage": {
+    "placeholders": {
+      "link": { "type": "String" }
+    }
+  },
+
+  "recipientLocationTitle": "تحديد موقع استلام الديلفري",
+  "recipientLocationGps": "موقع المستلم (GPS)",
+  "loadingCoordinates": "جاري تحديد إحداثيات الموقع... 📍",
+  "invalidLink": "هذا الرابط غير صالح أو غير مصرح لك بالوصول ❌",
+  "linkExpired": "انتهت صلاحية هذا الرابط لأن الطلب غير نشط أو مكتمل بالفعل ⚠️",
+  "locationAlreadyConfirmed": "تم تحديد وتأكيد الموقع مسبقاً لهذا الطلب ✅",
+  "orderNotFound": "عذراً، لم يتم العثور على تفاصيل هذا الطلب ❌",
+  "loadingError": "حدث خطأ أثناء تحميل بيانات الطلب. يرجى التأكد من اتصالك بالإنترنت.",
+  "locationPermissionDenied": "تم رفض صلاحية الوصول للموقع الجغرافي. يرجى تفعيل الصلاحية للمتابعة ⚠️",
+  "gpsAccuracyError": "تعذر جلب موقعك الجغرافي بدقة عالية. يرجى التحقق من تفعيل GPS بجهازك أو التحديد يدوياً.",
+  "gpsAccuracyErrorAlt": "فشل جلب موقعك الجغرافي بدقة عالية. يرجى التحقق من إعدادات GPS بجهازك أو تحديد موقعك يدوياً.",
+  "saveLocationError": "حدث خطأ أثناء حفظ موقعك المحدد. يرجى المحاولة مرة أخرى.",
+  "savingAndNotifying": "جاري تحديث النظام وإخطار الكابتن...",
+  "connectingToSystem": "جاري الاتصال بالنظام...",
+  "unexpectedError": "حدث خطأ غير متوقع. يرجى المحاولة مجدداً.",
+  "retryAction": "إعادة المحاولة",
+  "closePage": "إغلاق الصفحة",
+  "senderWantsToSend": "يريد ({sender}) إرسال طرد إليك، اضغط على الزر بالأسفل لمشاركة موقعك الحالي وتسهيل مهمة الكابتن.",
+  "@senderWantsToSend": {
+    "placeholders": {
+      "sender": { "type": "String" }
+    }
+  },
+  "packageDescLabel": "وصف الطرد: {desc}",
+  "@packageDescLabel": {
+    "placeholders": {
+      "desc": { "type": "String" }
+    }
+  },
+  "useMyCurrentLocation": "استخدام موقعي الحالي 📍",
+  "selectLocationManually": "تحديد الموقع يدويًا على الخريطة",
+  "confirmLocation": "تأكيد الموقع 📌",
+  "locationConfirmedSuccess": "تم تحديد موقعك بنجاح! 🎉",
+  "locationConfirmedMessage": "شكراً لك، تم حفظ إحداثيات التوصيل وتحديث التكلفة لدى الكابتن تلقائياً. السائق في طريقه إليك الآن.",
+
+  "driver": "سائق",
+  "car": "عربية",
+  "vehicleMotorcycleBike": "موتوسيكل / بايك",
+  "vehicleScooter": "اسكوتر",
+  "vehiclePrivateCar": "سيارة ملاكي",
+
+  "authUnknownError": "حدث خطأ غير معروف، يرجى المحاولة لاحقاً.",
+  "authNoInternet": "لا يوجد اتصال بالإنترنت. يرجى التحقق من الشبكة وإعادة المحاولة.",
+  "authServerConnect": "تعذر الاتصال بالسيرفر. يرجى التأكد من الاتصال بالإنترنت.",
+  "authInvalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+  "authAlreadyRegistered": "هذا الحساب مسجل بالفعل، يرجى تسجيل الدخول.",
+  "authEmailNotConfirmed": "البريد الإلكتروني غير مفعل، يرجى مراجعة بريدك الإلكتروني لتأكيده.",
+  "authWeakPassword": "كلمة المرور ضعيفة. يجب أن تتكون من 6 أحرف على الأقل.",
+  "authInvalidEmail": "البريد الإلكتروني غير صالح.",
+  "authRateLimit": "تم تجاوز عدد المحاولات المسموح بها. يرجى الانتظار قليلاً ثم المحاولة لاحقاً.",
+  "authOtpExpired": "رمز التحقق منتهي الصلاحية، يرجى طلب رمز جديد.",
+  "authInvalidOtp": "رمز التحقق غير صحيح.",
+  "authCancelled": "تم إلغاء العملية بواسطة المستخدم.",
+  "authErrorPrefix": "حدث خطأ: {error}",
+  "@authErrorPrefix": {
+    "placeholders": {
+      "error": { "type": "String" }
     }
   }
 }

@@ -7,9 +7,11 @@ import '../../core/localization/locale_controller.dart';
 import '../../shared/widgets/profile_image_editor.dart';
 import '../../core/utils/snappy_page_route.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../generated/app_localizations.dart';
 import 'ratings_page.dart';
 import '../driver_registration/presentation/pages/doc_upload_page.dart';
 import '../driver_registration/presentation/pages/review_pending_page.dart';
+
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -254,6 +256,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final state = GlobalState.instance;
     final isRider = state.currentRole == UserRole.rider;
 
@@ -261,7 +264,7 @@ class _ProfilePageState extends State<ProfilePage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          'الملف الشخصي',
+          l10n.profile,
           style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         leading: IconButton(
@@ -313,7 +316,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              state.userName ?? (isRider ? (state.passengerName ?? 'راكب') : 'كابتن'),
+                              state.userName ?? (isRider ? (state.passengerName ?? l10n.passengerRole) : l10n.driverRole),
                               style: GoogleFonts.cairo(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                             ),
                             const SizedBox(width: 8),
@@ -359,7 +362,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                 icon: const Icon(Icons.close, color: Colors.red),
                                 onPressed: () {
                                   setState(() {
-                                    _nameController.text = state.userName ?? (isRider ? (state.passengerName ?? 'راكب') : 'كابتن');
+                                    _nameController.text = state.userName ?? (isRider ? (state.passengerName ?? l10n.passengerRole) : l10n.driverRole);
                                     _isEditingName = false;
                                   });
                                 },
@@ -384,8 +387,8 @@ class _ProfilePageState extends State<ProfilePage> {
                             const SizedBox(width: 4),
                             Text(
                               state.userRating > 0.0
-                                  ? '${state.userRating.toStringAsFixed(1)} ${isRider ? "تقييم الراكب" : "تقييم الكابتن"} (عرض المراجعات ↗)'
-                                  : 'لا توجد تقييمات بعد (عرض المراجعات ↗)',
+                                  ? '${state.userRating.toStringAsFixed(1)} ${l10n.ratingsAndReviews}'
+                                  : l10n.noRatingsYet,
                               style: GoogleFonts.cairo(
                                 fontSize: 13,
                                 color: AppColors.mediumBlue,
@@ -400,6 +403,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ),
               ),
+
               const SizedBox(height: 20),
 
               // Dual Role & Account Status Card

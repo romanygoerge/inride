@@ -7,6 +7,7 @@ import '../../core/controllers/notification_controller.dart';
 import '../../core/models/notification_model.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/utils/snappy_page_route.dart';
+import '../../generated/app_localizations.dart';
 import 'notification_details_page.dart';
 
 class NotificationsPage extends StatefulWidget {
@@ -21,6 +22,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, _) {
@@ -33,7 +35,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
             backgroundColor: Colors.white,
             elevation: 0,
             title: Text(
-              'مركز الإشعارات',
+              l10n.notificationsCenter,
               style: GoogleFonts.cairo(
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
@@ -49,13 +51,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 // Mark all read button
                 IconButton(
                   icon: const Icon(Icons.done_all_rounded, color: AppColors.mediumBlue, size: 22),
-                  tooltip: 'تعليم الكل كمقروء',
+                  tooltip: l10n.markAllRead,
                   onPressed: () => _confirmMarkAllRead(context),
                 ),
                 // Delete all button
                 IconButton(
                   icon: const Icon(Icons.delete_sweep_outlined, color: AppColors.error, size: 22),
-                  tooltip: 'حذف الكل',
+                  tooltip: l10n.deleteAllNotifications,
                   onPressed: () => _confirmDeleteAll(context),
                 ),
                 const SizedBox(width: 8),
@@ -69,7 +71,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
                     ? _buildEmptyState()
                     : RefreshIndicator(
                         onRefresh: () async {
-                          // Firestore streams refresh automatically, but we can simulate a delay
                           await Future.delayed(const Duration(milliseconds: 500));
                         },
                         color: AppColors.mediumBlue,
@@ -90,16 +91,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   // Confirm Mark all read dialog
   void _confirmMarkAllRead(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('تنبيه', style: GoogleFonts.cairo(fontWeight: FontWeight.bold), textAlign: TextAlign.right),
-        content: Text('هل تريد تعليم جميع الإشعارات كمقروءة؟', style: GoogleFonts.cairo(), textAlign: TextAlign.right),
+        title: Text(l10n.warning, style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+        content: Text(l10n.markAllRead, style: GoogleFonts.cairo()),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('إلغاء', style: GoogleFonts.cairo(color: AppColors.textSecondary)),
+            child: Text(l10n.cancel, style: GoogleFonts.cairo(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -110,7 +112,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
               backgroundColor: AppColors.mediumBlue,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            child: Text('نعم، الكل', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: Text(l10n.confirm, style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -119,16 +121,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   // Confirm Delete all dialog
   void _confirmDeleteAll(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('تأكيد الحذف', style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: AppColors.error), textAlign: TextAlign.right),
-        content: Text('هل أنت متأكد من رغبتك في حذف جميع الإشعارات نهائياً؟ لا يمكن التراجع عن هذا الإجراء.', style: GoogleFonts.cairo(), textAlign: TextAlign.right),
+        title: Text(l10n.deleteAllNotifications, style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: AppColors.error)),
+        content: Text(l10n.deleteAllNotifications, style: GoogleFonts.cairo()),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('إلغاء', style: GoogleFonts.cairo(color: AppColors.textSecondary)),
+            child: Text(l10n.cancel, style: GoogleFonts.cairo(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -139,12 +142,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
               backgroundColor: AppColors.error,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            child: Text('حذف الكل', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: Text(l10n.delete, style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
   }
+
 
   // Shimmer loading placeholder
   Widget _buildShimmerLoading() {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../generated/app_localizations.dart';
 
 class VehicleCategoryOption {
   final String id;
@@ -26,29 +27,33 @@ class VehicleCategorySelector extends StatelessWidget {
     required this.onSelected,
   });
 
-  static const List<VehicleCategoryOption> categories = [
-    VehicleCategoryOption(
-      id: 'motorcycle',
-      title: 'موتوسيكل',
-      iconPath: 'assets/icons/motorcycle.png',
-      defaultPrice: 15.0,
-    ),
-    VehicleCategoryOption(
-      id: 'car',
-      title: 'سيارة ملاكي',
-      iconPath: 'assets/icons/car.png',
-      defaultPrice: 45.0,
-    ),
-    VehicleCategoryOption(
-      id: 'scooter',
-      title: 'اسكوتر (قريباً)',
-      iconPath: 'assets/icons/scooter.png',
-      defaultPrice: 20.0,
-    ),
-  ];
+  static List<VehicleCategoryOption> getCategories(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return [
+      VehicleCategoryOption(
+        id: 'motorcycle',
+        title: l10n.motorcycle,
+        iconPath: 'assets/icons/motorcycle.png',
+        defaultPrice: 15.0,
+      ),
+      VehicleCategoryOption(
+        id: 'car',
+        title: l10n.privateCar,
+        iconPath: 'assets/icons/car.png',
+        defaultPrice: 45.0,
+      ),
+      VehicleCategoryOption(
+        id: 'scooter',
+        title: l10n.scooterComingSoonShort,
+        iconPath: 'assets/icons/scooter.png',
+        defaultPrice: 20.0,
+      ),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
+    final categories = getCategories(context);
     return Row(
       children: categories.map((cat) {
         final isSelected = selectedCategory == cat.id;

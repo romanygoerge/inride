@@ -90,17 +90,23 @@ class VehicleHelper {
     return 'car';
   }
 
-  /// Returns Arabic display label for vehicle type
-  static String getArabicLabel(String type) {
+  /// Returns localized display label for vehicle type based on current locale
+  static String getLocalizedLabel(String type, bool isArabic) {
     final normalized = normalizeVehicleType(type);
     switch (normalized) {
       case 'motorcycle':
-        return 'موتوسيكل / بايك';
+        return isArabic ? 'موتوسيكل / بايك' : 'Motorcycle';
       case 'scooter':
-        return 'اسكوتر';
+        return isArabic ? 'اسكوتر' : 'Scooter';
       case 'car':
       default:
-        return 'سيارة ملاكي';
+        return isArabic ? 'سيارة ملاكي' : 'Private Car';
     }
   }
+
+  /// Returns Arabic display label for vehicle type (backwards compatibility)
+  static String getArabicLabel(String type) {
+    return getLocalizedLabel(type, true);
+  }
 }
+

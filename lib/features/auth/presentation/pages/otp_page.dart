@@ -9,6 +9,7 @@ import 'package:inride_app/features/driver_registration/presentation/pages/doc_u
 import 'package:inride_app/features/driver_registration/presentation/pages/review_pending_page.dart';
 import 'package:inride_app/features/driver/presentation/pages/driver_home_page.dart';
 import 'package:inride_app/features/passenger/presentation/pages/passenger_home_page.dart';
+import '../../../../generated/app_localizations.dart';
 import 'passenger_profile_setup_page.dart';
 
 class OtpPage extends StatefulWidget {
@@ -52,19 +53,14 @@ class _OtpPageState extends State<OtpPage> {
     });
   }
 
-  /// Navigate to the appropriate next screen ONLY after successful OTP verification.
-  /// This method is ONLY called after Supabase returns a valid session + user.
   void _navigateToNextScreen() {
     final state = GlobalState.instance;
-    debugPrint('[OtpPage] ▶ _navigateToNextScreen — role: ${state.currentRole}, passengerName: ${state.passengerName}');
 
     if (state.currentRole == UserRole.rider) {
       Widget targetPage;
       if (!state.hasPassengerProfile) {
-        debugPrint('[OtpPage] → Navigating to PassengerProfileSetupPage (new user)');
         targetPage = const PassengerProfileSetupPage();
       } else {
-        debugPrint('[OtpPage] → Navigating to PassengerHomePage (existing user)');
         targetPage = const PassengerHomePage();
       }
       Navigator.pushAndRemoveUntil(
@@ -75,13 +71,10 @@ class _OtpPageState extends State<OtpPage> {
     } else {
       Widget targetPage;
       if (state.verificationStatus == DriverVerificationStatus.unregistered) {
-        debugPrint('[OtpPage] → Navigating to DocUploadPage (unregistered driver)');
         targetPage = const DocUploadPage();
       } else if (state.verificationStatus == DriverVerificationStatus.submitted) {
-        debugPrint('[OtpPage] → Navigating to ReviewPendingPage (submitted driver)');
         targetPage = const ReviewPendingPage();
       } else {
-        debugPrint('[OtpPage] → Navigating to DriverHomePage (verified driver)');
         targetPage = const DriverHomePage();
       }
 
@@ -94,11 +87,12 @@ class _OtpPageState extends State<OtpPage> {
   }
 
   void _onConfirmPressed() async {
+    final l10n = AppLocalizations.of(context)!;
     if (_otp.length != 6) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'يرجى إدخال كود التحقق المكون من 6 أرقام',
+            l10n.enterOtpCode,
             style: GoogleFonts.cairo(),
           ),
           backgroundColor: AppColors.error,
@@ -109,7 +103,6 @@ class _OtpPageState extends State<OtpPage> {
 
     FocusManager.instance.primaryFocus?.unfocus();
 
-    // Show loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -119,22 +112,12 @@ class _OtpPageState extends State<OtpPage> {
 
     try {
       final state = GlobalState.instance;
-
-      // Use the phone number passed to this page as verificationId.
-      // PhoneAuthService will format it to E.164 internally.
       final targetPhone = widget.phoneNumber;
 
-      debugPrint('[OtpPage] ▶ Submitting OTP for phone: $targetPhone, token: $_otp');
-
       if (targetPhone.isEmpty) {
-        throw Exception('رقم الهاتف غير صالح، يرجى إعادة المحاولة.');
+        throw Exception(l10n.invalidPhoneFormat);
       }
 
-      // SECURITY: loginWithOTP will throw an Exception if:
-      //   - The OTP code is wrong
-      //   - Supabase returns no session
-      //   - Any other auth failure
-      // It will NOT silently succeed. Navigation happens ONLY on success.
       await state.loginWithOTP(
         verificationId: targetPhone,
         smsCode: _otp,
@@ -142,20 +125,14 @@ class _OtpPageState extends State<OtpPage> {
         phoneNumber: widget.phoneNumber,
       );
 
-      debugPrint('[OtpPage] ✓ OTP verification succeeded — proceeding to next screen');
-
       if (!mounted) return;
       Navigator.pop(context); // Pop loading dialog
 
-      // ONLY navigate after confirmed successful OTP verification
       _navigateToNextScreen();
     } catch (e) {
-      debugPrint('[OtpPage] ✗ OTP verification failed: $e');
-
       if (!mounted) return;
       Navigator.pop(context); // Pop loading dialog
 
-      // Show clear error message — user stays on OTP screen
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -167,7 +144,6 @@ class _OtpPageState extends State<OtpPage> {
         ),
       );
 
-      // Clear the entered OTP so user can try again
       setState(() {
         _otp = '';
         _otpController.clear();
@@ -227,6 +203,7 @@ class _OtpPageState extends State<OtpPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     String formattedTime = '00:${_secondsRemaining.toString().padLeft(2, '0')}';
 
     return Scaffold(
@@ -258,7 +235,6 @@ class _OtpPageState extends State<OtpPage> {
       body: SafeArea(
         child: Stack(
           children: [
-            // Decorative background blobs
             Positioned(
               top: -80,
               right: -80,
@@ -282,7 +258,7 @@ class _OtpPageState extends State<OtpPage> {
                       children: [
                         const SizedBox(height: 24),
                         Text(
-                          'تأكيد رقم الهاتف',
+                          l10n.verifyOtp,
                           style: GoogleFonts.cairo(
                             fontSize: 32,
                             fontWeight: FontWeight.bold,
@@ -292,7 +268,7 @@ class _OtpPageState extends State<OtpPage> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'تم إرسال كود التحقق إلى حسابك على الواتساب\n${widget.phoneNumber}',
+                          '${l10n.otpSent}\n${widget.phoneNumber}',
                           style: GoogleFonts.cairo(
                             fontSize: 14,
                             color: AppColors.textSecondary,
@@ -302,7 +278,6 @@ class _OtpPageState extends State<OtpPage> {
                         ),
                         const SizedBox(height: 48),
 
-                        // Styled PIN input utilizing Stack and transparent TextField
                         Stack(
                           alignment: Alignment.center,
                           children: [
@@ -335,7 +310,7 @@ class _OtpPageState extends State<OtpPage> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Text(
-                                      'إعادة إرسال الكود خلال ',
+                                      l10n.resendCodeTimer(_secondsRemaining),
                                       style: GoogleFonts.cairo(
                                         fontSize: 13,
                                         color: AppColors.textSecondary,
@@ -355,17 +330,14 @@ class _OtpPageState extends State<OtpPage> {
                                   onPressed: () async {
                                     _startTimer();
                                     final messenger = ScaffoldMessenger.of(context);
-                                    debugPrint('[OtpPage] ▶ Resending OTP for ${widget.phoneNumber}');
                                     try {
                                        await PhoneAuthService.instance
                                            .sendOtp(phoneNumber: widget.phoneNumber);
-                                       final latestOtp = PhoneAuthService.instance.getLatestOtp(widget.phoneNumber);
-                                       debugPrint('[OtpPage] ✓ OTP resent successfully (code: $latestOtp)');
                                        if (!mounted) return;
                                        messenger.showSnackBar(
                                          SnackBar(
                                            content: Text(
-                                             'تم إعادة إرسال كود التحقق عبر الواتساب',
+                                             l10n.otpSent,
                                              style: GoogleFonts.cairo(),
                                            ),
                                            backgroundColor: AppColors.mediumBlue,
@@ -373,21 +345,20 @@ class _OtpPageState extends State<OtpPage> {
                                          ),
                                        );
                                     } catch (e) {
-                                      debugPrint('[OtpPage] ✗ Resend OTP failed: $e');
-                                      if (!mounted) return;
-                                      messenger.showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            AuthErrorHandler.getErrorMessage(e),
-                                            style: GoogleFonts.cairo(),
-                                          ),
-                                          backgroundColor: AppColors.error,
-                                        ),
-                                      );
+                                       if (!mounted) return;
+                                       messenger.showSnackBar(
+                                         SnackBar(
+                                           content: Text(
+                                             AuthErrorHandler.getErrorMessage(e),
+                                             style: GoogleFonts.cairo(),
+                                           ),
+                                           backgroundColor: AppColors.error,
+                                         ),
+                                       );
                                     }
                                   },
                                   child: Text(
-                                    'إعادة إرسال الكود عبر الواتساب',
+                                    l10n.resendCode,
                                     style: GoogleFonts.cairo(
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold,
@@ -398,7 +369,7 @@ class _OtpPageState extends State<OtpPage> {
                         ),
                         const SizedBox(height: 48),
 
-                        // Confirm button with Blue Gradient & Shadow
+                        // Confirm button
                         Container(
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(16),
@@ -427,7 +398,7 @@ class _OtpPageState extends State<OtpPage> {
                               ),
                             ),
                             child: Text(
-                              'تأكيد',
+                              l10n.confirm,
                               style: GoogleFonts.cairo(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -448,3 +419,4 @@ class _OtpPageState extends State<OtpPage> {
     );
   }
 }
+

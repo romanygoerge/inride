@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
 import '../../shared/widgets/skeleton_placeholder.dart';
+import '../../generated/app_localizations.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -34,6 +35,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final state = GlobalState.instance;
     final trips = state.tripHistory;
 
@@ -41,7 +43,7 @@ class _HistoryPageState extends State<HistoryPage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          'رحلاتي السابقة',
+          l10n.historyTitle,
           style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         leading: IconButton(
@@ -60,12 +62,8 @@ class _HistoryPageState extends State<HistoryPage> {
                         const Icon(Icons.history_outlined, size: 64, color: AppColors.textLight),
                         const SizedBox(height: 16),
                         Text(
-                          'لا توجد رحلات سابقة',
+                          l10n.noHistoryTrips,
                           style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
-                        ),
-                        Text(
-                          'عند قيامك برحلتك الأولى، ستظهر تفاصيلها هنا.',
-                          style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textLight),
                         ),
                       ],
                     ),
@@ -75,7 +73,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     itemCount: trips.length,
                     itemBuilder: (context, index) {
                       final trip = trips[index];
-                      bool isCompleted = trip['status'] == 'مكتملة';
+                      bool isCompleted = trip['status'] == 'مكتملة' || trip['status'] == 'completed';
 
                       return Card(
                         elevation: 0,
@@ -109,7 +107,7 @@ class _HistoryPageState extends State<HistoryPage> {
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Text(
-                                      trip['status'] as String,
+                                      isCompleted ? l10n.tripCompleted : l10n.tripCanceled,
                                       style: GoogleFonts.cairo(
                                         fontSize: 11,
                                         fontWeight: FontWeight.bold,
@@ -148,6 +146,7 @@ class _HistoryPageState extends State<HistoryPage> {
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
+
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [

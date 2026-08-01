@@ -17,6 +17,7 @@ import '../../core/controllers/map_controller.dart';
 import '../../core/controllers/navigation_controller.dart';
 import '../../core/DI/injection_container.dart' show sl;
 import '../../core/controllers/marker_manager.dart'; // VehicleMarkerWidget
+import '../../core/utils/vehicle_helper.dart';
 
 class NearbyDriverInfo {
   final double lat;
@@ -36,6 +37,8 @@ class OsmMapWidget extends StatefulWidget {
 
 class _OsmMapWidgetState extends State<OsmMapWidget> with TickerProviderStateMixin {
   final fm.MapController _flutterMapController = fm.MapController();
+
+  String _normalizeVehicleType(String type) => VehicleHelper.normalizeVehicleType(type);
 
   bool _isAutoFollow = true;
   bool _isDisposed = false;
@@ -491,9 +494,7 @@ class _OsmMapWidgetState extends State<OsmMapWidget> with TickerProviderStateMix
                         child: Transform.rotate(
                           angle: state.driverBearing * math.pi / 180,
                           child: VehicleMarkerWidget(
-                            type: state.acceptedOffer?.driver.vehicleType == 'اسكوتر'
-                                ? 'scooter'
-                                : (state.acceptedOffer?.driver.vehicleType == 'موتوسيكل' ? 'motorcycle' : 'car'),
+                            type: _normalizeVehicleType(state.acceptedOffer?.driver.vehicleType ?? 'car'),
                           ),
                         ),
                       ),

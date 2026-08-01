@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
+import '../../generated/app_localizations.dart';
 
 /// Shows a professional premium bottom sheet preventing the user from exiting the app
 void showExitPreventionAlert(BuildContext context) {
+  final l10n = AppLocalizations.of(context)!;
   final isRider = GlobalState.instance.currentRole == UserRole.rider;
 
   final message = isRider
-      ? 'لديك رحلة نشطة، يجب إلغاء الرحلة أو إنهاؤها أولاً قبل الخروج من التطبيق.'
-      : 'أنت في وضع الأونلاين أو لديك رحلة نشطة، يرجى إيقاف الأونلاين أو إنهاء الرحلة أولاً قبل الخروج من التطبيق.';
+      ? l10n.exitPreventionRider
+      : l10n.exitPreventionDriver;
 
   showModalBottomSheet(
     context: context,
@@ -65,7 +67,7 @@ void showExitPreventionAlert(BuildContext context) {
             
             // Title
             Text(
-              'تنبيه هام',
+              l10n.warning,
               style: GoogleFonts.cairo(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -100,7 +102,7 @@ void showExitPreventionAlert(BuildContext context) {
                 elevation: 2,
               ),
               child: Text(
-                'حسناً، فهمت',
+                l10n.ok,
                 style: GoogleFonts.cairo(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
@@ -113,3 +115,4 @@ void showExitPreventionAlert(BuildContext context) {
     },
   );
 }
+

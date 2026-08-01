@@ -7,10 +7,11 @@ import '../../core/services/trip_navigation_manager.dart';
 import '../../core/DI/injection_container.dart' show sl;
 import '../../core/utils/map_coordinates_helper.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
+import '../../generated/app_localizations.dart';
 
 /// Professional navigation HUD overlay widget displayed during active navigation.
 /// Mirrors the experience of Uber/inDrive with large maneuver arrows,
-/// clear Arabic instructions, and real-time trip metrics.
+/// clear instructions, and real-time trip metrics.
 class NavigationHudWidget extends StatelessWidget {
   const NavigationHudWidget({super.key});
 
@@ -27,21 +28,23 @@ class NavigationHudWidget extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         // Status bar for special states (rerouting, GPS lost, offline)
-        _buildStatusBar(navCtrl),
+        _buildStatusBar(context, navCtrl),
 
         // Main maneuver instruction card
-        _buildManeuverCard(navCtrl),
+        _buildManeuverCard(context, navCtrl),
 
         const SizedBox(height: 6),
 
         // Info strip: street name, ETA, distance
-        _buildInfoStrip(navCtrl),
+        _buildInfoStrip(context, navCtrl),
+
       ],
     );
   }
 
   /// Top status bar for error/rerouting states (yellow, red, or gray)
-  Widget _buildStatusBar(NavigationController navCtrl) {
+  Widget _buildStatusBar(BuildContext context, NavigationController navCtrl) {
+    final l10n = AppLocalizations.of(context)!;
     if (navCtrl.status == NavigationStatus.active || navCtrl.status == NavigationStatus.idle) {
       return const SizedBox.shrink();
     }
@@ -54,26 +57,27 @@ class NavigationHudWidget extends StatelessWidget {
       case NavigationStatus.rerouting:
         bgColor = AppColors.warning;
         icon = Icons.refresh;
-        text = 'جاري إعادة حساب المسار...';
+        text = l10n.recalculatingRoute;
         break;
       case NavigationStatus.gpsLost:
         bgColor = AppColors.error;
         icon = Icons.gps_off;
-        text = 'تم فقدان إشارة GPS';
+        text = l10n.gpsDisabled;
         break;
       case NavigationStatus.offline:
         bgColor = const Color(0xFF78909C);
         icon = Icons.cloud_off;
-        text = navCtrl.errorMessage.isNotEmpty ? navCtrl.errorMessage : 'لا يوجد اتصال بالإنترنت';
+        text = navCtrl.errorMessage.isNotEmpty ? navCtrl.errorMessage : l10n.networkError;
         break;
       case NavigationStatus.error:
         bgColor = AppColors.error;
         icon = Icons.error_outline;
-        text = navCtrl.errorMessage.isNotEmpty ? navCtrl.errorMessage : 'حدث خطأ';
+        text = navCtrl.errorMessage.isNotEmpty ? navCtrl.errorMessage : l10n.error;
         break;
       default:
         return const SizedBox.shrink();
     }
+
 
     return Container(
       width: double.infinity,
@@ -113,7 +117,7 @@ class NavigationHudWidget extends StatelessWidget {
   }
 
   /// Main large maneuver instruction card (gradient blue background)
-  Widget _buildManeuverCard(NavigationController navCtrl) {
+  Widget _buildManeuverCard(BuildContext context, NavigationController navCtrl) {
     final hasStatusBar = navCtrl.status != NavigationStatus.active && navCtrl.status != NavigationStatus.idle;
 
     return Container(
@@ -168,7 +172,7 @@ class NavigationHudWidget extends StatelessWidget {
                 children: [
                   // Distance to next maneuver
                   Text(
-                    'بعد ${navCtrl.formattedDistanceToTurn}',
+                    AppLocalizations.of(context)!.navAfterDistance(navCtrl.formattedDistanceToTurn),
                     style: GoogleFonts.outfit(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -179,7 +183,7 @@ class NavigationHudWidget extends StatelessWidget {
 
                   // Main instruction
                   Text(
-                    _getShortInstruction(navCtrl),
+                    _getShortInstruction(navCtrl, AppLocalizations.of(context)!),
                     style: GoogleFonts.cairo(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -194,7 +198,7 @@ class NavigationHudWidget extends StatelessWidget {
                   if (navCtrl.nextStreetName.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
-                      'نحو: ${navCtrl.nextStreetName}',
+                      AppLocalizations.of(context)!.navTowards(navCtrl.nextStreetName),
                       style: GoogleFonts.cairo(
                         fontSize: 11,
                         color: Colors.white.withValues(alpha: 0.6),
@@ -255,7 +259,7 @@ class NavigationHudWidget extends StatelessWidget {
   }
 
   /// Info strip showing current street, ETA, remaining distance
-  Widget _buildInfoStrip(NavigationController navCtrl) {
+  Widget _buildInfoStrip(BuildContext context, NavigationController navCtrl) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -283,7 +287,7 @@ class NavigationHudWidget extends StatelessWidget {
                   child: Text(
                     navCtrl.currentStreetName.isNotEmpty
                         ? navCtrl.currentStreetName
-                        : 'طريق غير مسمى',
+                        : AppLocalizations.of(context)!.navUnnamedRoad,
                     style: GoogleFonts.cairo(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -349,62 +353,62 @@ class NavigationHudWidget extends StatelessWidget {
   }
 
   /// Returns a concise direction-only instruction for the HUD (without distance prefix).
-  String _getShortInstruction(NavigationController navCtrl) {
+  String _getShortInstruction(NavigationController navCtrl, AppLocalizations l10n) {
     final type = navCtrl.maneuverType;
     final modifier = navCtrl.maneuverModifier;
 
     switch (type) {
       case 'depart':
-        return 'ابدأ التحرك';
+        return l10n.navDepart;
       case 'arrive':
-        if (modifier == 'left') return 'وجهتك على اليسار';
-        if (modifier == 'right') return 'وجهتك على اليمين';
-        return 'وصلت إلى وجهتك';
+        if (modifier == 'left') return l10n.navArriveLeft;
+        if (modifier == 'right') return l10n.navArriveRight;
+        return l10n.navArrived;
       case 'turn':
-        return _getShortDirection(modifier);
+        return _getShortDirection(modifier, l10n);
       case 'new name':
       case 'continue':
-        return 'استمر للأمام';
+        return l10n.navContinue;
       case 'roundabout':
       case 'rotary':
         final exit = navCtrl.exitNumber;
         if (exit != null) {
-          return 'ادخل الدوار - المخرج ${_translateExitNumber(exit)}';
+          return l10n.navRoundaboutExit(_translateExitNumber(exit, l10n));
         }
-        return 'ادخل الدوار';
+        return l10n.navRoundabout;
       case 'merge':
-        return 'اندمج في الطريق';
+        return l10n.navMerge;
       case 'fork':
-        return _getShortDirection(modifier);
+        return _getShortDirection(modifier, l10n);
       case 'end of road':
-        return _getShortDirection(modifier);
+        return _getShortDirection(modifier, l10n);
       default:
-        return _getShortDirection(modifier);
+        return _getShortDirection(modifier, l10n);
     }
   }
 
-  String _getShortDirection(String modifier) {
+  String _getShortDirection(String modifier, AppLocalizations l10n) {
     switch (modifier) {
-      case 'left': return 'انعطف يساراً';
-      case 'right': return 'انعطف يميناً';
-      case 'slight left': return 'انحرف قليلاً لليسار';
-      case 'slight right': return 'انحرف قليلاً لليمين';
-      case 'sharp left': return 'انعطف بحدة لليسار';
-      case 'sharp right': return 'انعطف بحدة لليمين';
-      case 'uturn': return 'قم بالدوران';
-      case 'straight': return 'استمر مباشرة';
-      default: return 'استمر للأمام';
+      case 'left': return l10n.navTurnLeft;
+      case 'right': return l10n.navTurnRight;
+      case 'slight left': return l10n.navSlightLeft;
+      case 'slight right': return l10n.navSlightRight;
+      case 'sharp left': return l10n.navSharpLeft;
+      case 'sharp right': return l10n.navSharpRight;
+      case 'uturn': return l10n.navUturn;
+      case 'straight': return l10n.navStraight;
+      default: return l10n.navContinue;
     }
   }
 
-  String _translateExitNumber(int n) {
+  String _translateExitNumber(int n, AppLocalizations l10n) {
     switch (n) {
-      case 1: return 'الأول';
-      case 2: return 'الثاني';
-      case 3: return 'الثالث';
-      case 4: return 'الرابع';
-      case 5: return 'الخامس';
-      default: return 'رقم $n';
+      case 1: return l10n.navExitFirst;
+      case 2: return l10n.navExitSecond;
+      case 3: return l10n.navExitThird;
+      case 4: return l10n.navExitFourth;
+      case 5: return l10n.navExitFifth;
+      default: return l10n.navExitNumber(n);
     }
   }
 }

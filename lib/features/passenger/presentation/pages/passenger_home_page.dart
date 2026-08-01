@@ -16,9 +16,15 @@ import '../../../../shared/widgets/exit_prevention_dialog.dart';
 import '../../../../core/utils/snappy_page_route.dart';
 import '../../../../core/DI/injection_container.dart' show sl;
 import '../../../../core/controllers/notification_controller.dart';
+import '../../../../core/models/place_location.dart';
+import '../../../../core/services/search_history_service.dart';
 import 'passenger_ride_matching_page.dart';
 import 'passenger_delivery_booking_page.dart';
 import '../../../common/notifications_page.dart';
+import '../../../../generated/app_localizations.dart';
+
+
+
 
 enum PassengerMode { dashboard, rideBooking, deliveryBooking }
 
@@ -124,53 +130,108 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
   }
 
   void _openSearchPickup() async {
+    final l10n = AppLocalizations.of(context)!;
     final result = await Navigator.push(
       context,
       SnappyPageRoute(
-        page: const LocationSearchPage(
-          title: 'من أين؟',
-          hintText: 'حدد موقع الركوب...',
+        page: LocationSearchPage(
+          title: l10n.whereFrom,
+          hintText: l10n.setPickupHint,
         ),
       ),
     );
 
-    if (result != null && result is String) {
+    if (result != null) {
+      PlaceLocation loc;
+      if (result is SearchResultItem) {
+        loc = result.location;
+      } else if (result is PlaceLocation) {
+        loc = result;
+      } else if (result is String && result.isNotEmpty) {
+        final geocoded = MapCoordinatesHelper.getLatLngForAddress(result);
+        loc = PlaceLocation(
+          latitude: geocoded.latitude,
+          longitude: geocoded.longitude,
+          placeName: result,
+          formattedAddress: result,
+          timestamp: DateTime.now(),
+        );
+      } else {
+        return;
+      }
+
       setState(() {
-        GlobalState.instance.fromAddress = result;
-        _fareController.text = _getDefaultFare(_selectedVehicle).round().toString();
+        GlobalState.instance.fromAddress = loc.formattedAddress;
+        GlobalState.instance.fromLat = loc.latitude;
+        GlobalState.instance.fromLng = loc.longitude;
       });
+      MapCoordinatesHelper.registerCoordinate(loc.formattedAddress, LatLng(loc.latitude, loc.longitude));
+
+      if (GlobalState.instance.selectedDestinationLocation != null) {
+        final source = GlobalState.instance.selectedDestinationLocation!.placeId != null ? 'Search History' : 'Fresh Search';
+        await GlobalState.instance.selectDestination(GlobalState.instance.selectedDestinationLocation!, selectionSource: source);
+      }
       GlobalState.instance.update();
     }
   }
 
   void _openSearchDestination() async {
+    final l10n = AppLocalizations.of(context)!;
     final result = await Navigator.push(
       context,
       SnappyPageRoute(
-        page: const LocationSearchPage(
-          title: 'إلى أين؟',
-          hintText: 'ابحث عن وجهة أو موقع...',
+        page: LocationSearchPage(
+          title: l10n.whereTo,
+          hintText: l10n.searchDestinationHint,
         ),
       ),
     );
 
-    if (result != null && result is String) {
+    if (result != null) {
+      PlaceLocation place;
+      String source = 'Fresh Search';
+
+      if (result is SearchResultItem) {
+        place = result.location;
+        source = result.isHistory ? 'Search History' : 'Fresh Search';
+      } else if (result is PlaceLocation) {
+        place = result;
+      } else if (result is String && result.isNotEmpty) {
+        final geocoded = MapCoordinatesHelper.getLatLngForAddress(result);
+        place = PlaceLocation(
+          latitude: geocoded.latitude,
+          longitude: geocoded.longitude,
+          placeName: result,
+          formattedAddress: result,
+          timestamp: DateTime.now(),
+        );
+      } else {
+        return;
+      }
+
+      await GlobalState.instance.selectDestination(place, selectionSource: source);
+
       setState(() {
-        GlobalState.instance.toAddress = result;
-        _fareController.text = _getDefaultFare(_selectedVehicle).round().toString();
+        if (GlobalState.instance.calculatedRouteFare != null) {
+          _fareController.text = GlobalState.instance.calculatedRouteFare!.round().toString();
+        } else {
+          _fareController.text = _getDefaultFare(_selectedVehicle).round().toString();
+        }
       });
       GlobalState.instance.update();
     }
   }
 
+
   void _requestRide() async {
+    final l10n = AppLocalizations.of(context)!;
     final hasLocPermission = await LocationService.instance.checkPermission();
     if (!mounted) return;
     if (!hasLocPermission) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'يرجى السماح بالوصول لموقعك الجغرافي لتتمكن من حجز رحلة.',
+            l10n.locationPermissionRide,
             style: GoogleFonts.cairo(),
           ),
           backgroundColor: AppColors.error,
@@ -183,7 +244,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'يرجى تحديد وجهة أولاً للبدء',
+            l10n.selectDestinationFirst,
             style: GoogleFonts.cairo(),
           ),
           backgroundColor: AppColors.error,
@@ -197,10 +258,10 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'عذراً، خدمة الاسكوتر ستتوفر قريباً! يرجى اختيار الموتوسيكل أو السيارة حالياً.',
+            l10n.scooterComingSoon,
             style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
           ),
-          backgroundColor: AppColors.mediumBlue,
+          backgroundColor: AppColors.warning,
         ),
       );
       return;
@@ -406,7 +467,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            _selectedVehicle == 'car' ? 'طلب رحلة ملاكي' : 'طلب رحلة بايك',
+                            _selectedVehicle == 'car' ? AppLocalizations.of(context)!.requestCarRide : AppLocalizations.of(context)!.requestBikeRide,
                             style: GoogleFonts.cairo(
                               fontSize: 15,
                               fontWeight: FontWeight.bold,
@@ -436,7 +497,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                                 builder: (context) {
                                   String displayText = _fromText;
                                   return Text(
-                                    displayText.isEmpty ? 'من أين تريد الركوب؟' : displayText,
+                                    displayText.isEmpty ? AppLocalizations.of(context)!.whereToRide : displayText,
                                     style: GoogleFonts.cairo(
                                       fontSize: 14,
                                       color: displayText.isEmpty ? AppColors.textLight : AppColors.textPrimary,
@@ -472,7 +533,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                             const SizedBox(width: 16),
                             Expanded(
                               child: Text(
-                                _toText.isEmpty ? 'أين تريد الذهاب؟' : _toText,
+                                _toText.isEmpty ? AppLocalizations.of(context)!.whereToGoShort : _toText,
                                 style: GoogleFonts.cairo(
                                   fontSize: 14,
                                   color: _toText.isEmpty ? AppColors.textLight : AppColors.textPrimary,
@@ -522,7 +583,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                       const Icon(Icons.route_outlined, color: AppColors.mediumBlue, size: 48),
                       const SizedBox(height: 16),
                       Text(
-                        'حدد وجهتك للبدء في طلب رحلة',
+                        AppLocalizations.of(context)!.setDestinationToStart,
                         style: GoogleFonts.cairo(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -532,7 +593,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'اختر مكاناً تود الذهاب إليه من حقل البحث في الأعلى لمعرفة التكلفة والبدء في طلب الرحلة.',
+                        AppLocalizations.of(context)!.chooseDestinationFromSearch,
                         style: GoogleFonts.cairo(
                           fontSize: 13,
                           color: AppColors.textSecondary,
@@ -546,7 +607,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                          children: [
                            Text(
-                             'اختر سعر الرحلة المقترح',
+                             AppLocalizations.of(context)!.chooseFare,
                              style: GoogleFonts.cairo(
                                fontSize: 14,
                                fontWeight: FontWeight.bold,
@@ -570,7 +631,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                                    borderRadius: BorderRadius.circular(8),
                                  ),
                                  child: Text(
-                                   '${distance.toStringAsFixed(1)} كم',
+                                   AppLocalizations.of(context)!.distanceKm(distance.toStringAsFixed(1)),
                                    style: GoogleFonts.outfit(
                                      fontSize: 12,
                                      fontWeight: FontWeight.bold,
@@ -596,21 +657,22 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                           );
                           final durationMotorcycle = (distance * 1.8).round().clamp(2, 120);
                           final durationCar = (distance * 2.5).round().clamp(2, 120);
+                          final l10n = AppLocalizations.of(context)!;
                           return Row(
                             children: [
                               _buildVehicleOption(
                                 type: 'car',
-                                title: 'سيارة ملاكي',
-                                eta: '~$durationCar دقيقة',
-                                baseFare: '${_getDefaultFare('car').round()} ج.م',
+                                title: l10n.privateCar,
+                                eta: '~${l10n.durationMinutes(durationCar)}',
+                                baseFare: '${_getDefaultFare('car').round()} ${l10n.egp}',
                                 icon: Icons.directions_car,
                               ),
                               const SizedBox(width: 12),
                               _buildVehicleOption(
                                 type: 'motorcycle',
-                                title: 'موتوسيكل / بايك',
-                                eta: '~$durationMotorcycle دقيقة',
-                                baseFare: '${_getDefaultFare('motorcycle').round()} ج.م',
+                                title: l10n.motorcycleBike,
+                                eta: '~${l10n.durationMinutes(durationMotorcycle)}',
+                                baseFare: '${_getDefaultFare('motorcycle').round()} ${l10n.egp}',
                                 icon: Icons.motorcycle,
                               ),
                             ],
@@ -626,7 +688,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                               const Icon(Icons.people_outline, color: AppColors.mediumBlue, size: 20),
                               const SizedBox(width: 8),
                               Text(
-                                'عدد الأفراد / الركاب',
+                                AppLocalizations.of(context)!.passengerCount,
                                 style: GoogleFonts.cairo(
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
@@ -712,12 +774,12 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                                 controller: _fareController,
                                 keyboardType: TextInputType.number,
                                 textAlign: TextAlign.center,
-                                decoration: const InputDecoration(
+                                decoration: InputDecoration(
                                   border: InputBorder.none,
                                   enabledBorder: InputBorder.none,
                                   focusedBorder: InputBorder.none,
                                   contentPadding: EdgeInsets.zero,
-                                  suffixText: 'ج.م ',
+                                  suffixText: '${AppLocalizations.of(context)!.egp} ',
                                   fillColor: Colors.transparent,
                                 ),
                                 style: GoogleFonts.outfit(
@@ -766,7 +828,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                           ),
                           alignment: Alignment.center,
                           child: Text(
-                            'طلب رحلة الآن',
+                            AppLocalizations.of(context)!.requestRideNow,
                             style: GoogleFonts.cairo(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -800,10 +862,11 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
   );
 }
 
-Widget _buildDashboardOverlay() {
-  final state = GlobalState.instance;
-  final name = state.userName ?? 'عميلنا العزيز';
-  final balance = state.walletBalance;
+  Widget _buildDashboardOverlay() {
+    final state = GlobalState.instance;
+    final l10n = AppLocalizations.of(context)!;
+    final name = state.userName ?? l10n.dearCustomer;
+    final balance = state.walletBalance;
 
   return Positioned(
     bottom: 0,
@@ -850,7 +913,7 @@ Widget _buildDashboardOverlay() {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'اختر نوع المركبة للرحلة',
+                              l10n.selectVehicleForRide,
                               style: GoogleFonts.cairo(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -860,7 +923,7 @@ Widget _buildDashboardOverlay() {
                               overflow: TextOverflow.ellipsis,
                             ),
                             Text(
-                              'حدد نوع المركبة لبدء رحلتك',
+                              l10n.selectVehicleToStart,
                               style: GoogleFonts.cairo(
                                 fontSize: 11,
                                 color: AppColors.textSecondary,
@@ -886,7 +949,7 @@ Widget _buildDashboardOverlay() {
                       const Icon(Icons.account_balance_wallet_outlined, color: AppColors.mediumBlue, size: 16),
                       const SizedBox(width: 6),
                       Text(
-                        '${balance.round()} ج.م',
+                        '${balance.round()} ${l10n.egp}',
                         style: GoogleFonts.outfit(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
@@ -903,8 +966,8 @@ Widget _buildDashboardOverlay() {
               children: [
                 Expanded(
                   child: _VehicleSelectionCard(
-                    title: 'سيارة ملاكي (Car)',
-                    description: 'رحلة مريحة وآمنة بالسيارة الملاكي الخاصة',
+                    title: l10n.privateCarOption,
+                    description: l10n.privateCarDesc,
                     icon: Icons.directions_car_rounded,
                     iconColor: AppColors.mediumBlue,
                     isSelected: _selectedVehicle == 'car',
@@ -922,8 +985,8 @@ Widget _buildDashboardOverlay() {
                 const SizedBox(width: 16),
                 Expanded(
                   child: _VehicleSelectionCard(
-                    title: 'بايك (Motorcycle)',
-                    description: 'رحلة سريعة وآمنة لتفادي زحام المرور بالدراجة',
+                    title: l10n.bikeOption,
+                    description: l10n.bikeDesc,
                     icon: Icons.motorcycle_rounded,
                     iconColor: AppColors.mediumBlue,
                     isSelected: _selectedVehicle == 'motorcycle',
@@ -949,7 +1012,7 @@ Widget _buildDashboardOverlay() {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'مرحباً بك، $name',
+                        l10n.welcomeUser(name),
                         style: GoogleFonts.cairo(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -959,7 +1022,7 @@ Widget _buildDashboardOverlay() {
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        'اختر الخدمة للبدء فوراً',
+                        l10n.chooseServiceToStart,
                         style: GoogleFonts.cairo(
                           fontSize: 12,
                           color: AppColors.textSecondary,
@@ -982,7 +1045,7 @@ Widget _buildDashboardOverlay() {
                       const Icon(Icons.account_balance_wallet_outlined, color: AppColors.mediumBlue, size: 16),
                       const SizedBox(width: 6),
                       Text(
-                        '${balance.round()} ج.م',
+                        '${balance.round()} ${l10n.egp}',
                         style: GoogleFonts.outfit(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
@@ -999,8 +1062,8 @@ Widget _buildDashboardOverlay() {
               children: [
                 Expanded(
                   child: _DashboardServiceCard(
-                    title: 'رحلة (Ride)',
-                    description: 'رحلتك بالسيارة أو البايك سريعة وآمنة بأسعارك المقترحة',
+                    title: l10n.rideOption,
+                    description: l10n.rideDesc,
                     icon: Icons.directions_car_rounded,
                     iconColor: AppColors.mediumBlue,
                     backgroundColor: AppColors.mediumBlue.withValues(alpha: 0.08),
@@ -1015,8 +1078,8 @@ Widget _buildDashboardOverlay() {
                 const SizedBox(width: 16),
                 Expanded(
                   child: _DashboardServiceCard(
-                    title: 'ديلفري (Delivery)',
-                    description: 'أرسل طرودك وهداياك بضغطة زر مع بايكر سريع',
+                    title: l10n.deliveryOption,
+                    description: l10n.deliveryDesc,
                     icon: Icons.inventory_2_outlined,
                     iconColor: AppColors.darkBlue,
                     backgroundColor: AppColors.darkBlue.withValues(alpha: 0.06),
@@ -1034,9 +1097,9 @@ Widget _buildDashboardOverlay() {
           const SizedBox(height: 12),
         ],
       ),
-      ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildVehicleOption({
     required String type,
@@ -1092,6 +1155,16 @@ Widget _buildDashboardOverlay() {
 }
 
 // ----------------------------------------------------
+// Search Result Item Wrapper
+// ----------------------------------------------------
+class SearchResultItem {
+  final PlaceLocation location;
+  final bool isHistory;
+
+  const SearchResultItem({required this.location, required this.isHistory});
+}
+
+// ----------------------------------------------------
 // Location Search Page (In Arabic)
 // ----------------------------------------------------
 class LocationSearchPage extends StatefulWidget {
@@ -1114,61 +1187,63 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
   bool _isSearchingApi = false;
   Timer? _debounceTimer;
 
+  @override
+  void initState() {
+    super.initState();
+    SearchHistoryService.instance.init();
+  }
+
   // Dynamic visited places with fallback to Cairo/Giza popular landmarks
   List<Map<String, dynamic>> get _allPlaces {
-    final history = GlobalState.instance.tripHistory;
+    final historyPlaces = SearchHistoryService.instance.getHistory();
     final List<Map<String, dynamic>> visited = [];
     final Set<String> uniqueAddresses = {};
 
-    for (var trip in history) {
-      final toAddress = trip['to'] as String? ?? '';
-      final toLat = trip['toLat'] as double? ?? 0.0;
-      final toLng = trip['toLng'] as double? ?? 0.0;
-
-      if (toAddress.isNotEmpty && toLat != 0.0 && !uniqueAddresses.contains(toAddress.toLowerCase().trim())) {
-        uniqueAddresses.add(toAddress.toLowerCase().trim());
-        
-        String title = toAddress;
-        if (toAddress.contains('،')) {
-          title = toAddress.split('،').first.trim();
-        } else if (toAddress.contains(',')) {
-          title = toAddress.split(',').first.trim();
-        }
-        
+    for (var loc in historyPlaces) {
+      if (loc.isValid && !uniqueAddresses.contains(loc.formattedAddress.toLowerCase().trim())) {
+        uniqueAddresses.add(loc.formattedAddress.toLowerCase().trim());
         visited.add({
-          'title': title,
-          'address': toAddress,
-          'icon': Icons.history, // History icon for visited places
-          'lat': toLat,
-          'lon': toLng,
-        });
-      }
-      
-      final fromAddress = trip['from'] as String? ?? '';
-      final fromLat = trip['fromLat'] as double? ?? 0.0;
-      final fromLng = trip['fromLng'] as double? ?? 0.0;
-
-      if (fromAddress.isNotEmpty && fromLat != 0.0 && fromAddress != 'موقعي الحالي' && !uniqueAddresses.contains(fromAddress.toLowerCase().trim())) {
-        uniqueAddresses.add(fromAddress.toLowerCase().trim());
-        
-        String title = fromAddress;
-        if (fromAddress.contains('،')) {
-          title = fromAddress.split('،').first.trim();
-        } else if (fromAddress.contains(',')) {
-          title = fromAddress.split(',').first.trim();
-        }
-        
-        visited.add({
-          'title': title,
-          'address': fromAddress,
+          'placeId': loc.placeId,
+          'title': loc.placeName.isNotEmpty ? loc.placeName : loc.formattedAddress,
+          'address': loc.formattedAddress,
           'icon': Icons.history,
-          'lat': fromLat,
-          'lon': fromLng,
+          'lat': loc.latitude,
+          'lon': loc.longitude,
+          'isHistory': true,
         });
       }
     }
+
+    if (visited.isEmpty) {
+      final history = GlobalState.instance.tripHistory;
+      for (var trip in history) {
+        final toAddress = trip['to'] as String? ?? '';
+        final toLat = (trip['toLat'] as num?)?.toDouble() ?? 0.0;
+        final toLng = (trip['toLng'] as num?)?.toDouble() ?? 0.0;
+
+        if (toAddress.isNotEmpty && toLat != 0.0 && !uniqueAddresses.contains(toAddress.toLowerCase().trim())) {
+          uniqueAddresses.add(toAddress.toLowerCase().trim());
+          
+          String title = toAddress;
+          if (toAddress.contains('،')) {
+            title = toAddress.split('،').first.trim();
+          } else if (toAddress.contains(',')) {
+            title = toAddress.split(',').first.trim();
+          }
+          
+          visited.add({
+            'title': title,
+            'address': toAddress,
+            'icon': Icons.history,
+            'lat': toLat,
+            'lon': toLng,
+            'isHistory': true,
+          });
+        }
+      }
+    }
     
-    // Cairo/Giza popular places for fallback if history has less than 5 items
+    // Cairo/Giza popular places for fallback
     final List<Map<String, dynamic>> defaults = [
       {
         'title': 'المنزل',
@@ -1176,6 +1251,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
         'icon': Icons.home_outlined,
         'lat': 30.0130,
         'lon': 31.2080,
+        'isHistory': false,
       },
       {
         'title': 'العمل',
@@ -1183,6 +1259,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
         'icon': Icons.work_outline,
         'lat': 30.0526,
         'lon': 31.2014,
+        'isHistory': false,
       },
       {
         'title': 'ميدان التحرير',
@@ -1190,6 +1267,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
         'icon': Icons.star_border,
         'lat': 30.0444,
         'lon': 31.2357,
+        'isHistory': false,
       },
       {
         'title': 'الجامعة الأمريكية بالقاهرة',
@@ -1197,6 +1275,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
         'icon': Icons.school_outlined,
         'lat': 30.0263,
         'lon': 31.4913,
+        'isHistory': false,
       },
       {
         'title': 'مول مصر',
@@ -1204,6 +1283,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
         'icon': Icons.shopping_bag_outlined,
         'lat': 29.9722,
         'lon': 31.0152,
+        'isHistory': false,
       },
     ];
 
@@ -1254,17 +1334,20 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
             final displayName = item['display_name'] as String;
             final lat = double.tryParse(item['lat']?.toString() ?? '');
             final lon = double.tryParse(item['lon']?.toString() ?? '');
+            final placeId = item['place_id']?.toString();
             
             if (lat != null && lon != null) {
               final parts = displayName.split(',');
               final title = parts.first.trim();
               
               results.add({
+                'placeId': placeId,
                 'title': title,
                 'address': displayName,
                 'lat': lat,
                 'lon': lon,
                 'icon': Icons.location_on_outlined,
+                'isHistory': false,
               });
             }
           }
@@ -1295,9 +1378,8 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Filter places based on search query
     final filteredPlaces = _searchQuery.trim().isEmpty
-        ? _allPlaces.take(5).toList() // Show top 5 recent/saved places when empty
+        ? _allPlaces.take(5).toList()
         : (_searchResults.isNotEmpty 
             ? _searchResults 
             : _allPlaces.where((place) {
@@ -1326,7 +1408,6 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
       body: SafeArea(
         child: Column(
           children: [
-            // Search Input Row
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               child: TextField(
@@ -1337,9 +1418,22 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                   });
                   _onSearchChanged(value);
                 },
-                onSubmitted: (value) {
-                  if (value.trim().isNotEmpty) {
-                    Navigator.pop(context, value.trim());
+                onSubmitted: (value) async {
+                  final query = value.trim();
+                  if (query.isNotEmpty) {
+                    final geocoded = await MapCoordinatesHelper.geocodeAddress(query);
+                    final lat = geocoded?.latitude ?? 0.0;
+                    final lon = geocoded?.longitude ?? 0.0;
+                    final loc = PlaceLocation(
+                      latitude: lat,
+                      longitude: lon,
+                      placeName: query,
+                      formattedAddress: query,
+                      timestamp: DateTime.now(),
+                    );
+                    if (context.mounted) {
+                      Navigator.pop(context, SearchResultItem(location: loc, isHistory: false));
+                    }
                   }
                 },
                 decoration: InputDecoration(
@@ -1372,12 +1466,11 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
               Padding(
                 padding: const EdgeInsets.all(20.0),
                 child: Text(
-                  'لم نتمكن من العثور على "$_searchQuery"',
+                  AppLocalizations.of(context)!.noResultsFor(_searchQuery),
                   style: GoogleFonts.cairo(color: AppColors.textSecondary),
                 ),
               ),
 
-            // My Current Location Option
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
               child: Card(
@@ -1399,7 +1492,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                     child: const Icon(Icons.my_location, color: AppColors.mediumBlue, size: 20),
                   ),
                   title: Text(
-                    'موقعي الحالي',
+                    AppLocalizations.of(context)!.myCurrentLocation,
                     style: GoogleFonts.cairo(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -1407,7 +1500,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                     ),
                   ),
                   subtitle: Text(
-                    'تحديد موقع الركوب تلقائياً بناءً على موقعك',
+                    AppLocalizations.of(context)!.setPickupAuto,
                     style: GoogleFonts.cairo(
                       fontSize: 12,
                       color: AppColors.textSecondary,
@@ -1425,7 +1518,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                                 child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                               ),
                               const SizedBox(width: 16),
-                              Text('جاري تحديد موقعك...', style: GoogleFonts.cairo(fontSize: 14)),
+                              Text(AppLocalizations.of(context)!.detectingLocation, style: GoogleFonts.cairo(fontSize: 14)),
                             ],
                           ),
                           duration: const Duration(seconds: 2),
@@ -1441,17 +1534,40 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                           MapCoordinatesHelper.deviceLocation = LatLng(pos.latitude, pos.longitude);
                           final geocodedName = await MapCoordinatesHelper.reverseGeocode(pos.latitude, pos.longitude);
                           if (!context.mounted) return;
-                          final addressString = geocodedName.isNotEmpty ? geocodedName : 'موقعي الحالي (${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)})';
+                          final addressString = geocodedName.isNotEmpty ? geocodedName : '${AppLocalizations.of(context)!.myCurrentLocation} (${pos.latitude.toStringAsFixed(6)}, ${pos.longitude.toStringAsFixed(6)})';
+                          final loc = PlaceLocation(
+                            latitude: pos.latitude,
+                            longitude: pos.longitude,
+                            placeName: AppLocalizations.of(context)!.myCurrentLocation,
+                            formattedAddress: addressString,
+                            timestamp: DateTime.now(),
+                          );
                           MapCoordinatesHelper.registerCoordinate(addressString, LatLng(pos.latitude, pos.longitude));
-                          Navigator.pop(context, addressString);
+                          Navigator.pop(context, SearchResultItem(location: loc, isHistory: false));
                         } else {
-                          Navigator.pop(context, 'الموقع الحالي');
+                          final defaultPos = MapCoordinatesHelper.deviceLocation ?? const LatLng(30.0130, 31.2080);
+                          final loc = PlaceLocation(
+                            latitude: defaultPos.latitude,
+                            longitude: defaultPos.longitude,
+                            placeName: 'موقعي الحالي',
+                            formattedAddress: 'الموقع الحالي',
+                            timestamp: DateTime.now(),
+                          );
+                          Navigator.pop(context, SearchResultItem(location: loc, isHistory: false));
                         }
                       }
                     } catch (_) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                        Navigator.pop(context, 'الموقع الحالي');
+                        final defaultPos = MapCoordinatesHelper.deviceLocation ?? const LatLng(30.0130, 31.2080);
+                        final loc = PlaceLocation(
+                          latitude: defaultPos.latitude,
+                          longitude: defaultPos.longitude,
+                          placeName: 'موقعي الحالي',
+                          formattedAddress: 'الموقع الحالي',
+                          timestamp: DateTime.now(),
+                        );
+                        Navigator.pop(context, SearchResultItem(location: loc, isHistory: false));
                       }
                     }
                   },
@@ -1459,7 +1575,6 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
               ),
             ),
             
-            // Saved places / Suggestions heading
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
               child: Align(
@@ -1475,7 +1590,6 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
               ),
             ),
 
-            // Suggestions list items
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1485,7 +1599,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                   return ListTile(
                     leading: Container(
                       padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         color: AppColors.background,
                         shape: BoxShape.circle,
                       ),
@@ -1507,12 +1621,31 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                       ),
                     ),
                     onTap: () {
-                      if (place.containsKey('lat') && place.containsKey('lon')) {
-                        final latLng = LatLng(place['lat'] as double, place['lon'] as double);
-                        MapCoordinatesHelper.registerCoordinate(place['address'] as String, latLng);
-                        MapCoordinatesHelper.registerCoordinate(place['title'] as String, latLng);
+                      final lat = (place['lat'] as num?)?.toDouble() ?? 0.0;
+                      final lon = (place['lon'] as num?)?.toDouble() ?? 0.0;
+                      final title = place['title'] as String? ?? '';
+                      final address = place['address'] as String? ?? title;
+                      final isHistory = place['isHistory'] == true;
+
+                      final placeLocation = PlaceLocation(
+                        placeId: place['placeId'] as String?,
+                        latitude: lat,
+                        longitude: lon,
+                        placeName: title,
+                        formattedAddress: address,
+                        timestamp: DateTime.now(),
+                      );
+
+                      if (lat != 0.0 && lon != 0.0) {
+                        MapCoordinatesHelper.registerCoordinate(address, LatLng(lat, lon));
+                        if (title.isNotEmpty) {
+                          MapCoordinatesHelper.registerCoordinate(title, LatLng(lat, lon));
+                        }
                       }
-                      Navigator.pop(context, place['address']);
+                      Navigator.pop(
+                        context,
+                        SearchResultItem(location: placeLocation, isHistory: isHistory),
+                      );
                     },
                   );
                 },
@@ -1524,6 +1657,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
     );
   }
 }
+
 
 class _DashboardServiceCard extends StatefulWidget {
   final String title;

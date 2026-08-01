@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../core/theme/app_theme.dart';
+import '../../generated/app_localizations.dart';
 
 class ProfileImageEditor extends StatefulWidget {
   final String imagePath;
@@ -78,7 +79,7 @@ class _ProfileImageEditorState extends State<ProfileImageEditor> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('حدث خطأ أثناء معالجة الصورة. يرجى المحاولة مرة أخرى.', style: GoogleFonts.cairo()),
+            content: Text(AppLocalizations.of(context)!.imageProcessingError, style: GoogleFonts.cairo()),
             backgroundColor: AppColors.error,
           ),
         );
@@ -101,7 +102,7 @@ class _ProfileImageEditorState extends State<ProfileImageEditor> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         title: Text(
-          'تعديل الصورة الشخصية',
+          AppLocalizations.of(context)!.editProfileImage,
           style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
         ),
         leading: IconButton(
@@ -112,7 +113,7 @@ class _ProfileImageEditorState extends State<ProfileImageEditor> {
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _reset,
-            tooltip: 'إعادة ضبط',
+            tooltip: AppLocalizations.of(context)!.resetAction,
           ),
         ],
       ),
@@ -193,7 +194,7 @@ class _ProfileImageEditorState extends State<ProfileImageEditor> {
                 children: [
                   // Zoom Level text indicator
                   Text(
-                    'التكبير: ${_zoomScale.toStringAsFixed(1)}x',
+                    AppLocalizations.of(context)!.zoomLevel(_zoomScale.toStringAsFixed(1)),
                     style: GoogleFonts.cairo(color: Colors.grey[400], fontSize: 13),
                   ),
                   const SizedBox(height: 16),
@@ -207,7 +208,7 @@ class _ProfileImageEditorState extends State<ProfileImageEditor> {
                           onPressed: _rotateImage,
                           icon: const Icon(Icons.rotate_right_rounded, color: Colors.white, size: 20),
                           label: Text(
-                            'تدوير 90°',
+                            AppLocalizations.of(context)!.rotate90,
                             style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                           ),
                           style: OutlinedButton.styleFrom(
@@ -232,7 +233,7 @@ class _ProfileImageEditorState extends State<ProfileImageEditor> {
                                 )
                               : const Icon(Icons.check, color: Colors.white, size: 20),
                           label: Text(
-                            _isSaving ? 'جاري الحفظ...' : 'حفظ الصورة الكروية',
+                            _isSaving ? AppLocalizations.of(context)!.savingImage : AppLocalizations.of(context)!.saveCircularImage,
                             style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                           ),
                           style: ElevatedButton.styleFrom(

@@ -203,4 +203,12 @@ class MapController extends ChangeNotifier {
       pitch: pitch ?? 0.0,
     );
   }
+
+  /// Fits camera to bounds between two LatLng points
+  void fitBounds(LatLng start, LatLng end) {
+    if (!isBound) return;
+    final bounds = fm.LatLngBounds(start, end);
+    _flutterMapController?.fitCamera(fm.CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50)));
+  }
 }
+

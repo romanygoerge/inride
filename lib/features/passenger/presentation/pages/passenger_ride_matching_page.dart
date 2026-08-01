@@ -8,6 +8,7 @@ import '../../../../core/utils/vehicle_helper.dart';
 import '../../../../shared/widgets/osm_map_widget.dart';
 import 'passenger_ride_active_page.dart';
 import 'passenger_home_page.dart';
+import '../../../../generated/app_localizations.dart';
 
 
 class PassengerRideMatchingPage extends StatefulWidget {
@@ -75,11 +76,13 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
           MaterialPageRoute(builder: (context) => const PassengerRideActivePage()),
         );
       } else if (state.rideStatus == RideStatus.cancelled) {
-        final msg = state.lastCancelReason ?? 'تم إلغاء الرحلة';
+        final l10n = AppLocalizations.of(context)!;
+        final msg = state.lastCancelReason ?? l10n.rideCancelled;
         _safeNavigateBack(message: msg);
       } else if (state.rideStatus == RideStatus.expired) {
         if (!_isCancelling) {
-          _safeNavigateBack(message: 'انتهت صلاحية طلب التوصيل لعدم استجابة السائقين. يرجى إعادة المحاولة.');
+          final l10n = AppLocalizations.of(context)!;
+          _safeNavigateBack(message: l10n.rideExpiredNoDrivers);
         }
       }
     } catch (e) {
@@ -104,11 +107,12 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
 
     try {
       debugPrint('[TripLifecycle] Cancel button pressed on PassengerRideMatchingPage');
+      final l10n = AppLocalizations.of(context)!;
       await GlobalState.instance.cancelRide(
         cancelledBy: 'passenger',
-        reason: 'تم الإلغاء بواسطة العميل',
+        reason: l10n.cancelledByCustomer,
       );
-      _safeNavigateBack(message: 'تم إلغاء الطلب بنجاح');
+      _safeNavigateBack(message: l10n.requestCancelledSuccess);
     } catch (e) {
       debugPrint('[RideMatchingPage] Error during cancel: $e');
       _safeNavigateBack();
@@ -116,11 +120,12 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
   }
 
   void _shareLink(BuildContext context, String link) {
+    final l10n = AppLocalizations.of(context)!;
     // Show user-friendly warning SnackBar to encourage app installation
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'لتحديد موقعك بسهولة، يُرجى التأكد من تثبيت التطبيق على جهازك.',
+          l10n.shareLocationInstall,
           style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13),
         ),
         backgroundColor: AppColors.mediumBlue,
@@ -128,7 +133,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
       ),
     );
 
-    final message = 'لتحديد موقعك بسهولة، يُرجى التأكد من تثبيت التطبيق على جهازك.\n\nمن فضلك اضغط على هذا الرابط لتحديد موقع تسليم الطرد الخاص بك على الخريطة لتسهيل التوصيل: $link';
+    final message = l10n.shareLocationMessage(link);
     
     showModalBottomSheet(
       context: context,
@@ -142,7 +147,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'مشاركة رابط تحديد الموقع 🔗',
+                '${l10n.shareLocationLink} 🔗',
                 style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                 textAlign: TextAlign.center,
               ),
@@ -153,7 +158,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                   _buildShareButton(
                     icon: Icons.chat_bubble_outline,
                     color: Colors.green,
-                    label: 'واتساب',
+                    label: 'WhatsApp',
                     onTap: () async {
                       Navigator.pop(context);
                       final url = Uri.parse('whatsapp://send?text=${Uri.encodeComponent(message)}');
@@ -168,7 +173,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                   _buildShareButton(
                     icon: Icons.sms_outlined,
                     color: Colors.blue,
-                    label: 'رسالة نصية',
+                    label: 'SMS',
                     onTap: () async {
                       Navigator.pop(context);
                       final url = Uri.parse('sms:?body=${Uri.encodeComponent(message)}');
@@ -180,14 +185,14 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                   _buildShareButton(
                     icon: Icons.copy_outlined,
                     color: Colors.grey[700]!,
-                    label: 'نسخ الرابط',
+                    label: l10n.copy,
                     onTap: () async {
                       Navigator.pop(context);
                       await Clipboard.setData(ClipboardData(text: link));
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('تم نسخ رابط التحديد بنجاح! 📋', style: GoogleFonts.cairo()),
+                            content: Text(l10n.linkCopied, style: GoogleFonts.cairo()),
                             backgroundColor: AppColors.success,
                           ),
                         );
@@ -294,11 +299,11 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                       child: Text(
                         isSearching
                             ? (state.currentServiceType == 'delivery'
-                                ? 'جاري إرسال طلب التوصيل للكباتن القريبين...'
-                                : 'جاري إرسال طلبك للسائقين القريبين...')
+                                ? AppLocalizations.of(context)!.searchingForDrivers
+                                : AppLocalizations.of(context)!.searchingForDrivers)
                             : (state.currentServiceType == 'delivery'
-                                ? 'تلقيت عروض توصيل من الكباتن!'
-                                : 'تلقيت عروضاً أسعار من السائقين!'),
+                                ? AppLocalizations.of(context)!.offersReceived
+                                : AppLocalizations.of(context)!.offersReceived),
                         style: GoogleFonts.cairo(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
@@ -338,7 +343,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'بانتظار تحديد موقع المستلم',
+                                  AppLocalizations.of(context)!.confirmRecipientLocation,
                                   style: GoogleFonts.cairo(
                                     fontSize: 13,
                                     fontWeight: FontWeight.bold,
@@ -346,7 +351,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                                   ),
                                 ),
                                 Text(
-                                  'شارك الرابط مع المستلم لتحديد مكان التوصيل الجغرافي.',
+                                  AppLocalizations.of(context)!.shareLocationInstall,
                                   style: GoogleFonts.cairo(
                                     fontSize: 11,
                                     color: AppColors.textSecondary,
@@ -369,7 +374,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                               },
                               icon: const Icon(Icons.share_rounded, size: 16, color: Colors.white),
                               label: Text(
-                                'مشاركة الرابط للمستلم',
+                                AppLocalizations.of(context)!.shareLocationLink,
                                 style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
                               ),
                               style: ElevatedButton.styleFrom(
@@ -421,7 +426,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      'جاري البحث عن عروض...',
+                      AppLocalizations.of(context)!.searchingForDrivers,
                       style: GoogleFonts.cairo(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -431,9 +436,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      state.currentServiceType == 'delivery'
-                          ? 'سيقوم الكباتن بتقديم عروضهم لتوصيل طردك قريباً.'
-                          : 'سيقوم السائقون بتقديم عروضهم بالأسعار المقترحة أو أسعار مضادة قريباً.',
+                      AppLocalizations.of(context)!.searchingForDrivers,
                       style: GoogleFonts.cairo(
                         fontSize: 12,
                         color: AppColors.textSecondary,
@@ -447,7 +450,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'العروض المتاحة (${state.driverOffers.length})',
+                          '${AppLocalizations.of(context)!.offersReceived} (${state.driverOffers.length})',
                           style: GoogleFonts.cairo(
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
@@ -455,7 +458,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                           ),
                         ),
                         Text(
-                          'اضغط للقبول والبدء',
+                          AppLocalizations.of(context)!.acceptOffer,
                           style: GoogleFonts.cairo(
                             fontSize: 12,
                             color: AppColors.textLight,
@@ -507,7 +510,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                               ),
                               const SizedBox(width: 10),
                               Text(
-                                'جاري الإلغاء...',
+                                AppLocalizations.of(context)!.loading,
                                 style: GoogleFonts.cairo(
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,
@@ -516,9 +519,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                             ],
                           )
                         : Text(
-                            state.currentServiceType == 'delivery'
-                                ? 'إلغاء طلب التوصيل'
-                                : 'إلغاء طلب الرحلة',
+                            AppLocalizations.of(context)!.cancelRide,
                             style: GoogleFonts.cairo(
                               fontSize: 15,
                               fontWeight: FontWeight.bold,

@@ -855,10 +855,16 @@ function renderPage(page) {
     case 'driver-profile':
       container.innerHTML = renderDriverProfile();
       initProfileChatSync(activeProfileUid, 'driver');
+      loadProfileRatings(activeProfileUid);
       break;
     case 'passenger-profile':
       container.innerHTML = renderPassengerProfile();
       initProfileChatSync(activeProfileUid, 'rider');
+      loadProfileRatings(activeProfileUid);
+      break;
+    case 'ratings':
+      container.innerHTML = renderRatingsPage();
+      loadRatingsPageData();
       break;
     case 'wallet':
       container.innerHTML = renderWallet();
@@ -2525,11 +2531,19 @@ async function loadFinancialDataFromSupabase() {
     const { data: usrData } = await client.from('users').select('id, name, phone:phone_number, role, wallet_balance');
     if (usrData) financialState.usersList = usrData;
 
+    try {
+      const { data: reqData } = await client.from('wallet_recharge_requests').select('*').order('created_at', { ascending: false });
+      if (reqData) financialState.rechargeRequests = reqData;
+    } catch (e) {
+      console.warn('wallet_recharge_requests fetch warning:', e);
+    }
+
     financialState.isLoaded = true;
   } catch (err) {
     console.warn('[Financial Log] Error loading financial data:', err);
   }
 }
+
 
 function getFilteredTransactions() {
   const allTx = financialState.transactions || [];
@@ -2691,6 +2705,225 @@ async function rejectPendingRecharge(txId, userId) {
   }
 }
 
+function viewReceiptModal(imageUrl, title, userName, amount, dateStr, method) {
+  let modal = document.getElementById('receiptPreviewModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'receiptPreviewModal';
+    modal.className = 'modal-overlay';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px;';
+    document.body.appendChild(modal);
+  }
+
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;max-width:500px;width:100%;overflow:hidden;box-shadow:0 20px 40px rgba(0,0,0,0.3);direction:rtl;">
+      <div style="padding:16px 20px;background:#1E293B;color:white;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h3 style="margin:0;font-size:15px;font-weight:700;">📸 ${title || 'معاينة إيصال التحويل'}</h3>
+          <p style="margin:0;font-size:11px;color:#94A3B8;margin-top:2px;">${userName} • ${amount} ج.م (${method})</p>
+        </div>
+        <button onclick="closeReceiptModal()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;">&times;</button>
+      </div>
+      <div style="padding:20px;text-align:center;background:#F8FAFC;">
+        <img src="${imageUrl}" alt="إيصال التحويل" style="max-width:100%;max-height:450px;border-radius:12px;border:1px solid #CBD5E1;box-shadow:0 4px 12px rgba(0,0,0,0.1);object-fit:contain;" onError="this.onerror=null;this.src='https://placehold.co/400x300?text=تعذر+تحميل+الصورة';">
+      </div>
+      <div style="padding:12px 20px;background:white;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;font-size:12px;">
+        <span style="color:#64748B;">تاريخ الطلب: ${dateStr}</span>
+        <button onclick="closeReceiptModal()" class="btn btn-primary" style="padding:6px 18px;border-radius:8px;">إغلاق</button>
+      </div>
+    </div>
+  `;
+  modal.style.display = 'flex';
+}
+
+function closeReceiptModal() {
+  const modal = document.getElementById('receiptPreviewModal');
+  if (modal) modal.style.display = 'none';
+}
+
+let currentCommunicationTab = 'recharge';
+let rechargeFilterUserType = 'all';
+
+function setCommunicationTab(tab) {
+  currentCommunicationTab = tab;
+  const container = document.getElementById('pageContent');
+  if (container && currentPage === 'communication') {
+    container.innerHTML = renderCommunication();
+  }
+}
+
+function setRechargeFilterUserType(type) {
+  rechargeFilterUserType = type;
+  const container = document.getElementById('pageContent');
+  if (container && currentPage === 'communication') {
+    container.innerHTML = renderCommunication();
+  }
+}
+
+function renderCommunication() {
+  const rechargeList = financialState.rechargeRequests || [];
+  const pendingCount = rechargeList.filter(r => r.status === 'pending').length;
+
+  const filteredRecharge = rechargeList.filter(r => {
+    if (rechargeFilterUserType === 'rider') return r.user_type === 'rider';
+    if (rechargeFilterUserType === 'driver') return r.user_type === 'driver';
+    return true;
+  });
+
+  return `
+    <div class="page-section">
+      <div class="card" style="margin-bottom:20px;padding:12px 16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn ${currentCommunicationTab === 'recharge' ? 'btn-primary' : 'btn-outline'}" onclick="setCommunicationTab('recharge')">
+              <i class="ri-wallet-3-fill"></i> طلبات الشحن والتحويلات
+              ${pendingCount > 0 ? `<span class="badge" style="background:#EF4444;color:white;margin-right:6px;">${pendingCount}</span>` : ''}
+            </button>
+            <button class="btn ${currentCommunicationTab === 'chat' ? 'btn-primary' : 'btn-outline'}" onclick="setCommunicationTab('chat')">
+              <i class="ri-chat-smile-2-fill"></i> المحادثات المباشرة والدعم
+            </button>
+            <button class="btn ${currentCommunicationTab === 'tickets' ? 'btn-primary' : 'btn-outline'}" onclick="setCommunicationTab('tickets')">
+              <i class="ri-customer-service-2-fill"></i> التذاكر والشكاوى العامة
+            </button>
+          </div>
+        </div>
+      </div>
+
+      ${currentCommunicationTab === 'recharge' ? `
+        <div class="card">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+            <div>
+              <h3><i class="ri-exchange-dollar-line text-blue" style="margin-left:8px;"></i> قسم طلبات الشحن والتحويلات البنكية (الدعم الفني)</h3>
+              <p style="font-size:12px;color:var(--text-secondary);margin:4px 0 0 0;">مراجعة طلبات شحن المحفظة المعلقة والتواصل المباشر مع أصحاب الإيصالات</p>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-sm ${rechargeFilterUserType === 'all' ? 'btn-primary' : 'btn-outline'}" onclick="setRechargeFilterUserType('all')">الكل</button>
+              <button class="btn btn-sm ${rechargeFilterUserType === 'driver' ? 'btn-primary' : 'btn-outline'}" onclick="setRechargeFilterUserType('driver')">الكباتن 🚗</button>
+              <button class="btn btn-sm ${rechargeFilterUserType === 'rider' ? 'btn-primary' : 'btn-outline'}" onclick="setRechargeFilterUserType('rider')">الركاب 👤</button>
+            </div>
+          </div>
+          <div class="card-body" style="padding:0;overflow-x:auto;">
+            <table class="data-table" style="width:100%;font-size:12px;">
+              <thead>
+                <tr style="background:var(--bg-primary);">
+                  <th style="padding:12px 14px;">تاريخ الطلب</th>
+                  <th style="padding:12px 14px;">المستخدم</th>
+                  <th style="padding:12px 14px;">النوع</th>
+                  <th style="padding:12px 14px;">طريقة الدفع</th>
+                  <th style="padding:12px 14px;">المبلغ</th>
+                  <th style="padding:12px 14px;">صورة الإيصال</th>
+                  <th style="padding:12px 14px;">الحالة</th>
+                  <th style="padding:12px 14px;text-align:center;">إجراء الدعم</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredRecharge.length === 0 ? `
+                  <tr><td colspan="8" style="text-align:center;padding:30px;color:var(--text-light);">لا توجد طلبات شحن مسجلة في هذا القسم حالياً</td></tr>
+                ` : filteredRecharge.map(req => {
+                  const dateStr = new Date(req.created_at || Date.now()).toLocaleString('ar-EG');
+                  const isDriver = req.user_type === 'driver';
+                  const statusBg = req.status === 'approved' ? '#D1FAE5' : (req.status === 'rejected' ? '#FEE2E2' : '#FEF3C7');
+                  const statusColor = req.status === 'approved' ? '#065F46' : (req.status === 'rejected' ? '#991B1B' : '#92400E');
+                  const statusText = req.status === 'approved' ? 'تم القبول ✅' : (req.status === 'rejected' ? 'مرفوض ❌' : 'معلق ⏳');
+
+                  return `
+                    <tr style="border-bottom:1px solid var(--border-light);">
+                      <td style="padding:12px 14px;white-space:nowrap;">${dateStr}</td>
+                      <td style="padding:12px 14px;">
+                        <div style="font-weight:700;color:var(--text-primary);">${req.user_name || 'مستخدم'}</div>
+                        <div style="font-size:11px;color:var(--text-secondary);">${req.user_phone || ''}</div>
+                      </td>
+                      <td style="padding:12px 14px;">
+                        <span class="badge" style="background:${isDriver ? '#E0F2FE' : '#F3E8FF'};color:${isDriver ? '#0369A1' : '#7E22CE'};">
+                          ${isDriver ? 'كابتن 🚗' : 'راكب 👤'}
+                        </span>
+                      </td>
+                      <td style="padding:12px 14px;font-weight:600;">${req.payment_method || 'InstaPay'}</td>
+                      <td style="padding:12px 14px;font-weight:800;color:#059669;">${parseFloat(req.amount || 0).toLocaleString()} ج.م</td>
+                      <td style="padding:12px 14px;">
+                        ${req.receipt_url ? `
+                          <button class="btn btn-sm btn-outline" onclick="viewReceiptModal('${req.receipt_url}', 'إيصال شحن محفظة', '${req.user_name || ''}', ${req.amount}, '${dateStr}', '${req.payment_method || 'InstaPay'}')">
+                            📸 معاينة
+                          </button>
+                        ` : '<span style="color:var(--text-light);">بدون صورة</span>'}
+                      </td>
+                      <td style="padding:12px 14px;">
+                        <span class="badge" style="background:${statusBg};color:${statusColor};font-weight:700;padding:4px 10px;border-radius:12px;">
+                          ${statusText}
+                        </span>
+                      </td>
+                      <td style="padding:12px 14px;text-align:center;">
+                        <div style="display:flex;gap:6px;justify-content:center;">
+                          ${req.status === 'pending' ? `
+                            <button class="btn btn-sm btn-primary" style="background:#059669;padding:4px 10px;" onclick="approvePendingRecharge(null, '${req.user_id}', ${req.amount}, '${req.id}')">
+                              قبول
+                            </button>
+                            <button class="btn btn-sm btn-outline" style="color:var(--error);border-color:var(--error);padding:4px 10px;" onclick="rejectPendingRecharge(null, '${req.user_id}', '${req.id}')">
+                              رفض
+                            </button>
+                          ` : ''}
+                          <button class="btn btn-sm btn-outline" onclick="openDirectUserChat('${req.user_id}', '${req.user_name || 'مستخدم'}', '${isDriver ? 'driver' : 'rider'}')">
+                            💬 مراسلة
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ` : (currentCommunicationTab === 'chat' ? `
+        <div class="card" style="padding:24px;text-align:center;">
+          <i class="ri-chat-smile-2-line" style="font-size:48px;color:var(--medium-blue);"></i>
+          <h3 style="margin-top:12px;">محادثات الدعم الفني المباشرة</h3>
+          <p style="color:var(--text-secondary);font-size:13px;">اختر مسجلاً أو كابتن من قائمة الركاب والسائقين لبدء محادثة دعم مباشرة معه.</p>
+        </div>
+      ` : `
+        <div class="card" style="padding:24px;text-align:center;">
+          <i class="ri-customer-service-2-line" style="font-size:48px;color:var(--medium-blue);"></i>
+          <h3 style="margin-top:12px;">مركز التذاكر والشكاوى العامة</h3>
+          <p style="color:var(--text-secondary);font-size:13px;">استقبال الشكاوى العامة وتذاكر المساعدة ومتابعتها مع فريق الدعم.</p>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
+async function openDirectUserChat(userId, userName, role) {
+  const message = prompt(`إرسال رسالة دعم مباشر إلى ${userName} (${role === 'driver' ? 'كابتن' : 'راكب'}):`);
+  if (!message || !message.trim()) return;
+
+  const client = getSupabaseClient() || supabaseClient;
+  if (!client) return;
+
+  try {
+    await client.from('support_messages').insert({
+      sender_id: currentAdminUser ? currentAdminUser.id : '00000000-0000-0000-0000-000000000000',
+      receiver_id: userId,
+      sender_role: 'admin',
+      message: message.trim(),
+      created_at: new Date().toISOString()
+    });
+
+    try {
+      await client.from('admin_notifications').insert({
+        user_id: userId,
+        user_name: userName,
+        title: '💬 رسالة من دعم inRide',
+        body: message.trim(),
+        type: 'support_chat'
+      });
+    } catch (_) {}
+
+    showToast(`✅ تم إرسال الرسالة بنجاح إلى ${userName}`);
+  } catch (err) {
+    console.error('Error sending support message:', err);
+    showToast(`❌ فشل إرسال الرسالة: ${err.message}`);
+  }
+}
+
 function renderWallet() {
   if (!financialState.isLoaded) {
     loadFinancialDataFromSupabase().then(() => {
@@ -2702,6 +2935,7 @@ function renderWallet() {
   }
   return renderWalletContentHtml();
 }
+
 
 function renderWalletContentHtml() {
   const filteredTx = getFilteredTransactions();
@@ -5611,6 +5845,27 @@ function initSupabaseSync() {
 
       const { data: usersData, error } = await supabaseClient.from('users').select('*');
       if (!error && usersData) {
+        // Fetch ratings to calculate exact real ratings
+        const userRatingsMap = {};
+        try {
+          const { data: allRatings } = await supabaseClient.from('ratings').select('receiver_id, rating');
+          if (allRatings && Array.isArray(allRatings)) {
+            const userSumMap = {};
+            const userCountMap = {};
+            allRatings.forEach(r => {
+              if (r.receiver_id) {
+                const val = parseFloat(r.rating) || 0;
+                userSumMap[r.receiver_id] = (userSumMap[r.receiver_id] || 0) + val;
+                userCountMap[r.receiver_id] = (userCountMap[r.receiver_id] || 0) + 1;
+              }
+            });
+            Object.keys(userCountMap).forEach(uid => {
+              const avg = userSumMap[uid] / userCountMap[uid];
+              userRatingsMap[uid] = parseFloat(avg.toFixed(1));
+            });
+          }
+        } catch (_) {}
+
         const passengers = [];
         usersData.forEach(data => {
           usersMap[data.id] = data;
@@ -5628,6 +5883,10 @@ function initSupabaseSync() {
 
           if (data.role === 'rider' || !data.role) {
             const dateObj = new Date(data.created_at || Date.now());
+            const realRating = userRatingsMap[data.id] !== undefined
+              ? userRatingsMap[data.id]
+              : (data.rating ? parseFloat(parseFloat(data.rating).toFixed(1)) : 5.0);
+
             passengers.push({
               id: data.id.substring(0, 8).toUpperCase(),
               uid: data.id,
@@ -5635,7 +5894,7 @@ function initSupabaseSync() {
               phone: data.phone_number || data.phone || pRecord.phone || '—',
               email: data.email || pRecord.email || '—',
               address: data.address || pRecord.address || '—',
-              rating: data.rating || pRecord.rating || 5.0,
+              rating: realRating,
               totalTrips: 0,
               totalSpent: 0,
               joinDate: dateObj.toLocaleDateString('ar-EG'),
@@ -5665,6 +5924,10 @@ function initSupabaseSync() {
     supabaseClient.channel('public:users')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
         fetchUsers();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ratings' }, () => {
+        fetchUsers();
+        if (typeof fetchRealData === 'function') fetchRealData();
       })
       .subscribe();
 
@@ -5934,6 +6197,8 @@ function viewUserProfile(uid, role) {
   activeProfileUid = uid;
   activeProfileRole = role;
   navigateTo(role === 'driver' ? 'driver-profile' : 'passenger-profile');
+  // Load initial data for profile
+  setTimeout(() => loadProfileRatings(uid), 100);
 }
 
 function renderDriverProfile() {
@@ -6253,6 +6518,15 @@ function renderPassengerProfile() {
               </div>
             </div>
           </div>
+          <!-- Received Ratings & Reviews Card -->
+          <div class="card" style="margin-top:24px;">
+            <div class="card-header">
+              <h3><i class="ri-star-smile-fill text-warning" style="margin-left:8px;"></i> سجل التقييمات والمراجعات المستلمة</h3>
+            </div>
+            <div class="card-body" id="profileRatingsContainer">
+              <div style="text-align:center;padding:24px;color:var(--text-light);">جاري تحميل التقييمات...</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -6306,6 +6580,329 @@ function renderPassengerProfile() {
       </div>
     </div>
   `;
+}
+
+// ---- RATINGS & REVIEWS MODULE ----
+async function loadProfileRatings(uid) {
+  const container = document.getElementById('profileRatingsContainer');
+  if (!container || !uid) return;
+  try {
+    const { data: ratingsData, error } = await supabaseClient
+      .from('ratings')
+      .select('*')
+      .eq('receiver_id', uid)
+      .order('created_at', { ascending: false });
+
+    if (error || !ratingsData || ratingsData.length === 0) {
+      container.innerHTML = `
+        <div style="text-align:center;padding:32px;color:var(--text-light);">
+          <i class="ri-star-line" style="font-size:36px;display:block;margin-bottom:8px;color:var(--warning);"></i>
+          لا توجد تقييمات أو تعليقات مسجلة حتى الآن لهذا الحساب.
+        </div>`;
+      return;
+    }
+
+    const total = ratingsData.reduce((acc, r) => acc + (parseFloat(r.rating) || 0), 0);
+    const avg = (total / ratingsData.length).toFixed(1);
+
+    let html = `
+      <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg-primary);padding:16px;border-radius:var(--radius-md);margin-bottom:16px;border:1px solid var(--border-color);">
+        <div>
+          <span style="font-size:12px;color:var(--text-secondary);font-weight:700;">متوسط التقييم العام المستلم</span>
+          <div style="font-size:24px;font-weight:900;color:var(--warning);display:flex;align-items:center;gap:6px;">
+            <i class="ri-star-fill"></i> ${avg} <span style="font-size:13px;color:var(--text-light);font-weight:normal;">/ 5.0</span>
+          </div>
+        </div>
+        <div style="text-align:left;">
+          <span style="font-size:12px;color:var(--text-secondary);font-weight:700;">إجمالي التقييمات</span>
+          <div style="font-size:20px;font-weight:800;color:var(--text-primary);">${ratingsData.length} تقييم</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;max-height:400px;overflow-y:auto;padding-left:4px;">
+    `;
+
+    ratingsData.forEach(r => {
+      const starVal = parseFloat(r.rating) || 5.0;
+      const dateStr = r.created_at ? new Date(r.created_at).toLocaleString('ar-EG') : '—';
+      const commentText = (r.comment && r.comment.trim() !== '' && r.comment !== 'بدون تعليق') ? r.comment : 'بدون تعليق نصي';
+      const senderName = r.sender_name || 'مستخدم';
+      const senderRole = r.sender_role === 'driver' ? 'كابتن' : (r.sender_role === 'rider' ? 'راكب' : 'مُقيّم');
+
+      let starsHtml = '';
+      for (let i = 1; i <= 5; i++) {
+        if (i <= Math.round(starVal)) {
+          starsHtml += `<i class="ri-star-fill" style="color:var(--warning);"></i>`;
+        } else {
+          starsHtml += `<i class="ri-star-line" style="color:var(--border-color);"></i>`;
+        }
+      }
+
+      html += `
+        <div style="padding:14px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-md);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-weight:700;font-size:13px;">${senderName}</span>
+              <span class="vehicle-badge" style="font-size:10px;padding:2px 8px;font-weight:700;">${senderRole}</span>
+            </div>
+            <span style="font-size:11px;color:var(--text-light);direction:ltr;">${dateStr}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;margin-bottom:6px;">
+            ${starsHtml}
+            <span style="font-weight:800;font-size:12px;margin-right:4px;color:var(--warning);">${starVal.toFixed(1)}</span>
+          </div>
+          <div style="font-size:13px;color:${commentText === 'بدون تعليق نصي' ? 'var(--text-light)' : 'var(--text-primary)'};line-height:1.5;">
+            ${commentText}
+          </div>
+        </div>
+      `;
+    });
+
+    html += `</div>`;
+    container.innerHTML = html;
+  } catch (err) {
+    console.error('Error loading profile ratings:', err);
+    container.innerHTML = `<div style="text-align:center;padding:16px;color:var(--error);">حدث خطأ أثناء تحميل التقييمات.</div>`;
+  }
+}
+
+let allSystemRatings = [];
+
+function renderRatingsPage() {
+  return `
+    <div class="page-section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+        <div>
+          <h2 style="font-size:22px;font-weight:800;margin-bottom:4px;">
+            <i class="ri-star-fill text-warning" style="margin-left:8px;"></i>
+            إدارة التقييمات والمراجعات الحقيقية
+          </h2>
+          <p style="font-size:13px;color:var(--text-secondary);">عرض وتتبع التقييمات والتعليقات الحقيقية المتبادلة بين الركاب والكباتن عبر التطبيق</p>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadRatingsPageData()">
+          <i class="ri-refresh-line"></i> تحديث القائمة
+        </button>
+      </div>
+
+      <!-- Stats Grid -->
+      <div class="stats-grid" style="margin-bottom:24px;">
+        <div class="stat-card blue">
+          <div class="stat-card-header">
+            <div class="stat-card-icon"><i class="ri-star-smile-fill"></i></div>
+          </div>
+          <div class="stat-card-value" id="totalRatingsCount">0</div>
+          <div class="stat-card-label">إجمالي التقييمات المسجلة</div>
+        </div>
+
+        <div class="stat-card green">
+          <div class="stat-card-header">
+            <div class="stat-card-icon"><i class="ri-thumb-up-fill"></i></div>
+          </div>
+          <div class="stat-card-value" id="avgSystemRating">5.0</div>
+          <div class="stat-card-label">متوسط التقييم العام بالنظام</div>
+        </div>
+
+        <div class="stat-card orange">
+          <div class="stat-card-header">
+            <div class="stat-card-icon"><i class="ri-chat-1-fill"></i></div>
+          </div>
+          <div class="stat-card-value" id="ratingsWithCommentsCount">0</div>
+          <div class="stat-card-label">تقييمات مرفقة بتعليقات نصية</div>
+        </div>
+      </div>
+
+      <!-- Filters & Search -->
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-body" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
+          <div style="flex:1;min-width:240px;">
+            <input type="text" id="ratingsSearchInput" placeholder="البحث باسم المُقيّم، المستلم، أو نص التعليق..." style="width:100%;padding:10px 14px;border:1px solid var(--border-color);border-radius:var(--radius-md);background:var(--bg-primary);" oninput="filterRatingsPage()">
+          </div>
+          <select id="ratingsRoleFilter" style="padding:10px 14px;border:1px solid var(--border-color);border-radius:var(--radius-md);background:var(--bg-primary);" onchange="filterRatingsPage()">
+            <option value="all">جميع التقييمات</option>
+            <option value="driver">التقييمات الموجهة للكباتن</option>
+            <option value="rider">التقييمات الموجهة للركاب</option>
+          </select>
+          <select id="ratingsStarsFilter" style="padding:10px 14px;border:1px solid var(--border-color);border-radius:var(--radius-md);background:var(--bg-primary);" onchange="filterRatingsPage()">
+            <option value="all">جميع النجوم (1 - 5)</option>
+            <option value="5">5 نجوم ★★★★★</option>
+            <option value="4">4 نجوم ★★★★</option>
+            <option value="3">3 نجوم ★★★</option>
+            <option value="2">نجمتان ★★</option>
+            <option value="1">نجمة واحدة ★</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Ratings List Container -->
+      <div class="card">
+        <div class="card-header">
+          <h3><i class="ri-list-check-2 text-blue" style="margin-left:8px;"></i> سجل التقييمات المباشرة</h3>
+        </div>
+        <div class="card-body" id="ratingsTableContainer" style="padding:0;">
+          <div style="text-align:center;padding:40px;color:var(--text-light);">جاري تحميل قائمة التقييمات...</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadRatingsPageData() {
+  const container = document.getElementById('ratingsTableContainer');
+  if (!container) return;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('ratings')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    allSystemRatings = data || [];
+
+    // Calculate stats
+    const totalCount = allSystemRatings.length;
+    const withComments = allSystemRatings.filter(r => r.comment && r.comment.trim() !== '' && r.comment !== 'بدون تعليق').length;
+    let avg = '5.0';
+    if (totalCount > 0) {
+      const sum = allSystemRatings.reduce((acc, r) => acc + (parseFloat(r.rating) || 0), 0);
+      avg = (sum / totalCount).toFixed(1);
+    }
+
+    const totalEl = document.getElementById('totalRatingsCount');
+    const avgEl = document.getElementById('avgSystemRating');
+    const commentsEl = document.getElementById('ratingsWithCommentsCount');
+
+    if (totalEl) totalEl.textContent = totalCount;
+    if (avgEl) avgEl.textContent = avg;
+    if (commentsEl) commentsEl.textContent = withComments;
+
+    filterRatingsPage();
+  } catch (err) {
+    console.error('Error loading ratings page data:', err);
+    container.innerHTML = `<div style="text-align:center;padding:24px;color:var(--error);">حدث خطأ أثناء تحميل بيانات التقييمات: ${err.message || err}</div>`;
+  }
+}
+
+function filterRatingsPage() {
+  const container = document.getElementById('ratingsTableContainer');
+  if (!container) return;
+
+  const search = (document.getElementById('ratingsSearchInput')?.value || '').toLowerCase().trim();
+  const roleFilter = document.getElementById('ratingsRoleFilter')?.value || 'all';
+  const starsFilter = document.getElementById('ratingsStarsFilter')?.value || 'all';
+
+  const filtered = allSystemRatings.filter(r => {
+    // Role filter
+    if (roleFilter === 'driver' && r.receiver_role !== 'driver') return false;
+    if (roleFilter === 'rider' && r.receiver_role !== 'rider' && r.receiver_role !== 'passenger') return false;
+
+    // Stars filter
+    if (starsFilter !== 'all') {
+      const starVal = Math.round(parseFloat(r.rating) || 0);
+      if (starVal !== parseInt(starsFilter)) return false;
+    }
+
+    // Search query
+    if (search) {
+      const senderName = (r.sender_name || '').toLowerCase();
+      const comment = (r.comment || '').toLowerCase();
+      const receiverId = (r.receiver_id || '').toLowerCase();
+      if (!senderName.includes(search) && !comment.includes(search) && !receiverId.includes(search)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:40px;color:var(--text-light);">
+        <i class="ri-search-line" style="font-size:36px;display:block;margin-bottom:8px;color:var(--warning);"></i>
+        لا توجد تقييمات تطابق خيارات البحث المحددة.
+      </div>`;
+    return;
+  }
+
+  let html = `
+    <div style="overflow-x:auto;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>المستلم (التقييم لـ)</th>
+            <th>المُقيّم (صاحب التقييم)</th>
+            <th>التقييم بالنجوم</th>
+            <th>التعليق والملاحظات</th>
+            <th>التاريخ والوقت</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  filtered.forEach(r => {
+    const starVal = parseFloat(r.rating) || 5.0;
+    const dateStr = r.created_at ? new Date(r.created_at).toLocaleString('ar-EG') : '—';
+    const commentText = (r.comment && r.comment.trim() !== '' && r.comment !== 'بدون تعليق') ? r.comment : 'بدون تعليق';
+    const senderName = r.sender_name || 'مستخدم';
+    const senderRoleBadge = r.sender_role === 'driver' ? '<span class="status-badge active" style="font-size:10px;">كابتن</span>' : '<span class="status-badge pending" style="font-size:10px;">راكب</span>';
+    const receiverRoleBadge = (r.receiver_role === 'driver') ? '<span class="status-badge active" style="font-size:10px;">كابتن</span>' : '<span class="status-badge pending" style="font-size:10px;">راكب</span>';
+
+    // Find receiver name if possible
+    let receiverName = 'مستخدم (' + (r.receiver_id ? r.receiver_id.substring(0, 6) : '') + ')';
+    if (typeof mockData !== 'undefined') {
+      const drv = mockData.drivers ? mockData.drivers.find(d => d.uid === r.receiver_id) : null;
+      const psg = mockData.passengers ? mockData.passengers.find(p => p.uid === r.receiver_id) : null;
+      if (drv) receiverName = drv.name;
+      else if (psg) receiverName = psg.name;
+    }
+
+    let starsHtml = '';
+    for (let i = 1; i <= 5; i++) {
+      if (i <= Math.round(starVal)) {
+        starsHtml += `<i class="ri-star-fill" style="color:var(--warning);font-size:14px;"></i>`;
+      } else {
+        starsHtml += `<i class="ri-star-line" style="color:var(--border-color);font-size:14px;"></i>`;
+      }
+    }
+
+    html += `
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="font-weight:700;font-size:13px;color:var(--medium-blue);cursor:pointer;" onclick="${r.receiver_role === 'driver' ? `viewUserProfile('${r.receiver_id}', 'driver')` : `viewUserProfile('${r.receiver_id}', 'rider')`}">${receiverName}</div>
+            ${receiverRoleBadge}
+          </div>
+        </td>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="font-weight:600;font-size:13px;">${senderName}</div>
+            ${senderRoleBadge}
+          </div>
+        </td>
+        <td>
+          <div style="display:flex;align-items:center;gap:4px;">
+            ${starsHtml}
+            <span style="font-weight:800;font-size:13px;margin-right:4px;color:var(--warning);">${starVal.toFixed(1)}</span>
+          </div>
+        </td>
+        <td>
+          <span style="font-size:13px;color:${commentText === 'بدون تعليق' ? 'var(--text-light)' : 'var(--text-primary)'};">
+            ${commentText}
+          </span>
+        </td>
+        <td style="font-size:12px;color:var(--text-secondary);direction:ltr;text-align:right;">
+          ${dateStr}
+        </td>
+      </tr>
+    `;
+  });
+
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  container.innerHTML = html;
 }
 
 let activeProfileChatChannel = null;

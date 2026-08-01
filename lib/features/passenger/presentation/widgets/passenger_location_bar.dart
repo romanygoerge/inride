@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../generated/app_localizations.dart';
 
 class PassengerLocationBar extends StatelessWidget {
   final String fromAddress;
@@ -42,7 +43,7 @@ class PassengerLocationBar extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    fromAddress.isEmpty ? 'موقعي الحالي' : fromAddress,
+                    fromAddress.isEmpty ? AppLocalizations.of(context)!.myCurrentLocation : fromAddress,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.cairo(
@@ -69,7 +70,7 @@ class PassengerLocationBar extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    toAddress.isEmpty ? 'إلى أين تريد الذهاب؟' : toAddress,
+                    toAddress.isEmpty ? AppLocalizations.of(context)!.whereToGo : toAddress,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.cairo(

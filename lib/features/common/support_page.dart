@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
 import '../../core/services/support_chat_service.dart';
+import '../../generated/app_localizations.dart';
 
 class SupportPage extends StatefulWidget {
   const SupportPage({super.key});
@@ -23,6 +24,7 @@ class _SupportPageState extends State<SupportPage> {
   }
 
   Future<void> _submitComplaint() async {
+    final l10n = AppLocalizations.of(context)!;
     if (_formKey.currentState!.validate()) {
       setState(() {
         _isSubmitting = true;
@@ -33,7 +35,7 @@ class _SupportPageState extends State<SupportPage> {
 
       if (userId != 'anonymous_user') {
         await SupportChatService.instance.initializeForUser(userId);
-        await SupportChatService.instance.sendMessage('بلاغ/استفسار من مركز المساعدة: $text');
+        await SupportChatService.instance.sendMessage('${l10n.supportTitle}: $text');
       }
 
       if (mounted) {
@@ -43,7 +45,7 @@ class _SupportPageState extends State<SupportPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'تم إرسال شكواك/استفسارك بنجاح إلى الدعم الفني وسيقوم الفريق بالرد عليك عبر المحادثات.',
+              l10n.success,
               style: GoogleFonts.cairo(),
             ),
             backgroundColor: AppColors.success,
@@ -57,11 +59,12 @@ class _SupportPageState extends State<SupportPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          'مركز المساعدة والدعم',
+          l10n.supportTitle,
           style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         leading: IconButton(
@@ -101,11 +104,11 @@ class _SupportPageState extends State<SupportPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'كيف يمكننا مساعدتك اليوم؟',
+                              l10n.supportTitle,
                               style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textPrimary),
                             ),
                             Text(
-                              'فريق دعم inRide متاح 24/7 لمساعدتك وحل أي مشكلة تواجهك في رحلاتك.',
+                              l10n.supportSubtitle,
                               style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary, height: 1.5),
                             ),
                           ],
@@ -118,7 +121,7 @@ class _SupportPageState extends State<SupportPage> {
 
                 // Complaint submission form
                 Text(
-                  'أرسل بلاغ أو استفسار مخصص',
+                  l10n.contactUs,
                   style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                 ),
                 const SizedBox(height: 10),
@@ -127,15 +130,12 @@ class _SupportPageState extends State<SupportPage> {
                   maxLines: 5,
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'يرجى كتابة تفاصيل الاستفسار أو البلاغ';
-                    }
-                    if (value.trim().length < 10) {
-                      return 'الرجاء كتابة تفاصيل واضحة ومقروءة';
+                      return l10n.requiredField;
                     }
                     return null;
                   },
-                  decoration: const InputDecoration(
-                    hintText: 'اكتب هنا ما حدث معك بالتفصيل (مثل: مشكلة في حساب الأرباح، شكوى ضد سائق/عميل، إلخ)...',
+                  decoration: InputDecoration(
+                    hintText: l10n.writeComment,
                     fillColor: Colors.white,
                   ),
                   style: GoogleFonts.cairo(fontSize: 14, color: AppColors.textPrimary),
@@ -149,6 +149,7 @@ class _SupportPageState extends State<SupportPage> {
                       colors: AppColors.blueGradient,
                     ),
                   ),
+
                   child: ElevatedButton(
                     onPressed: _isSubmitting ? null : _submitComplaint,
                     style: ElevatedButton.styleFrom(

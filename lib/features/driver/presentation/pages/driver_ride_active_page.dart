@@ -1220,7 +1220,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                 setState(() {
                                   _isSubmittingRating = true;
                                 });
-                                final passId = state.activePassengerId;
+                                final passId = state.activePassengerId ?? state.currentRideRequest?.passengerId;
                                 final navigator = Navigator.of(context);
                                 await state.submitRating(
                                   _rating,

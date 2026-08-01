@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/widgets/skeleton_placeholder.dart';
+import '../../generated/app_localizations.dart';
 
 class RatingsPage extends StatefulWidget {
   final String userId;
@@ -77,11 +78,12 @@ class _RatingsPageState extends State<RatingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          'المراجعات والتقييمات',
+          l10n.ratingsAndReviews,
           style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         leading: IconButton(
@@ -89,6 +91,7 @@ class _RatingsPageState extends State<RatingsPage> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
+
       body: RefreshIndicator(
         onRefresh: _refreshData,
         color: AppColors.mediumBlue,
@@ -261,7 +264,7 @@ class _RatingsPageState extends State<RatingsPage> {
                                       Builder(
                                         builder: (context) {
                                           final String? name = data['sender_name'] ?? data['senderName'];
-                                          if (name != null && name.isNotEmpty && name != 'كابتن' && name != 'راكب') {
+                                          if (name != null && name.trim().isNotEmpty && name != 'كابتن' && name != 'راكب') {
                                             return Text(
                                               name,
                                               style: GoogleFonts.cairo(
@@ -275,15 +278,15 @@ class _RatingsPageState extends State<RatingsPage> {
                                           return FutureBuilder<Map<String, dynamic>?>(
                                             future: _getSenderFuture(senderId),
                                             builder: (context, snapshot) {
-                                              String fallbackName = name ?? 'عميل';
+                                              String displayName = (name != null && name.isNotEmpty) ? name : 'عميل';
                                               if (snapshot.hasData && snapshot.data != null) {
                                                 final dbName = snapshot.data!['name'];
-                                                if (dbName != null && (dbName as String).isNotEmpty) {
-                                                  fallbackName = dbName;
+                                                if (dbName != null && (dbName as String).trim().isNotEmpty) {
+                                                  displayName = dbName.trim();
                                                 }
                                               }
                                               return Text(
-                                                fallbackName,
+                                                displayName,
                                                 style: GoogleFonts.cairo(
                                                   fontSize: 13,
                                                   fontWeight: FontWeight.bold,

@@ -22,6 +22,7 @@ import '../../../../core/services/ride_sound_service.dart';
 import 'driver_ride_active_page.dart';
 import '../../../common/wallet_page.dart';
 import '../../../common/notifications_page.dart';
+import '../../../../generated/app_localizations.dart';
 
 class DriverHomePage extends StatefulWidget {
   const DriverHomePage({super.key});
@@ -250,6 +251,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
   }
 
   void _toggleOnlineOffline() {
+    final l10n = AppLocalizations.of(context)!;
     if (_isOnline) {
       _stopTracking();
     } else {
@@ -257,7 +259,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'عفواً، لقد وصلت للحد الائتماني المسموح به. يرجى شحن محفظتك للاستمرار في استقبال الطلبات.',
+              l10n.creditLimitReached,
               style: GoogleFonts.cairo(),
             ),
             backgroundColor: AppColors.error,
@@ -279,6 +281,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
   }
 
   void _submitBidInline(RideRequestModel req, double fare) async {
+    final l10n = AppLocalizations.of(context)!;
     final isCounter = (fare - req.offeredFare).abs() > 0.01;
     
     if (isCounter) {
@@ -296,7 +299,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('خطأ في إرسال العرض: $e', style: GoogleFonts.cairo()),
+              content: Text(l10n.errorSendingOffer(e.toString()), style: GoogleFonts.cairo()),
               backgroundColor: AppColors.error,
             ),
           );
@@ -318,7 +321,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
                 const CircularProgressIndicator(color: AppColors.mediumBlue),
                 const SizedBox(height: 20),
                 Text(
-                  'جاري حجز الرحلة وتأكيد القبول...',
+                  l10n.bookingRide,
                   style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
@@ -387,6 +390,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
   }
 
   void _showCustomFareDialog(RideRequestModel req) {
+    final l10n = AppLocalizations.of(context)!;
     final TextEditingController customFareController = TextEditingController(text: req.offeredFare.round().toString());
     showDialog(
       context: context,
@@ -394,7 +398,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Text(
-            'عرض سعر مخصص',
+            l10n.customPriceOffer,
             style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 18),
             textAlign: TextAlign.center,
           ),
@@ -402,9 +406,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
             controller: customFareController,
             keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
-            decoration: const InputDecoration(
-              suffixText: 'ج.م',
-              border: OutlineInputBorder(
+            decoration: InputDecoration(
+              suffixText: l10n.egp,
+              border: const OutlineInputBorder(
                 borderRadius: BorderRadius.all(Radius.circular(12)),
               ),
             ),
@@ -417,7 +421,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('إلغاء', style: GoogleFonts.cairo(color: AppColors.textSecondary)),
+              child: Text(l10n.cancel, style: GoogleFonts.cairo(color: AppColors.textSecondary)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -431,7 +435,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
                   _submitBidInline(req, newFare);
                 }
               },
-              child: Text('إرسال العرض', style: GoogleFonts.cairo(color: Colors.white)),
+              child: Text(l10n.sendOffer, style: GoogleFonts.cairo(color: Colors.white)),
             ),
           ],
         );
@@ -533,7 +537,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        _isOnline ? 'متصل للعمل' : 'غير متصل',
+                        _isOnline ? AppLocalizations.of(context)!.onlineForWork : AppLocalizations.of(context)!.offlineStatus,
                         style: GoogleFonts.cairo(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
@@ -679,7 +683,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        _isOnline ? 'الطلبات المتاحة حولك' : 'وضع عدم الاتصال',
+                        _isOnline ? AppLocalizations.of(context)!.availableRequestsAround : AppLocalizations.of(context)!.offlineMode,
                         style: GoogleFonts.cairo(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -705,7 +709,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
                     const Icon(Icons.notifications_off_outlined, color: AppColors.textLight, size: 48),
                     const SizedBox(height: 16),
                     Text(
-                      'أنت غير نشط حالياً',
+                      AppLocalizations.of(context)!.youAreInactive,
                       style: GoogleFonts.cairo(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
@@ -714,7 +718,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
                       textAlign: TextAlign.center,
                     ),
                     Text(
-                      'قم بتفعيل الزر بالأعلى لتلقي إشعارات رحلات الركاب والبدء بالعمل.',
+                      AppLocalizations.of(context)!.activateToReceive,
                       style: GoogleFonts.cairo(
                         fontSize: 12,
                         color: AppColors.textLight,
@@ -732,7 +736,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
                           const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 48),
                           const SizedBox(height: 12),
                           Text(
-                            'تم إيقاف تلقي الطلبات مؤقتاً',
+                            AppLocalizations.of(context)!.requestsPaused,
                             style: GoogleFonts.cairo(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -741,7 +745,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'لقد وصلت إلى الحد الأقصى للمديونية (-100 ج.م) بسبب نسب عمولة الرحلات السابقة. يرجى شحن رصيد المحفظة لتفعيل حسابك وتلقي طلبات الركاب مرة أخرى.',
+                            AppLocalizations.of(context)!.debtLimitMessage,
                             style: GoogleFonts.cairo(
                               fontSize: 12,
                               color: AppColors.textSecondary,
@@ -758,7 +762,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
                             },
                             icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
                             label: Text(
-                              'الانتقال للمحفظة للشحن',
+                              AppLocalizations.of(context)!.goToWallet,
                               style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13),
                             ),
                             style: ElevatedButton.styleFrom(
@@ -923,17 +927,18 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
     return FutureBuilder<Map<String, dynamic>?>(
       future: widget.passengerFuture,
       builder: (context, snapshot) {
-        String pName = isDelivery ? 'مرسل الطرد' : 'راكب';
+        final l10n = AppLocalizations.of(context)!;
+        String pName = isDelivery ? l10n.packageSender : l10n.passenger;
         double pRating = 5.0;
         String? pAvatar;
-        int completedCount = (widget.request.passengerId.hashCode.abs() % 120) + 12;
+        int completedCount = 0;
         
         if (snapshot.hasData && snapshot.data != null) {
           final data = snapshot.data!;
-          pName = data['name'] ?? (isDelivery ? 'مرسل الطرد' : 'راكب');
+          pName = data['name'] ?? (isDelivery ? l10n.packageSender : l10n.passenger);
           pRating = ((data['rating'] as num?) ?? 5.0).toDouble();
           pAvatar = data['avatar_url'] ?? data['avatarUrl'] as String?;
-          completedCount = data['completedTrips'] ?? (widget.request.passengerId.hashCode.abs() % 150 + 5);
+          completedCount = ((data['completed_trips'] ?? data['completedTrips'] ?? data['total_trips']) as num? ?? 0).toInt();
         }
 
         final isNewUser = completedCount < 5;
@@ -979,7 +984,7 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                             ),
                           ),
                           child: Text(
-                            isDelivery ? '📦 ديلفري' : '🚗 رحلة',
+                            isDelivery ? '📦 ${l10n.deliveryOption}' : '🚗 ${l10n.rideOption}',
                             style: GoogleFonts.cairo(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
@@ -1001,7 +1006,7 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                             ),
                           ),
                           child: Text(
-                            req.paymentMethod == 'المحفظة' ? '💳 المحفظة' : '💵 كاش',
+                            req.paymentMethod == 'المحفظة' ? l10n.walletPaymentShort : l10n.cashPaymentShort,
                             style: GoogleFonts.cairo(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
@@ -1039,7 +1044,7 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            _secondsLeft > 0 ? 'باقي $_secondsLeft ث' : 'منتهي',
+                            _secondsLeft > 0 ? l10n.timeRemaining(_secondsLeft) : l10n.expired,
                             style: GoogleFonts.cairo(
                               fontSize: 11,
                               fontWeight: FontWeight.w900,
@@ -1096,7 +1101,7 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
-                                    'مستخدم جديد',
+                                    l10n.newUser,
                                     style: GoogleFonts.cairo(
                                       fontSize: 9,
                                       fontWeight: FontWeight.bold,
@@ -1259,7 +1264,11 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              'المسافة إلى الراكب: $distText  •  مسافة الرحلة: ${req.distance.toStringAsFixed(1)} كم\nالوقت للوصول للعميل: $etaToCustomer دقائق',
+                              l10n.distanceToPassenger(
+                                distText,
+                                req.distance.toStringAsFixed(1),
+                                '$etaToCustomer',
+                              ),
                               style: GoogleFonts.cairo(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -1294,7 +1303,7 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                             Icon(Icons.inventory_2_outlined, color: Colors.purple[800], size: 16),
                             const SizedBox(width: 8),
                             Text(
-                              'تفاصيل الطرد المرسل:',
+                              l10n.packageDetails,
                               style: GoogleFonts.cairo(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -1305,13 +1314,13 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'محتوى الطرد: ${req.packageDescription ?? "غير محدد"}',
+                          l10n.packageContent(req.packageDescription ?? l10n.notSpecified),
                           style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
                         ),
                         if (req.deliveryNotes != null && req.deliveryNotes!.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
-                            'تعليمات التوصيل: ${req.deliveryNotes}',
+                            l10n.deliveryInstructions(req.deliveryNotes!),
                             style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
                           ),
                         ],
@@ -1347,11 +1356,11 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    isCountered ? 'عرض العميل المقترح' : 'الأجرة المقترحة',
+                                    isCountered ? l10n.customerCounterOffer : l10n.suggestedFare,
                                     style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textLight),
                                   ),
                                   Text(
-                                    '${currentFare.round()} ج.م',
+                                    '${currentFare.round()} ${l10n.egp}',
                                     style: GoogleFonts.outfit(
                                       fontSize: 24,
                                       fontWeight: FontWeight.w900,
@@ -1411,7 +1420,7 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                                         const Icon(Icons.info_outline, color: AppColors.mediumBlue, size: 16),
                                         const SizedBox(width: 8),
                                         Text(
-                                          'اقترح العميل أجرة جديدة: ${currentFare.round()} ج.م',
+                                          l10n.customerSuggestedFare(currentFare.round()),
                                           style: GoogleFonts.cairo(
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,
@@ -1431,7 +1440,7 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                                           onPressed: () => widget.onDecline(activeReq),
                                           icon: const Icon(Icons.close_rounded, size: 16),
                                           label: Text(
-                                            'تخطى',
+                                            l10n.skipAction,
                                             style: GoogleFonts.cairo(
                                               fontWeight: FontWeight.bold,
                                               fontSize: 13,
@@ -1470,7 +1479,7 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                                             onPressed: () => widget.onAccept(activeReq),
                                             icon: const Icon(Icons.check_rounded, size: 16, color: Colors.white),
                                             label: Text(
-                                              'قبول التفاوض',
+                                              l10n.acceptNegotiation,
                                               style: GoogleFonts.cairo(
                                                 fontWeight: FontWeight.bold,
                                                 fontSize: 13,
@@ -1513,7 +1522,7 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                                         ),
                                         const SizedBox(width: 10),
                                         Text(
-                                          'تم إرسال عرض السعر بنجاح... بانتظار العميل',
+                                          l10n.offerSentWaiting,
                                           style: GoogleFonts.cairo(
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,
@@ -1532,7 +1541,7 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                                           onPressed: () => widget.onDecline(activeReq),
                                           icon: const Icon(Icons.close_rounded, size: 16),
                                           label: Text(
-                                            'تخطى',
+                                            l10n.skipAction,
                                             style: GoogleFonts.cairo(
                                               fontWeight: FontWeight.bold,
                                               fontSize: 13,
@@ -1571,7 +1580,7 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                                             onPressed: () => widget.onAccept(activeReq),
                                             icon: const Icon(Icons.check_rounded, size: 16, color: Colors.white),
                                             label: Text(
-                                              'قبول الأجرة',
+                                              l10n.acceptFare,
                                               style: GoogleFonts.cairo(
                                                 fontWeight: FontWeight.bold,
                                                 fontSize: 13,

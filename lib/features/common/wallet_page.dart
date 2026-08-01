@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
 import '../../shared/widgets/camera_capture_dialog.dart';
 import '../../shared/widgets/skeleton_placeholder.dart';
+import '../../generated/app_localizations.dart';
 
 class WalletPage extends StatefulWidget {
   const WalletPage({super.key});
@@ -554,7 +555,7 @@ class _WalletPageState extends State<WalletPage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          'المحفظة وطرق الدفع',
+          AppLocalizations.of(context)!.wallet,
           style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         leading: IconButton(
@@ -593,7 +594,7 @@ class _WalletPageState extends State<WalletPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'الرصيد المتاح',
+                          AppLocalizations.of(context)!.walletBalance,
                           style: GoogleFonts.cairo(fontSize: 14, color: Colors.white70),
                         ),
                         const Icon(Icons.account_balance_wallet, color: Colors.white, size: 28),
@@ -601,7 +602,7 @@ class _WalletPageState extends State<WalletPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      '${state.walletBalance.toStringAsFixed(2)} ج.م',
+                      '${state.walletBalance.toStringAsFixed(2)} ${AppLocalizations.of(context)!.egp}',
                       style: GoogleFonts.outfit(
                         fontSize: 32, 
                         fontWeight: FontWeight.w900, 
@@ -611,7 +612,7 @@ class _WalletPageState extends State<WalletPage> {
                     if (state.currentRole == UserRole.driver) ...[
                       const SizedBox(height: 4),
                       Text(
-                        'الحد الائتماني: ${state.creditLimit.toStringAsFixed(2)} ج.م',
+                        'الحد الائتماني: ${state.creditLimit.toStringAsFixed(2)} ${AppLocalizations.of(context)!.egp}',
                         style: GoogleFonts.cairo(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -627,7 +628,7 @@ class _WalletPageState extends State<WalletPage> {
                             onPressed: () => _showChargeDialog(context, state),
                             icon: const Icon(Icons.add, size: 18),
                             label: Text(
-                              'شحن الرصيد',
+                              AppLocalizations.of(context)!.addFunds,
                               style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                             style: ElevatedButton.styleFrom(
@@ -646,7 +647,7 @@ class _WalletPageState extends State<WalletPage> {
 
               // 2. Title Payment Methods
               Text(
-                'طرق الدفع المفضلة',
+                AppLocalizations.of(context)!.paymentMethods,
                 style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 12),

@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
 import '../../core/localization/locale_controller.dart';
-import '../../core/extensions/l10n_extension.dart';
+import '../../generated/app_localizations.dart';
 import 'legal_pages.dart';
 import '../../core/utils/snappy_page_route.dart';
 
@@ -21,11 +21,12 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          'إعدادات التطبيق',
+          l10n.settings,
           style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         leading: IconButton(
@@ -41,7 +42,7 @@ class _SettingsPageState extends State<SettingsPage> {
             children: [
               // 1. General Preferences
               Text(
-                'التفضيلات العامة',
+                l10n.accountSettings,
                 style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 10),
@@ -57,7 +58,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     children: [
                       _buildSwitchTile(
                         icon: Icons.notifications_active_outlined,
-                        title: 'إشعارات الرحلات والعروض',
+                        title: l10n.notificationsCenter,
                         value: _pushNotifications,
                         onChanged: (val) {
                           setState(() {
@@ -68,7 +69,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       const Divider(color: AppColors.border, height: 16),
                       _buildSwitchTile(
                         icon: Icons.volume_up_outlined,
-                        title: 'الأصوات والتنبيهات الصوتية',
+                        title: l10n.supportTitle,
                         value: _soundEffects,
                         onChanged: (val) {
                           setState(() {
@@ -79,7 +80,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       const Divider(color: AppColors.border, height: 16),
                       _buildSwitchTile(
                         icon: Icons.dark_mode_outlined,
-                        title: 'الوضع الليلي (تلقائي)',
+                        title: l10n.darkMode,
                         value: _darkMode,
                         onChanged: (val) {
                           setState(() {
@@ -95,7 +96,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
               // 2. Language Preferences
               Text(
-                'اللغة والدولة',
+                l10n.language,
                 style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 10),
@@ -108,11 +109,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: ListTile(
                   leading: const Icon(Icons.language_outlined, color: AppColors.textSecondary),
                   title: Text(
-                    context.l10n.language,
+                    l10n.language,
                     style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                   ),
                   subtitle: Text(
-                    LocaleController.instance.isArabic ? 'العربية (مصر)' : 'English (US)',
+                    LocaleController.instance.isArabic ? l10n.arabic : l10n.english,
                     style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
                   ),
                   trailing: const Icon(Icons.arrow_forward_ios_outlined, color: AppColors.textLight, size: 14),
@@ -121,12 +122,12 @@ class _SettingsPageState extends State<SettingsPage> {
                       context: context,
                       builder: (context) {
                         return AlertDialog(
-                          title: Text(context.l10n.changeLanguage, style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                          title: Text(l10n.changeLanguage, style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
                           content: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               ListTile(
-                                title: const Text('العربية'),
+                                title: Text(l10n.arabic),
                                 trailing: LocaleController.instance.isArabic ? const Icon(Icons.check, color: AppColors.mediumBlue) : null,
                                 onTap: () async {
                                   await LocaleController.instance.setLocale(const Locale('ar', 'EG'));
@@ -134,7 +135,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                 },
                               ),
                               ListTile(
-                                title: const Text('English'),
+                                title: Text(l10n.english),
                                 trailing: LocaleController.instance.isEnglish ? const Icon(Icons.check, color: AppColors.mediumBlue) : null,
                                 onTap: () async {
                                   await LocaleController.instance.setLocale(const Locale('en', 'US'));
@@ -153,7 +154,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
               // 3. Legal & Policy Information
               Text(
-                'الشروط والسياسات',
+                l10n.legalTerms,
                 style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 10),
@@ -167,21 +168,21 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     ListTile(
                       leading: const Icon(Icons.description_outlined, color: AppColors.mediumBlue),
-                      title: Text('شروط الاستخدام', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600)),
+                      title: Text(l10n.legalTerms, style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600)),
                       trailing: const Icon(Icons.arrow_forward_ios_outlined, color: AppColors.textLight, size: 14),
                       onTap: () => Navigator.push(context, SnappyPageRoute(page: const TermsOfUsePage())),
                     ),
                     const Divider(color: AppColors.border, height: 1),
                     ListTile(
                       leading: const Icon(Icons.assignment_outlined, color: AppColors.mediumBlue),
-                      title: Text('الشروط والأحكام', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600)),
+                      title: Text(l10n.termsAndConditionsText, style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600)),
                       trailing: const Icon(Icons.arrow_forward_ios_outlined, color: AppColors.textLight, size: 14),
                       onTap: () => Navigator.push(context, SnappyPageRoute(page: const TermsAndConditionsPage())),
                     ),
                     const Divider(color: AppColors.border, height: 1),
                     ListTile(
                       leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.mediumBlue),
-                      title: Text('سياسة الخصوصية', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600)),
+                      title: Text(l10n.privacyPolicyText, style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600)),
                       trailing: const Icon(Icons.arrow_forward_ios_outlined, color: AppColors.textLight, size: 14),
                       onTap: () => Navigator.push(context, SnappyPageRoute(page: const PrivacyPolicyPage())),
                     ),
@@ -205,14 +206,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   elevation: 0,
                 ),
                 child: Text(
-                  'تسجيل الخروج من الحساب',
+                  l10n.logout,
                   style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 14),
                 ),
               ),
               const SizedBox(height: 12),
               Center(
                 child: Text(
-                  'إصدار التطبيق 1.0.0 (بناء 2026)',
+                  '${l10n.version} 1.0.0 (2026)',
                   style: GoogleFonts.outfit(fontSize: 11, color: AppColors.textLight),
                 ),
               ),
@@ -232,6 +233,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
+
         Row(
           children: [
             Icon(icon, color: AppColors.textSecondary, size: 20),
@@ -251,3 +253,4 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 }
+

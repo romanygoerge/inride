@@ -7,6 +7,7 @@ import '../../../common/support_chat_page.dart';
 import '../../domain/repositories/chat_repository.dart';
 import '../../domain/entities/chat_room.dart';
 import 'chat_page.dart';
+import '../../../../generated/app_localizations.dart';
 
 class MessagesCenterPage extends StatefulWidget {
   const MessagesCenterPage({super.key});
@@ -26,10 +27,11 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
   }
 
   void _openSupportChat() {
+    final l10n = AppLocalizations.of(context)!;
     if (_myId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('يرجى تسجيل الدخول أولاً للتحدث مع الدعم الفني.', style: GoogleFonts.cairo()),
+          content: Text(l10n.authTitle, style: GoogleFonts.cairo()),
           backgroundColor: AppColors.warning,
         ),
       );
@@ -45,13 +47,14 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     if (_myId.isEmpty) {
       return Scaffold(
         appBar: AppBar(
-          title: Text('الرسائل', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+          title: Text(l10n.messagesCenter, style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
         ),
         body: Center(
-          child: Text('يرجى تسجيل الدخول أولاً.', style: GoogleFonts.cairo()),
+          child: Text(l10n.authTitle, style: GoogleFonts.cairo()),
         ),
       );
     }
@@ -61,7 +64,7 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         title: Text(
-          'الرسائل والمحادثات',
+          l10n.messagesCenter,
           style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.textPrimary),
         ),
         leading: IconButton(
@@ -99,6 +102,7 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                           color: AppColors.mediumBlue.withValues(alpha: 0.1),
                           shape: BoxShape.circle,
                         ),
+
                         child: const Icon(Icons.support_agent, color: AppColors.mediumBlue, size: 28),
                       ),
                       const SizedBox(width: 16),

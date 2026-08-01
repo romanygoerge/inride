@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_theme.dart';
+import '../../generated/app_localizations.dart';
 
 class CameraCaptureDialog extends StatefulWidget {
   final String title;
@@ -30,7 +31,12 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
   Future<void> _pickImage(ImageSource source) async {
     try {
       final picker = ImagePicker();
-      final XFile? image = await picker.pickImage(source: source, imageQuality: 85);
+      final XFile? image = await picker.pickImage(
+        source: source,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 75,
+      );
       if (image != null) {
         setState(() {
           _triggerFlashOverlay = true;
@@ -66,6 +72,7 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Dialog(
       backgroundColor: Colors.black,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
@@ -109,7 +116,7 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                                     ),
                                     const SizedBox(height: 16),
                                     Text(
-                                      widget.isReceipt ? 'تم اختيار الإيصال بنجاح' : 'تم اختيار الصورة بنجاح',
+                                      l10n.success,
                                       style: GoogleFonts.cairo(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                                     ),
                                   ],
@@ -150,11 +157,7 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                                   ),
                                   const SizedBox(height: 12),
                                   Text(
-                                    widget.isReceipt
-                                        ? 'التقاط أو اختيار صورة إيصال التحويل'
-                                        : (widget.isPickup
-                                            ? 'ضع الطرد في المنتصف للاستلام'
-                                            : 'صوّر الطرد عند مكان التسليم'),
+                                    l10n.takePhoto,
                                     style: GoogleFonts.cairo(
                                       color: Colors.white70,
                                       fontSize: 12,
@@ -269,7 +272,7 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                                 ),
                                 icon: const Icon(Icons.replay),
                                 label: Text(
-                                  'إعادة تصوير',
+                                  l10n.retry,
                                   style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
                                 ),
                                 onPressed: _retakePhoto,
@@ -293,7 +296,7 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                                   ),
                                   icon: const Icon(Icons.check),
                                   label: Text(
-                                    'تأكيد الصورة',
+                                    l10n.confirm,
                                     style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
                                   ),
                                   onPressed: _confirmPhoto,
@@ -320,13 +323,14 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                                     const Icon(Icons.photo_library_outlined, color: Colors.white, size: 20),
                                     const SizedBox(width: 6),
                                     Text(
-                                      'المعرض',
+                                      l10n.uploadFromGallery,
                                       style: GoogleFonts.cairo(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                                     ),
                                   ],
                                 ),
                               ),
                             ),
+
 
                             // Camera Shutter Button
                             GestureDetector(

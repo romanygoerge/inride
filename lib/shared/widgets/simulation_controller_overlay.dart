@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
+import '../../generated/app_localizations.dart';
 import '../../features/driver/presentation/pages/driver_home_page.dart';
 import '../../features/passenger/presentation/pages/passenger_home_page.dart';
 
@@ -57,7 +58,7 @@ class _SimulationControllerOverlayState extends State<SimulationControllerOverla
               foregroundColor: Colors.white,
               icon: Icon(_isExpanded ? Icons.close : Icons.tune),
               label: Text(
-                _isExpanded ? 'إغلاق المحاكي' : 'لوحة المحاكاة التفاعلية',
+                _isExpanded ? AppLocalizations.of(context)!.simClosePanel : AppLocalizations.of(context)!.simPanelTitle,
                 style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold),
               ),
             ),
@@ -89,7 +90,7 @@ class _SimulationControllerOverlayState extends State<SimulationControllerOverla
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          '🎛️ أدوات المحاكاة الفورية (للاختبار)',
+                          AppLocalizations.of(context)!.simToolsHeader,
                           style: GoogleFonts.cairo(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -103,7 +104,7 @@ class _SimulationControllerOverlayState extends State<SimulationControllerOverla
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
-                            'الحالة: ${state.rideStatus.name}',
+                            AppLocalizations.of(context)!.simStatus(state.rideStatus.name),
                             style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.purple),
                           ),
                         ),
@@ -118,7 +119,7 @@ class _SimulationControllerOverlayState extends State<SimulationControllerOverla
                       children: [
                         // Role selection shortcut
                         _buildSimButton(
-                          label: 'التبديل لراكب 🚶',
+                          label: AppLocalizations.of(context)!.simSwitchToPassenger,
                           onPressed: () {
                             state.selectRole(UserRole.rider);
                             Navigator.of(context).pushAndRemoveUntil(
@@ -128,7 +129,7 @@ class _SimulationControllerOverlayState extends State<SimulationControllerOverla
                           },
                         ),
                         _buildSimButton(
-                          label: 'التبديل لسائق 🚗',
+                          label: AppLocalizations.of(context)!.simSwitchToDriver,
                           onPressed: () {
                             state.selectRole(UserRole.driver);
                             if (state.verificationStatus == DriverVerificationStatus.verified) {
@@ -148,13 +149,13 @@ class _SimulationControllerOverlayState extends State<SimulationControllerOverla
                         ),
                         // Admin Verification Shortcuts
                         _buildSimButton(
-                          label: 'اعتماد السائق فوراً ✅',
+                          label: AppLocalizations.of(context)!.simApproveDriver,
                           onPressed: () {
                             state.verificationStatus = DriverVerificationStatus.verified;
                             state.update();
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('تم تفعيل واعتماد حساب السائق بنجاح!', style: GoogleFonts.cairo()),
+                                content: Text(AppLocalizations.of(context)!.simDriverApproved, style: GoogleFonts.cairo()),
                                 backgroundColor: AppColors.success,
                               ),
                             );
@@ -162,13 +163,13 @@ class _SimulationControllerOverlayState extends State<SimulationControllerOverla
                           color: Colors.green,
                         ),
                         _buildSimButton(
-                          label: 'إلغاء التوثيق ❌',
+                          label: AppLocalizations.of(context)!.simRevokeVerification,
                           onPressed: () {
                             state.verificationStatus = DriverVerificationStatus.unregistered;
                             state.update();
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('تم إلغاء اعتماد السائق (غير مسجل)', style: GoogleFonts.cairo()),
+                                content: Text(AppLocalizations.of(context)!.simDriverRevoked, style: GoogleFonts.cairo()),
                                 backgroundColor: AppColors.error,
                               ),
                             );
@@ -179,7 +180,7 @@ class _SimulationControllerOverlayState extends State<SimulationControllerOverla
                         // Ride lifecycle shortcuts
                         if (state.rideStatus == RideStatus.searching)
                           _buildSimButton(
-                            label: 'توليد عروض أسائقين قريبة ⚡',
+                            label: AppLocalizations.of(context)!.simGenerateOffers,
                             onPressed: () {
                               // Force bids immediately
                               state.rideStatus = RideStatus.driverBidding;
@@ -220,7 +221,7 @@ class _SimulationControllerOverlayState extends State<SimulationControllerOverla
 
                         if (state.rideStatus == RideStatus.driverOnWay)
                           _buildSimButton(
-                            label: 'محاكاة وصول السائق 🏁',
+                            label: AppLocalizations.of(context)!.simDriverArrival,
                             onPressed: () {
                               state.rideStatus = RideStatus.arrived;
                               state.driverProgress = 0.0;
@@ -231,7 +232,7 @@ class _SimulationControllerOverlayState extends State<SimulationControllerOverla
 
                         if (state.rideStatus == RideStatus.arrived)
                           _buildSimButton(
-                            label: 'محاكاة بدء الرحلة 🚀',
+                            label: AppLocalizations.of(context)!.simStartTrip,
                             onPressed: () {
                               state.startTrip();
                             },
@@ -240,7 +241,7 @@ class _SimulationControllerOverlayState extends State<SimulationControllerOverla
 
                         if (state.rideStatus == RideStatus.tripStarted)
                           _buildSimButton(
-                            label: 'محاكاة إنهاء الرحلة الدفع 💳',
+                            label: AppLocalizations.of(context)!.simCompleteTrip,
                             onPressed: () {
                               state.completeTrip();
                             },
@@ -248,12 +249,12 @@ class _SimulationControllerOverlayState extends State<SimulationControllerOverla
                           ),
                           
                         _buildSimButton(
-                          label: 'إعادة ضبط الرحلات 🔄',
+                          label: AppLocalizations.of(context)!.simResetRides,
                           onPressed: () {
                             state.resetRide();
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('تم إعادة تعيين كافة الطلبات النشطة.', style: GoogleFonts.cairo()),
+                                content: Text(AppLocalizations.of(context)!.simRidesReset, style: GoogleFonts.cairo()),
                                 backgroundColor: Colors.black87,
                               ),
                             );
@@ -264,7 +265,7 @@ class _SimulationControllerOverlayState extends State<SimulationControllerOverla
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'ملاحظة: تتيح لك هذه اللوحة اختبار سيناريو الرحلة كاملاً (الطلب، المزايدة، القبول، التتبع، الوصول، الدفع) مباشرة دون الحاجة لأجهزة إضافية.',
+                      AppLocalizations.of(context)!.simNote,
                       style: GoogleFonts.cairo(fontSize: 10, color: AppColors.textLight),
                     ),
                   ],

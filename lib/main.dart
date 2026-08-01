@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'core/config/supabase_config.dart';
 import 'core/localization/locale_controller.dart';
 import 'generated/app_localizations.dart';
+
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/pages/login_page.dart';
 
@@ -26,8 +28,12 @@ import 'core/utils/app_logger.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 @pragma("vm:entry-point")
-void overlayMain() {
+void overlayMain() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  final savedCode = prefs.getString('selected_language_code') ?? 'ar';
+  final isAr = savedCode == 'ar';
+
   runApp(
     MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -47,8 +53,8 @@ void overlayMain() {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'inRide الكابتن',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+                  isAr ? 'inRide الكابتن' : 'inRide Captain',
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
                 ),
                 const SizedBox(height: 12),
                 ElevatedButton(
@@ -60,7 +66,7 @@ void overlayMain() {
                     await FlutterOverlayWindow.shareData('arrive_at_pickup');
                     await FlutterOverlayWindow.closeOverlay();
                   },
-                  child: const Text('أنا وصلت للراكب', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: Text(isAr ? 'أنا وصلت للراكب' : 'Arrived at Pickup', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
                 const SizedBox(height: 8),
                 TextButton(
@@ -68,7 +74,7 @@ void overlayMain() {
                     await FlutterOverlayWindow.shareData('return_to_app');
                     await FlutterOverlayWindow.closeOverlay();
                   },
-                  child: const Text('الرجوع للتطبيق', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                  child: Text(isAr ? 'الرجوع للتطبيق' : 'Return to App', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -78,6 +84,7 @@ void overlayMain() {
     ),
   );
 }
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

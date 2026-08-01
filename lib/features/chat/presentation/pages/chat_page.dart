@@ -13,6 +13,7 @@ import '../cubit/chat_cubit.dart';
 import '../cubit/chat_state.dart';
 import '../widgets/typing_indicator.dart';
 import '../../domain/repositories/chat_repository.dart';
+import '../../../../generated/app_localizations.dart';
 
 class ChatPage extends StatefulWidget {
   final String roomId;
@@ -111,7 +112,6 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _pickAndSendImage() async {
     final picker = ImagePicker();
-    // Compress image before upload using maxWidth/maxHeight and imageQuality (Requirement 7)
     final XFile? pickedFile = await picker.pickImage(
       source: ImageSource.gallery,
       maxWidth: 1024,
@@ -126,7 +126,7 @@ class _ChatPageState extends State<ChatPage> {
       _chatCubit.sendAttachment(
         roomId: _currentRoomId,
         senderId: widget.myId,
-        text: '📷 صورة',
+        text: '📷',
         filePath: filePath,
         fileName: fileName,
         replyToMessageId: _replyingTo?.id,
@@ -152,6 +152,7 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return BlocProvider.value(
       value: _chatCubit,
       child: Scaffold(
@@ -172,7 +173,7 @@ class _ChatPageState extends State<ChatPage> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'يكتب الآن',
+                          l10n.partnerTyping,
                           style: GoogleFonts.cairo(fontSize: 10, color: AppColors.success, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(width: 4),
@@ -181,7 +182,7 @@ class _ChatPageState extends State<ChatPage> {
                     );
                   }
                   return Text(
-                    widget.chatType == 'support' ? 'الدعم الفني المباشر' : 'محادثة الرحلة نشطة',
+                    widget.chatType == 'support' ? l10n.supportChat : l10n.chatTitle,
                     style: GoogleFonts.cairo(fontSize: 10, color: AppColors.textLight),
                   );
                 },
@@ -211,11 +212,9 @@ class _ChatPageState extends State<ChatPage> {
         body: SafeArea(
           child: Column(
             children: [
-              // Trip Info Banner (Requirement 4)
               if (widget.chatType == 'trip' && widget.tripRoom != null && _showTripBanner)
                 _buildTripBanner(widget.tripRoom!),
 
-              // Messages List
               Expanded(
                 child: BlocBuilder<ChatCubit, ChatState>(
                   builder: (context, state) {
@@ -232,11 +231,12 @@ class _ChatPageState extends State<ChatPage> {
                             children: [
                               const Icon(Icons.chat_bubble_outline, size: 48, color: AppColors.textLight),
                               const SizedBox(height: 12),
-                              Text('أرسل رسالة لبدء التنسيق المباشر', style: GoogleFonts.cairo(color: AppColors.textSecondary)),
+                              Text(l10n.typeMessage, style: GoogleFonts.cairo(color: AppColors.textSecondary)),
                             ],
                           ),
                         );
                       }
+
                       return ListView.builder(
                         controller: _scrollController,
                         reverse: true,

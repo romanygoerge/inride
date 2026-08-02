@@ -59,18 +59,20 @@ class _SupportChatPageState extends State<SupportChatPage> {
       return Scaffold(
         appBar: AppBar(
           title: Text(
-            'الدعم الفني المباشر',
+            l10n.supportChat,
             style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16),
           ),
         ),
         body: Center(
           child: Text(
-            'يرجى تسجيل الدخول أولاً للتحدث مع الدعم الفني.',
+            LocaleController.instance.isArabic ? 'يرجى تسجيل الدخول أولاً للتحدث مع الدعم الفني.' : 'Please sign in first to chat with support.',
             style: GoogleFonts.cairo(color: AppColors.textSecondary),
           ),
         ),
       );
     }
+
+    final isArabic = LocaleController.instance.isArabic;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -80,11 +82,11 @@ class _SupportChatPageState extends State<SupportChatPage> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
-              'محادثة الدعم الفني',
+              isArabic ? 'محادثة الدعم الفني' : 'Technical Support Chat',
               style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textPrimary),
             ),
             Text(
-              'نحن متصلون لمساعدتك 24/7',
+              isArabic ? 'نحن متصلون لمساعدتك 24/7' : 'We are online 24/7 to help you',
               style: GoogleFonts.cairo(fontSize: 10, color: AppColors.success, fontWeight: FontWeight.bold),
             ),
           ],
@@ -123,12 +125,14 @@ class _SupportChatPageState extends State<SupportChatPage> {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              'ابدأ المحادثة مع الدعم الفني',
+                              isArabic ? 'ابدأ المحادثة مع الدعم الفني' : 'Start chat with support',
                               style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textPrimary),
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'اكتب مشكلتك أو استفسارك هنا وسيقوم فريق الدعم بالرد عليك في أسرع وقت.',
+                              isArabic
+                                  ? 'اكتب مشكلتك أو استفسارك هنا وسيقوم فريق الدعم بالرد عليك في أسرع وقت.'
+                                  : 'Type your problem or inquiry here and our support team will respond as soon as possible.',
                               style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary, height: 1.5),
                               textAlign: TextAlign.center,
                             ),
@@ -171,7 +175,7 @@ class _SupportChatPageState extends State<SupportChatPage> {
                         controller: _messageController,
                         onSubmitted: (_) => _sendMessage(),
                         decoration: InputDecoration(
-                          hintText: 'اكتب رسالتك هنا...',
+                          hintText: l10n.typeMessage,
                           hintStyle: GoogleFonts.cairo(fontSize: 13, color: AppColors.textLight),
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,

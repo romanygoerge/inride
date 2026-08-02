@@ -339,7 +339,7 @@ class AppDrawer extends StatelessWidget {
                 _buildDrawerItem(
                   context,
                   icon: Icons.language_outlined,
-                  title: l10n.switchLanguage,
+                  title: LocaleController.instance.isArabic ? 'English Language' : 'اللغة العربية',
                   onTap: () async {
                     Navigator.pop(context);
                     await LocaleController.instance.toggleLanguage();

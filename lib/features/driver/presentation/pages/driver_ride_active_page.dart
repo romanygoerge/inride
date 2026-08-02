@@ -519,21 +519,21 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                       _buildStatColumn(
                                         icon: Icons.access_time_rounded,
                                         value: sl<NavigationController>().formattedETA,
-                                        label: 'وقت الوصول',
+                                        label: LocaleController.instance.isArabic ? 'وقت الوصول' : 'ETA',
                                         valueColor: AppColors.mediumBlue,
                                       ),
                                       Container(height: 32, width: 1, color: AppColors.border),
                                       _buildStatColumn(
                                         icon: Icons.navigation_rounded,
                                         value: sl<NavigationController>().formattedRemainingDistance,
-                                        label: 'المسافة المتبقية',
+                                        label: LocaleController.instance.isArabic ? 'المسافة المتبقية' : 'Remaining',
                                         valueColor: AppColors.darkBlue,
                                       ),
                                       Container(height: 32, width: 1, color: AppColors.border),
                                       _buildStatColumn(
                                         icon: Icons.speed_rounded,
-                                        value: '${sl<NavigationController>().speedKmH.round()} كم/س',
-                                        label: 'السرعة الحالية',
+                                        value: '${sl<NavigationController>().speedKmH.round()} ${LocaleController.instance.isArabic ? "كم/س" : "km/h"}',
+                                        label: LocaleController.instance.isArabic ? 'السرعة الحالية' : 'Speed',
                                         valueColor: Colors.redAccent,
                                       ),
                                     ],
@@ -554,7 +554,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            '${_passengerName ?? (state.currentServiceType == 'delivery' ? "العميل" : "الراكب")} (${state.currentServiceType == 'delivery' ? "طلب توصيل" : "راكب"})',
+                                            '${_passengerName ?? (state.currentServiceType == 'delivery' ? (LocaleController.instance.isArabic ? "العميل" : "Customer") : (LocaleController.instance.isArabic ? "الراكب" : "Passenger"))} (${state.currentServiceType == 'delivery' ? (LocaleController.instance.isArabic ? "طلب توصيل" : "Delivery") : (LocaleController.instance.isArabic ? "راكب" : "Rider")})',
                                             style: GoogleFonts.cairo(
                                               fontSize: 14,
                                               fontWeight: FontWeight.bold,
@@ -629,7 +629,10 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                           if (mounted) {
                                             messenger.showSnackBar(
                                               SnackBar(
-                                                content: Text('رقم العميل غير متوفر حالياً', style: GoogleFonts.cairo()),
+                                                content: Text(
+                                                  LocaleController.instance.isArabic ? 'رقم العميل غير متوفر حالياً' : 'Customer phone unavailable',
+                                                  style: GoogleFonts.cairo(),
+                                                ),
                                                 backgroundColor: Colors.orange,
                                               ),
                                             );
@@ -648,23 +651,23 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                                 tripId: state.currentRequestId!,
                                                 myId: state.userUid!,
                                                 partnerId: state.activePassengerId!,
-                                                 partnerName: _passengerName ?? 'الراكب',
-                                               ),
-                                             ),
-                                           );
-                                         }
-                                       },
-                                     ),
-                                     IconButton(
-                                       icon: const Icon(Icons.share_location_outlined, color: Colors.green),
-                                       tooltip: 'مشاركة موقعي المباشر',
-                                       onPressed: _shareLiveLocation,
-                                     ),
-                                     IconButton(
-                                       icon: const Icon(Icons.warning_amber_rounded, color: Colors.red),
-                                       tooltip: 'طوارئ النجدة ١٢٢',
-                                       onPressed: _callEmergency,
-                                     ),
+                                                partnerName: _passengerName ?? (LocaleController.instance.isArabic ? 'الراكب' : 'Passenger'),
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.share_location_outlined, color: Colors.green),
+                                      tooltip: LocaleController.instance.isArabic ? 'مشاركة موقعي المباشر' : 'Share Live Location',
+                                      onPressed: _shareLiveLocation,
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.warning_amber_rounded, color: Colors.red),
+                                      tooltip: LocaleController.instance.isArabic ? 'طوارئ النجدة ١٢٢' : 'Emergency SOS 122',
+                                      onPressed: _callEmergency,
+                                    ),
                                   ],
                                 ),
                                 const Divider(height: 20, color: AppColors.border),
@@ -677,7 +680,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
-                                        'من: ${state.fromAddress ?? "موقع الالتقاء"}',
+                                        '${LocaleController.instance.isArabic ? "من:" : "From:"} ${state.fromAddress ?? (LocaleController.instance.isArabic ? "موقع الالتقاء" : "Pickup Location")}',
                                         style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -693,7 +696,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
-                                        'إلى: ${state.toAddress ?? "الوجهة"}',
+                                        '${LocaleController.instance.isArabic ? "إلى:" : "To:"} ${state.toAddress ?? (LocaleController.instance.isArabic ? "الوجهة" : "Destination")}',
                                         style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -714,7 +717,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
 
                                         if (isUnconfirmed) {
                                           return Text(
-                                            'المسافة الكلية: قيد التحديد من المستلم',
+                                            LocaleController.instance.isArabic ? 'المسافة الكلية: قيد التحديد من المستلم' : 'Total Distance: Pending recipient confirmation',
                                             style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.bold),
                                           );
                                         }
@@ -723,12 +726,12 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                         if (activeRoute != null && activeRoute.distance > 0) {
                                           final distanceKm = activeRoute.distance / 1000;
                                           return Text(
-                                            'المسافة الكلية: ${distanceKm.toStringAsFixed(1)} كم',
+                                            '${LocaleController.instance.isArabic ? "المسافة الكلية:" : "Total Distance:"} ${distanceKm.toStringAsFixed(1)} ${LocaleController.instance.isArabic ? "كم" : "km"}',
                                             style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.bold),
                                           );
                                         } else {
                                           return Text(
-                                            'المسافة الكلية: جاري الحساب...',
+                                            LocaleController.instance.isArabic ? 'المسافة الكلية: جاري الحساب...' : 'Total Distance: Calculating...',
                                             style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.bold),
                                           );
                                         }
@@ -743,7 +746,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                       const Icon(Icons.people_outline, color: AppColors.mediumBlue, size: 18),
                                       const SizedBox(width: 8),
                                       Text(
-                                        'عدد الأفراد: ${state.currentPassengerCount} ${state.currentPassengerCount == 1 ? "فرد" : "أفراد"}',
+                                        '${LocaleController.instance.isArabic ? "عدد الأفراد:" : "Passengers:"} ${state.currentPassengerCount}',
                                         style: GoogleFonts.cairo(
                                           fontSize: 12,
                                           fontWeight: FontWeight.bold,
@@ -767,7 +770,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          '📦 طرد التوصيل: ${state.currentPackageDescription ?? "غير محدد"}',
+                                          '📦 ${LocaleController.instance.isArabic ? "طرد التوصيل:" : "Package:"} ${state.currentPackageDescription ?? (LocaleController.instance.isArabic ? "غير محدد" : "Not specified")}',
                                           style: GoogleFonts.cairo(
                                             fontSize: 13,
                                             fontWeight: FontWeight.bold,
@@ -777,7 +780,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                         if (state.currentDeliveryNotes != null && state.currentDeliveryNotes!.isNotEmpty) ...[
                                           const SizedBox(height: 4),
                                           Text(
-                                            'تعليمات العميل: ${state.currentDeliveryNotes}',
+                                            '${LocaleController.instance.isArabic ? "تعليمات العميل:" : "Instructions:"} ${state.currentDeliveryNotes}',
                                             style: GoogleFonts.cairo(
                                               fontSize: 12,
                                               color: AppColors.textSecondary,
@@ -794,7 +797,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                                     crossAxisAlignment: CrossAxisAlignment.start,
                                                     children: [
                                                       Text(
-                                                        'صورة الاستلام:',
+                                                        LocaleController.instance.isArabic ? 'صورة الاستلام:' : 'Pickup Photo:',
                                                         style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
                                                       ),
                                                       const SizedBox(height: 4),
@@ -818,7 +821,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                                     crossAxisAlignment: CrossAxisAlignment.start,
                                                     children: [
                                                       Text(
-                                                        'صورة التسليم:',
+                                                        LocaleController.instance.isArabic ? 'صورة التسليم:' : 'Delivery Photo:',
                                                         style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
                                                       ),
                                                       const SizedBox(height: 4),
@@ -851,11 +854,11 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'طريقة الدفع',
+                                          LocaleController.instance.isArabic ? 'طريقة الدفع' : 'Payment Method',
                                           style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textLight),
                                         ),
                                         Text(
-                                          state.activeRidePaymentMethod ?? 'كاش',
+                                          state.activeRidePaymentMethod ?? (LocaleController.instance.isArabic ? 'كاش' : 'Cash'),
                                           style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                                         ),
                                       ],
@@ -864,11 +867,11 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                       crossAxisAlignment: CrossAxisAlignment.end,
                                       children: [
                                         Text(
-                                          'إجمالي الأجرة المتوقعة',
+                                          LocaleController.instance.isArabic ? 'إجمالي الأجرة المتوقعة' : 'Expected Total Fare',
                                           style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textLight),
                                         ),
                                         Text(
-                                          '${state.offeredFare.round()} ج.م',
+                                          '${state.offeredFare.round()} ${LocaleController.instance.isArabic ? "ج.م" : "EGP"}',
                                           style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.mediumBlue),
                                         ),
                                       ],

@@ -339,7 +339,7 @@ class _LegalPageLayout extends StatelessWidget {
               const SizedBox(height: 16),
               Center(
                 child: Text(
-                  'inRide © 2026 - جميع الحقوق محفوظة',
+                  LocaleController.instance.isArabic ? 'inRide © 2026 - جميع الحقوق محفوظة' : 'inRide © 2026 - All Rights Reserved',
                   style: GoogleFonts.cairo(
                     fontSize: 12,
                     color: AppColors.textLight,

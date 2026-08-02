@@ -1126,7 +1126,7 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                '•  $completedCount ${isDelivery ? "طلبات مكتملة" : "رحلات مكتملة"}',
+                                '•  $completedCount ${isDelivery ? (LocaleController.instance.isArabic ? "طلبات مكتملة" : "completed orders") : (LocaleController.instance.isArabic ? "رحلات مكتملة" : "completed trips")}',
                                 style: GoogleFonts.cairo(
                                   fontSize: 12,
                                   color: AppColors.textSecondary,

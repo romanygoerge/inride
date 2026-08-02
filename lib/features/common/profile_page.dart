@@ -413,7 +413,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
               // 2. Personal Information Heading
               Text(
-                'البيانات الشخصية',
+                isArabic ? 'البيانات الشخصية' : 'Personal Details',
                 style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 10),
@@ -431,27 +431,27 @@ class _ProfilePageState extends State<ProfilePage> {
                     children: [
                       _buildInfoTile(
                         icon: Icons.phone_android_outlined,
-                        label: 'رقم الهاتف المعرّف (مغلق)',
+                        label: isArabic ? 'رقم الهاتف المعرّف (مغلق)' : 'Verified Phone Number (Locked)',
                         value: state.phoneNumber ?? '+20 10 1234 5678',
                       ),
                       const Divider(color: AppColors.border, height: 16),
                       _buildInfoTile(
                         icon: Icons.location_on_outlined,
-                        label: 'العنوان المسجل',
-                        value: (isRider ? state.passengerAddress : state.driverAddress) ?? state.driverAddress ?? state.passengerAddress ?? 'غير محدد',
+                        label: isArabic ? 'العنوان المسجل' : 'Registered Address',
+                        value: (isRider ? state.passengerAddress : state.driverAddress) ?? state.driverAddress ?? state.passengerAddress ?? (isArabic ? 'غير محدد' : 'Not set'),
                       ),
                       const Divider(color: AppColors.border, height: 16),
                       _buildInfoTile(
                         icon: Icons.badge_outlined,
-                        label: 'حالة الحساب الرسمي',
-                        value: 'نشط',
+                        label: isArabic ? 'حالة الحساب الرسمي' : 'Official Account Status',
+                        value: isArabic ? 'نشط' : 'Active',
                         valueColor: AppColors.success,
                       ),
                       if (!isRider && state.vehicleName != null) ...[
                         const Divider(color: AppColors.border, height: 16),
                         _buildInfoTile(
                           icon: Icons.directions_car_filled_outlined,
-                          label: 'المركبة المسجلة للعمل',
+                          label: isArabic ? 'المركبة المسجلة للعمل' : 'Registered Work Vehicle',
                           value: '${state.vehicleName} (${state.vehicleNumber})',
                         ),
                       ],
@@ -459,22 +459,22 @@ class _ProfilePageState extends State<ProfilePage> {
                         const Divider(color: AppColors.border, height: 16),
                         _buildInfoTile(
                           icon: state.driverVehicleCategory == 'motorcycle' ? Icons.two_wheeler : Icons.directions_car,
-                          label: 'نوع المركبة',
-                          value: state.driverVehicleCategory == 'motorcycle' ? 'دراجة نارية' : 'سيارة ملاكي',
+                          label: isArabic ? 'نوع المركبة' : 'Vehicle Type',
+                          value: state.driverVehicleCategory == 'motorcycle' ? (isArabic ? 'دراجة نارية' : 'Motorcycle') : (isArabic ? 'سيارة ملاكي' : 'Private Car'),
                         ),
                         if (state.driverVehicleCategory == 'private_car') ...[
                           const Divider(color: AppColors.border, height: 16),
                           _buildInfoTile(
                             icon: Icons.ac_unit,
-                            label: 'التكييف',
-                            value: state.driverHasAC ? 'نعم - مكيفة ❄️' : 'لا',
+                            label: isArabic ? 'التكييف' : 'Air Conditioner',
+                            value: state.driverHasAC ? (isArabic ? 'نعم - مكيفة ❄️' : 'Yes - Air Conditioned ❄️') : (isArabic ? 'لا' : 'No'),
                             valueColor: state.driverHasAC ? AppColors.mediumBlue : null,
                           ),
                           const Divider(color: AppColors.border, height: 16),
                           _buildInfoTile(
                             icon: Icons.people_outline,
-                            label: 'عدد الركاب المسموح',
-                            value: '${state.driverMaxPassengers} راكب',
+                            label: isArabic ? 'عدد الركاب المسموح' : 'Max Passengers Allowed',
+                            value: '${state.driverMaxPassengers} ${isArabic ? "راكب" : "Passengers"}',
                           ),
                         ],
                       ],
@@ -482,14 +482,14 @@ class _ProfilePageState extends State<ProfilePage> {
                         const Divider(color: AppColors.border, height: 16),
                         _buildInfoTile(
                           icon: Icons.wc_outlined,
-                          label: 'النوع (الجنس)',
-                          value: state.passengerGender ?? 'ذكر',
+                          label: isArabic ? 'النوع (الجنس)' : 'Gender',
+                          value: state.passengerGender == 'female' ? (isArabic ? 'أنثى' : 'Female') : (isArabic ? 'ذكر' : 'Male'),
                         ),
                         const Divider(color: AppColors.border, height: 16),
                         _buildInfoTile(
                           icon: Icons.home_outlined,
-                          label: 'العنوان المفضل',
-                          value: state.passengerAddress ?? 'القاهرة، مصر',
+                          label: isArabic ? 'العنوان المفضل' : 'Preferred Address',
+                          value: state.passengerAddress ?? (isArabic ? 'القاهرة، مصر' : 'Cairo, Egypt'),
                         ),
                       ],
                     ],
@@ -501,7 +501,7 @@ class _ProfilePageState extends State<ProfilePage> {
               if (!isRider && (state.driverNationalIdUrl != null || state.driverLicenseUrl != null || state.driverVehicleFrontUrl != null)) ...[
                 const SizedBox(height: 24),
                 Text(
-                  'المستندات والرخص',
+                  isArabic ? 'المستندات والرخص' : 'Documents & Licenses',
                   style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                 ),
                 const SizedBox(height: 10),
@@ -523,25 +523,25 @@ class _ProfilePageState extends State<ProfilePage> {
                           children: [
                             if (state.driverNationalIdUrl != null)
                               _buildDocThumbnail(
-                                label: 'البطاقة الشخصية',
+                                label: isArabic ? 'البطاقة الشخصية' : 'National ID',
                                 url: state.driverNationalIdUrl!,
                                 icon: Icons.badge_outlined,
                               ),
                             if (state.driverLicenseUrl != null)
                               _buildDocThumbnail(
-                                label: 'رخصة القيادة',
+                                label: isArabic ? 'رخصة القيادة' : 'Driving License',
                                 url: state.driverLicenseUrl!,
                                 icon: Icons.card_membership_outlined,
                               ),
                             if (state.driverVehicleFrontUrl != null)
                               _buildDocThumbnail(
-                                label: 'رخصة المركبة',
+                                label: isArabic ? 'رخصة المركبة' : 'Vehicle License',
                                 url: state.driverVehicleFrontUrl!,
                                 icon: Icons.description_outlined,
                               ),
                             ...state.driverVehicleImages.asMap().entries.map((entry) =>
                               _buildDocThumbnail(
-                                label: 'صورة المركبة ${entry.key + 1}',
+                                label: '${isArabic ? "صورة المركبة" : "Vehicle Photo"} ${entry.key + 1}',
                                 url: entry.value,
                                 icon: Icons.photo_camera_outlined,
                               ),
@@ -563,7 +563,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
               // 3. Settings / Options / Ads
               Text(
-                'خيارات التطبيق والإعلان',
+                isArabic ? 'خيارات التطبيق والإعلان' : 'App & Advertising Options',
                 style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 10),
@@ -578,19 +578,19 @@ class _ProfilePageState extends State<ProfilePage> {
                   children: [
                     _buildSettingsTile(
                       icon: Icons.language_outlined,
-                      title: 'لغة التطبيق',
+                      title: l10n.language,
                       trailing: LocaleController.instance.isArabic ? 'العربية (مصر)' : 'English (US)',
                       onTap: () => _showLanguageDialog(context),
                     ),
                     const Divider(color: AppColors.border, height: 1),
                     _buildSettingsTile(
                       icon: Icons.notifications_none_outlined,
-                      title: 'إعدادات الإشعارات',
+                      title: isArabic ? 'إعدادات الإشعارات' : 'Notification Settings',
                     ),
                     const Divider(color: AppColors.border, height: 1),
                     _buildSettingsTile(
                       icon: Icons.verified_user_outlined,
-                      title: 'الأمان والخصوصية',
+                      title: isArabic ? 'الأمان والخصوصية' : 'Security & Privacy',
                     ),
                     if (isRider) ...[
                       const Divider(color: AppColors.border, height: 1),
@@ -598,11 +598,11 @@ class _ProfilePageState extends State<ProfilePage> {
                         activeTrackColor: AppColors.mediumBlue.withValues(alpha: 0.3),
                         activeThumbColor: AppColors.mediumBlue,
                         title: Text(
-                          'تلقي العروض الترويجية والإعلانات',
+                          isArabic ? 'تلقي العروض الترويجية والإعلانات' : 'Receive Promotional Offers & Ads',
                           style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
                         ),
                         subtitle: Text(
-                          'تلقي إشعارات بالخصومات والعروض الحصرية',
+                          isArabic ? 'تلقي إشعارات بالخصومات والعروض الحصرية' : 'Receive notifications for discounts & exclusive offers',
                           style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
                         ),
                         value: _receivePromos,
@@ -617,11 +617,11 @@ class _ProfilePageState extends State<ProfilePage> {
                         activeTrackColor: AppColors.mediumBlue.withValues(alpha: 0.3),
                         activeThumbColor: AppColors.mediumBlue,
                         title: Text(
-                          'إعلانات مخصصة حسب اهتماماتك',
+                          isArabic ? 'إعلانات مخصصة حسب اهتماماتك' : 'Personalized Ads',
                           style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
                         ),
                         subtitle: Text(
-                          'تحسين تجربة الإعلانات لتلائم احتياجاتك',
+                          isArabic ? 'تحسين تجربة الإعلانات لتلائم احتياجاتك' : 'Tailor advertising experience to match your interests',
                           style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
                         ),
                         value: _personalizedAds,
@@ -636,11 +636,11 @@ class _ProfilePageState extends State<ProfilePage> {
                         activeTrackColor: AppColors.mediumBlue.withValues(alpha: 0.3),
                         activeThumbColor: AppColors.mediumBlue,
                         title: Text(
-                          'إشعارات وتنبيهات الشركاء',
+                          isArabic ? 'إشعارات وتنبيهات الشركاء' : 'Partner Alerts & Notifications',
                           style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
                         ),
                         subtitle: Text(
-                          'تلقي إعلانات وتحديثات من شركائنا الموثوقين',
+                          isArabic ? 'تلقي إعلانات وتحديثات من شركائنا الموثوقين' : 'Receive announcements & updates from trusted partners',
                           style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
                         ),
                         value: _partnerAlerts,
@@ -1042,6 +1042,7 @@ class _ProfilePageState extends State<ProfilePage> {
     final isRider = state.currentRole == UserRole.rider;
     final hasDual = state.hasDualRole;
     final hasPassenger = state.hasPassengerProfile;
+    final isArabic = LocaleController.instance.isArabic;
 
     return Card(
       elevation: 0,
@@ -1093,8 +1094,8 @@ class _ProfilePageState extends State<ProfilePage> {
                         children: [
                           Text(
                             hasDual
-                                ? 'حساب مزدوج (كابتن وراكب)'
-                                : (hasPassenger ? 'حساب راكب' : 'حساب كابتن'),
+                                ? (isArabic ? 'حساب مزدوج (كابتن وراكب)' : 'Dual Account (Captain & Passenger)')
+                                : (hasPassenger ? (isArabic ? 'حساب راكب' : 'Passenger Account') : (isArabic ? 'حساب كابتن' : 'Captain Account')),
                             style: GoogleFonts.cairo(
                               fontSize: 15,
                               fontWeight: FontWeight.bold,
@@ -1111,7 +1112,11 @@ class _ProfilePageState extends State<ProfilePage> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
-                              hasDual ? '⭐ مفعّل بالكامل' : (isRider ? 'الوضع الحالي: راكب' : 'الوضع الحالي: كابتن'),
+                              hasDual
+                                  ? (isArabic ? '⭐ مفعّل بالكامل' : '⭐ Fully Verified')
+                                  : (isRider
+                                      ? (isArabic ? 'الوضع الحالي: راكب' : 'Current Mode: Passenger')
+                                      : (isArabic ? 'الوضع الحالي: كابتن' : 'Current Mode: Captain')),
                               style: GoogleFonts.cairo(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -1124,10 +1129,16 @@ class _ProfilePageState extends State<ProfilePage> {
                       const SizedBox(height: 2),
                       Text(
                         hasDual
-                            ? 'تم التحقق من بيانات الراكب ومستندات الكابتن. يمكنك التبديل بين الوضعين بكل سهولة.'
+                            ? (isArabic
+                                ? 'تم التحقق من بيانات الراكب ومستندات الكابتن. يمكنك التبديل بين الوضعين بكل سهولة.'
+                                : 'Passenger info and Captain documents verified. Switch modes anytime.')
                             : (hasPassenger
-                                ? 'لديك حساب راكب مفعّل. يمكنك طلب إنشاء حساب كابتن للعمل معنا.'
-                                : 'لديك حساب كابتن. يمكنك تفعيل حساب الراكب بضغطة زر لحجز الرحلات.'),
+                                ? (isArabic
+                                    ? 'لديك حساب راكب مفعّل. يمكنك طلب إنشاء حساب كابتن للعمل معنا.'
+                                    : 'You have an active passenger account. Apply to become a Captain anytime.')
+                                : (isArabic
+                                    ? 'لديك حساب كابتن. يمكنك تفعيل حساب الراكب بضغطة زر لحجز الرحلات.'
+                                    : 'You have a Captain account. Activate passenger mode with one click.')),
                         style: GoogleFonts.cairo(
                           fontSize: 12,
                           color: AppColors.textSecondary,
@@ -1166,7 +1177,9 @@ class _ProfilePageState extends State<ProfilePage> {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            hasPassenger ? 'الراكب: مفعّل تلقائياً' : 'الراكب: غير مفعّل',
+                            hasPassenger
+                                ? (isArabic ? 'الراكب: مفعّل تلقائياً' : 'Passenger: Auto Active')
+                                : (isArabic ? 'الراكب: غير مفعّل' : 'Passenger: Not Active'),
                             style: GoogleFonts.cairo(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
@@ -1217,10 +1230,10 @@ class _ProfilePageState extends State<ProfilePage> {
                         Expanded(
                           child: Text(
                             state.verificationStatus == DriverVerificationStatus.verified
-                                ? 'الكابتن: معتمد ومفعل'
+                                ? (isArabic ? 'الكابتن: معتمد ومفعل' : 'Captain: Verified & Active')
                                 : (state.verificationStatus == DriverVerificationStatus.submitted
-                                    ? 'الكابتن: قيد المراجعة'
-                                    : 'الكابتن: غير مسجل'),
+                                    ? (isArabic ? 'الكابتن: قيد المراجعة' : 'Captain: Under Review')
+                                    : (isArabic ? 'الكابتن: غير مسجل' : 'Captain: Unregistered')),
                             style: GoogleFonts.cairo(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
@@ -1273,8 +1286,12 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 label: Text(
                   hasDual
-                      ? (isRider ? 'التحويل إلى وضع الكابتن 🚗' : 'التحويل إلى وضع الراكب 👤')
-                      : (isRider ? 'إنشاء حساب سائق / الانضمام ككابتن 🚗' : 'تفعيل حساب الراكب 👤'),
+                      ? (isArabic
+                          ? (isRider ? 'التحويل إلى وضع الكابتن 🚗' : 'التحويل إلى وضع الراكب 👤')
+                          : (isRider ? 'Switch to Captain Mode 🚗' : 'Switch to Passenger Mode 👤'))
+                      : (isArabic
+                          ? (isRider ? 'إنشاء حساب سائق / الانضمام ككابتن 🚗' : 'تفعيل حساب الراكب 👤')
+                          : (isRider ? 'Join as Driver / Captain 🚗' : 'Activate Passenger Mode 👤')),
                   style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13),
                 ),
                 style: ElevatedButton.styleFrom(

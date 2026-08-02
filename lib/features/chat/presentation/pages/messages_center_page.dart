@@ -111,7 +111,7 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'الدعم الفني المباشر',
+                              l10n.supportChat,
                               style: GoogleFonts.cairo(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
@@ -120,7 +120,7 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'تواصل مع خدمة العملاء لحل مشكلتك 24/7',
+                              LocaleController.instance.isArabic ? 'تواصل مع خدمة العملاء لحل مشكلتك 24/7' : 'Contact customer support 24/7',
                               style: GoogleFonts.cairo(
                                 fontSize: 11,
                                 color: AppColors.textSecondary,
@@ -140,9 +140,9 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
               child: Align(
-                alignment: Alignment.centerRight,
+                alignment: LocaleController.instance.isArabic ? Alignment.centerRight : Alignment.centerLeft,
                 child: Text(
-                  'محادثات الرحلات النشطة والسابقة',
+                  LocaleController.instance.isArabic ? 'محادثات الرحلات النشطة والسابقة' : 'Active & Past Trip Chats',
                   style: GoogleFonts.cairo(
                     fontWeight: FontWeight.bold,
                     fontSize: 13,
@@ -166,7 +166,7 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                   if (snapshot.hasError) {
                     return Center(
                       child: Text(
-                        'خطأ في تحميل المحادثات: ${snapshot.error}',
+                        '${LocaleController.instance.isArabic ? "خطأ في تحميل المحادثات:" : "Error loading chats:"} ${snapshot.error}',
                         style: GoogleFonts.cairo(color: AppColors.error),
                       ),
                     );
@@ -179,29 +179,32 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
 
                   if (rooms.isEmpty) {
                     return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.forum_outlined, size: 64, color: AppColors.textLight.withValues(alpha: 0.5)),
-                          const SizedBox(height: 16),
-                          Text(
-                            'لا توجد محادثات رحلات حالياً',
-                            style: GoogleFonts.cairo(color: AppColors.textSecondary, fontSize: 14),
-                          ),
-                        ],
+                      child: Padding(
+                        padding: const EdgeInsets.all(32.0),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.chat_bubble_outline, size: 48, color: AppColors.textLight),
+                            const SizedBox(height: 12),
+                            Text(
+                              LocaleController.instance.isArabic ? 'لا توجد محادثات رحلات بعد' : 'No trip chats yet',
+                              style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   }
 
-                  return ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                  return ListView.builder(
                     itemCount: rooms.length,
-                    separatorBuilder: (context, index) => const Divider(height: 1, color: AppColors.border),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     itemBuilder: (context, index) {
                       final room = rooms[index];
                       final partnerName = room.getRoomTitle(_myId);
                       final partnerId = _myId == room.passengerId ? room.driverId : room.passengerId;
-                      final tripStatusAr = _getTripStatusArabic(room.tripStatus);
+                      final isArabic = LocaleController.instance.isArabic;
+                      final tripStatusStr = _getTripStatusLocalized(room.tripStatus, isArabic);
 
                       return ListTile(
                         contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
@@ -266,7 +269,9 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                room.lastMessage.isNotEmpty ? room.lastMessage : 'تم بدء المحادثة للرحلة',
+                                room.lastMessage.isNotEmpty
+                                    ? room.lastMessage
+                                    : (isArabic ? 'تم بدء المحادثة للرحلة' : 'Trip chat started'),
                                 style: GoogleFonts.cairo(
                                   fontSize: 12,
                                   color: room.unreadCount > 0 ? AppColors.textPrimary : AppColors.textSecondary,
@@ -283,7 +288,7 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
-                                  'الرحلة: $tripStatusAr',
+                                  '${isArabic ? "الرحلة" : "Trip"}: $tripStatusStr',
                                   style: GoogleFonts.cairo(
                                     fontSize: 9,
                                     color: _getTripStatusColor(room.tripStatus),
@@ -331,20 +336,20 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
     return '${time.day}/${time.month}/${time.year}';
   }
 
-  String _getTripStatusArabic(String? status) {
+  String _getTripStatusLocalized(String? status, bool isArabic) {
     switch (status) {
       case 'Accepted':
-        return 'تم قبول الطلب';
+        return isArabic ? 'تم قبول الطلب' : 'Accepted';
       case 'DriverArriving':
-        return 'السائق في الطريق';
+        return isArabic ? 'السائق في الطريق' : 'Driver Arriving';
       case 'TripStarted':
-        return 'بدأت الرحلة';
+        return isArabic ? 'بدأت الرحلة' : 'Trip Started';
       case 'Completed':
-        return 'مكتملة';
+        return isArabic ? 'مكتملة' : 'Completed';
       case 'Cancelled':
-        return 'ملغاة';
+        return isArabic ? 'ملغاة' : 'Cancelled';
       default:
-        return 'نشط';
+        return isArabic ? 'نشط' : 'Active';
     }
   }
 

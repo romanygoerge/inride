@@ -55,6 +55,7 @@ class _WalletPageState extends State<WalletPage> {
     bool isCustom = false;
     String? receiptImagePath;
 
+    final isArabic = LocaleController.instance.isArabic;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -68,7 +69,7 @@ class _WalletPageState extends State<WalletPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'الخطوة ١ من ٣: اختر وسيلة الشحن',
+                      isArabic ? 'الخطوة ١ من ٣: اختر وسيلة الشحن' : 'Step 1 of 3: Choose Top-up Method',
                       style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.bold),
                       textAlign: TextAlign.center,
                     ),
@@ -89,11 +90,11 @@ class _WalletPageState extends State<WalletPage> {
                           child: Icon(Icons.account_balance, color: Colors.white, size: 20),
                         ),
                         title: Text(
-                          'انستا باي (InstaPay)',
+                          isArabic ? 'انستا باي (InstaPay)' : 'InstaPay',
                           style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
                         ),
                         subtitle: Text(
-                          'شحن يدوي سريع وآمن بلقطة شاشة الإيصال',
+                          isArabic ? 'شحن يدوي سريع وآمن بلقطة شاشة الإيصال' : 'Fast and safe top-up with receipt screenshot',
                           style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
                         ),
                         trailing: Icon(
@@ -123,11 +124,11 @@ class _WalletPageState extends State<WalletPage> {
                             child: Icon(Icons.credit_card, color: Colors.white, size: 20),
                           ),
                           title: Text(
-                            'بطاقة ائتمان (قريباً)',
+                            isArabic ? 'بطاقة ائتمان (قريباً)' : 'Credit Card (Coming Soon)',
                             style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
                           ),
                           subtitle: Text(
-                            'فيزا، ماستركارد، ميزة',
+                            isArabic ? 'فيزا، ماستركارد، ميزة' : 'Visa, Mastercard, Meeza',
                             style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
                           ),
                           trailing: const Icon(Icons.lock_outline, size: 18),
@@ -143,7 +144,7 @@ class _WalletPageState extends State<WalletPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'الخطوة ٢ من ٣: حدد مبلغ الشحن',
+                      isArabic ? 'الخطوة ٢ من ٣: حدد مبلغ الشحن' : 'Step 2 of 3: Select Top-up Amount',
                       style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.bold),
                       textAlign: TextAlign.center,
                     ),
@@ -156,7 +157,7 @@ class _WalletPageState extends State<WalletPage> {
                         children: [50.0, 100.0, 200.0, 500.0].map((amount) {
                           bool isSelected = selectedAmount == amount;
                           return ChoiceChip(
-                            label: Text('${amount.round()} ج.م', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                            label: Text('${amount.round()} ${isArabic ? "ج.م" : "EGP"}', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
                             selected: isSelected,
                             selectedColor: AppColors.mediumBlue,
                             labelStyle: TextStyle(color: isSelected ? Colors.white : AppColors.textPrimary, fontSize: 13),
@@ -175,7 +176,7 @@ class _WalletPageState extends State<WalletPage> {
                         controller: customAmountController,
                         keyboardType: TextInputType.number,
                         decoration: InputDecoration(
-                          labelText: 'القيمة المطلوبة (ج.م)',
+                          labelText: isArabic ? 'القيمة المطلوبة (ج.م)' : 'Custom Amount (EGP)',
                           labelStyle: GoogleFonts.cairo(fontSize: 12),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                           focusedBorder: OutlineInputBorder(
@@ -193,7 +194,9 @@ class _WalletPageState extends State<WalletPage> {
                         });
                       },
                       child: Text(
-                        isCustom ? 'الرجوع للمبالغ الجاهزة' : 'إدخال قيمة مخصصة أخرى',
+                        isCustom
+                            ? (isArabic ? 'الرجوع للمبالغ الجاهزة' : 'Back to Preset Amounts')
+                            : (isArabic ? 'إدخال قيمة مخصصة أخرى' : 'Enter Custom Amount'),
                         style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: AppColors.mediumBlue),
                       ),
                     ),
@@ -209,13 +212,13 @@ class _WalletPageState extends State<WalletPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'الخطوة ٣ من ٣: تحويل المبلغ ورفع الإيصال',
+                      isArabic ? 'الخطوة ٣ من ٣: تحويل المبلغ ورفع الإيصال' : 'Step 3 of 3: Transfer & Upload Receipt',
                       style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.bold),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      'يرجى تحويل مبلغ $finalAmt ج.م للعنوان التالي:',
+                      isArabic ? 'يرجى تحويل مبلغ $finalAmt ج.م للعنوان التالي:' : 'Please transfer $finalAmt EGP to this address:',
                       style: GoogleFonts.cairo(fontSize: 13, color: AppColors.textPrimary),
                       textAlign: TextAlign.center,
                     ),
@@ -238,7 +241,10 @@ class _WalletPageState extends State<WalletPage> {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('تم نسخ عنوان انستا باي: $instapayAddr', style: GoogleFonts.cairo()),
+                                    content: Text(
+                                      isArabic ? 'تم نسخ عنوان انستا باي: $instapayAddr' : 'InstaPay address copied: $instapayAddr',
+                                      style: GoogleFonts.cairo(),
+                                    ),
                                     backgroundColor: AppColors.success,
                                     duration: const Duration(seconds: 2),
                                   ),
@@ -255,7 +261,7 @@ class _WalletPageState extends State<WalletPage> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'بعد التحويل، التقط صورة للإيصال لتأكيد العملية:',
+                      isArabic ? 'بعد التحويل، التقط صورة للإيصال لتأكيد العملية:' : 'After transfer, take a photo of receipt to confirm:',
                       style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
                       textAlign: TextAlign.center,
                     ),
@@ -265,8 +271,8 @@ class _WalletPageState extends State<WalletPage> {
                       onTap: () async {
                         final photo = await showDialog<String>(
                           context: context,
-                          builder: (context) => const CameraCaptureDialog(
-                            title: 'تصوير إيصال التحويل',
+                          builder: (context) => CameraCaptureDialog(
+                            title: isArabic ? 'تصوير إيصال التحويل' : 'Capture Receipt Photo',
                             isPickup: true,
                             isReceipt: true,
                           ),
@@ -291,7 +297,7 @@ class _WalletPageState extends State<WalletPage> {
                                   const Icon(Icons.camera_alt_outlined, size: 36, color: AppColors.textLight),
                                   const SizedBox(height: 8),
                                   Text(
-                                    'اضغط لتصوير إيصال التحويل 📸',
+                                    isArabic ? 'اضغط لتصوير إيصال التحويل 📸' : 'Tap to take photo of receipt 📸',
                                     style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.bold),
                                   ),
                                 ],
@@ -345,7 +351,7 @@ class _WalletPageState extends State<WalletPage> {
                                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                         decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)),
                                         child: Text(
-                                          'تغيير الصورة',
+                                          isArabic ? 'تغيير الصورة' : 'Change Photo',
                                           style: GoogleFonts.cairo(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                                         ),
                                       ),
@@ -363,7 +369,7 @@ class _WalletPageState extends State<WalletPage> {
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
               title: Text(
-                'شحن المحفظة (انستا باي)',
+                isArabic ? 'شحن المحفظة (انستا باي)' : 'Top Up Wallet (InstaPay)',
                 style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16),
                 textAlign: TextAlign.center,
               ),
@@ -383,7 +389,7 @@ class _WalletPageState extends State<WalletPage> {
                             currentStep--;
                           });
                         },
-                        child: Text('السابق', style: GoogleFonts.cairo(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                        child: Text(isArabic ? 'السابق' : 'Previous', style: GoogleFonts.cairo(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
                       )
                     else
                       const SizedBox.shrink(),
@@ -394,7 +400,7 @@ class _WalletPageState extends State<WalletPage> {
                           onPressed: () {
                             Navigator.pop(context);
                           },
-                          child: Text('إلغاء', style: GoogleFonts.cairo(color: Colors.red[600], fontWeight: FontWeight.bold)),
+                          child: Text(isArabic ? 'إلغاء' : 'Cancel', style: GoogleFonts.cairo(color: Colors.red[600], fontWeight: FontWeight.bold)),
                         ),
                         const SizedBox(width: 8),
                         ElevatedButton(
@@ -414,13 +420,13 @@ class _WalletPageState extends State<WalletPage> {
                               final finalAmt = isCustom ? (double.tryParse(customAmountController.text) ?? 0.0) : selectedAmount;
                               if (finalAmt <= 0) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('يرجى إدخال مبلغ صحيح', style: GoogleFonts.cairo())),
+                                  SnackBar(content: Text(isArabic ? 'يرجى إدخال مبلغ صحيح' : 'Please enter a valid amount', style: GoogleFonts.cairo())),
                                 );
                                 return;
                               }
                               if (receiptImagePath == null) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('يرجى تصوير إيصال التحويل للمتابعة', style: GoogleFonts.cairo())),
+                                  SnackBar(content: Text(isArabic ? 'يرجى تصوير إيصال التحويل للمتابعة' : 'Please upload a receipt photo to proceed', style: GoogleFonts.cairo())),
                                 );
                                 return;
                               }
@@ -460,13 +466,15 @@ class _WalletPageState extends State<WalletPage> {
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(
-                                            'تم تقديم طلب الشحن بنجاح!',
+                                            isArabic ? 'تم تقديم طلب الشحن بنجاح!' : 'Top-up request submitted successfully!',
                                             style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textPrimary),
                                             textAlign: TextAlign.center,
                                           ),
                                           const SizedBox(height: 10),
                                           Text(
-                                            'لقد استلمنا إيصال تحويل InstaPay الخاص بك بقيمة $finalAmt ج.م. سيتم مراجعة الطلب وتفعيل الرصيد في محفظتك خلال دقائق قليلة.',
+                                            isArabic
+                                                ? 'لقد استلمنا إيصال تحويل InstaPay الخاص بك بقيمة $finalAmt ج.م. سيتم مراجعة الطلب وتفعيل الرصيد في محفظتك خلال دقائق قليلة.'
+                                                : 'We received your InstaPay transfer receipt of $finalAmt EGP. It will be reviewed and activated in your wallet shortly.',
                                             style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
                                             textAlign: TextAlign.center,
                                           ),
@@ -483,7 +491,7 @@ class _WalletPageState extends State<WalletPage> {
                                               foregroundColor: Colors.white,
                                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                             ),
-                                            child: Text('حسناً', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                                            child: Text(isArabic ? 'حسناً' : 'OK', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
                                           ),
                                         ),
                                       ],
@@ -495,7 +503,10 @@ class _WalletPageState extends State<WalletPage> {
                               } else if (!success && context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('تعذر تقديم طلب الشحن حالياً، يرجى المحاولة مرة أخرى', style: GoogleFonts.cairo()),
+                                    content: Text(
+                                      isArabic ? 'تعذر تقديم طلب الشحن حالياً، يرجى المحاولة مرة أخرى' : 'Failed to submit top-up request, please try again',
+                                      style: GoogleFonts.cairo(),
+                                    ),
                                     backgroundColor: AppColors.error,
                                   ),
                                 );
@@ -503,7 +514,7 @@ class _WalletPageState extends State<WalletPage> {
                             }
                           },
                           child: Text(
-                            currentStep == 3 ? 'إرسال الطلب' : 'التالي',
+                            currentStep == 3 ? (isArabic ? 'إرسال الطلب' : 'Submit') : (isArabic ? 'التالي' : 'Next'),
                             style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
                           ),
                         ),
@@ -523,33 +534,34 @@ class _WalletPageState extends State<WalletPage> {
   Widget build(BuildContext context) {
     final state = GlobalState.instance;
     final isDriver = state.currentRole == UserRole.driver;
+    final isArabic = LocaleController.instance.isArabic;
 
     final List<Map<String, dynamic>> paymentMethods = isDriver
         ? [
             {
               'id': 'instapay',
-              'title': 'انستا باي',
-              'subtitle': 'الدفع الفوري عبر تطبيق انستا باي',
+              'title': isArabic ? 'انستا باي' : 'InstaPay',
+              'subtitle': isArabic ? 'الدفع الفوري عبر تطبيق انستا باي' : 'Instant payment via InstaPay app',
               'icon': Icons.account_balance_outlined,
             },
           ]
         : [
             {
               'id': 'cash',
-              'title': 'كاش',
-              'subtitle': 'الدفع نقداً عند الوصول',
+              'title': isArabic ? 'كاش' : 'Cash',
+              'subtitle': isArabic ? 'الدفع نقداً عند الوصول' : 'Pay cash upon arrival',
               'icon': Icons.payments_outlined,
             },
             {
               'id': 'instapay',
-              'title': 'انستا باي',
-              'subtitle': 'الدفع الفوري عبر تطبيق انستا باي',
+              'title': isArabic ? 'انستا باي' : 'InstaPay',
+              'subtitle': isArabic ? 'الدفع الفوري عبر تطبيق انستا باي' : 'Instant payment via InstaPay app',
               'icon': Icons.account_balance_outlined,
             },
             {
               'id': 'wallet',
-              'title': 'المحفظة',
-              'subtitle': '${state.walletBalance.toStringAsFixed(2)} ج.م',
+              'title': isArabic ? 'المحفظة' : 'Wallet',
+              'subtitle': '${state.walletBalance.toStringAsFixed(2)} ${isArabic ? "ج.م" : "EGP"}',
               'icon': Icons.account_balance_wallet_outlined,
             },
           ];
@@ -615,7 +627,7 @@ class _WalletPageState extends State<WalletPage> {
                     if (state.currentRole == UserRole.driver) ...[
                       const SizedBox(height: 4),
                       Text(
-                        'الحد الائتماني: ${state.creditLimit.toStringAsFixed(2)} ${AppLocalizations.of(context)!.egp}',
+                        '${isArabic ? "الحد الائتماني" : "Credit Limit"}: ${state.creditLimit.toStringAsFixed(2)} ${AppLocalizations.of(context)!.egp}',
                         style: GoogleFonts.cairo(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -713,7 +725,7 @@ class _WalletPageState extends State<WalletPage> {
                 onPressed: () {},
                 icon: const Icon(Icons.add, size: 18),
                 label: Text(
-                  'إضافة طريقة دفع جديدة',
+                  isArabic ? 'إضافة طريقة دفع جديدة' : 'Add New Payment Method',
                   style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -731,7 +743,7 @@ class _WalletPageState extends State<WalletPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'سجل المعاملات والخصومات',
+                    isArabic ? 'سجل المعاملات والخصومات' : 'Transactions & Deductions Log',
                     style: GoogleFonts.cairo(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -758,7 +770,7 @@ class _WalletPageState extends State<WalletPage> {
                               const Icon(Icons.receipt_long_outlined, size: 40, color: AppColors.textLight),
                               const SizedBox(height: 10),
                               Text(
-                                'لا توجد معاملات مالية بعد',
+                                isArabic ? 'لا توجد معاملات مالية بعد' : 'No financial transactions yet',
                                 style: GoogleFonts.cairo(
                                   fontSize: 13,
                                   color: AppColors.textSecondary,
@@ -777,6 +789,14 @@ class _WalletPageState extends State<WalletPage> {
                             final double amt = tx['amount'] as double;
                             final bool isDebit = amt < 0;
                             final bool isPending = tx['type'] == 'charge_pending';
+                            final String rawDesc = tx['description'] as String;
+                            final String desc = isArabic
+                                ? rawDesc
+                                : rawDesc
+                                    .replaceAll('شحن رصيد معلق', 'Pending Top-up')
+                                    .replaceAll('شحن رصيد بواسطة الأدمن', 'Admin Top-up')
+                                    .replaceAll('خصم عمولة رحلة', 'Trip Fee Deduction')
+                                    .replaceAll('مواكبة رصيد', 'Balance Adjustment');
 
                             return Card(
                               elevation: 0,
@@ -807,7 +827,7 @@ class _WalletPageState extends State<WalletPage> {
                                   ),
                                 ),
                                 title: Text(
-                                  tx['description'] as String,
+                                  desc,
                                   style: GoogleFonts.cairo(
                                     fontSize: 13,
                                     fontWeight: FontWeight.bold,
@@ -822,7 +842,7 @@ class _WalletPageState extends State<WalletPage> {
                                   ),
                                 ),
                                 trailing: Text(
-                                  '${isPending ? "" : (isDebit ? "" : "+")}${amt.toStringAsFixed(2)} ج.م',
+                                  '${isPending ? "" : (isDebit ? "" : "+")}${amt.toStringAsFixed(2)} ${isArabic ? "ج.م" : "EGP"}',
                                   style: GoogleFonts.outfit(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,

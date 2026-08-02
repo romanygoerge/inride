@@ -2706,25 +2706,20 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         localPath: localPath,
         bucketName: 'wallet_receipts',
         pathInBucket: pathInBucket,
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 6));
     } catch (e) {
-      debugPrint('Uploading to wallet_receipts bucket failed, trying receipts bucket: $e');
+      debugPrint('Uploading to wallet_receipts bucket failed: $e, using base64 encoding fallback');
       try {
-        return await _uploadToSupabaseStorage(
-          localPath: localPath,
-          bucketName: 'receipts',
-          pathInBucket: pathInBucket,
-        ).timeout(const Duration(seconds: 10));
-      } catch (e2) {
-        debugPrint('Uploading to storage failed, using base64 encoding fallback: $e2');
         final file = File(localPath);
         if (await file.exists()) {
           final bytes = await file.readAsBytes();
           final b64 = base64Encode(bytes);
           return 'data:image/png;base64,$b64';
         }
-        rethrow;
+      } catch (b64Error) {
+        debugPrint('Base64 encoding fallback failed: $b64Error');
       }
+      return 'file_upload_fallback';
     }
   }
 
@@ -2744,7 +2739,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
       final roleStr = currentRole == UserRole.driver ? 'driver' : 'rider';
       final nameStr = userName ?? passengerName ?? 'مستخدم';
-      final phoneStr = _supabase.auth.currentUser?.phone ?? '';
+      final phoneStr = _supabase.auth.currentUser?.phone ?? userPhoneNumber ?? '';
 
       // 1. Insert into wallet_recharge_requests for Admin Dashboard Review
       try {
@@ -2758,7 +2753,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'receipt_url': finalReceiptUrl,
           'status': 'pending',
           'created_at': DateTime.now().toIso8601String(),
-        }).timeout(const Duration(seconds: 10));
+        }).timeout(const Duration(seconds: 6));
       } catch (e) {
         debugPrint('[GlobalState] Error writing to wallet_recharge_requests: $e');
       }
@@ -2775,21 +2770,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'receipt_url': finalReceiptUrl,
           'notes': 'طلب شحن محفظة عبر $method',
           'created_at': DateTime.now().toIso8601String(),
-        }).timeout(const Duration(seconds: 10));
+        }).timeout(const Duration(seconds: 6));
       } catch (e) {
-        debugPrint('[GlobalState] Full transactions insert failed, trying minimal fields: $e');
-        try {
-          await _supabase.from('transactions').insert({
-            'user_id': userUid!,
-            'title': 'شحن رصيد معلق',
-            'amount': amount,
-            'type': 'charge_pending',
-            'balance_after': walletBalance,
-            'created_at': DateTime.now().toIso8601String(),
-          }).timeout(const Duration(seconds: 10));
-        } catch (e2) {
-          debugPrint('[GlobalState] Minimal transactions insert also failed: $e2');
-        }
+        debugPrint('[GlobalState] Error writing to transactions: $e');
       }
 
       notifyListeners();

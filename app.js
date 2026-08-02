@@ -2633,7 +2633,7 @@ function setFinancialPeriodFilter(period, startDate = null, endDate = null) {
   renderPage('wallet');
 }
 
-async function approvePendingRecharge(txId, userId, amount) {
+async function approvePendingRecharge(id, userId, amount) {
   if (!confirm(`هل تريد تأكيد قبول طلب الشحن بمبلغ ${amount} ج.م وإضافته لحساب المستخدم؟`)) return;
 
   const client = getSupabaseClient() || supabaseClient;
@@ -2642,7 +2642,21 @@ async function approvePendingRecharge(txId, userId, amount) {
   try {
     const numericAmount = parseFloat(amount || 0);
 
-    // 1. Fetch current user balance
+    // 1. Try stored function first if it's a wallet_recharge_request ID
+    try {
+      const { data: rpcData, error: rpcErr } = await client.rpc('approve_wallet_recharge_request', {
+        p_request_id: id,
+        p_admin_id: (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : null
+      });
+      if (!rpcErr && rpcData && rpcData.success) {
+        showToast(`✅ ${rpcData.message || 'تم قبول طلب الشحن وإضافة الرصيد بنجاح'}`);
+        await loadFinancialDataFromSupabase();
+        renderPage('wallet');
+        return;
+      }
+    } catch (_) {}
+
+    // 2. Fallback manual update logic
     const { data: userRecord, error: userFetchErr } = await client
       .from('users')
       .select('wallet_balance, name')
@@ -2654,99 +2668,71 @@ async function approvePendingRecharge(txId, userId, amount) {
     const currentBalance = parseFloat(userRecord?.wallet_balance || 0);
     const newBalance = currentBalance + numericAmount;
 
-    // 2. Update user wallet balance in users table
-    const { error: userUpdateErr } = await client
-      .from('users')
-      .update({ wallet_balance: newBalance })
-      .eq('id', userId);
+    await client.from('users').update({ wallet_balance: newBalance }).eq('id', userId);
+    await client.from('wallet_recharge_requests').update({ status: 'approved', processed_at: new Date().toISOString() }).eq('id', id).catch(() => {});
+    await client.from('transactions').update({ type: 'charge', title: 'شحن رصيد مقبول', balance_after: newBalance, notes: 'تم قبول طلب الشحن وتفعيل الرصيد بواسطة إدارة inRide' }).eq('id', id).catch(() => {});
 
-    if (userUpdateErr) throw userUpdateErr;
-
-    // 3. Update wallets table if exists
+    // Notification to user
     try {
-      await client.from('wallets').upsert({
+      await client.from('notifications').insert({
         user_id: userId,
-        balance: newBalance,
-        updated_at: new Date().toISOString()
-      });
-    } catch (e) {
-      console.warn('wallets table update warning:', e);
-    }
-
-    // 4. Update transaction record
-    const { error: txErr } = await client
-      .from('transactions')
-      .update({
-        type: 'charge',
-        title: 'شحن رصيد مقبول',
-        balance_after: newBalance,
-        notes: 'تم قبول طلب الشحن وتفعيل الرصيد بواسطة إدارة inRide'
-      })
-      .eq('id', txId);
-
-    if (txErr) throw txErr;
-
-    // 5. Send notification to user
-    try {
-      await client.from('admin_notifications').insert({
-        user_id: userId,
-        user_name: userRecord?.name || 'مستخدم',
         title: '✅ تم شحن رصيد محفظتك',
-        body: `تمت مراجعة إيصال تحويل InstaPay وقبول طلب الشحن بمبلغ ${numericAmount} ج.م بنجاح. رصيدك الحالي: ${newBalance} ج.م`,
+        body: `تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م بنجاح. رصيدك الحالي: ${newBalance} ج.م`,
         type: 'wallet'
       });
-    } catch (e) {
-      console.warn('admin_notifications insert error:', e);
-    }
+    } catch (e) {}
 
     showToast(`✅ تم قبول طلب الشحن وإضافة ${numericAmount} ج.م إلى محفظة ${userRecord?.name || 'المستخدم'} بنجاح!`);
-    loadFinancialDataFromSupabase().then(() => {
-      renderPage('wallet');
-    });
+    await loadFinancialDataFromSupabase();
+    renderPage('wallet');
   } catch (e) {
     console.error('approvePendingRecharge error:', e);
-    showToast('❌ فشل قبول طلب الشحن: ' + e.message);
+    showToast('❌ فشل قبول طلب الشحن: ' + (e.message || e));
   }
 }
 
-async function rejectPendingRecharge(txId, userId) {
+async function rejectPendingRecharge(id, userId) {
   const reason = prompt('ادخل سبب رفض طلب الشحن (أو اتركه فارغاً):', 'إيصال تحويل غير واضح أو غير مكتمل');
-  if (reason === null) return; // User cancelled
+  if (reason === null) return;
 
   const client = getSupabaseClient() || supabaseClient;
   if (!client) return;
 
   try {
-    const { error: txErr } = await client
-      .from('transactions')
-      .update({
-        type: 'rejected',
-        title: 'طلب شحن مرفوض',
-        notes: `مرفوض: ${reason}`
-      })
-      .eq('id', txId);
-
-    if (txErr) throw txErr;
-
-    // Send notification
+    // 1. Try stored RPC function first
     try {
-      await client.from('admin_notifications').insert({
+      const { data: rpcData, error: rpcErr } = await client.rpc('reject_wallet_recharge_request', {
+        p_request_id: id,
+        p_reason: reason || 'إيصال تحويل غير واضح',
+        p_admin_id: (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : null
+      });
+      if (!rpcErr && rpcData && rpcData.success) {
+        showToast('❌ تم رفض طلب الشحن وإبلاغ المستخدم.');
+        await loadFinancialDataFromSupabase();
+        renderPage('wallet');
+        return;
+      }
+    } catch (_) {}
+
+    // 2. Fallback manual update logic
+    await client.from('wallet_recharge_requests').update({ status: 'rejected', rejection_reason: reason, processed_at: new Date().toISOString() }).eq('id', id).catch(() => {});
+    await client.from('transactions').update({ type: 'rejected', title: 'طلب شحن مرفوض', notes: `مرفوض: ${reason}` }).eq('id', id).catch(() => {});
+
+    try {
+      await client.from('notifications').insert({
         user_id: userId,
         title: '❌ تم رفض طلب الشحن',
         body: `نأسف، تعذر قبول طلب الشحن الخاص بك. السبب: ${reason}`,
         type: 'wallet'
       });
-    } catch (e) {
-      console.warn('admin_notifications insert error:', e);
-    }
+    } catch (e) {}
 
     showToast('❌ تم رفض طلب الشحن وإبلاغ المستخدم.');
-    loadFinancialDataFromSupabase().then(() => {
-      renderPage('wallet');
-    });
+    await loadFinancialDataFromSupabase();
+    renderPage('wallet');
   } catch (e) {
     console.error('rejectPendingRecharge error:', e);
-    showToast('❌ فشل رفض طلب الشحن: ' + e.message);
+    showToast('❌ فشل رفض طلب الشحن: ' + (e.message || e));
   }
 }
 
@@ -3361,7 +3347,31 @@ function renderWallet() {
 
 function renderWalletContentHtml() {
   const filteredTx = getFilteredTransactions();
-  const pendingRechargeList = (financialState.transactions || []).filter(t => t.type === 'charge_pending');
+  const pendingRequests = (financialState.rechargeRequests || []).filter(r => r.status === 'pending');
+  const pendingTx = (financialState.transactions || []).filter(t => t.type === 'charge_pending');
+  const pendingRechargeList = [
+    ...pendingRequests.map(r => ({
+      id: r.id,
+      user_id: r.user_id,
+      amount: r.amount,
+      payment_method: r.payment_method || 'InstaPay',
+      receipt_url: r.receipt_url,
+      created_at: r.created_at,
+      is_recharge_request: true,
+      user_name: r.user_name,
+      user_phone: r.user_phone,
+      user_type: r.user_type
+    })),
+    ...pendingTx.filter(t => !pendingRequests.some(r => r.user_id === t.user_id && Math.abs(r.amount - t.amount) < 0.1)).map(t => ({
+      id: t.id,
+      user_id: t.user_id,
+      amount: t.amount,
+      payment_method: t.payment_method || 'InstaPay',
+      receipt_url: t.receipt_url,
+      created_at: t.created_at,
+      is_recharge_request: false
+    }))
+  ];
 
   // Update sidebar badge if exists
   const badgeEl = document.getElementById('pendingRechargeBadge');

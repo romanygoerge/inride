@@ -425,7 +425,7 @@ class _WalletPageState extends State<WalletPage> {
                                 return;
                               }
 
-                              Navigator.pop(context); // Close dialog
+                              Navigator.pop(context); // Close step dialog
 
                               // Show loading spinner
                               showDialog(
@@ -439,7 +439,7 @@ class _WalletPageState extends State<WalletPage> {
                                 await state.chargeWalletPending(finalAmt, receiptImagePath!, 'InstaPay');
 
                                 if (context.mounted) {
-                                  Navigator.pop(context); // Close loading spinner
+                                  Navigator.of(context, rootNavigator: true).pop(); // Close loading spinner safely
                                   
                                   // Show Success Overlay
                                   showDialog(
@@ -488,7 +488,7 @@ class _WalletPageState extends State<WalletPage> {
                                 }
                               } catch (e) {
                                 if (context.mounted) {
-                                  Navigator.pop(context); // Close loading spinner
+                                  Navigator.of(context, rootNavigator: true).pop(); // Close loading spinner safely
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text('فشل تقديم طلب الشحن: $e', style: GoogleFonts.cairo()),

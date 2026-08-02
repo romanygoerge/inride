@@ -101,17 +101,23 @@ class ProfileHeaderCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.amber.withValues(alpha: 0.12),
+              color: (state.userTotalRatingsCount > 0 ? Colors.amber : Colors.blueGrey).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+              border: Border.all(color: (state.userTotalRatingsCount > 0 ? Colors.amber : Colors.blueGrey).withValues(alpha: 0.3)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.star_rounded, color: Colors.amber, size: 18),
+                Icon(
+                  state.userTotalRatingsCount > 0 ? Icons.star_rounded : Icons.star_outline_rounded,
+                  color: state.userTotalRatingsCount > 0 ? Colors.amber : AppColors.textSecondary,
+                  size: 18,
+                ),
                 const SizedBox(width: 4),
                 Text(
-                  '${state.userRating > 0 ? state.userRating.toStringAsFixed(1) : "5.0"} (${state.userTotalRatingsCount} تقييم • ${state.userCompletedTripsCount} رحلة)',
+                  state.userTotalRatingsCount > 0
+                      ? '${state.userRating.toStringAsFixed(1)} (${state.userTotalRatingsCount} تقييم • ${state.userCompletedTripsCount} رحلة)'
+                      : 'جديد (بدون تقييم • ${state.userCompletedTripsCount} رحلة)',
                   style: GoogleFonts.cairo(
                     fontSize: 12.5,
                     fontWeight: FontWeight.bold,

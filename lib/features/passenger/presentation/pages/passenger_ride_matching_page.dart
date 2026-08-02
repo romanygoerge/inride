@@ -582,10 +582,16 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                             ),
                           ),
                           const SizedBox(width: 6),
-                          const Icon(Icons.star_rounded, color: Colors.amber, size: 16),
+                          Icon(
+                            offer.driver.ratingCount > 0 ? Icons.star_rounded : Icons.star_outline_rounded,
+                            color: offer.driver.ratingCount > 0 ? Colors.amber : AppColors.textSecondary,
+                            size: 16,
+                          ),
                           const SizedBox(width: 2),
                           Text(
-                            '${offer.driver.rating.toStringAsFixed(1)}${offer.driver.ratingCount > 0 ? " (${offer.driver.ratingCount} تقييم)" : ""}',
+                            offer.driver.ratingCount > 0
+                                ? '${offer.driver.rating.toStringAsFixed(1)} (${offer.driver.ratingCount} تقييم)'
+                                : 'جديد (بدون تقييم)',
                             style: GoogleFonts.cairo(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,

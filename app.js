@@ -1515,11 +1515,18 @@ function renderDrivers() {
                     ${driver.licensePlate ? `<span class="font-outfit fw-700" style="font-size:12px;">${driver.licensePlate}</span>` : '—'}
                   </td>
                   <td>
-                    <div class="rating" title="متوسط التقييمات وإجمالي التقييمات والرحلات" style="white-space:nowrap; display:inline-flex; align-items:center; gap:4px; direction:rtl;">
-                      <i class="ri-star-fill" style="color:var(--warning);"></i>
-                      <span style="font-weight:700;">${driver.rating}</span>
-                      <span style="font-size:11px; color:var(--text-light); white-space:nowrap;">(${driver.ratingCount || 0} تقييم)</span>
-                    </div>
+                    ${(driver.ratingCount && driver.ratingCount > 0) ? `
+                      <div class="rating" title="متوسط التقييمات وإجمالي التقييمات" style="white-space:nowrap; display:inline-flex; align-items:center; gap:4px; direction:rtl;">
+                        <i class="ri-star-fill" style="color:var(--warning);"></i>
+                        <span style="font-weight:700;">${driver.rating}</span>
+                        <span style="font-size:11px; color:var(--text-light); white-space:nowrap;">(${driver.ratingCount} تقييم)</span>
+                      </div>
+                    ` : `
+                      <div class="rating-empty" title="لم يتلق هذا الكابتن أي تقييمات حتى الآن" style="white-space:nowrap; display:inline-flex; align-items:center; gap:4px; color:var(--text-light);">
+                        <i class="ri-star-line" style="color:var(--text-light); font-size:14px;"></i>
+                        <span style="font-size:11px; font-weight:600; color:var(--text-light);">جديد (بدون تقييم)</span>
+                      </div>
+                    `}
                   </td>
                   <td><span class="font-outfit fw-700" style="white-space:nowrap;">${driver.totalTrips} رحلة</span></td>
                   <td>
@@ -1950,11 +1957,18 @@ function renderPassengers() {
                   </td>
                   <td><span style="font-size:12px;font-weight:600;direction:ltr;display:inline-block;">${p.phone}</span></td>
                   <td>
-                    <div class="rating" title="متوسط التقييمات وإجمالي التقييمات والرحلات" style="white-space:nowrap; display:inline-flex; align-items:center; gap:4px; direction:rtl;">
-                      <i class="ri-star-fill" style="color:var(--warning);"></i>
-                      <span style="font-weight:700;">${p.rating}</span>
-                      <span style="font-size:11px; color:var(--text-light); white-space:nowrap;">(${p.ratingCount || 0} تقييم)</span>
-                    </div>
+                    ${(p.ratingCount && p.ratingCount > 0) ? `
+                      <div class="rating" title="متوسط التقييمات وإجمالي التقييمات" style="white-space:nowrap; display:inline-flex; align-items:center; gap:4px; direction:rtl;">
+                        <i class="ri-star-fill" style="color:var(--warning);"></i>
+                        <span style="font-weight:700;">${p.rating}</span>
+                        <span style="font-size:11px; color:var(--text-light); white-space:nowrap;">(${p.ratingCount} تقييم)</span>
+                      </div>
+                    ` : `
+                      <div class="rating-empty" title="لم يتلق هذا الراكب أي تقييمات حتى الآن" style="white-space:nowrap; display:inline-flex; align-items:center; gap:4px; color:var(--text-light);">
+                        <i class="ri-star-line" style="color:var(--text-light); font-size:14px;"></i>
+                        <span style="font-size:11px; font-weight:600; color:var(--text-light);">جديد (بدون تقييم)</span>
+                      </div>
+                    `}
                   </td>
                   <td><span class="font-outfit fw-700" style="white-space:nowrap;">${p.totalTrips} رحلة</span></td>
                   <td><span style="font-size:12px;color:var(--text-light);font-weight:600;">${p.joinDate}</span></td>
@@ -2271,9 +2285,15 @@ function showEditUserModal(uid, role) {
 
         <div>
           <label style="display:block; margin-bottom:6px; font-weight:700; font-size:13px; color:var(--text-primary);">التقييم المستلم (محسوب تلقائياً)</label>
-          <div style="padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary); font-weight:800; color:var(--warning); display:flex; align-items:center; gap:6px;">
-            <i class="ri-star-fill"></i> ${(parseFloat(user.rating) || 5.0).toFixed(1)} <span style="font-size:11px; color:var(--text-light); font-weight:normal;">(${user.ratingCount || 0} تقييم • ${user.totalTrips || 0} رحلة - محمي ولا يمكن تعديله يدوياً)</span>
-          </div>
+          ${(user.ratingCount && user.ratingCount > 0) ? `
+            <div style="padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary); font-weight:800; color:var(--warning); display:flex; align-items:center; gap:6px;">
+              <i class="ri-star-fill"></i> ${(parseFloat(user.rating) || 5.0).toFixed(1)} <span style="font-size:11px; color:var(--text-light); font-weight:normal;">(${user.ratingCount} تقييم • ${user.totalTrips || 0} رحلة - محمي ولا يمكن تعديله يدوياً)</span>
+            </div>
+          ` : `
+            <div style="padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary); font-weight:600; color:var(--text-light); display:flex; align-items:center; gap:6px;">
+              <i class="ri-star-line"></i> جديد (بدون تقييم) <span style="font-size:11px; color:var(--text-light); font-weight:normal;">(لم يتلق أي تقييمات بعد • ${user.totalTrips || 0} رحلة مكتملة)</span>
+            </div>
+          `}
         </div>
 
         ${isDriver ? `
@@ -3185,9 +3205,15 @@ async function loadCommMessagesThread(userId) {
             <span class="badge" style="font-size:11px;background:${isDriver ? '#E0F2FE' : '#F3E8FF'};color:${isDriver ? '#0369A1' : '#7E22CE'};font-weight:700;">
               ${roleText}
             </span>
-            <span style="font-size:12px;font-weight:800;color:var(--warning);display:flex;align-items:center;gap:3px;" title="التقييمات والرحلات">
-              <i class="ri-star-fill"></i> ${ratingVal} (${userObj?.ratingCount || 0} تقييم • ${userObj?.totalTrips || 0} رحلة)
-            </span>
+            ${(userObj?.ratingCount && userObj.ratingCount > 0) ? `
+              <span style="font-size:12px;font-weight:800;color:var(--warning);display:flex;align-items:center;gap:3px;" title="التقييمات والرحلات">
+                <i class="ri-star-fill"></i> ${ratingVal} (${userObj.ratingCount} تقييم • ${userObj.totalTrips || 0} رحلة)
+              </span>
+            ` : `
+              <span style="font-size:11px;font-weight:600;color:var(--text-light);display:flex;align-items:center;gap:3px;" title="التقييمات والرحلات">
+                <i class="ri-star-line"></i> جديد (بدون تقييم • ${userObj?.totalTrips || 0} رحلة)
+              </span>
+            `}
           </div>
           <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">
             📱 ${userPhone} • ID: ${userId.substring(0, 8).toUpperCase()}

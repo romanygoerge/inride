@@ -2375,7 +2375,10 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _updateAverageRating(String userId) async {
     try {
-      final ratingsRes = await _supabase.from('ratings').select('rating').eq('receiver_id', userId);
+      final ratingsRes = await _supabase
+          .from('ratings')
+          .select('rating')
+          .or('receiver_id.eq.$userId,to_user_id.eq.$userId');
       final list = List<Map<String, dynamic>>.from(ratingsRes as List);
       if (list.isNotEmpty) {
         double total = 0;
@@ -2396,6 +2399,21 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           notifyListeners();
         }
       }
+      
+      // Also fetch completed trips count
+      try {
+        final isDriver = currentRole == UserRole.driver;
+        final tripsRes = await _supabase
+            .from('ride_requests')
+            .select('id')
+            .eq(isDriver ? 'driver_id' : 'passenger_id', userId)
+            .or('status.eq.Completed,status.eq.completed,status.eq.FINISHED,status.eq.finished');
+        final tripsList = List<Map<String, dynamic>>.from(tripsRes as List);
+        if (userId == userUid) {
+          userCompletedTripsCount = tripsList.length;
+          notifyListeners();
+        }
+      } catch (_) {}
     } catch (e) {
       debugPrint('Error updating average rating: $e');
     }

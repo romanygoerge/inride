@@ -140,37 +140,54 @@ async function initDriversRealtimeSync() {
             } catch (_) {}
           }
 
-          // Count completed trips
+          // Count completed trips (historical from registration + ride_requests)
           let completedTripsCount = 0;
           try {
-            const { count } = await supabaseClient
+            const { data: driverTrips } = await supabaseClient
               .from('ride_requests')
-              .select('*', { count: 'exact', head: true })
-              .eq('driver_id', drv.id)
-              .eq('status', 'Completed');
-            completedTripsCount = count || 0;
+              .select('id, status')
+              .or(`driver_id.eq.${drv.id},driver_id.eq.${userObj?.id || drv.id}`);
+            
+            if (driverTrips && Array.isArray(driverTrips)) {
+              completedTripsCount = driverTrips.filter(t => {
+                const st = (t.status || '').toLowerCase();
+                return st === 'completed' || st === 'finished';
+              }).length;
+            }
           } catch (_) {}
 
-          // Compute average rating from real ratings table
+          const dbDriverTrips = parseInt(drv.total_trips || drv.completed_trips || userObj?.total_trips || userObj?.completed_trips || 0);
+          const realTotalTrips = Math.max(completedTripsCount, dbDriverTrips);
+
+          // Compute average rating from real ratings table + user/driver rating fallback
           let avgRating = 5.0;
           let ratingCount = 0;
+          let ratingsData = null;
           try {
-            const { data: ratingsData } = await supabaseClient
+            const { data: rData } = await supabaseClient
               .from('ratings')
               .select('rating')
-              .eq('receiver_id', drv.id);
+              .or(`receiver_id.eq.${drv.id},to_user_id.eq.${drv.id},receiver_id.eq.${userObj?.id || drv.id},to_user_id.eq.${userObj?.id || drv.id}`);
 
+            ratingsData = rData;
             if (ratingsData && ratingsData.length > 0) {
               const total = ratingsData.reduce((acc, r) => acc + (parseFloat(r.rating) || 0), 0);
               avgRating = parseFloat((total / ratingsData.length).toFixed(1));
               ratingCount = ratingsData.length;
-            } else {
-              const dbRating = drv.rating || userObj?.rating;
-              if (dbRating !== undefined && dbRating !== null && !isNaN(parseFloat(dbRating)) && parseFloat(dbRating) > 0) {
-                avgRating = parseFloat(parseFloat(dbRating).toFixed(1));
-              }
             }
           } catch (_) {}
+
+          const dbRatingCount = parseInt(drv.rating_count || drv.total_ratings || userObj?.rating_count || userObj?.total_ratings || 0);
+          if (ratingCount === 0 && dbRatingCount > 0) {
+            ratingCount = dbRatingCount;
+          }
+
+          const dbRating = drv.rating || userObj?.rating;
+          if (dbRating !== undefined && dbRating !== null && !isNaN(parseFloat(dbRating)) && parseFloat(dbRating) > 0) {
+            if (!ratingsData || ratingsData.length === 0) {
+              avgRating = parseFloat(parseFloat(dbRating).toFixed(1));
+            }
+          }
           let ratingDisplay = avgRating.toFixed(1);
 
           let statusAr = 'قيد المراجعة';
@@ -196,7 +213,7 @@ async function initDriversRealtimeSync() {
             status: drv.verification_status || 'submitted',
             statusAr: statusAr,
             rejectionReason: drv.rejection_reason || '',
-            totalTrips: completedTripsCount || drv.total_trips || 0,
+            totalTrips: realTotalTrips,
             earnings: drv.total_earnings || 0,
             isOnline: drv.is_online || false,
             joinDate: drv.created_at ? new Date(drv.created_at).toLocaleDateString('ar-EG') : '2026/01/10',
@@ -1498,13 +1515,13 @@ function renderDrivers() {
                     ${driver.licensePlate ? `<span class="font-outfit fw-700" style="font-size:12px;">${driver.licensePlate}</span>` : '—'}
                   </td>
                   <td>
-                    <div class="rating" title="متوسط التقييمات وإجمالي التقييمات والرحلات">
-                      <i class="ri-star-fill"></i>
-                      <span>${driver.rating}</span>
-                      <span style="font-size:11px; color:var(--text-light); margin-right:4px;">(${driver.ratingCount || 0} تقييم)</span>
+                    <div class="rating" title="متوسط التقييمات وإجمالي التقييمات والرحلات" style="white-space:nowrap; display:inline-flex; align-items:center; gap:4px; direction:rtl;">
+                      <i class="ri-star-fill" style="color:var(--warning);"></i>
+                      <span style="font-weight:700;">${driver.rating}</span>
+                      <span style="font-size:11px; color:var(--text-light); white-space:nowrap;">(${driver.ratingCount || 0} تقييم)</span>
                     </div>
                   </td>
-                  <td><span class="font-outfit fw-700">${driver.totalTrips} رحلة</span></td>
+                  <td><span class="font-outfit fw-700" style="white-space:nowrap;">${driver.totalTrips} رحلة</span></td>
                   <td>
                     <span class="status-badge ${driver.status}">
                       <span class="status-dot"></span>
@@ -1933,13 +1950,13 @@ function renderPassengers() {
                   </td>
                   <td><span style="font-size:12px;font-weight:600;direction:ltr;display:inline-block;">${p.phone}</span></td>
                   <td>
-                    <div class="rating" title="متوسط التقييمات وإجمالي التقييمات والرحلات">
-                      <i class="ri-star-fill"></i>
-                      <span>${p.rating}</span>
-                      <span style="font-size:11px; color:var(--text-light); margin-right:4px;">(${p.ratingCount || 0} تقييم)</span>
+                    <div class="rating" title="متوسط التقييمات وإجمالي التقييمات والرحلات" style="white-space:nowrap; display:inline-flex; align-items:center; gap:4px; direction:rtl;">
+                      <i class="ri-star-fill" style="color:var(--warning);"></i>
+                      <span style="font-weight:700;">${p.rating}</span>
+                      <span style="font-size:11px; color:var(--text-light); white-space:nowrap;">(${p.ratingCount || 0} تقييم)</span>
                     </div>
                   </td>
-                  <td><span class="font-outfit fw-700">${p.totalTrips} رحلة</span></td>
+                  <td><span class="font-outfit fw-700" style="white-space:nowrap;">${p.totalTrips} رحلة</span></td>
                   <td><span style="font-size:12px;color:var(--text-light);font-weight:600;">${p.joinDate}</span></td>
                   <td>
                     <span class="status-badge ${getStatusClass(p.status)}">
@@ -6169,14 +6186,18 @@ function initSupabaseSync() {
         const pId = req.passenger_id || req.passengerId;
         if (!pId) return;
         if (!statsMap[pId]) statsMap[pId] = { trips: 0, spent: 0 };
-        if (req.status === 'Completed') {
+        const st = (req.status || '').toLowerCase();
+        if (st === 'completed' || st === 'finished') {
           statsMap[pId].trips += 1;
           statsMap[pId].spent += (parseFloat(req.offered_fare || req.offeredFare || 0));
         }
       });
       mockData.passengers.forEach(p => {
         const s = statsMap[p.uid] || { trips: 0, spent: 0 };
-        p.totalTrips = s.trips;
+        const userObj = usersMap[p.uid] || {};
+        const pRec = passengersMap[p.uid] || {};
+        const dbTrips = parseInt(userObj.total_trips || userObj.completed_trips || pRec.total_trips || pRec.completed_trips || 0);
+        p.totalTrips = Math.max(s.trips, dbTrips);
         p.totalSpent = s.spent;
       });
     };
@@ -6199,15 +6220,16 @@ function initSupabaseSync() {
         const userRatingsMap = {};
         const userRatingsCountMap = {};
         try {
-          const { data: allRatings } = await supabaseClient.from('ratings').select('receiver_id, rating');
+          const { data: allRatings } = await supabaseClient.from('ratings').select('receiver_id, to_user_id, rating');
           if (allRatings && Array.isArray(allRatings)) {
             const userSumMap = {};
             const userCountMap = {};
             allRatings.forEach(r => {
-              if (r.receiver_id) {
+              const targetUid = r.receiver_id || r.to_user_id;
+              if (targetUid) {
                 const val = parseFloat(r.rating) || 0;
-                userSumMap[r.receiver_id] = (userSumMap[r.receiver_id] || 0) + val;
-                userCountMap[r.receiver_id] = (userCountMap[r.receiver_id] || 0) + 1;
+                userSumMap[targetUid] = (userSumMap[targetUid] || 0) + val;
+                userCountMap[targetUid] = (userCountMap[targetUid] || 0) + 1;
               }
             });
             Object.keys(userCountMap).forEach(uid => {
@@ -6239,6 +6261,11 @@ function initSupabaseSync() {
               ? userRatingsMap[data.id]
               : (data.rating ? parseFloat(parseFloat(data.rating).toFixed(1)) : 5.0);
 
+            const dbRatingCount = parseInt(data.rating_count || data.ratingCount || data.total_ratings || pRecord.rating_count || 0);
+            const realRatingCount = (userRatingsCountMap[data.id] !== undefined && userRatingsCountMap[data.id] > 0)
+              ? userRatingsCountMap[data.id]
+              : dbRatingCount;
+
             passengers.push({
               id: data.id.substring(0, 8).toUpperCase(),
               uid: data.id,
@@ -6247,7 +6274,7 @@ function initSupabaseSync() {
               email: data.email || pRecord.email || '—',
               address: data.address || pRecord.address || '—',
               rating: realRating,
-              ratingCount: userRatingsCountMap[data.id] || 0,
+              ratingCount: realRatingCount,
               totalTrips: 0,
               totalSpent: 0,
               joinDate: dateObj.toLocaleDateString('ar-EG'),

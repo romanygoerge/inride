@@ -2847,17 +2847,21 @@ function openDirectUserChat(userId, userName, role) {
 }
 
 function renderCommunication() {
-  const rechargeList = financialState.rechargeRequests || [];
-  const pendingCount = rechargeList.filter(r => r.status === 'pending').length;
+  try {
+    const rechargeList = (typeof financialState !== 'undefined' && financialState && financialState.rechargeRequests)
+      ? financialState.rechargeRequests
+      : (mockData.rechargeRequests || []);
+    const pendingCount = Array.isArray(rechargeList) ? rechargeList.filter(r => r && r.status === 'pending').length : 0;
 
-  const filteredRecharge = rechargeList.filter(r => {
-    if (rechargeFilterUserType === 'rider') return r.user_type === 'rider';
-    if (rechargeFilterUserType === 'driver') return r.user_type === 'driver';
-    return true;
-  });
+    const filteredRecharge = Array.isArray(rechargeList) ? rechargeList.filter(r => {
+      if (!r) return false;
+      if (rechargeFilterUserType === 'rider') return r.user_type === 'rider';
+      if (rechargeFilterUserType === 'driver') return r.user_type === 'driver';
+      return true;
+    }) : [];
 
-  return `
-    <div class="page-section">
+    return `
+      <div class="page-section">
       <div class="card" style="margin-bottom:16px;padding:12px 16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -3041,6 +3045,18 @@ function renderCommunication() {
       `)}
     </div>
   `;
+  } catch (err) {
+    console.error('Error rendering communication page:', err);
+    return `
+      <div class="page-section">
+        <div class="card" style="padding:24px;text-align:center;">
+          <h3 style="color:var(--error);"><i class="ri-error-warning-line"></i> تعذر تحميل مركز التواصل والمحادثات</h3>
+          <p style="font-size:13px;color:var(--text-secondary);">${err.message || err}</p>
+          <button class="btn btn-primary" onclick="renderPage('communication')">إعادة المحاولة</button>
+        </div>
+      </div>
+    `;
+  }
 }
 
 function renderCommConversationsList() {

@@ -898,6 +898,9 @@ function renderPage(page) {
       break;
     case 'communication':
       container.innerHTML = renderCommunication();
+      if (currentCommunicationTab === 'chat') {
+        initCommChatSync();
+      }
       break;
     case 'messages':
       container.innerHTML = renderMessages();
@@ -3131,6 +3134,15 @@ function renderCommConversationsList() {
 
 async function initCommChatSync() {
   renderCommConversationsList();
+  if (!commActiveUserId) {
+    if (mockData.drivers && mockData.drivers.length > 0) {
+      commActiveUserId = mockData.drivers[0].uid;
+      commActiveUserRole = 'driver';
+    } else if (mockData.passengers && mockData.passengers.length > 0) {
+      commActiveUserId = mockData.passengers[0].uid;
+      commActiveUserRole = 'rider';
+    }
+  }
   if (commActiveUserId) {
     loadCommMessagesThread(commActiveUserId);
   }

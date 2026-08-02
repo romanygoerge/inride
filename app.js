@@ -884,12 +884,12 @@ function renderPage(page) {
     case 'driver-profile':
       container.innerHTML = renderDriverProfile();
       initProfileChatSync(activeProfileUid, 'driver');
-      loadProfileRatings(activeProfileUid);
+      loadProfileRatings(activeProfileUid, 'driver');
       break;
     case 'passenger-profile':
       container.innerHTML = renderPassengerProfile();
       initProfileChatSync(activeProfileUid, 'rider');
-      loadProfileRatings(activeProfileUid);
+      loadProfileRatings(activeProfileUid, 'rider');
       break;
     case 'wallet':
       container.innerHTML = renderWallet();
@@ -2786,6 +2786,7 @@ function closeReceiptModal() {
   if (modal) modal.style.display = 'none';
 }
 
+
 let currentCommunicationTab = 'chat';
 let rechargeFilterUserType = 'all';
 let commActiveUserId = null;
@@ -3343,6 +3344,7 @@ function sendCommQuickReply(text) {
     sendCommChatMessage();
   }
 }
+
 
 function renderWallet() {
   if (!financialState.isLoaded) {
@@ -6269,26 +6271,37 @@ function initSupabaseSync() {
 
       const { data: usersData, error } = await supabaseClient.from('users').select('*');
       if (!error && usersData) {
-        // Fetch ratings to calculate exact real ratings
-        const userRatingsMap = {};
-        const userRatingsCountMap = {};
+        // Fetch ratings to calculate exact real ratings separated by role
+        const riderRatingsMap = {};
+        const riderRatingsCountMap = {};
+        const driverRatingsMap = {};
+        const driverRatingsCountMap = {};
         try {
-          const { data: allRatings } = await supabaseClient.from('ratings').select('receiver_id, to_user_id, rating');
+          const { data: allRatings } = await supabaseClient.from('ratings').select('receiver_id, receiver_role, rating');
           if (allRatings && Array.isArray(allRatings)) {
-            const userSumMap = {};
-            const userCountMap = {};
+            const riderSumMap = {}, riderCountMap = {};
+            const driverSumMap = {}, driverCountMap = {};
             allRatings.forEach(r => {
-              const targetUid = r.receiver_id || r.to_user_id;
+              const targetUid = r.receiver_id;
               if (targetUid) {
                 const val = parseFloat(r.rating) || 0;
-                userSumMap[targetUid] = (userSumMap[targetUid] || 0) + val;
-                userCountMap[targetUid] = (userCountMap[targetUid] || 0) + 1;
+                const role = (r.receiver_role || 'rider').toLowerCase();
+                if (role === 'rider' || role === 'passenger') {
+                  riderSumMap[targetUid] = (riderSumMap[targetUid] || 0) + val;
+                  riderCountMap[targetUid] = (riderCountMap[targetUid] || 0) + 1;
+                } else if (role === 'driver') {
+                  driverSumMap[targetUid] = (driverSumMap[targetUid] || 0) + val;
+                  driverCountMap[targetUid] = (driverCountMap[targetUid] || 0) + 1;
+                }
               }
             });
-            Object.keys(userCountMap).forEach(uid => {
-              const avg = userSumMap[uid] / userCountMap[uid];
-              userRatingsMap[uid] = parseFloat(avg.toFixed(1));
-              userRatingsCountMap[uid] = userCountMap[uid];
+            Object.keys(riderCountMap).forEach(uid => {
+              riderRatingsMap[uid] = parseFloat((riderSumMap[uid] / riderCountMap[uid]).toFixed(1));
+              riderRatingsCountMap[uid] = riderCountMap[uid];
+            });
+            Object.keys(driverCountMap).forEach(uid => {
+              driverRatingsMap[uid] = parseFloat((driverSumMap[uid] / driverCountMap[uid]).toFixed(1));
+              driverRatingsCountMap[uid] = driverCountMap[uid];
             });
           }
         } catch (_) {}
@@ -6311,14 +6324,14 @@ function initSupabaseSync() {
           if (data.role === 'rider' || !data.role) {
             const dateObj = new Date(data.created_at || Date.now());
             const dbRatingCount = parseInt(data.rating_count || data.ratingCount || data.total_ratings || pRecord.rating_count || 0);
-            const realRatingCount = (userRatingsCountMap[data.id] !== undefined && userRatingsCountMap[data.id] > 0)
-              ? userRatingsCountMap[data.id]
+            const realRatingCount = (riderRatingsCountMap[data.id] !== undefined)
+              ? riderRatingsCountMap[data.id]
               : dbRatingCount;
 
             const hasRatings = realRatingCount > 0;
             const realRatingVal = hasRatings
-              ? (userRatingsMap[data.id] !== undefined
-                  ? userRatingsMap[data.id]
+              ? (riderRatingsMap[data.id] !== undefined
+                  ? riderRatingsMap[data.id]
                   : (data.rating ? parseFloat(parseFloat(data.rating).toFixed(1)) : 0))
               : 0;
 
@@ -6334,7 +6347,7 @@ function initSupabaseSync() {
               rating: realRatingDisplay,
               ratingNum: realRatingVal,
               ratingCount: realRatingCount,
-              totalTrips: 0,
+              totalTrips: parseInt(data.total_trips || pRecord.total_trips || 0),
               totalSpent: 0,
               joinDate: dateObj.toLocaleDateString('ar-EG'),
               status: data.status || 'active',
@@ -6628,6 +6641,8 @@ function viewUserProfile(uid, role) {
   activeProfileUid = uid;
   activeProfileRole = role;
   navigateTo(role === 'driver' ? 'driver-profile' : 'passenger-profile');
+  // Load initial data for profile
+  setTimeout(() => loadProfileRatings(uid, role), 100);
 }
 
 function renderDriverProfile() {
@@ -7028,45 +7043,45 @@ function renderPassengerProfile() {
 }
 
 // ---- RATINGS & REVIEWS MODULE ----
-async function loadProfileRatings(uid) {
+async function loadProfileRatings(uid, role = 'rider') {
   const container = document.getElementById('profileRatingsContainer');
   if (!container || !uid) return;
   try {
+    const roleFilter = (role === 'driver') ? ['driver'] : ['rider', 'passenger'];
     const { data: ratingsData, error } = await supabaseClient
       .from('ratings')
       .select('*')
       .eq('receiver_id', uid)
+      .in('receiver_role', roleFilter)
       .order('created_at', { ascending: false });
 
     let list = (ratingsData && ratingsData.length > 0) ? ratingsData : [];
 
-    // If no explicit rating entries in ratings table, construct from user/driver profile
-    if (list.length === 0) {
-      let targetUser = null;
-      if (typeof mockData !== 'undefined') {
-        targetUser = (mockData.drivers && mockData.drivers.find(d => d.uid === uid)) ||
-                     (mockData.passengers && mockData.passengers.find(p => p.uid === uid));
-      }
-      const ratingVal = targetUser ? (parseFloat(targetUser.rating) || 5.0) : 5.0;
-      list.push({
-        id: 'synth_' + uid.substring(0, 6),
-        sender_name: 'تقييم الحساب الأساسي',
-        sender_role: 'system',
-        rating: ratingVal,
-        comment: 'التقييم المسجل المعتمد للحساب في النظام',
-        created_at: targetUser?.joinDate ? new Date().toISOString() : new Date().toISOString(),
-      });
+    // Resolve sender names if available
+    const senderIds = list.map(r => r.sender_id).filter(id => id);
+    let sendersMap = {};
+    if (senderIds.length > 0) {
+      try {
+        const { data: senders } = await supabaseClient
+          .from('users')
+          .select('id, name')
+          .in('id', senderIds);
+        if (senders) {
+          senders.forEach(s => { sendersMap[s.id] = s.name; });
+        }
+      } catch (_) {}
     }
 
+    const hasRatings = list.length > 0;
     const total = list.reduce((acc, r) => acc + (parseFloat(r.rating) || 0), 0);
-    const avg = (total / list.length).toFixed(1);
+    const avg = hasRatings ? (total / list.length).toFixed(1) : 'جديد (بدون تقييم)';
 
     let html = `
       <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg-primary);padding:16px;border-radius:var(--radius-md);margin-bottom:16px;border:1px solid var(--border-color);">
         <div>
-          <span style="font-size:12px;color:var(--text-secondary);font-weight:700;">متوسط التقييم العام المستلم</span>
+          <span style="font-size:12px;color:var(--text-secondary);font-weight:700;">متوسط التقييم العام المستلم (${role === 'driver' ? 'كابتن' : 'راكب'})</span>
           <div style="font-size:24px;font-weight:900;color:var(--warning);display:flex;align-items:center;gap:6px;">
-            <i class="ri-star-fill"></i> ${avg} <span style="font-size:13px;color:var(--text-light);font-weight:normal;">/ 5.0</span>
+            <i class="${hasRatings ? 'ri-star-fill' : 'ri-star-line'}"></i> ${avg} ${hasRatings ? '<span style="font-size:13px;color:var(--text-light);font-weight:normal;">/ 5.0</span>' : ''}
           </div>
         </div>
         <div style="text-align:left;">
@@ -7077,33 +7092,56 @@ async function loadProfileRatings(uid) {
       <div style="display:flex;flex-direction:column;gap:12px;max-height:400px;overflow-y:auto;padding-left:4px;">
     `;
 
-    list.forEach(r => {
-      const starVal = parseFloat(r.rating) || 5.0;
-      const dateStr = r.created_at ? new Date(r.created_at).toLocaleString('ar-EG') : '—';
-      const commentText = (r.comment && r.comment.trim() !== '' && r.comment !== 'بدون تعليق') ? r.comment : 'بدون تعليق نصي';
-      const senderName = r.sender_name || 'مستخدم';
-      const senderRole = r.sender_role === 'driver' ? 'كابتن' : (r.sender_role === 'rider' ? 'راكب' : (r.sender_role === 'system' ? 'النظام' : 'مُقيّم'));
-
-      let starsHtml = '';
-      for (let i = 1; i <= 5; i++) {
-        if (i <= Math.round(starVal)) {
-          starsHtml += `<i class="ri-star-fill" style="color:var(--warning);"></i>`;
-        } else {
-          starsHtml += `<i class="ri-star-line" style="color:var(--border-color);"></i>`;
-        }
-      }
-
+    if (!hasRatings) {
       html += `
-        <div style="padding:14px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-md);">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-weight:700;font-size:13px;">${senderName}</span>
-              <span class="vehicle-badge" style="font-size:10px;padding:2px 8px;font-weight:700;">${senderRole}</span>
+        <div style="padding:24px;text-align:center;color:var(--text-light);background:var(--bg-primary);border-radius:var(--radius-md);border:1px border-dashed var(--border-color);">
+          <i class="ri-star-line" style="font-size:32px;display:block;margin-bottom:8px;color:var(--text-light);"></i>
+          لا توجد تقييمات مسجلة لهذا الحساب كـ ${role === 'driver' ? 'كابتن' : 'راكب'} حتى الآن
+        </div>
+      `;
+    } else {
+      list.forEach(r => {
+        const starVal = parseFloat(r.rating) || 5.0;
+        const dateStr = r.created_at ? new Date(r.created_at).toLocaleString('ar-EG') : '—';
+        const commentText = (r.comment && r.comment.trim() !== '' && r.comment !== 'بدون تعليق') ? r.comment : 'بدون تعليق نصي';
+        const senderName = sendersMap[r.sender_id] || r.sender_name || 'مستخدم';
+        const senderRole = r.sender_role === 'driver' ? 'كابتن' : (r.sender_role === 'rider' ? 'راكب' : 'مُقيّم');
+
+        let starsHtml = '';
+        for (let i = 1; i <= 5; i++) {
+          if (i <= Math.round(starVal)) {
+            starsHtml += `<i class="ri-star-fill" style="color:var(--warning);"></i>`;
+          } else {
+            starsHtml += `<i class="ri-star-line" style="color:var(--border-color);"></i>`;
+          }
+        }
+
+        html += `
+          <div style="padding:14px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-md);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-weight:700;font-size:13px;">${senderName}</span>
+                <span class="vehicle-badge" style="font-size:10px;padding:2px 8px;font-weight:700;">${senderRole}</span>
+              </div>
+              <span style="font-size:11px;color:var(--text-light);direction:ltr;">${dateStr}</span>
             </div>
-            <span style="font-size:11px;color:var(--text-light);direction:ltr;">${dateStr}</span>
+            <div style="display:flex;align-items:center;gap:4px;margin-bottom:6px;">
+              ${starsHtml}
+              <span style="font-weight:700;font-size:12px;margin-right:6px;">${starVal.toFixed(1)}</span>
+            </div>
+            <p style="font-size:12px;color:var(--text-secondary);margin:0;line-height:1.4;">${commentText}</p>
           </div>
-          <div style="display:flex;align-items:center;gap:4px;margin-bottom:6px;">
-            ${starsHtml}
+        `;
+      });
+    }
+
+    html += `</div>`;
+    container.innerHTML = html;
+  } catch (err) {
+    console.error('Error loading ratings:', err);
+    container.innerHTML = `<div style="color:var(--error);padding:16px;text-align:center;">حدث خطأ أثناء تحميل التقييمات</div>`;
+  }
+}
             <span style="font-weight:800;font-size:12px;margin-right:4px;color:var(--warning);">${starVal.toFixed(1)}</span>
           </div>
           <div style="font-size:13px;color:${commentText === 'بدون تعليق نصي' ? 'var(--text-light)' : 'var(--text-primary)'};line-height:1.5;">
@@ -7867,8 +7905,6 @@ function initDashboardRealtimeTriggers() {
     .subscribe();
 }
 
-// Hook dashboard realtime triggers into startup
-if (typeof supabaseClient !== 'undefined' && supabaseClient) {
 // System communication triggers
 if (typeof supabaseClient !== 'undefined' && supabaseClient) {
   setTimeout(initDashboardRealtimeTriggers, 2000);

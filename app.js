@@ -13,6 +13,10 @@ if (typeof window.supabase !== 'undefined') {
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 }
 
+function getSupabaseClient() {
+  return supabaseClient;
+}
+
 // ============================================
 // AUTHENTICATION & AUTHORIZATION STATE (Supabase Auth)
 // ============================================
@@ -589,6 +593,19 @@ let customDateStart = '';
 let customDateEnd = '';
 let currentPages = { trips: 1, drivers: 1, passengers: 1, wallet: 1, support: 1, logs: 1 };
 const itemsPerPage = 8;
+
+// Profile & Communication System Global Variables
+let activeProfileUid = sessionStorage.getItem('admin_activeProfileUid') || null;
+let activeProfileRole = sessionStorage.getItem('admin_activeProfileRole') || null;
+let profileChatUnsubscribe = null;
+
+let commRooms = [];
+let commMessages = [];
+let selectedCommRoomId = null;
+let commRoomsSubscription = null;
+let commMessagesSubscription = null;
+let replyReplyingToId = null;
+let allSystemRatings = [];
 
 // ---- Date filtering functions ----
 // ---- UUID Generator ----
@@ -6638,10 +6655,6 @@ function exportPassengersCSV() {
 // PROFILE PAGES AND SUPPORT CHAT FOR INDIVIDUAL USERS
 // ============================================
 
-let activeProfileUid = null;
-let activeProfileRole = null;
-let profileChatUnsubscribe = null;
-
 // Initialize mock support message cache if needed
 if (!mockData.supportChats) {
   mockData.supportChats = {};
@@ -7167,10 +7180,6 @@ async function loadProfileRatings(uid, role = 'rider') {
     console.error('Error loading profile ratings:', err);
     container.innerHTML = `<div style="text-align:center;padding:16px;color:var(--error);">حدث خطأ أثناء تحميل التقييمات.</div>`;
   }
-}
-
-let allSystemRatings = [];
-
 function renderRatingsPage() {
   return `
     <div class="page-section">

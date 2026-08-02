@@ -153,6 +153,7 @@ async function initDriversRealtimeSync() {
 
           // Compute average rating from real ratings table
           let avgRating = 5.0;
+          let ratingCount = 0;
           try {
             const { data: ratingsData } = await supabaseClient
               .from('ratings')
@@ -162,6 +163,7 @@ async function initDriversRealtimeSync() {
             if (ratingsData && ratingsData.length > 0) {
               const total = ratingsData.reduce((acc, r) => acc + (parseFloat(r.rating) || 0), 0);
               avgRating = parseFloat((total / ratingsData.length).toFixed(1));
+              ratingCount = ratingsData.length;
             } else {
               const dbRating = drv.rating || userObj?.rating;
               if (dbRating !== undefined && dbRating !== null && !isNaN(parseFloat(dbRating)) && parseFloat(dbRating) > 0) {
@@ -186,6 +188,7 @@ async function initDriversRealtimeSync() {
             address: drv.address || userObj?.address || '',
             rating: ratingDisplay,
             ratingNum: avgRating,
+            ratingCount: ratingCount,
             vehicleType: vehicleObj?.type || drv.vehicle_type || 'car',
             vehicleName: vehicleObj?.model || drv.vehicle_name || 'مركبة',
             vehicleColor: vehicleObj?.color || 'فضي',
@@ -1495,12 +1498,13 @@ function renderDrivers() {
                     ${driver.licensePlate ? `<span class="font-outfit fw-700" style="font-size:12px;">${driver.licensePlate}</span>` : '—'}
                   </td>
                   <td>
-                    <div class="rating">
+                    <div class="rating" title="متوسط التقييمات وإجمالي التقييمات والرحلات">
                       <i class="ri-star-fill"></i>
                       <span>${driver.rating}</span>
+                      <span style="font-size:11px; color:var(--text-light); margin-right:4px;">(${driver.ratingCount || 0} تقييم)</span>
                     </div>
                   </td>
-                  <td><span class="font-outfit fw-700">${driver.totalTrips}</span></td>
+                  <td><span class="font-outfit fw-700">${driver.totalTrips} رحلة</span></td>
                   <td>
                     <span class="status-badge ${driver.status}">
                       <span class="status-dot"></span>
@@ -1929,12 +1933,13 @@ function renderPassengers() {
                   </td>
                   <td><span style="font-size:12px;font-weight:600;direction:ltr;display:inline-block;">${p.phone}</span></td>
                   <td>
-                    <div class="rating">
+                    <div class="rating" title="متوسط التقييمات وإجمالي التقييمات والرحلات">
                       <i class="ri-star-fill"></i>
                       <span>${p.rating}</span>
+                      <span style="font-size:11px; color:var(--text-light); margin-right:4px;">(${p.ratingCount || 0} تقييم)</span>
                     </div>
                   </td>
-                  <td><span class="font-outfit fw-700">${p.totalTrips}</span></td>
+                  <td><span class="font-outfit fw-700">${p.totalTrips} رحلة</span></td>
                   <td><span style="font-size:12px;color:var(--text-light);font-weight:600;">${p.joinDate}</span></td>
                   <td>
                     <span class="status-badge ${getStatusClass(p.status)}">
@@ -2250,7 +2255,7 @@ function showEditUserModal(uid, role) {
         <div>
           <label style="display:block; margin-bottom:6px; font-weight:700; font-size:13px; color:var(--text-primary);">التقييم المستلم (محسوب تلقائياً)</label>
           <div style="padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary); font-weight:800; color:var(--warning); display:flex; align-items:center; gap:6px;">
-            <i class="ri-star-fill"></i> ${(parseFloat(user.rating) || 5.0).toFixed(1)} <span style="font-size:11px; color:var(--text-light); font-weight:normal;">(محمي ولا يمكن تعديله يدوياً)</span>
+            <i class="ri-star-fill"></i> ${(parseFloat(user.rating) || 5.0).toFixed(1)} <span style="font-size:11px; color:var(--text-light); font-weight:normal;">(${user.ratingCount || 0} تقييم • ${user.totalTrips || 0} رحلة - محمي ولا يمكن تعديله يدوياً)</span>
           </div>
         </div>
 
@@ -3164,8 +3169,8 @@ async function loadCommMessagesThread(userId) {
             <span class="badge" style="font-size:11px;background:${isDriver ? '#E0F2FE' : '#F3E8FF'};color:${isDriver ? '#0369A1' : '#7E22CE'};font-weight:700;">
               ${roleText}
             </span>
-            <span style="font-size:12px;font-weight:800;color:var(--warning);display:flex;align-items:center;gap:3px;">
-              <i class="ri-star-fill"></i> ${ratingVal}
+            <span style="font-size:12px;font-weight:800;color:var(--warning);display:flex;align-items:center;gap:3px;" title="التقييمات والرحلات">
+              <i class="ri-star-fill"></i> ${ratingVal} (${userObj?.ratingCount || 0} تقييم • ${userObj?.totalTrips || 0} رحلة)
             </span>
           </div>
           <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">
@@ -6192,6 +6197,7 @@ function initSupabaseSync() {
       if (!error && usersData) {
         // Fetch ratings to calculate exact real ratings
         const userRatingsMap = {};
+        const userRatingsCountMap = {};
         try {
           const { data: allRatings } = await supabaseClient.from('ratings').select('receiver_id, rating');
           if (allRatings && Array.isArray(allRatings)) {
@@ -6207,6 +6213,7 @@ function initSupabaseSync() {
             Object.keys(userCountMap).forEach(uid => {
               const avg = userSumMap[uid] / userCountMap[uid];
               userRatingsMap[uid] = parseFloat(avg.toFixed(1));
+              userRatingsCountMap[uid] = userCountMap[uid];
             });
           }
         } catch (_) {}
@@ -6240,6 +6247,7 @@ function initSupabaseSync() {
               email: data.email || pRecord.email || '—',
               address: data.address || pRecord.address || '—',
               rating: realRating,
+              ratingCount: userRatingsCountMap[data.id] || 0,
               totalTrips: 0,
               totalSpent: 0,
               joinDate: dateObj.toLocaleDateString('ar-EG'),

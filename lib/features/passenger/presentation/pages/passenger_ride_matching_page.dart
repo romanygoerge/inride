@@ -585,7 +585,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                           const Icon(Icons.star_rounded, color: Colors.amber, size: 16),
                           const SizedBox(width: 2),
                           Text(
-                            offer.driver.rating.toStringAsFixed(1),
+                            '${offer.driver.rating.toStringAsFixed(1)}${offer.driver.ratingCount > 0 ? " (${offer.driver.ratingCount} تقييم)" : ""}',
                             style: GoogleFonts.cairo(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
@@ -597,7 +597,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                       const SizedBox(height: 2),
                       // Trips & Deliveries
                       Text(
-                        '${offer.driver.completedTrips} رحلة • ${offer.driver.completedDeliveries} ديلفري',
+                        '${offer.driver.completedTrips} رحلة مكتملة',
                         style: GoogleFonts.cairo(
                           fontSize: 11,
                           color: AppColors.textSecondary,

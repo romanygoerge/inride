@@ -7,6 +7,7 @@ class DriverModel {
   final String? vehicleId;
   final String verificationStatus; // 'unregistered' | 'submitted' | 'verified'
   final double? rating;
+  final int? ratingCount;
   final int? completedTrips;
 
   DriverModel({
@@ -18,6 +19,7 @@ class DriverModel {
     this.vehicleId,
     required this.verificationStatus,
     this.rating,
+    this.ratingCount,
     this.completedTrips,
   });
 
@@ -31,6 +33,7 @@ class DriverModel {
       vehicleId: data['vehicle_id'] ?? data['vehicleId'],
       verificationStatus: data['verification_status'] ?? data['verificationStatus'] ?? 'unregistered',
       rating: (data['rating'] as num?)?.toDouble(),
+      ratingCount: (data['rating_count'] ?? data['ratingCount'] ?? data['total_ratings']) as int?,
       completedTrips: (data['total_trips'] ?? data['completedTrips']) as int?,
     );
   }
@@ -44,6 +47,7 @@ class DriverModel {
       'vehicleId': vehicleId,
       'verificationStatus': verificationStatus,
       'rating': rating,
+      'ratingCount': ratingCount,
       'completedTrips': completedTrips,
     };
   }

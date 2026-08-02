@@ -55,6 +55,7 @@ enum RideStatus {
 class DriverInfo {
   final String name;
   final double rating;
+  final int ratingCount;
   final String vehicleType;
   final String vehicleName;
   final String vehicleColor;
@@ -67,6 +68,7 @@ class DriverInfo {
   DriverInfo({
     required this.name,
     required this.rating,
+    int? ratingCount,
     required this.vehicleType,
     required this.vehicleName,
     required this.vehicleColor,
@@ -75,7 +77,8 @@ class DriverInfo {
     this.phoneNumber = '',
     int? completedTrips,
     int? completedDeliveries,
-  }) : completedTrips = completedTrips ?? 0,
+  }) : ratingCount = ratingCount ?? 0,
+       completedTrips = completedTrips ?? 0,
        completedDeliveries = completedDeliveries ?? 0;
 }
 
@@ -159,6 +162,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   String? userAvatarUrl;
   double userRating = 0.0;
   int userTotalRatingsCount = 0;
+  int userCompletedTripsCount = 0;
   bool isOffline = false;
 
   // Driver Document State

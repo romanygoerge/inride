@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
 import '../../core/services/support_chat_service.dart';
+import '../../core/localization/locale_controller.dart';
+import '../../generated/app_localizations.dart';
 
 class SupportChatPage extends StatefulWidget {
   const SupportChatPage({super.key});
@@ -20,8 +22,7 @@ class _SupportChatPageState extends State<SupportChatPage> {
   @override
   void initState() {
     super.initState();
-    final globalState = GlobalState.instance;
-    _userId = globalState.userUid ?? 'anonymous_user';
+    _userId = GlobalState.instance.userUid ?? 'anonymous_user';
 
     if (_userId != 'anonymous_user') {
       _chatService.initializeForUser(_userId);
@@ -38,9 +39,9 @@ class _SupportChatPageState extends State<SupportChatPage> {
   }
 
   void _sendMessage() async {
+    if (_messageController.text.trim().isEmpty || _userId == 'anonymous_user') return;
+    
     final text = _messageController.text.trim();
-    if (text.isEmpty || _userId == 'anonymous_user') return;
-
     _messageController.clear();
     await _chatService.sendMessage(text);
 
@@ -55,6 +56,8 @@ class _SupportChatPageState extends State<SupportChatPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    
     if (_userId == 'anonymous_user') {
       return Scaffold(
         appBar: AppBar(

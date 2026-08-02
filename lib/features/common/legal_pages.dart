@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/localization/locale_controller.dart';
 
 /// 1. شروط الاستخدام (Terms of Use)
 class TermsOfUsePage extends StatelessWidget {

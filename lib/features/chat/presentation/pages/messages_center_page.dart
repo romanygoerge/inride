@@ -8,6 +8,7 @@ import '../../domain/repositories/chat_repository.dart';
 import '../../domain/entities/chat_room.dart';
 import 'chat_page.dart';
 import '../../../../generated/app_localizations.dart';
+import '../../../../core/localization/locale_controller.dart';
 
 class MessagesCenterPage extends StatefulWidget {
   const MessagesCenterPage({super.key});

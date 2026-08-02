@@ -23,6 +23,7 @@ import 'driver_ride_active_page.dart';
 import '../../../common/wallet_page.dart';
 import '../../../common/notifications_page.dart';
 import '../../../../generated/app_localizations.dart';
+import '../../../../core/localization/locale_controller.dart';
 
 class DriverHomePage extends StatefulWidget {
   const DriverHomePage({super.key});

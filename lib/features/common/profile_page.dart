@@ -259,6 +259,7 @@ class _ProfilePageState extends State<ProfilePage> {
     final l10n = AppLocalizations.of(context)!;
     final state = GlobalState.instance;
     final isRider = state.currentRole == UserRole.rider;
+    final isArabic = LocaleController.instance.isArabic;
 
     return Scaffold(
       backgroundColor: AppColors.background,

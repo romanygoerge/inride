@@ -7,6 +7,7 @@ import '../../core/state/global_state.dart';
 import '../../shared/widgets/camera_capture_dialog.dart';
 import '../../shared/widgets/skeleton_placeholder.dart';
 import '../../generated/app_localizations.dart';
+import '../../core/localization/locale_controller.dart';
 
 class WalletPage extends StatefulWidget {
   const WalletPage({super.key});

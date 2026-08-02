@@ -21,6 +21,7 @@ import '../../../../core/services/external_navigation_service.dart';
 import '../../../../core/DI/injection_container.dart';
 import '../../../../core/controllers/navigation_state_manager.dart';
 import '../../../../core/services/driver_location_service.dart';
+import '../../../../core/localization/locale_controller.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
 
 class DriverRideActivePage extends StatefulWidget {

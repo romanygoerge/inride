@@ -3,43 +3,34 @@ import 'package:flutter/foundation.dart';
 @immutable
 class RatingModel {
   final String id;
-  final String tripId;
-  final String fromUserId;
-  final String toUserId;
-  final String? senderName;
-  final String? receiverName;
-  final String role; // 'driver' or 'passenger' / 'rider'
-  final int rating; // 1 to 5
-  final String? review;
-  final bool isHidden;
+  final String? requestId;
+  final String senderId;
+  final String receiverId;
+  final String receiverRole; // 'driver' or 'rider'
+  final double rating; // 1.0 to 5.0
+  final String? comment;
   final DateTime createdAt;
 
   const RatingModel({
     required this.id,
-    required this.tripId,
-    required this.fromUserId,
-    required this.toUserId,
-    this.senderName,
-    this.receiverName,
-    required this.role,
+    this.requestId,
+    required this.senderId,
+    required this.receiverId,
+    required this.receiverRole,
     required this.rating,
-    this.review,
-    this.isHidden = false,
+    this.comment,
     required this.createdAt,
   });
 
   factory RatingModel.fromJson(Map<String, dynamic> json) {
     return RatingModel(
       id: json['id']?.toString() ?? '',
-      tripId: json['trip_id']?.toString() ?? '',
-      fromUserId: json['from_user_id']?.toString() ?? '',
-      toUserId: json['to_user_id']?.toString() ?? '',
-      senderName: json['sender_name']?.toString(),
-      receiverName: json['receiver_name']?.toString(),
-      role: json['role']?.toString() ?? 'rider',
-      rating: (json['rating'] as num?)?.toInt() ?? 5,
-      review: json['review']?.toString(),
-      isHidden: json['is_hidden'] == true,
+      requestId: json['request_id']?.toString(),
+      senderId: json['sender_id']?.toString() ?? '',
+      receiverId: json['receiver_id']?.toString() ?? '',
+      receiverRole: json['receiver_role']?.toString() ?? 'rider',
+      rating: (json['rating'] as num?)?.toDouble() ?? 5.0,
+      comment: json['comment']?.toString(),
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
@@ -49,18 +40,15 @@ class RatingModel {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'trip_id': tripId,
-      'from_user_id': fromUserId,
-      'to_user_id': toUserId,
-      'sender_name': senderName,
-      'receiver_name': receiverName,
-      'role': role,
+      'request_id': requestId,
+      'sender_id': senderId,
+      'receiver_id': receiverId,
+      'receiver_role': receiverRole,
       'rating': rating,
-      'review': review,
-      'is_hidden': isHidden,
+      'comment': comment,
       'created_at': createdAt.toIso8601String(),
     };
   }
 
-  bool get hasReview => review != null && review!.trim().isNotEmpty;
+  bool get hasComment => comment != null && comment!.trim().isNotEmpty && comment != 'بدون تعليق';
 }

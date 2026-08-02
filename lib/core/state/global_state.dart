@@ -2350,17 +2350,21 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           senderName = currentRole == UserRole.rider ? 'راكب' : 'كابتن';
         }
 
-        await _supabase.from('ratings').upsert({
+        final Map<String, dynamic> ratingPayload = {
           'id': ratingId,
-          'request_id': reqId ?? '',
           'sender_id': userUid!,
-          'sender_name': senderName,
           'receiver_id': resolvedReceiverId,
           'receiver_role': resolvedReceiverRole,
           'rating': rating,
           'comment': comment.trim().isEmpty ? 'بدون تعليق' : comment,
           'created_at': DateTime.now().toIso8601String(),
-        });
+        };
+        if (reqId != null && reqId.isNotEmpty) {
+          ratingPayload['request_id'] = reqId;
+        }
+
+        debugPrint('[submitRating] Saving rating payload: $ratingPayload');
+        await _supabase.from('ratings').upsert(ratingPayload);
 
         debugPrint('[submitRating] Rating submitted successfully: rating=$rating, receiver=$resolvedReceiverId, role=$resolvedReceiverRole');
         await _updateAverageRating(resolvedReceiverId);

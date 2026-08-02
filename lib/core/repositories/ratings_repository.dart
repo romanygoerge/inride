@@ -61,22 +61,27 @@ class RatingsRepositoryImpl implements RatingsRepository {
       return false;
     } catch (e) {
       debugPrint('Error submitting trip rating: $e');
-      // Fallback direct insert if RPC fails or table backup
+      // Fallback direct insert if RPC fails
       try {
         final currentUserId = _supabase.auth.currentUser?.id;
         if (currentUserId == null) return false;
 
-        await _supabase.from('ratings').insert({
-          'trip_id': tripId,
-          'from_user_id': currentUserId,
-          'to_user_id': toUserId,
-          'sender_name': senderName,
-          'receiver_name': receiverName,
-          'role': role,
-          'rating': rating,
-          'review': review,
+        final ratingId = '${tripId}_$currentUserId';
+        final Map<String, dynamic> payload = {
+          'id': ratingId,
+          'sender_id': currentUserId,
+          'receiver_id': toUserId,
+          'receiver_role': role,
+          'rating': rating.toDouble(),
+          'comment': (review != null && review.isNotEmpty) ? review : 'بدون تعليق',
           'created_at': DateTime.now().toIso8601String(),
-        });
+        };
+        if (tripId.isNotEmpty) {
+          payload['request_id'] = tripId;
+        }
+
+        debugPrint('[RatingsRepo] Fallback insert payload: $payload');
+        await _supabase.from('ratings').upsert(payload);
         return true;
       } catch (fallbackError) {
         debugPrint('Fallback rating submission error: $fallbackError');
@@ -95,8 +100,7 @@ class RatingsRepositoryImpl implements RatingsRepository {
       final data = await _supabase
           .from('ratings')
           .select()
-          .eq('to_user_id', userId)
-          .eq('is_hidden', false)
+          .eq('receiver_id', userId)
           .order('created_at', ascending: false)
           .range(offset, offset + limit - 1);
 
@@ -112,16 +116,53 @@ class RatingsRepositoryImpl implements RatingsRepository {
   @override
   Future<RatingStatsModel> getUserRatingStats(String userId) async {
     try {
+      // Get user's rating from users table
       final userData = await _supabase
           .from('users')
-          .select('rating, total_rating, rating_count, average_rating, star_5_count, star_4_count, star_3_count, star_2_count, star_1_count')
+          .select('rating')
           .eq('id', userId)
           .maybeSingle();
 
-      if (userData != null) {
-        return RatingStatsModel.fromJson(userData);
+      // Calculate real stats from ratings table
+      final ratingsData = await _supabase
+          .from('ratings')
+          .select('rating')
+          .eq('receiver_id', userId);
+
+      final ratingsList = List<Map<String, dynamic>>.from(ratingsData as List);
+      
+      if (ratingsList.isNotEmpty) {
+        double total = 0;
+        int star5 = 0, star4 = 0, star3 = 0, star2 = 0, star1 = 0;
+        for (var row in ratingsList) {
+          final val = (row['rating'] as num?)?.toDouble() ?? 0;
+          total += val;
+          if (val >= 4.5) {
+            star5++;
+          } else if (val >= 3.5) {
+            star4++;
+          } else if (val >= 2.5) {
+            star3++;
+          } else if (val >= 1.5) {
+            star2++;
+          } else {
+            star1++;
+          }
+        }
+        final avg = total / ratingsList.length;
+        return RatingStatsModel(
+          averageRating: double.parse(avg.toStringAsFixed(1)),
+          ratingCount: ratingsList.length,
+          star5Count: star5,
+          star4Count: star4,
+          star3Count: star3,
+          star2Count: star2,
+          star1Count: star1,
+        );
       }
-      return const RatingStatsModel();
+
+      final dbRating = (userData?['rating'] as num?)?.toDouble() ?? 0.0;
+      return RatingStatsModel(averageRating: dbRating, ratingCount: 0);
     } catch (e) {
       debugPrint('Error fetching user rating stats: $e');
       return const RatingStatsModel();
@@ -133,10 +174,9 @@ class RatingsRepositoryImpl implements RatingsRepository {
     return _supabase
         .from('ratings')
         .stream(primaryKey: ['id'])
-        .eq('to_user_id', userId)
+        .eq('receiver_id', userId)
         .order('created_at', ascending: false)
         .map((data) => data
-            .where((json) => json['is_hidden'] != true)
             .map((json) => RatingModel.fromJson(json))
             .toList());
   }

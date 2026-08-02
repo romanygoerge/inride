@@ -232,7 +232,7 @@ class RatingBreakdownCard extends StatelessWidget {
               Row(
                 children: [
                   Text(
-                    review.senderName ?? 'مستخدم التطبيق',
+                    'مستخدم التطبيق',
                     style: GoogleFonts.cairo(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
@@ -268,7 +268,7 @@ class RatingBreakdownCard extends StatelessWidget {
               Row(
                 children: List.generate(5, (index) {
                   return Icon(
-                    index + 1 <= review.rating
+                    index + 1 <= review.rating.toInt()
                         ? Icons.star_rounded
                         : Icons.star_outline_rounded,
                     color: const Color(0xFFFFB300),
@@ -278,10 +278,10 @@ class RatingBreakdownCard extends StatelessWidget {
               ),
             ],
           ),
-          if (review.hasReview) ...[
+          if (review.hasComment) ...[
             const SizedBox(height: 6),
             Text(
-              review.review!,
+              review.comment!,
               style: GoogleFonts.cairo(
                 fontSize: 12,
                 color: AppColors.textPrimary,

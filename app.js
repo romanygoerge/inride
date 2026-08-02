@@ -7165,21 +7165,7 @@ async function loadProfileRatings(uid, role = 'rider') {
     container.innerHTML = `<div style="color:var(--error);padding:16px;text-align:center;">حدث خطأ أثناء تحميل التقييمات</div>`;
   }
 }
-            <span style="font-weight:800;font-size:12px;margin-right:4px;color:var(--warning);">${starVal.toFixed(1)}</span>
-          </div>
-          <div style="font-size:13px;color:${commentText === 'بدون تعليق نصي' ? 'var(--text-light)' : 'var(--text-primary)'};line-height:1.5;">
-            ${commentText}
-          </div>
-        </div>
-      `;
-    });
 
-    html += `</div>`;
-    container.innerHTML = html;
-  } catch (err) {
-    console.error('Error loading profile ratings:', err);
-    container.innerHTML = `<div style="text-align:center;padding:16px;color:var(--error);">حدث خطأ أثناء تحميل التقييمات.</div>`;
-  }
 function renderRatingsPage() {
   return `
     <div class="page-section">

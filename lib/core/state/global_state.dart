@@ -447,6 +447,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   StreamSubscription? _driverBidRequestSubscription;
   StreamSubscription? _driverBidCounterSubscription;
   StreamSubscription? _userDocSubscription;
+  StreamSubscription? _rechargeStreamSubscription;
+  final Set<String> _notifiedRechargeIds = {};
   StreamSubscription? _driverDocSubscription;
   StreamSubscription? _passengerDocSubscription;
   double? passengerCounterPrice;
@@ -547,6 +549,56 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
               debugPrint("Notification initialization failed on auth changes: $e");
             }
             
+            _rechargeStreamSubscription?.cancel();
+            _rechargeStreamSubscription = _supabase
+                .from('wallet_recharge_requests')
+                .stream(primaryKey: ['id'])
+                .eq('user_id', user.id)
+                .listen((requests) {
+              for (final req in requests) {
+                final reqId = req['id'] as String?;
+                final status = req['status'] as String?;
+                final amount = (req['amount'] as num? ?? 0.0).toDouble();
+                final reason = (req['rejection_reason'] as String? ?? '').trim();
+
+                if (reqId == null || status == null || status == 'pending') continue;
+
+                if (!_notifiedRechargeIds.contains(reqId)) {
+                  _notifiedRechargeIds.add(reqId);
+
+                  final ctx = navigatorKey.currentContext;
+                  if (status == 'approved') {
+                    try {
+                      sl<RideSoundService>().playNotification();
+                    } catch (_) {}
+                    if (ctx != null && ctx.mounted) {
+                      InAppNotificationWidget.show(
+                        ctx,
+                        title: '✅ تم قبول طلب الشحن',
+                        body: 'تم إضافة ${amount.toStringAsFixed(0)} ج.م إلى رصيد محفظتك بنجاح!',
+                        onTap: () {},
+                      );
+                    }
+                    reloadUserProfile();
+                  } else if (status == 'rejected') {
+                    try {
+                      sl<RideSoundService>().playNotification();
+                    } catch (_) {}
+                    final reasonStr = reason.isNotEmpty ? reason : 'إيصال تحويل غير مطابق أو تعذر التحقق';
+                    if (ctx != null && ctx.mounted) {
+                      InAppNotificationWidget.show(
+                        ctx,
+                        title: '❌ تم رفض طلب الشحن',
+                        body: 'تعذر قبول طلب الشحن بمبلغ ${amount.toStringAsFixed(0)} ج.م. السبب: $reasonStr',
+                        onTap: () {},
+                      );
+                    }
+                    reloadUserProfile();
+                  }
+                }
+              }
+            });
+
             _userDocSubscription?.cancel();
             _userDocSubscription = _supabase
                 .from('users')
@@ -2706,7 +2758,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         localPath: localPath,
         bucketName: 'wallet_receipts',
         pathInBucket: pathInBucket,
-      ).timeout(const Duration(seconds: 6));
+      ).timeout(const Duration(seconds: 12));
     } catch (e) {
       debugPrint('Uploading to wallet_receipts bucket failed: $e, using base64 encoding fallback');
       try {
@@ -2739,8 +2791,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
       final roleStr = currentRole == UserRole.driver ? 'driver' : 'rider';
       final nameStr = userName ?? passengerName ?? 'مستخدم';
-      final phoneStr = _supabase.auth.currentUser?.phone ?? userPhoneNumber ?? '';
+      final phoneStr = phoneNumber ?? _supabase.auth.currentUser?.phone ?? '';
 
+      bool insertedReq = false;
       // 1. Insert into wallet_recharge_requests for Admin Dashboard Review
       try {
         await _supabase.from('wallet_recharge_requests').insert({
@@ -2753,7 +2806,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'receipt_url': finalReceiptUrl,
           'status': 'pending',
           'created_at': DateTime.now().toIso8601String(),
-        }).timeout(const Duration(seconds: 6));
+        }).timeout(const Duration(seconds: 10));
+        insertedReq = true;
       } catch (e) {
         debugPrint('[GlobalState] Error writing to wallet_recharge_requests: $e');
       }
@@ -2770,16 +2824,16 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'receipt_url': finalReceiptUrl,
           'notes': 'طلب شحن محفظة عبر $method',
           'created_at': DateTime.now().toIso8601String(),
-        }).timeout(const Duration(seconds: 6));
+        }).timeout(const Duration(seconds: 8));
       } catch (e) {
         debugPrint('[GlobalState] Error writing to transactions: $e');
       }
 
       notifyListeners();
-      return true;
+      return insertedReq;
     } catch (e) {
       debugPrint('Error writing pending transaction: $e');
-      rethrow;
+      return false;
     }
   }
 

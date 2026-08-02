@@ -6817,6 +6817,16 @@ function renderDriverProfile() {
               </div>
             </div>
           </div>
+
+          <!-- Received Ratings & Reviews Card -->
+          <div class="card" style="margin-top:24px;">
+            <div class="card-header">
+              <h3><i class="ri-star-smile-fill text-warning" style="margin-left:8px;"></i> سجل التقييمات والمراجعات المستلمة</h3>
+            </div>
+            <div class="card-body" id="profileRatingsContainer">
+              <div style="text-align:center;padding:24px;color:var(--text-light);">جاري تحميل التقييمات...</div>
+            </div>
+          </div>
         </div>
       </div>
 

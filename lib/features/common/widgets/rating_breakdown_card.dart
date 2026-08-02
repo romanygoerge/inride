@@ -87,9 +87,9 @@ class RatingBreakdownCard extends StatelessWidget {
                 Column(
                   children: [
                     Text(
-                      stats.averageRating.toStringAsFixed(1),
+                      stats.ratingCount > 0 ? stats.averageRating.toStringAsFixed(1) : '—',
                       style: GoogleFonts.outfit(
-                        fontSize: 44,
+                        fontSize: stats.ratingCount > 0 ? 44 : 36,
                         fontWeight: FontWeight.w900,
                         color: AppColors.textPrimary,
                       ),
@@ -97,18 +97,17 @@ class RatingBreakdownCard extends StatelessWidget {
                     Row(
                       children: List.generate(5, (index) {
                         final starVal = index + 1;
+                        final isFilled = stats.ratingCount > 0 && starVal <= stats.averageRating.round();
                         return Icon(
-                          starVal <= stats.averageRating.round()
-                              ? Icons.star_rounded
-                              : Icons.star_outline_rounded,
-                          color: const Color(0xFFFFB300),
+                          isFilled ? Icons.star_rounded : Icons.star_outline_rounded,
+                          color: isFilled ? const Color(0xFFFFB300) : AppColors.textSecondary,
                           size: 16,
                         );
                       }),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${stats.ratingCount} تقييم',
+                      stats.ratingCount > 0 ? '${stats.ratingCount} تقييم' : 'جديد (بدون تقييم)',
                       style: GoogleFonts.cairo(
                         fontSize: 11,
                         color: AppColors.textSecondary,

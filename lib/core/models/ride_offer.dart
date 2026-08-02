@@ -48,7 +48,7 @@ class RideOffer {
       passengerId: data['passenger_id'] ?? data['passengerId'] ?? '',
       driverName: data['driver_name'] ?? data['driverName'] ?? 'سائق',
       driverAvatar: data['driver_avatar'] ?? data['driverAvatar'] ?? '',
-      driverRating: ((data['driver_rating'] ?? data['driverRating']) as num?)?.toDouble() ?? 5.0,
+      driverRating: ((data['driver_rating'] ?? data['driverRating']) as num?)?.toDouble() ?? 0.0,
       vehicleType: data['vehicle_type'] ?? data['vehicleType'] ?? 'car',
       vehicleName: data['vehicle_name'] ?? data['vehicleName'] ?? '',
       licensePlate: data['license_plate'] ?? data['licensePlate'] ?? '',

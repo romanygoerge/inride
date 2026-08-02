@@ -79,7 +79,8 @@ class RideMatchingCubit extends Cubit<RideMatchingState> {
         final dMap = driverDoc != null ? Map<String, dynamic>.from(driverDoc) : {};
 
         final driverName = uMap['name'] ?? 'سائق';
-        final rating = (uMap['rating'] as num?)?.toDouble() ?? 5.0;
+        final ratingCount = (uMap['rating_count'] ?? uMap['total_ratings'] as num?)?.toInt() ?? 0;
+        final rating = (uMap['rating'] as num?)?.toDouble() ?? 0.0;
         final vName = dMap['vehicle_name'] ?? dMap['vehicleName'] ?? 'سيارة';
         final vNum = dMap['vehicle_number'] ?? dMap['vehicleNumber'] ?? '';
 
@@ -88,6 +89,7 @@ class RideMatchingCubit extends Cubit<RideMatchingState> {
           driver: DriverInfo(
             name: driverName,
             rating: rating,
+            ratingCount: ratingCount,
             vehicleType: request.vehicleType == 'scooter' ? 'اسكوتر' : (request.vehicleType == 'motorcycle' ? 'موتوسيكل' : 'عربية'),
             vehicleName: vName,
             vehicleColor: 'فضي',
@@ -122,7 +124,8 @@ class RideMatchingCubit extends Cubit<RideMatchingState> {
           driverId: d['driverId'],
           driver: DriverInfo(
             name: d['driverName'],
-            rating: d['rating'],
+            rating: (d['rating'] as num?)?.toDouble() ?? 0.0,
+            ratingCount: (d['ratingCount'] as num?)?.toInt() ?? 0,
             vehicleType: vehicleType == 'scooter' ? 'اسكوتر' : (vehicleType == 'motorcycle' ? 'موتوسيكل' : 'عربية'),
             vehicleName: d['vehicle'].model,
             vehicleColor: d['vehicle'].color,

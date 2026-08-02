@@ -12,7 +12,7 @@ class RatingStatsModel {
   final int star1Count;
 
   const RatingStatsModel({
-    this.averageRating = 5.0,
+    this.averageRating = 0.0,
     this.ratingCount = 0,
     this.totalRating = 0,
     this.star5Count = 0,
@@ -27,10 +27,10 @@ class RatingStatsModel {
     final total = (json['total_rating'] as num?)?.toInt() ?? 0;
     final rawAvg = (json['average_rating'] as num?)?.toDouble() ??
         (json['rating'] as num?)?.toDouble() ??
-        5.0;
+        0.0;
 
     return RatingStatsModel(
-      averageRating: count > 0 ? (total > 0 ? total / count : rawAvg) : rawAvg,
+      averageRating: count > 0 ? (total > 0 ? total / count : rawAvg) : 0.0,
       ratingCount: count,
       totalRating: total,
       star5Count: (json['star_5_count'] as num?)?.toInt() ?? 0,

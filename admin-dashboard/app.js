@@ -160,7 +160,7 @@ async function initDriversRealtimeSync() {
           const realTotalTrips = Math.max(completedTripsCount, dbDriverTrips);
 
           // Compute average rating from real ratings table + user/driver rating fallback
-          let avgRating = 5.0;
+          let avgRating = 0;
           let ratingCount = 0;
           let ratingsData = null;
           try {
@@ -183,12 +183,12 @@ async function initDriversRealtimeSync() {
           }
 
           const dbRating = drv.rating || userObj?.rating;
-          if (dbRating !== undefined && dbRating !== null && !isNaN(parseFloat(dbRating)) && parseFloat(dbRating) > 0) {
-            if (!ratingsData || ratingsData.length === 0) {
+          if (ratingCount > 0 && (avgRating === 0 || isNaN(avgRating))) {
+            if (dbRating !== undefined && dbRating !== null && !isNaN(parseFloat(dbRating)) && parseFloat(dbRating) > 0) {
               avgRating = parseFloat(parseFloat(dbRating).toFixed(1));
             }
           }
-          let ratingDisplay = avgRating.toFixed(1);
+          let ratingDisplay = ratingCount > 0 ? avgRating.toFixed(1) : 'جديد (بدون تقييم)';
 
           let statusAr = 'قيد المراجعة';
           if (drv.verification_status === 'verified') statusAr = 'معتمد';
@@ -787,15 +787,6 @@ function navigateTo(page) {
   const validPages = ['dashboard', 'trips', 'drivers', 'passengers', 'driver-profile', 'passenger-profile', 'wallet', 'pricing', 'communication', 'messages', 'support', 'content', 'monitoring', 'logs', 'settings'];
   if (!validPages.includes(page)) {
     page = 'dashboard';
-  }
-
-  // Prevent duplicate execution if already on this page with rendered content
-  if (currentPage === page && page !== 'driver-profile' && page !== 'passenger-profile') {
-    const container = document.getElementById('pageContent');
-    if (container && container.children && container.children.length > 0) {
-      closeSidebar();
-      return;
-    }
   }
 
   currentPage = page;
@@ -2118,7 +2109,7 @@ function submitAddUser(role) {
   const phone = document.getElementById('addPhone').value.trim();
   const email = document.getElementById('addEmail').value.trim();
   const address = document.getElementById('addAddress').value.trim();
-  const rating = 5.0;
+  const rating = 0.0;
   
   let vehicleType = '';
   let vehicleName = '';
@@ -6321,14 +6312,19 @@ function initSupabaseSync() {
 
           if (data.role === 'rider' || !data.role) {
             const dateObj = new Date(data.created_at || Date.now());
-            const realRating = userRatingsMap[data.id] !== undefined
-              ? userRatingsMap[data.id]
-              : (data.rating ? parseFloat(parseFloat(data.rating).toFixed(1)) : 5.0);
-
             const dbRatingCount = parseInt(data.rating_count || data.ratingCount || data.total_ratings || pRecord.rating_count || 0);
             const realRatingCount = (userRatingsCountMap[data.id] !== undefined && userRatingsCountMap[data.id] > 0)
               ? userRatingsCountMap[data.id]
               : dbRatingCount;
+
+            const hasRatings = realRatingCount > 0;
+            const realRatingVal = hasRatings
+              ? (userRatingsMap[data.id] !== undefined
+                  ? userRatingsMap[data.id]
+                  : (data.rating ? parseFloat(parseFloat(data.rating).toFixed(1)) : 0))
+              : 0;
+
+            const realRatingDisplay = hasRatings ? realRatingVal.toFixed(1) : 'جديد (بدون تقييم)';
 
             passengers.push({
               id: data.id.substring(0, 8).toUpperCase(),
@@ -6337,7 +6333,8 @@ function initSupabaseSync() {
               phone: data.phone_number || data.phone || pRecord.phone || '—',
               email: data.email || pRecord.email || '—',
               address: data.address || pRecord.address || '—',
-              rating: realRating,
+              rating: realRatingDisplay,
+              ratingNum: realRatingVal,
               ratingCount: realRatingCount,
               totalTrips: 0,
               totalSpent: 0,
@@ -6721,10 +6718,18 @@ function renderDriverProfile() {
                 </div>
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
                   <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">التقييم العام</div>
-                  <div class="rating" style="font-size:14px;font-weight:800;color:var(--warning);">
-                    <i class="ri-star-fill"></i>
-                    <span>${driver.rating}</span>
-                  </div>
+                  ${(driver.ratingCount && driver.ratingCount > 0) ? `
+                    <div class="rating" style="font-size:14px;font-weight:800;color:var(--warning);display:flex;align-items:center;gap:4px;">
+                      <i class="ri-star-fill"></i>
+                      <span>${driver.rating}</span>
+                      <span style="font-size:11px;color:var(--text-light);font-weight:normal;">(${driver.ratingCount} تقييم)</span>
+                    </div>
+                  ` : `
+                    <div style="font-size:12px;font-weight:700;color:var(--text-light);display:flex;align-items:center;gap:4px;">
+                      <i class="ri-star-line" style="color:var(--text-light);"></i>
+                      <span>جديد (بدون تقييم)</span>
+                    </div>
+                  `}
                 </div>
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
                   <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">رصيد الأرباح والمحفظة</div>
@@ -6917,10 +6922,18 @@ function renderPassengerProfile() {
                 </div>
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
                   <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">التقييم العام</div>
-                  <div class="rating" style="font-size:14px;font-weight:800;color:var(--warning);">
-                    <i class="ri-star-fill"></i>
-                    <span>${passenger.rating}</span>
-                  </div>
+                  ${(passenger.ratingCount && passenger.ratingCount > 0) ? `
+                    <div class="rating" style="font-size:14px;font-weight:800;color:var(--warning);display:flex;align-items:center;gap:4px;">
+                      <i class="ri-star-fill"></i>
+                      <span>${passenger.rating}</span>
+                      <span style="font-size:11px;color:var(--text-light);font-weight:normal;">(${passenger.ratingCount} تقييم)</span>
+                    </div>
+                  ` : `
+                    <div style="font-size:12px;font-weight:700;color:var(--text-light);display:flex;align-items:center;gap:4px;">
+                      <i class="ri-star-line" style="color:var(--text-light);"></i>
+                      <span>جديد (بدون تقييم)</span>
+                    </div>
+                  `}
                 </div>
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
                   <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">إجمالي المدفوعات والإنفاق</div>
@@ -7858,80 +7871,9 @@ function initDashboardRealtimeTriggers() {
     .subscribe();
 }
 
-// Hook dashboard realtime triggers into startup
+// System communication triggers
 if (typeof supabaseClient !== 'undefined' && supabaseClient) {
   setTimeout(initDashboardRealtimeTriggers, 2000);
-}
-
-
-function renderCommunication() {
-  setTimeout(initCommunicationSystem, 50);
-
-  return `
-    <div class="page-section">
-      <!-- Layout: Rooms List | Chat Box | Details Panel -->
-      <div style="display:grid; grid-template-columns: 360px 1.2fr 300px; gap:20px; height: calc(100vh - 160px); min-height: 600px;">
-        
-        <!-- Column 1: Rooms List -->
-        <div class="card" style="display:flex; flex-direction:column; height:100%; max-height: 720px; overflow:hidden;">
-          <div class="card-header" style="padding:16px; border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; gap:10px;">
-            <h3 style="margin:0; font-size:16px; font-weight:700;"><i class="ri-chat-smile-2-line text-blue" style="margin-left:6px;"></i>مركز التواصل والمحادثات</h3>
-            <input type="text" id="commSearchInput" placeholder="البحث بالاسم، السائق، رمز الرحلة..." 
-                   value="${commSearchQuery}" 
-                   oninput="onCommSearch(this.value)"
-                   style="width:100%; padding:8px 12px; border:1px solid var(--border-color); border-radius:var(--radius-md); font-size:12px;" />
-            
-            <div style="display:flex; gap:4px; background:var(--bg-primary); padding:4px; border-radius:var(--radius-md);">
-              <button class="btn btn-sm ${commFilter === 'all' ? 'btn-primary' : 'btn-outline'}" style="flex:1; padding:6px 2px; font-size:10.5px; text-align:center;" onclick="setCommFilter('all')">الكل</button>
-              <button class="btn btn-sm ${commFilter === 'trip' ? 'btn-primary' : 'btn-outline'}" style="flex:1; padding:6px 2px; font-size:10.5px; text-align:center;" onclick="setCommFilter('trip')">الرحلات</button>
-              <button class="btn btn-sm ${commFilter === 'support' ? 'btn-primary' : 'btn-outline'}" style="flex:1; padding:6px 2px; font-size:10.5px; text-align:center;" onclick="setCommFilter('support')">الدعم</button>
-              <button class="btn btn-sm ${commFilter === 'archived' ? 'btn-primary' : 'btn-outline'}" style="flex:1; padding:6px 2px; font-size:10.5px; text-align:center;" onclick="setCommFilter('archived')">الأرشيف</button>
-            </div>
-          </div>
-          <div id="commRoomsContainer" style="flex:1; overflow-y:auto; padding:0;">
-            <div style="text-align:center; color:var(--text-light); padding:32px;"><i class="ri-loader-4-line ri-spin" style="font-size:24px; color:var(--medium-blue);"></i> جاري تحميل المحادثات...</div>
-          </div>
-        </div>
-
-        <!-- Column 2: Live Chat Box -->
-        <div class="card" style="display:flex; flex-direction:column; height:100%; max-height: 720px; overflow:hidden;">
-          <div id="commChatBoxHeader" style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:white;">
-            <h3 style="margin:0; font-size:15px; font-weight:700; color:var(--text-light);">لا توجد محادثة محددة</h3>
-          </div>
-          
-          <div id="commChatMessagesScroll" style="flex:1; overflow-y:auto; padding:20px; background:var(--bg-primary); display:flex; flex-direction:column; gap:12px; max-height:480px;">
-            <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--text-light);">
-              <i class="ri-wechat-line" style="font-size:64px; margin-bottom:16px; color:var(--medium-blue);"></i>
-              <p style="font-weight:600; font-size:13px;">يرجى اختيار محادثة من القائمة لعرض الرسائل المتبادلة والرد عليها</p>
-            </div>
-          </div>
-
-          <!-- Input area -->
-          <div id="commInputArea" style="padding:16px; border-top:1px solid var(--border-color); background:white; display:none; flex-direction:column; gap:8px;">
-            <div id="commReplyBar" style="display:none; align-items:center; justify-content:space-between; padding:6px 12px; background:var(--bg-primary); border-radius:6px; font-size:11px; border-right:3px solid var(--medium-blue);">
-              <span id="commReplyText" style="color:var(--text-secondary);"></span>
-              <i class="ri-close-line" style="cursor:pointer;" onclick="cancelCommReply()"></i>
-            </div>
-            <div style="display:flex; gap:12px; align-items:center;">
-              <textarea id="commReplyInput" placeholder="اكتب ردك هنا..." rows="1" 
-                        onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); sendCommReply(); }"
-                        style="flex:1; padding:12px; border:1px solid var(--border-color); border-radius:var(--radius-md); resize:none; font-family:inherit; font-size:13px;"></textarea>
-              <button class="btn btn-primary" style="padding:12px 24px;" onclick="sendCommReply()"><i class="ri-send-plane-fill"></i> إرسال</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Column 3: Detailed Info Panel -->
-        <div class="card" id="commDetailsPanel" style="padding:20px; display:flex; flex-direction:column; gap:20px; height:100%; max-height:720px; overflow-y:auto;">
-          <div style="text-align:center; color:var(--text-light); margin-top:40px;">
-            <i class="ri-contacts-book-2-line" style="font-size:48px; display:block; margin-bottom:12px; color:var(--text-light);"></i>
-            <span style="font-size:12px;">اختر محادثة لعرض تفاصيل الرحلة وبيانات المستخدمين</span>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  `;
 }
 
 async function initCommunicationSystem() {

@@ -36,7 +36,7 @@ class UserModel {
       phoneNumber: data['phone_number'] ?? data['phoneNumber'] ?? data['phone'] ?? '',
       email: data['email'] ?? '',
       role: data['role'] ?? 'rider',
-      rating: ((data['rating'] as num?) ?? 5.0).toDouble(),
+      rating: ((data['rating'] as num?) ?? 0.0).toDouble(),
       walletBalance: ((data['wallet_balance'] ?? data['walletBalance']) as num? ?? 0.0).toDouble(),
       createdAt: createdDate,
     );

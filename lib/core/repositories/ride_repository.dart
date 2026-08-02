@@ -197,14 +197,16 @@ class RideRepository {
         if (VehicleHelper.isVehicleTypeMatching(driverVehicleType, vehicleType)) {
           qualifiedCount++;
           String name = 'سائق';
-          double rating = 5.0;
+          double rating = 0.0;
+          int ratingCount = 0;
 
           try {
             final userRes = await _supabase.from('users').select().eq('id', driverId).maybeSingle();
             if (userRes != null) {
               final uMap = Map<String, dynamic>.from(userRes);
               name = uMap['name'] ?? 'سائق';
-              rating = (uMap['rating'] as num?)?.toDouble() ?? 5.0;
+              ratingCount = (uMap['rating_count'] ?? uMap['total_ratings'] as num?)?.toInt() ?? 0;
+              rating = (uMap['rating'] as num?)?.toDouble() ?? 0.0;
             }
           } catch (e) {
             AppLogger.error('SearchDrivers', 'Error fetching user record for driver $driverId', e);
@@ -214,6 +216,7 @@ class RideRepository {
             'driverId': driverId,
             'driverName': name,
             'rating': rating,
+            'ratingCount': ratingCount,
             'distance': distance,
             'driver': driverModel,
             'vehicle': vehicle,

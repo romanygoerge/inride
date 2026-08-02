@@ -788,6 +788,16 @@ function navigateTo(page) {
   if (!validPages.includes(page)) {
     page = 'dashboard';
   }
+
+  // Prevent duplicate execution if already on this page with rendered content
+  if (currentPage === page && page !== 'driver-profile' && page !== 'passenger-profile') {
+    const container = document.getElementById('pageContent');
+    if (container && container.children && container.children.length > 0) {
+      closeSidebar();
+      return;
+    }
+  }
+
   currentPage = page;
   sessionStorage.setItem('admin_currentPage', page);
   if (page === 'driver-profile' || page === 'passenger-profile') {
@@ -6520,14 +6530,6 @@ function initSupabaseSync() {
 // ============================================
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Initialize navigation
-  document.querySelectorAll('.nav-item[data-page]').forEach(item => {
-    item.addEventListener('click', (e) => {
-      e.preventDefault();
-      navigateTo(item.dataset.page);
-    });
-  });
-
   // Mobile overlay close
   const overlay = document.getElementById('overlay');
   if (overlay) {

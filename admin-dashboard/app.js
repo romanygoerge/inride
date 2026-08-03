@@ -3220,6 +3220,7 @@ function selectCommConversation(userId, role) {
   });
 
   loadCommMessagesThread(userId);
+  openFullChatModal(userId, role);
 }
 
 function openDirectUserChat(userId, userName, role) {
@@ -3235,6 +3236,198 @@ function openDirectUserChat(userId, userName, role) {
       initCommChatSync();
       loadCommMessagesThread(userId);
     }
+  }
+  openFullChatModal(userId, role);
+}
+
+function openFullChatModal(userId, role) {
+  const targetId = userId || commActiveUserId;
+  if (!targetId) return;
+
+  commActiveUserId = targetId;
+  if (role) commActiveUserRole = role;
+
+  let modal = document.getElementById('commFullChatModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'commFullChatModal';
+    modal.className = 'modal-overlay';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.8);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;direction:rtl;';
+    document.body.appendChild(modal);
+  }
+
+  let userObj = null;
+  if (mockData.drivers) userObj = mockData.drivers.find(d => d.uid === targetId);
+  if (!userObj && mockData.passengers) userObj = mockData.passengers.find(p => p.uid === targetId);
+
+  const userName = userObj ? userObj.name : 'مستخدم inRide';
+  const userPhone = userObj ? (userObj.phone || '—') : '—';
+  const isDriver = commActiveUserRole === 'driver' || (userObj && userObj.vehicleType);
+  const ratingVal = userObj ? (parseFloat(userObj.rating) || 5.0).toFixed(1) : '5.0';
+  const roleText = isDriver ? 'كابتن 🚗' : 'راكب 👤';
+
+  modal.innerHTML = `
+    <div style="background:white;border-radius:20px;width:100%;max-width:900px;height:90vh;max-height:750px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 25px 50px -12px rgba(0,0,0,0.4);">
+      <!-- Header -->
+      <div style="padding:16px 20px;background:#1E293B;color:white;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:46px;height:46px;border-radius:50%;background:${isDriver ? '#0284C7' : '#7E22CE'};color:white;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;">
+            ${userName.charAt(0)}
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <h3 style="margin:0;font-size:17px;font-weight:800;color:white;">${userName}</h3>
+              <span class="badge" style="font-size:11px;background:${isDriver ? '#E0F2FE' : '#F3E8FF'};color:${isDriver ? '#0369A1' : '#7E22CE'};font-weight:700;">${roleText}</span>
+              <span class="badge" style="font-size:11px;background:#D1FAE5;color:#065F46;font-weight:700;">موثق inRide ✔️</span>
+            </div>
+            <div style="font-size:12px;color:#94A3B8;margin-top:3px;">📱 ${userPhone} • ID: ${targetId.substring(0, 10).toUpperCase()} • ⭐️ ${ratingVal}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button class="btn btn-sm btn-outline" style="color:white;border-color:#475569;font-size:12px;" onclick="viewUserProfile('${targetId}', '${isDriver ? 'driver' : 'rider'}')">
+            <i class="ri-user-line"></i> الملف الشخصي
+          </button>
+          <button onclick="closeFullChatModal()" style="background:rgba(255,255,255,0.15);border:none;color:white;width:38px;height:38px;border-radius:50%;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;">
+            &times;
+          </button>
+        </div>
+      </div>
+
+      <!-- Messages Body -->
+      <div id="modalCommMessagesContainer" style="flex:1;padding:20px;overflow-y:auto;background:#F8FAFC;display:flex;flex-direction:column;gap:12px;">
+        <div style="text-align:center;padding:40px;color:var(--text-light);">
+          <i class="ri-loader-4-line ri-spin" style="font-size:32px;color:var(--medium-blue);"></i>
+          <div style="margin-top:8px;">جاري تحميل المحادثة بالكامل...</div>
+        </div>
+      </div>
+
+      <!-- Quick Replies & Footer -->
+      <div style="padding:14px 20px;background:white;border-top:1px solid #E2E8F0;display:flex;flex-direction:column;gap:10px;">
+        <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;">
+          <button class="comm-quick-pill" onclick="sendModalQuickReply('أهلاً بك 🖐️ يسعدنا خدمتك في inRide')">أهلاً بك 🖐️</button>
+          <button class="comm-quick-pill" onclick="sendModalQuickReply('تم شحن المحفظة بنجاح ✅ يرجى التحديث')">تم الشحن ✅</button>
+          <button class="comm-quick-pill" onclick="sendModalQuickReply('تم استقبال الطلب وجاري المتابعة معك 📋')">جاري المتابعة 📋</button>
+          <button class="comm-quick-pill" onclick="sendModalQuickReply('شكراً لتواصلك معنا مع تحيات فريق inRide 🚗')">شكراً لك 🚗</button>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <input type="text" id="modalCommChatInput" placeholder="اكتب رسالتك المباشرة وسيقوم التطبيق بإرسالها فوراً باسم inRide..." onkeypress="if(event.key === 'Enter') sendModalChatMessage()" style="flex:1;padding:12px 16px;border:1px solid #CBD5E1;border-radius:12px;font-size:13.5px;outline:none;">
+          <button onclick="sendModalChatMessage()" class="btn btn-primary" style="padding:10px 24px;border-radius:12px;font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px;">
+            <span>إرسال</span>
+            <i class="ri-send-plane-fill"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  modal.style.display = 'flex';
+  loadModalMessagesThread(targetId);
+}
+
+function closeFullChatModal() {
+  const modal = document.getElementById('commFullChatModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function loadModalMessagesThread(userId) {
+  const box = document.getElementById('modalCommMessagesContainer');
+  if (!box || !userId) return;
+
+  let messagesList = [
+    { sender: 'admin', text: `أهلاً بك! يسعدنا تواصلك معنا عبر دعم inRide المباشر. كيف يمكننا مساعدتك اليوم؟`, time: 'الآن' }
+  ];
+
+  if (supabaseClient) {
+    try {
+      const { data: realMsgs } = await supabaseClient
+        .from('support_messages')
+        .select('*')
+        .or(`sender_id.eq.${userId},receiver_id.eq.${userId},user_id.eq.${userId},conversation_id.eq.${userId}`)
+        .order('created_at', { ascending: true });
+
+      if (realMsgs && realMsgs.length > 0) {
+        messagesList = realMsgs.map(m => {
+          const isAdmin = m.sender_type === 'admin' || m.is_admin === true || m.sender_role === 'admin';
+          const t = new Date(m.created_at || Date.now()).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+          return {
+            sender: isAdmin ? 'admin' : 'user',
+            text: m.message || m.text || '',
+            time: t
+          };
+        });
+      }
+    } catch (_) {}
+  }
+
+  box.innerHTML = messagesList.map(m => `
+    <div style="display:flex;flex-direction:column;align-items:${m.sender === 'admin' ? 'flex-end' : 'flex-start'};margin-bottom:8px;">
+      <div style="background:${m.sender === 'admin' ? 'var(--medium-blue,#1E88E5)' : '#FFFFFF'};color:${m.sender === 'admin' ? 'white' : '#1E293B'};padding:12px 16px;border-radius:16px;max-width:75%;font-size:13.5px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border:${m.sender === 'admin' ? 'none' : '1px solid #E2E8F0'};">
+        ${m.text}
+      </div>
+      <span style="font-size:10.5px;color:#64748B;margin-top:4px;display:flex;align-items:center;gap:4px;">
+        ${m.sender === 'admin' ? '✔️ الدعم الفني (inRide) • ' : ''}${m.time}
+      </span>
+    </div>
+  `).join('');
+
+  box.scrollTop = box.scrollHeight;
+}
+
+function sendModalQuickReply(text) {
+  const input = document.getElementById('modalCommChatInput');
+  if (input) {
+    input.value = text;
+    sendModalChatMessage();
+  }
+}
+
+async function sendModalChatMessage() {
+  const input = document.getElementById('modalCommChatInput');
+  if (!input || !input.value.trim() || !commActiveUserId) return;
+
+  const text = input.value.trim();
+  input.value = '';
+
+  const box = document.getElementById('modalCommMessagesContainer');
+  const nowStr = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+
+  if (box) {
+    const bubbleHtml = `
+      <div style="display:flex;flex-direction:column;align-items:flex-end;margin-bottom:8px;">
+        <div style="background:var(--medium-blue,#1E88E5);color:white;padding:12px 16px;border-radius:16px;max-width:75%;font-size:13.5px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+          ${text}
+        </div>
+        <span style="font-size:10.5px;color:#64748B;margin-top:4px;">
+          ✔️ الدعم الفني (inRide) • ${nowStr}
+        </span>
+      </div>
+    `;
+    box.insertAdjacentHTML('beforeend', bubbleHtml);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  // Send to Supabase directly
+  if (supabaseClient) {
+    try {
+      await supabaseClient.from('support_messages').insert({
+        user_id: commActiveUserId,
+        conversation_id: commActiveUserId,
+        sender_id: (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : 'admin',
+        sender_type: 'admin',
+        sender_name: 'inRide',
+        message: text,
+        is_admin: true,
+        created_at: new Date().toISOString()
+      });
+
+      await supabaseClient.from('notifications').insert({
+        user_id: commActiveUserId,
+        title: 'inRide',
+        body: text,
+        type: 'support_chat',
+        created_at: new Date().toISOString()
+      });
+    } catch (_) {}
   }
 }
 
@@ -3275,28 +3468,28 @@ function renderCommunication() {
         </div>
 
         ${currentCommunicationTab === 'chat' ? `
-          <div class="comm-chat-layout">
+          <div class="comm-chat-layout" style="display:grid;grid-template-columns:360px 1fr;gap:16px;min-height:640px;background:var(--bg-primary,#F8FAFC);border-radius:16px;border:1px solid var(--border-color,#E2E8F0);overflow:hidden;">
             <!-- Left Sidebar: Conversations & Contacts List -->
-            <div class="comm-chat-sidebar">
-              <div class="comm-sidebar-header">
-                <div class="comm-search-box">
+            <div class="comm-chat-sidebar" style="border-left:1px solid var(--border-color,#E2E8F0);background:white;display:flex;flex-direction:column;max-height:680px;overflow-y:auto;">
+              <div class="comm-sidebar-header" style="padding:16px;border-bottom:1px solid var(--border-light);">
+                <div class="comm-search-box" style="margin-bottom:10px;">
                   <i class="ri-search-line"></i>
                   <input type="text" placeholder="البحث باسم الكابتن أو الراكب..." oninput="onCommSearchInput(this.value)">
                 </div>
-                <div class="comm-filter-pills">
+                <div class="comm-filter-pills" style="display:flex;gap:4px;">
                   <button class="comm-pill ${commRoleFilter === 'all' ? 'active' : ''}" onclick="setCommRoleFilter('all')">الكل</button>
                   <button class="comm-pill ${commRoleFilter === 'driver' ? 'active' : ''}" onclick="setCommRoleFilter('driver')">الكباتن 🚗</button>
                   <button class="comm-pill ${commRoleFilter === 'rider' ? 'active' : ''}" onclick="setCommRoleFilter('rider')">الركاب 👤</button>
                 </div>
               </div>
 
-              <div class="comm-conv-list" id="commConvListContainer">
+              <div class="comm-conv-list" id="commConvListContainer" style="flex:1;overflow-y:auto;">
                 <!-- Dynamically populated by renderCommConversationsList -->
               </div>
             </div>
 
             <!-- Right Main Chat Box -->
-            <div class="comm-chat-main" id="commMainChatPanel">
+            <div class="comm-chat-main" id="commMainChatPanel" style="background:white;display:flex;flex-direction:column;height:100%;min-height:600px;">
               <div style="text-align:center;padding:60px 20px;color:var(--text-light);">
                 <i class="ri-chat-smile-2-line" style="font-size:48px;display:block;margin-bottom:12px;"></i>
                 <h4 style="margin:0 0 6px 0;">اختر محادثة لبدء التواصل</h4>

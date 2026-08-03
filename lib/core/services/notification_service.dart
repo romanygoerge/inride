@@ -55,6 +55,8 @@ class NotificationService {
       }
     }
 
+    if (!context.mounted) return;
+
     // 1. رسالة دردشة بين الركاب والسائقين
     if (type == 'new_message' || type == 'chat_message') {
       final tripId = data['tripId'] ?? data['trip_id'] ?? data['requestId'] ?? GlobalState.instance.currentRequestId;
@@ -154,6 +156,7 @@ class NotificationService {
     // 6. توثيق وقبول / رفض الكابتن
     if (type == 'driver_approved' || type == 'driver_verified') {
       await GlobalState.instance.selectRole(UserRole.driver);
+      if (!context.mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => const DriverHomePage()),

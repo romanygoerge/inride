@@ -2685,9 +2685,53 @@ async function loadFinancialDataFromSupabase() {
 
 
 function getFilteredTransactions() {
-  const allTx = financialState.transactions || [];
-  const period = financialState.selectedPeriod;
+  const rawTx = financialState.transactions || [];
+  const reqs = financialState.rechargeRequests || [];
 
+  let combinedMap = {};
+
+  // 1. Add all DB transactions
+  rawTx.forEach(t => {
+    if (t.id) combinedMap[t.id] = { ...t };
+  });
+
+  // 2. Merge approved & rejected recharge requests into completed ledger
+  reqs.forEach(r => {
+    if (r.status === 'approved' || r.status === 'rejected') {
+      const isApproved = r.status === 'approved';
+      const existingId = Object.keys(combinedMap).find(k => {
+        const item = combinedMap[k];
+        return item.user_id === r.user_id && 
+          ((isApproved && item.type === 'charge' && Math.abs((item.amount || 0) - (r.amount || 0)) < 0.1) ||
+           (!isApproved && item.type === 'charge_rejected'));
+      });
+
+      if (!existingId) {
+        const newId = r.id || generateUUID();
+        const userObj = (financialState.usersList || []).find(u => u.id === r.user_id);
+        const userBal = userObj ? parseFloat(userObj.wallet_balance || 0) : 0;
+
+        combinedMap[newId] = {
+          id: newId,
+          user_id: r.user_id,
+          title: isApproved ? 'شحن رصيد مقبول' : 'طلب شحن مرفوض',
+          amount: isApproved ? parseFloat(r.amount || 0) : 0,
+          type: isApproved ? 'charge' : 'charge_rejected',
+          balance_after: isApproved ? userBal : 0,
+          payment_method: r.payment_method || 'InstaPay',
+          receipt_url: r.receipt_url || '',
+          notes: isApproved ? 'تم قبول طلب الشحن وإضافة الرصيد للمحفظة' : `تم رفض طلب الشحن. ${r.rejection_reason ? 'السبب: ' + r.rejection_reason : ''}`,
+          is_settled: false,
+          created_at: r.processed_at || r.updated_at || r.created_at || new Date().toISOString()
+        };
+      }
+    }
+  });
+
+  let allTx = Object.values(combinedMap);
+  allTx.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+  const period = financialState.selectedPeriod;
   if (period === 'all') return allTx;
 
   const now = new Date();
@@ -2743,6 +2787,12 @@ async function approvePendingRecharge(id, userId, amount, requestIdFallback = nu
   }
 
   try {
+    let reqObj = null;
+    try {
+      const { data: rData } = await client.from('wallet_recharge_requests').select('*').eq('id', targetId).maybeSingle();
+      reqObj = rData;
+    } catch (_) {}
+
     // 1. Try stored RPC function first
     let rpcSuccess = false;
     try {
@@ -2755,78 +2805,72 @@ async function approvePendingRecharge(id, userId, amount, requestIdFallback = nu
       }
     } catch (_) {}
 
-    // 2. Guaranteed Client-side Fallback
-    if (!rpcSuccess) {
-      let reqObj = null;
-      try {
-        const { data: rData } = await client.from('wallet_recharge_requests').select('*').eq('id', targetId).maybeSingle();
-        reqObj = rData;
-      } catch (_) {}
+    // 2. Update wallet_recharge_requests status
+    await client.from('wallet_recharge_requests').update({
+      status: 'approved',
+      processed_at: new Date().toISOString()
+    }).eq('id', targetId);
 
-      const { data: userRecord } = await client
-        .from('users')
-        .select('wallet_balance, name')
-        .eq('id', userId)
-        .maybeSingle();
+    // 3. Update user wallet balance
+    const { data: userRecord } = await client
+      .from('users')
+      .select('wallet_balance, name')
+      .eq('id', userId)
+      .maybeSingle();
 
-      const currentBalance = parseFloat(userRecord?.wallet_balance || 0);
-      const newBalance = currentBalance + numericAmount;
+    const currentBalance = parseFloat(userRecord?.wallet_balance || 0);
+    const newBalance = currentBalance + numericAmount;
 
-      await client.from('users').update({ wallet_balance: newBalance }).eq('id', userId);
-      try {
-        await client.from('profiles').update({ wallet_balance: newBalance }).eq('id', userId);
-      } catch (_) {}
+    await client.from('users').update({ wallet_balance: newBalance }).eq('id', userId);
+    try { await client.from('profiles').update({ wallet_balance: newBalance }).eq('id', userId); } catch (_) {}
 
-      await client.from('wallet_recharge_requests').update({
-        status: 'approved',
-        processed_at: new Date().toISOString()
-      }).eq('id', targetId);
+    // 4. Ensure record exists in transactions ledger table
+    let existingTx = null;
+    try {
+      const { data: txList } = await client.from('transactions')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('type', 'charge_pending')
+        .limit(1);
+      if (txList && txList.length > 0) existingTx = txList[0];
+    } catch (_) {}
 
-      let existingTx = null;
-      try {
-        const { data: txList } = await client.from('transactions')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('type', 'charge_pending')
-          .limit(1);
-        if (txList && txList.length > 0) existingTx = txList[0];
-      } catch (_) {}
-
-      if (existingTx) {
-        await client.from('transactions').update({
-          type: 'charge',
-          title: 'شحن رصيد مقبول',
-          balance_after: newBalance,
-          notes: 'تم قبول طلب الشحن وتفعيل الرصيد بواسطة إدارة inRide',
-          payment_method: reqObj?.payment_method || 'InstaPay',
-          receipt_url: reqObj?.receipt_url || ''
-        }).eq('id', existingTx.id);
-      } else {
-        await client.from('transactions').insert({
-          id: generateUUID(),
-          user_id: userId,
-          title: 'شحن رصيد مقبول',
-          amount: numericAmount,
-          type: 'charge',
-          balance_after: newBalance,
-          payment_method: reqObj?.payment_method || 'InstaPay',
-          receipt_url: reqObj?.receipt_url || '',
-          notes: 'تم قبول طلب الشحن وإضافة الرصيد للمحفظة بواسطة الإدارة',
-          is_settled: false,
-          created_at: new Date().toISOString()
-        });
-      }
-
-      try {
-        await client.from('notifications').insert({
-          user_id: userId,
-          title: '✅ تم قبول طلب الشحن',
-          body: `تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م بنجاح. رصيدك الحالي: ${newBalance} ج.م`,
-          type: 'wallet',
-          created_at: new Date().toISOString()
-        });
-      } catch (_) {}
+    if (existingTx) {
+      await client.from('transactions').update({
+        type: 'charge',
+        title: 'شحن رصيد مقبول',
+        amount: numericAmount,
+        balance_after: newBalance,
+        notes: 'تم قبول طلب الشحن وتفعيل الرصيد بواسطة إدارة inRide',
+        payment_method: reqObj?.payment_method || 'InstaPay',
+        receipt_url: reqObj?.receipt_url || ''
+      }).eq('id', existingTx.id);
+    } else {
+      await client.from('transactions').insert({
+        id: generateUUID(),
+        user_id: userId,
+        title: 'شحن رصيد مقبول',
+        amount: numericAmount,
+        type: 'charge',
+        balance_after: newBalance,
+        payment_method: reqObj?.payment_method || 'InstaPay',
+        receipt_url: reqObj?.receipt_url || '',
+        notes: 'تم قبول طلب الشحن وإضافة الرصيد للمحفظة بواسطة الإدارة',
+        is_settled: false,
+        created_at: new Date().toISOString()
+      });
     }
+
+    try {
+      await client.from('notifications').insert({
+        id: generateUUID(),
+        user_id: userId,
+        title: '✅ تم قبول طلب الشحن',
+        body: `تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م بنجاح. رصيدك الحالي: ${newBalance} ج.م`,
+        type: 'wallet',
+        created_at: new Date().toISOString()
+      });
+    } catch (_) {}
 
     showToast(`✅ تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م وإضافته للمحفظة بنجاح!`);
     await loadFinancialDataFromSupabase();
@@ -2854,6 +2898,12 @@ async function rejectPendingRecharge(id, userId, requestIdFallback = null) {
   }
 
   try {
+    let reqObj = null;
+    try {
+      const { data: rData } = await client.from('wallet_recharge_requests').select('*').eq('id', targetId).maybeSingle();
+      reqObj = rData;
+    } catch (_) {}
+
     let rpcSuccess = false;
     try {
       const { data: rpcData, error: rpcErr } = await client.rpc('reject_wallet_recharge_request', {
@@ -2866,54 +2916,57 @@ async function rejectPendingRecharge(id, userId, requestIdFallback = null) {
       }
     } catch (_) {}
 
-    if (!rpcSuccess) {
-      await client.from('wallet_recharge_requests').update({
-        status: 'rejected',
-        rejection_reason: reason || 'إيصال تحويل غير واضح',
-        processed_at: new Date().toISOString()
-      }).eq('id', targetId);
+    await client.from('wallet_recharge_requests').update({
+      status: 'rejected',
+      rejection_reason: reason || 'إيصال تحويل غير واضح',
+      processed_at: new Date().toISOString()
+    }).eq('id', targetId);
 
-      let existingTx = null;
-      try {
-        const { data: txList } = await client.from('transactions')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('type', 'charge_pending')
-          .limit(1);
-        if (txList && txList.length > 0) existingTx = txList[0];
-      } catch (_) {}
+    let existingTx = null;
+    try {
+      const { data: txList } = await client.from('transactions')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('type', 'charge_pending')
+        .limit(1);
+      if (txList && txList.length > 0) existingTx = txList[0];
+    } catch (_) {}
 
-      if (existingTx) {
-        await client.from('transactions').update({
-          type: 'charge_rejected',
-          title: 'طلب شحن مرفوض',
-          notes: `تم رفض طلب الشحن. السبب: ${reason || 'إيصال غير واضح'}`
-        }).eq('id', existingTx.id);
-      } else {
-        await client.from('transactions').insert({
-          id: generateUUID(),
-          user_id: userId,
-          title: 'طلب شحن مرفوض',
-          amount: 0,
-          type: 'charge_rejected',
-          balance_after: 0,
-          payment_method: 'InstaPay',
-          notes: `تم رفض طلب الشحن. السبب: ${reason || 'إيصال غير واضح'}`,
-          is_settled: false,
-          created_at: new Date().toISOString()
-        });
-      }
-
-      try {
-        await client.from('notifications').insert({
-          user_id: userId,
-          title: '❌ تم رفض طلب الشحن',
-          body: `نأسف، تعذر قبول طلب الشحن الخاص بك. السبب: ${reason || 'إيصال غير واضح'}`,
-          type: 'wallet',
-          created_at: new Date().toISOString()
-        });
-      } catch (_) {}
+    if (existingTx) {
+      await client.from('transactions').update({
+        type: 'charge_rejected',
+        title: 'طلب شحن مرفوض',
+        amount: 0,
+        balance_after: 0,
+        notes: `تم رفض طلب الشحن. السبب: ${reason || 'إيصال غير واضح'}`,
+        receipt_url: reqObj?.receipt_url || ''
+      }).eq('id', existingTx.id);
+    } else {
+      await client.from('transactions').insert({
+        id: generateUUID(),
+        user_id: userId,
+        title: 'طلب شحن مرفوض',
+        amount: 0,
+        type: 'charge_rejected',
+        balance_after: 0,
+        payment_method: reqObj?.payment_method || 'InstaPay',
+        receipt_url: reqObj?.receipt_url || '',
+        notes: `تم رفض طلب الشحن. السبب: ${reason || 'إيصال غير واضح'}`,
+        is_settled: false,
+        created_at: new Date().toISOString()
+      });
     }
+
+    try {
+      await client.from('notifications').insert({
+        id: generateUUID(),
+        user_id: userId,
+        title: '❌ تم رفض طلب الشحن',
+        body: `نأسف، تعذر قبول طلب الشحن الخاص بك. السبب: ${reason || 'إيصال غير واضح'}`,
+        type: 'wallet',
+        created_at: new Date().toISOString()
+      });
+    } catch (_) {}
 
     showToast('❌ تم رفض طلب الشحن وإبلاغ المستخدم بنجاح.');
     await loadFinancialDataFromSupabase();

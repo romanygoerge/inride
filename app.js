@@ -627,9 +627,9 @@ function getFilteredTrips() {
     if (createdStr) {
       date = new Date(createdStr);
     } else if (trip.date) {
-      if (trip.date.startsWith("اليوم")) {
+      if (typeof trip.date === 'string' && trip.date.startsWith("اليوم")) {
         date = new Date();
-      } else if (trip.date.startsWith("أمس")) {
+      } else if (typeof trip.date === 'string' && trip.date.startsWith("أمس")) {
         date = new Date(Date.now() - 24 * 60 * 60 * 1000);
       } else {
         const parsed = new Date(trip.date);
@@ -921,62 +921,74 @@ function renderPage(page) {
   const container = document.getElementById('pageContent');
   if (!container) return;
 
-  switch (page) {
-    case 'dashboard':
-      container.innerHTML = renderDashboard();
-      initDashboardAnimations();
-      break;
-    case 'trips':
-      container.innerHTML = renderTrips();
-      break;
-    case 'drivers':
-      container.innerHTML = renderDrivers();
-      break;
-    case 'passengers':
-      container.innerHTML = renderPassengers();
-      break;
-    case 'driver-profile':
-      container.innerHTML = renderDriverProfile();
-      initProfileChatSync(activeProfileUid, 'driver');
-      loadProfileRatings(activeProfileUid, 'driver');
-      break;
-    case 'passenger-profile':
-      container.innerHTML = renderPassengerProfile();
-      initProfileChatSync(activeProfileUid, 'rider');
-      loadProfileRatings(activeProfileUid, 'rider');
-      break;
-    case 'wallet':
-      container.innerHTML = renderWallet();
-      break;
-    case 'pricing':
-      container.innerHTML = renderPricing();
-      break;
-    case 'communication':
-    case 'support':
-      container.innerHTML = renderCommunication();
-      if (currentCommunicationTab === 'chat') {
-        initCommChatSync();
-      }
-      break;
-    case 'messages':
-      container.innerHTML = renderMessages();
-      initMessagesPage();
-      break;
-    case 'content':
-      container.innerHTML = renderContent();
-      break;
-    case 'monitoring':
-      container.innerHTML = renderMonitoring();
-      break;
-    case 'logs':
-      container.innerHTML = renderLogs();
-      break;
-    case 'settings':
-      container.innerHTML = renderSettings();
-      break;
-    default:
-      container.innerHTML = renderDashboard();
-      initDashboardAnimations();
+  try {
+    switch (page) {
+      case 'dashboard':
+        container.innerHTML = renderDashboard();
+        initDashboardAnimations();
+        break;
+      case 'trips':
+        container.innerHTML = renderTrips();
+        break;
+      case 'drivers':
+        container.innerHTML = renderDrivers();
+        break;
+      case 'passengers':
+        container.innerHTML = renderPassengers();
+        break;
+      case 'driver-profile':
+        container.innerHTML = renderDriverProfile();
+        initProfileChatSync(activeProfileUid, 'driver');
+        loadProfileRatings(activeProfileUid, 'driver');
+        break;
+      case 'passenger-profile':
+        container.innerHTML = renderPassengerProfile();
+        initProfileChatSync(activeProfileUid, 'rider');
+        loadProfileRatings(activeProfileUid, 'rider');
+        break;
+      case 'wallet':
+        container.innerHTML = renderWallet();
+        break;
+      case 'pricing':
+        container.innerHTML = renderPricing();
+        break;
+      case 'communication':
+      case 'support':
+        container.innerHTML = renderCommunication();
+        if (currentCommunicationTab === 'chat') {
+          initCommChatSync();
+        }
+        break;
+      case 'messages':
+        container.innerHTML = renderMessages();
+        initMessagesPage();
+        break;
+      case 'content':
+        container.innerHTML = renderContent();
+        break;
+      case 'monitoring':
+        container.innerHTML = renderMonitoring();
+        break;
+      case 'logs':
+        container.innerHTML = renderLogs();
+        break;
+      case 'settings':
+        container.innerHTML = renderSettings();
+        break;
+      default:
+        container.innerHTML = renderDashboard();
+        initDashboardAnimations();
+    }
+  } catch (err) {
+    console.error(`[Dashboard Error] Failed rendering page ${page}:`, err);
+    container.innerHTML = `
+      <div style="padding:40px;text-align:center;color:var(--error);">
+        <i class="ri-error-warning-line" style="font-size:48px;display:block;margin-bottom:12px;"></i>
+        <h3 style="font-weight:700;">حدث خطأ غير متوقع أثناء عرض الصفحة</h3>
+        <p style="font-size:13px;color:var(--text-secondary);margin-top:6px;">${err.message || err}</p>
+        <button class="btn btn-primary btn-sm" style="margin-top:16px;" onclick="renderPage('${page}')">إعادة المحاولة</button>
+      </div>
+    `;
   }
 }
 
@@ -995,7 +1007,7 @@ function renderDashboard() {
       : (t.createdAt || t.created_at || null);
     let d = createdStr ? new Date(createdStr) : null;
     if (!d || isNaN(d.getTime())) {
-      if (t.date && t.date.startsWith("أمس")) {
+      if (t.date && typeof t.date === 'string' && t.date.startsWith("أمس")) {
         d = new Date(Date.now() - 24 * 60 * 60 * 1000);
       } else {
         d = new Date();
@@ -1278,8 +1290,8 @@ function groupTripsByDate(trips) {
         dayLabel = d.toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       }
     } else {
-      if (trip.date.startsWith("اليوم")) dayLabel = "اليوم الجاري";
-      else if (trip.date.startsWith("أمس")) dayLabel = "أمس";
+      if (trip.date && typeof trip.date === 'string' && trip.date.startsWith("اليوم")) dayLabel = "اليوم الجاري";
+      else if (trip.date && typeof trip.date === 'string' && trip.date.startsWith("أمس")) dayLabel = "أمس";
     }
     
     if (!groups[dayLabel]) groups[dayLabel] = [];
@@ -1479,10 +1491,24 @@ function changeTripPricePrompt(requestId) {
   
   if (supabaseClient) {
     supabaseClient.from('ride_requests').update({ offered_fare: newPrice }).eq('id', requestId)
-      .then(({ error }) => {
+      .then(async ({ error }) => {
         if (!error) {
           logAction(`تعديل سعر الرحلة ${requestId} إلى ${newPrice} ج.م`);
           showToast(`✅ تم تعديل سعر الرحلة بنجاح`);
+
+          // Push Notification: إبلاغ الراكب بتعديل سعر الرحلة
+          try {
+            const { data: reqData } = await supabaseClient.from('ride_requests')
+              .select('passenger_id').eq('id', requestId).maybeSingle();
+            if (reqData && reqData.passenger_id) {
+              await sendPushNotificationBackend({
+                recipientId: reqData.passenger_id,
+                title: '🔄 تم تعديل سعر الرحلة',
+                body: `تم تعديل سعر رحلتك إلى ${newPrice} ج.م بواسطة إدارة inRide.`,
+                type: 'wallet'
+              });
+            }
+          } catch (_) {}
         } else {
           showToast(`❌ فشل: ${error.message}`);
         }
@@ -1506,11 +1532,12 @@ function filterTrips(filter) {
 // ---- DRIVERS ----
 function renderDrivers() {
   const filteredDrivers = mockData.drivers.filter(d => {
-    return d.id.toLowerCase().includes(searchQuery) ||
-           d.name.toLowerCase().includes(searchQuery) ||
-           d.phone.includes(searchQuery) ||
-           (d.vehicleName && d.vehicleName.toLowerCase().includes(searchQuery)) ||
-           (d.licensePlate && d.licensePlate.toLowerCase().includes(searchQuery));
+    const q = (searchQuery || '').toLowerCase();
+    return (d.id || '').toString().toLowerCase().includes(q) ||
+           (d.name || '').toString().toLowerCase().includes(q) ||
+           (d.phone || '').toString().includes(q) ||
+           (d.vehicleName && d.vehicleName.toString().toLowerCase().includes(q)) ||
+           (d.licensePlate && d.licensePlate.toString().toLowerCase().includes(q));
   });
 
   const page = currentPages['drivers'] || 1;
@@ -1964,9 +1991,10 @@ function updatePendingBadge() {
 // ---- PASSENGERS ----
 function renderPassengers() {
   const filteredPassengers = mockData.passengers.filter(p => {
-    return p.id.toLowerCase().includes(searchQuery) ||
-           p.name.toLowerCase().includes(searchQuery) ||
-           p.phone.includes(searchQuery);
+    const q = (searchQuery || '').toLowerCase();
+    return (p.id || '').toString().toLowerCase().includes(q) ||
+           (p.name || '').toString().toLowerCase().includes(q) ||
+           (p.phone || '').toString().includes(q);
   });
 
   const page = currentPages['passengers'] || 1;
@@ -2872,6 +2900,16 @@ async function approvePendingRecharge(id, userId, amount, requestIdFallback = nu
       });
     } catch (_) {}
 
+    // Push Notification: إبلاغ المستخدم بقبول الشحن فوراً على جهازه
+    try {
+      await sendPushNotificationBackend({
+        recipientId: userId,
+        title: '✅ تم قبول طلب الشحن',
+        body: `تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م بنجاح. رصيدك الحالي: ${newBalance} ج.م`,
+        type: 'wallet'
+      });
+    } catch (_) {}
+
     showToast(`✅ تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م وإضافته للمحفظة بنجاح!`);
     await loadFinancialDataFromSupabase();
     renderPage('wallet');
@@ -2965,6 +3003,16 @@ async function rejectPendingRecharge(id, userId, requestIdFallback = null) {
         body: `نأسف، تعذر قبول طلب الشحن الخاص بك. السبب: ${reason || 'إيصال غير واضح'}`,
         type: 'wallet',
         created_at: new Date().toISOString()
+      });
+    } catch (_) {}
+
+    // Push Notification: إبلاغ المستخدم برفض الشحن فوراً على جهازه
+    try {
+      await sendPushNotificationBackend({
+        recipientId: userId,
+        title: '❌ تم رفض طلب الشحن',
+        body: `نأسف، تعذر قبول طلب الشحن الخاص بك. السبب: ${reason || 'إيصال غير واضح'}`,
+        type: 'wallet'
       });
     } catch (_) {}
 
@@ -3573,9 +3621,10 @@ function renderCommConversationsList() {
     if (commRoleFilter === 'rider' && c.role !== 'rider') return false;
 
     if (commSearchQuery) {
-      const n = c.name.toLowerCase();
-      const p = c.phone.toLowerCase();
-      if (!n.includes(commSearchQuery) && !p.includes(commSearchQuery)) return false;
+      const q = commSearchQuery.toLowerCase();
+      const n = (c.name || '').toString().toLowerCase();
+      const p = (c.phone || '').toString().toLowerCase();
+      if (!n.includes(q) && !p.includes(q)) return false;
     }
     return true;
   });
@@ -3734,7 +3783,7 @@ async function loadCommMessagesThread(userId) {
 
       if (realMsgs && realMsgs.length > 0) {
         messagesList = realMsgs.map(m => {
-          const isAdmin = m.sender_type === 'admin' || m.is_admin === true || m.sender_role === 'admin';
+          const isAdmin = m.sender_type === 'admin' || m.is_admin === true || m.sender_role === 'admin' || m.sender_id === null || (currentAdminUser && m.sender_id === currentAdminUser.id);
           const t = new Date(m.created_at || Date.now()).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
           return {
             sender: isAdmin ? 'admin' : 'user',
@@ -3746,17 +3795,24 @@ async function loadCommMessagesThread(userId) {
     } catch (_) {}
   }
 
-  let messagesHtml = messagesList.map(m => `
-    <div class="comm-bubble-wrapper ${m.sender}">
-      <div class="comm-bubble">
-        ${m.text}
+  let messagesHtml = messagesList.map(m => {
+    const isAdmin = m.sender === 'admin';
+    const bg = isAdmin ? '#1E3A8A' : '#F1F5F9';
+    const color = isAdmin ? '#FFFFFF' : '#0F172A';
+    const border = isAdmin ? 'none' : '1px solid #CBD5E1';
+    const radius = isAdmin ? '16px 16px 4px 16px' : '16px 16px 16px 4px';
+    return `
+      <div class="comm-bubble-wrapper ${m.sender}" style="display:flex; flex-direction:column; max-width:70%; align-self:${isAdmin ? 'flex-end' : 'flex-start'}; align-items:${isAdmin ? 'flex-end' : 'flex-start'}; margin-bottom:10px;">
+        <div class="comm-bubble" style="background:${bg} !important; color:${color} !important; border:${border} !important; border-radius:${radius}; padding:12px 16px; font-size:13.5px; font-weight:600; line-height:1.5; box-shadow:0 2px 5px rgba(0,0,0,0.08);">
+          ${m.text}
+        </div>
+        <div class="comm-bubble-meta" style="font-size:11px; font-weight:600; color:#475569 !important; margin-top:4px; display:flex; align-items:center; gap:4px;">
+          ${isAdmin ? '<i class="ri-check-double-line" style="color:#2563EB;"></i> الدعم الفني • ' : userName + ' • '}
+          ${m.time}
+        </div>
       </div>
-      <div class="comm-bubble-meta">
-        ${m.sender === 'admin' ? '<i class="ri-check-double-line text-blue"></i> الدعم الفني • ' : userName + ' • '}
-        ${m.time}
-      </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   mainPanel.innerHTML = `
     <!-- Header -->
@@ -3845,9 +3901,10 @@ async function sendCommChatMessage() {
   if (container) {
     const bubble = document.createElement('div');
     bubble.className = 'comm-bubble-wrapper admin';
+    bubble.style.cssText = 'display:flex; flex-direction:column; max-width:70%; align-self:flex-end; align-items:flex-end; margin-bottom:10px;';
     bubble.innerHTML = `
-      <div class="comm-bubble">${msgText}</div>
-      <div class="comm-bubble-meta"><i class="ri-check-double-line text-blue"></i> الدعم الفني • ${nowStr}</div>
+      <div class="comm-bubble" style="background:#1E3A8A !important; color:#FFFFFF !important; border:none !important; border-radius:16px 16px 4px 16px; padding:12px 16px; font-size:13.5px; font-weight:600; line-height:1.5; box-shadow:0 2px 5px rgba(0,0,0,0.08);">${msgText}</div>
+      <div class="comm-bubble-meta" style="font-size:11px; font-weight:600; color:#475569 !important; margin-top:4px; display:flex; align-items:center; gap:4px;"><i class="ri-check-double-line" style="color:#2563EB;"></i> الدعم الفني • ${nowStr}</div>
     `;
     container.appendChild(bubble);
     container.scrollTop = container.scrollHeight;
@@ -4623,6 +4680,24 @@ async function processTopupWithReceipt(userId, amount, methodCode, refCode, rece
       created_at: new Date().toISOString()
     });
 
+    // Push Notification + DB: إبلاغ المستخدم بشحن الرصيد المباشر
+    try {
+      await client.from('notifications').insert({
+        id: generateUUID(),
+        user_id: userId,
+        title: '💰 تم شحن رصيدك',
+        body: `تم شحن رصيد محفظتك بمبلغ ${parseFloat(amount)} ج.م بنجاح. رصيدك الحالي: ${newBal} ج.م`,
+        type: 'wallet',
+        created_at: new Date().toISOString()
+      });
+      await sendPushNotificationBackend({
+        recipientId: userId,
+        title: '💰 تم شحن رصيدك',
+        body: `تم شحن رصيد محفظتك بمبلغ ${parseFloat(amount)} ج.م. رصيدك الحالي: ${newBal} ج.م`,
+        type: 'wallet'
+      });
+    } catch (_) {}
+
     showToast('✅ تم شحن الرصيد وتوثيق الريسيت بنجاح');
     closeFinancialModal('rechargeModal');
     await loadFinancialDataFromSupabase();
@@ -4659,6 +4734,25 @@ async function processDriverPayout(userId, amount, methodCode, refCode, receiptB
       performed_by: currentAdminUser ? currentAdminUser.email : 'مدير النظام',
       created_at: new Date().toISOString()
     });
+
+    // Push Notification + DB: إبلاغ السائق بتحويل المستحقات
+    try {
+      await client.from('notifications').insert({
+        id: generateUUID(),
+        user_id: userId,
+        title: '💳 تم تحويل مستحقاتك',
+        body: `تم تحويل مبلغ ${payoutAmount} ج.م لحسابك. رصيدك الحالي: ${newBal} ج.م`,
+        type: 'wallet',
+        created_at: new Date().toISOString()
+      });
+      await sendPushNotificationBackend({
+        recipientId: userId,
+        title: '💳 تم تحويل مستحقاتك',
+        body: `تم تحويل مبلغ ${payoutAmount} ج.م لحسابك. رصيدك الحالي: ${newBal} ج.م`,
+        type: 'wallet',
+        targetRole: 'driver'
+      });
+    } catch (_) {}
 
     showToast('✅ تم سحب المبلغ وتسوية المستحقات بنجاح');
     closeFinancialModal('payoutModal');
@@ -5109,67 +5203,127 @@ function updateSetting(key, value) {
   }
 }
 
-function toggleSurgePricing(enabled) {
+async function toggleSurgePricing(enabled) {
   mockData.settings.surge_enabled = enabled;
-  settingsDirty = true;
-  const btnContainer = document.getElementById('pricing-save-container');
-  if (btnContainer) btnContainer.style.display = 'flex';
   logAction(`تغيير وضع Surge pricing إلى ${enabled ? 'مفعل' : 'معطل'}`);
+  await saveSettings();
+}
+
+function openRegionModal(regionId = null) {
+  const regions = mockData.settings.region_fares || [];
+  const target = regionId ? regions.find(r => r.id === regionId) : null;
+
+  const isEdit = !!target;
+  const modalTitle = isEdit ? `تعديل المنطقة: ${target.name}` : 'إضافة منطقة جديدة';
+  const nameValue = target ? target.name : '';
+  const surchargeValue = target ? target.surcharge : 0;
+  const isDefaultValue = target ? !!target.is_default : false;
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="modal-card" style="max-width:460px;width:90%;">
+      <div class="modal-header">
+        <h3><i class="ri-map-pin-2-line text-blue" style="margin-left:8px;"></i> ${modalTitle}</h3>
+        <button class="modal-close-btn" onclick="this.closest('.modal-backdrop').remove()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:20px;">
+        <div style="margin-bottom:16px;">
+          <label style="display:block;margin-bottom:6px;font-weight:700;font-size:13px;">اسم المنطقة / المدينة:</label>
+          <input type="text" id="regionNameInput" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" placeholder="مثال: مدينة السادات، القاهرة الكبرى..." value="${nameValue}">
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="display:block;margin-bottom:6px;font-weight:700;font-size:13px;">رسوم التسعير الإضافية (سريتشارج بالجنيه):</label>
+          <input type="number" id="regionSurchargeInput" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" placeholder="مثال: 5 أو 10" value="${surchargeValue}">
+          <span style="font-size:11px;color:var(--text-secondary);display:block;margin-top:4px;">تضاف هذه القيمة تلقائياً كزيادة على الأجرة في هذه المنطقة.</span>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px;background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);border:1px solid var(--border-color);">
+          <input type="checkbox" id="regionIsDefaultInput" ${isDefaultValue ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;">
+          <label for="regionIsDefaultInput" style="font-size:12.5px;font-weight:700;cursor:pointer;margin:0;">تعيين هذه المنطقة كمنطقة افتراضية بالنظام</label>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:10px;padding:16px;background:var(--bg-primary);">
+        <button class="btn btn-outline" onclick="this.closest('.modal-backdrop').remove()">إلغاء</button>
+        <button class="btn btn-primary" onclick="submitSaveRegion('${regionId || ''}')">
+          <i class="ri-save-line"></i> حفظ وتزامن مع الداتا بيس
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
 }
 
 function addRegionPricing() {
-  const name = prompt('أدخل اسم المنطقة الجديدة (مثال: مدينة السادات):');
-  if (!name || !name.trim()) return;
-  const surchargeStr = prompt(`أدخل الزيادة الإضافية للمنطقة (${name}) بالجنيه المصري (مثال: 10):`, '0');
-  const surcharge = parseFloat(surchargeStr || 0);
-
-  if (!mockData.settings.region_fares) {
-    mockData.settings.region_fares = [
-      { id: '1', name: 'القاهرة الكبرى', surcharge: 0, is_default: true }
-    ];
-  }
-
-  mockData.settings.region_fares.push({
-    id: 'reg_' + Date.now(),
-    name: name.trim(),
-    surcharge: surcharge,
-    is_default: false
-  });
-
-  settingsDirty = true;
-  renderPage('pricing');
-  showToast(`✅ تم إضافة المنطقة (${name})، اضغط "حفظ إعدادات الأسعار" لتأكيد التغييرات`);
+  openRegionModal(null);
 }
 
 function editRegionPricing(id) {
-  const regions = mockData.settings.region_fares || [];
-  const target = regions.find(r => r.id === id);
-  if (!target) return;
-
-  const newSurchargeStr = prompt(`تعديل الزيادة الإضافية لمنطقة (${target.name}) بالجنيه:`, target.surcharge);
-  if (newSurchargeStr === null) return;
-  target.surcharge = parseFloat(newSurchargeStr || 0);
-
-  settingsDirty = true;
-  renderPage('pricing');
-  showToast(`✅ تم تعديل سعر المنطقة (${target.name})، اضغط "حفظ إعدادات الأسعار" للتأكيد`);
+  openRegionModal(id);
 }
 
-function deleteRegionPricing(id) {
+async function submitSaveRegion(regionId) {
+  const nameInput = document.getElementById('regionNameInput');
+  const surchargeInput = document.getElementById('regionSurchargeInput');
+  const isDefaultInput = document.getElementById('regionIsDefaultInput');
+
+  const name = nameInput ? nameInput.value.trim() : '';
+  const surcharge = parseFloat(surchargeInput ? surchargeInput.value : 0) || 0;
+  const isDefault = isDefaultInput ? isDefaultInput.checked : false;
+
+  if (!name) {
+    showToast('⚠️ يرجى إدخال اسم المنطقة');
+    return;
+  }
+
+  if (!mockData.settings.region_fares) {
+    mockData.settings.region_fares = [];
+  }
+
+  if (isDefault) {
+    mockData.settings.region_fares.forEach(r => r.is_default = false);
+  }
+
+  if (regionId) {
+    const target = mockData.settings.region_fares.find(r => r.id === regionId);
+    if (target) {
+      target.name = name;
+      target.surcharge = surcharge;
+      target.is_default = isDefault;
+    }
+  } else {
+    mockData.settings.region_fares.push({
+      id: 'reg_' + Date.now(),
+      name: name,
+      surcharge: surcharge,
+      is_default: isDefault
+    });
+  }
+
+  const modal = document.querySelector('.modal-backdrop');
+  if (modal) modal.remove();
+
+  logAction(`${regionId ? 'تعديل' : 'إضافة'} منطقة تسعير: ${name}`);
+  await saveSettings();
+}
+
+async function deleteRegionPricing(id) {
   const regions = mockData.settings.region_fares || [];
   const targetIndex = regions.findIndex(r => r.id === id);
   if (targetIndex === -1) return;
 
+  const regName = regions[targetIndex].name;
   if (regions[targetIndex].is_default) {
     showToast('⚠️ لا يمكن حذف المنطقة الافتراضية');
     return;
   }
 
-  if (confirm(`هل أنت تأكد من حذف المنطقة (${regions[targetIndex].name})؟`)) {
+  if (confirm(`هل أنت تأكد من حذف المنطقة (${regName}) نهائياً وتصفيتها من الداتا بيس؟`)) {
     regions.splice(targetIndex, 1);
-    settingsDirty = true;
-    renderPage('pricing');
-    showToast('✅ تم حذف المنطقة، اضغط "حفظ إعدادات الأسعار" للتأكيد');
+    logAction(`حذف منطقة تسعير: ${regName}`);
+    await saveSettings();
   }
 }
 
@@ -6705,10 +6859,58 @@ function renderLogs() {
 function modifyTripStatus(requestId, newStatus) {
   if (supabaseClient) {
     supabaseClient.from('ride_requests').update({ status: newStatus }).eq('id', requestId)
-      .then(({ error }) => {
+      .then(async ({ error }) => {
         if (!error) {
           logAction(`تغيير حالة الرحلة ${requestId} إلى ${newStatus} يدوياً من الإدارة`);
           showToast(`✅ تم تحديث حالة الرحلة بنجاح إلى ${newStatus}`);
+
+          // Push Notification: إبلاغ الراكب والكابتن بتغيير حالة الرحلة من الإدارة
+          try {
+            const { data: tripData } = await supabaseClient.from('ride_requests')
+              .select('passenger_id, driver_id').eq('id', requestId).maybeSingle();
+
+            if (tripData) {
+              if (newStatus === 'Completed') {
+                if (tripData.passenger_id) {
+                  await sendPushNotificationBackend({
+                    recipientId: tripData.passenger_id,
+                    title: 'اكتملت الرحلة 🏁',
+                    body: 'تم إنهاء الرحلة بنجاح من قبل إدارة inRide. شكراً لاستخدامك التطبيق.',
+                    type: 'trip_completed'
+                  });
+                }
+                if (tripData.driver_id) {
+                  await sendPushNotificationBackend({
+                    recipientId: tripData.driver_id,
+                    title: 'اكتملت الرحلة 🏁',
+                    body: 'تم إنهاء الرحلة بنجاح من قبل إدارة inRide.',
+                    type: 'trip_completed',
+                    targetRole: 'driver'
+                  });
+                }
+              } else if (newStatus === 'Cancelled') {
+                if (tripData.passenger_id) {
+                  await sendPushNotificationBackend({
+                    recipientId: tripData.passenger_id,
+                    title: 'تم إلغاء الرحلة ❌',
+                    body: 'تم إلغاء الرحلة بواسطة إدارة inRide.',
+                    type: 'cancel_trip'
+                  });
+                }
+                if (tripData.driver_id) {
+                  await sendPushNotificationBackend({
+                    recipientId: tripData.driver_id,
+                    title: 'تم إلغاء الرحلة ❌',
+                    body: 'تم إلغاء الرحلة بواسطة إدارة inRide.',
+                    type: 'cancel_trip',
+                    targetRole: 'driver'
+                  });
+                }
+              }
+            }
+          } catch (pushErr) {
+            console.warn('[PushNotificationLog] Trip status push error:', pushErr);
+          }
         } else {
           showToast(`❌ فشل التحديث: ${error.message}`);
         }
@@ -6751,6 +6953,46 @@ function modifyUserStatus(uid, action, userRole) {
           const { error: actErr } = await supabaseClient.from('users').update({ banned_until: null }).eq('id', uid);
           if (actErr) throw actErr;
         }
+
+        // Push Notification + DB: إبلاغ المستخدم بتغيير حالة حسابه
+        try {
+          let statusNotifTitle = '';
+          let statusNotifBody = '';
+          let statusNotifType = 'account_status';
+
+          if (action === 'ban') {
+            statusNotifTitle = '⛔ تم إيقاف حسابك';
+            statusNotifBody = 'تم إيقاف حسابك بواسطة إدارة inRide. تواصل مع الدعم الفني لمزيد من المعلومات.';
+          } else if (action === 'suspend') {
+            statusNotifTitle = '⚠️ تم تعليق حسابك مؤقتاً';
+            statusNotifBody = 'تم تعليق حسابك مؤقتاً. تواصل مع الدعم الفني لمعرفة السبب.';
+          } else if (action === 'activate') {
+            statusNotifTitle = '✅ تم تفعيل حسابك';
+            statusNotifBody = 'تم تفعيل حسابك بنجاح. يمكنك استخدام التطبيق الآن.';
+          } else if (action === 'verify') {
+            statusNotifTitle = '✅ تم اعتماد حسابك كسائق';
+            statusNotifBody = 'تم اعتماد حسابك كسائق في inRide. يمكنك بدء استقبال الطلبات الآن.';
+            statusNotifType = 'driver_approved';
+          }
+
+          if (statusNotifTitle) {
+            await supabaseClient.from('notifications').insert({
+              id: generateUUID(),
+              user_id: uid,
+              title: statusNotifTitle,
+              body: statusNotifBody,
+              type: statusNotifType,
+              created_at: new Date().toISOString()
+            });
+            await sendPushNotificationBackend({
+              recipientId: uid,
+              title: statusNotifTitle,
+              body: statusNotifBody,
+              type: statusNotifType,
+              targetRole: userRole || ''
+            });
+          }
+        } catch (_) {}
 
         logAction(`إجراء (${action}) على حساب المستخدم/السائق: ${uid}`);
         showToast(`✅ تم تنفيذ الإجراء بنجاح`);
@@ -6828,6 +7070,26 @@ function adjustUserWallet(uid, amountStr, role) {
           balance_after: newBal,
           created_at: new Date().toISOString()
         });
+
+        // Push Notification + DB: إبلاغ المستخدم بتعديل الرصيد
+        try {
+          const walletNotifTitle = amount >= 0 ? '💰 تم إضافة رصيد لمحفظتك' : '⚡ تم خصم رصيد من محفظتك';
+          const walletNotifBody = `تم ${amount >= 0 ? 'إضافة' : 'خصم'} مبلغ ${Math.abs(amount)} ج.م ${amount >= 0 ? 'إلى' : 'من'} محفظتك. رصيدك الحالي: ${newBal} ج.م`;
+          await supabaseClient.from('notifications').insert({
+            id: generateUUID(),
+            user_id: uid,
+            title: walletNotifTitle,
+            body: walletNotifBody,
+            type: 'wallet',
+            created_at: new Date().toISOString()
+          });
+          await sendPushNotificationBackend({
+            recipientId: uid,
+            title: walletNotifTitle,
+            body: walletNotifBody,
+            type: 'wallet'
+          });
+        } catch (_) {}
 
         logAction(`تعديل رصيد محفظة ${uid} بقيمة ${amount} ج.م`);
         showToast('✅ تم تحديث الرصيد بنجاح في Supabase');
@@ -6930,9 +7192,16 @@ function initSupabaseSync() {
           ac_km_fare: parseFloat(sData.ac_km_fare || 1),
           heat_hour_km_fare: parseFloat(sData.heat_hour_km_fare || 1),
           heat_start_hour: parseInt(sData.heat_start_hour || 11),
-          heat_end_hour: parseInt(sData.heat_end_hour || 15)
+          heat_end_hour: parseInt(sData.heat_end_hour || 15),
+          surge_enabled: sData.surge_enabled !== false,
+          region_fares: Array.isArray(sData.region_fares) ? sData.region_fares : [
+            { id: '1', name: 'القاهرة الكبرى', surcharge: 0, is_default: true },
+            { id: '2', name: 'الإسكندرية (الساحل)', surcharge: 5, is_default: false }
+          ]
         };
-        renderPage(currentPage);
+        if (currentPage === 'pricing') {
+          renderPage('pricing');
+        }
       }
     };
 
@@ -8310,14 +8579,14 @@ function renderLocalProfileChat(uid) {
 
   let html = '';
   msgs.forEach(msg => {
-    const isSupport = msg.senderId === 'support';
+    const isSupport = msg.senderId === 'support' || msg.sender === 'admin' || msg.is_admin === true || msg.sender_type === 'admin';
     const time = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString('ar-EG', {hour: '2-digit', minute:'2-digit'}) : '';
     html += `
       <div style="align-self: ${isSupport ? 'flex-end' : 'flex-start'}; max-width: 75%; margin-bottom: 12px; display: flex; flex-direction: column;">
-        <div style="padding: 10px 14px; border-radius: var(--radius-md); background: ${isSupport ? 'var(--medium-blue)' : 'white'}; color: ${isSupport ? 'white' : 'var(--text-primary)'}; box-shadow: var(--shadow-sm); font-size: 13px; border: ${isSupport ? 'none' : '1px solid var(--border-color)'};">
+        <div style="padding: 10px 14px; border-radius: var(--radius-md); background: ${isSupport ? '#1E3A8A' : '#FFFFFF'}; color: ${isSupport ? '#FFFFFF' : '#0F172A'}; box-shadow: var(--shadow-sm); font-size: 13.5px; font-weight: 600; border: ${isSupport ? 'none' : '1px solid #CBD5E1'};">
           ${msg.text}
         </div>
-        <div style="font-size: 10px; color: var(--text-light); text-align: ${isSupport ? 'left' : 'right'}; margin-top: 4px;">
+        <div style="font-size: 11px; color: #475569; font-weight: 600; text-align: ${isSupport ? 'left' : 'right'}; margin-top: 4px;">
           ${isSupport ? 'الدعم الفني' : 'المستخدم'} • ${time}
         </div>
       </div>
@@ -8855,8 +9124,8 @@ function renderCommChatArea() {
   }
 
   container.innerHTML = commMessages.map(msg => {
-    const isMe = msg.sender_id === currentAdminUser?.id || msg.sender_id === selectedCommRoomId; // simplified logic or matches role admin
-    const text = msg.text || '';
+    const isMe = msg.sender_type === 'admin' || msg.is_admin === true || msg.sender_role === 'admin' || msg.sender_id === null || (currentAdminUser && msg.sender_id === currentAdminUser.id);
+    const text = msg.text || msg.message || '';
     const dateObj = new Date(msg.created_at || Date.now());
     const timeStr = dateObj.toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'});
     
@@ -8885,17 +9154,16 @@ function renderCommChatArea() {
     }
 
     return `
-      <div style="align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:72%; position:relative; group;">
-        <div style="padding:10px 14px; border-radius:var(--radius-md); background:${isMe ? 'var(--medium-blue)' : 'white'}; color:${isMe ? 'white' : 'var(--text-primary)'}; box-shadow:var(--shadow-sm); font-size:12.5px; border:${isMe ? 'none' : '1px solid var(--border-color)'};">
+      <div style="align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:72%; position:relative;">
+        <div style="padding:10px 14px; border-radius:var(--radius-md); background:${isMe ? '#1E3A8A' : '#FFFFFF'}; color:${isMe ? '#FFFFFF' : '#0F172A'}; box-shadow:var(--shadow-sm); font-size:13.5px; font-weight:600; border:${isMe ? 'none' : '1px solid #CBD5E1'};">
           ${replyHtml}
           ${attachmentHtml}
           <div>${text}</div>
         </div>
-        <div style="font-size:9.5px; color:var(--text-light); text-align:${isMe ? 'left' : 'right'}; margin-top:4px; display:flex; align-items:center; justify-content:${isMe ? 'flex-start' : 'flex-end'}; gap:6px;">
+        <div style="font-size:11px; color:#475569; font-weight:600; text-align:${isMe ? 'left' : 'right'}; margin-top:4px; display:flex; align-items:center; justify-content:${isMe ? 'flex-start' : 'flex-end'}; gap:6px;">
           <span>${timeStr}</span>
-          <!-- Options: Delete, Reply -->
           <span style="display:inline-flex; gap:6px;">
-            <button onclick="replyCommMessage('${msg.id}', '${text}')" style="background:none; border:none; color:var(--text-light); cursor:pointer; font-size:11px;" title="رد"><i class="ri-reply-line"></i></button>
+            <button onclick="replyCommMessage('${msg.id}', '${text}')" style="background:none; border:none; color:#475569; cursor:pointer; font-size:11px;" title="رد"><i class="ri-reply-line"></i></button>
             <button onclick="deleteCommMessage('${msg.id}')" style="background:none; border:none; color:var(--error); cursor:pointer; font-size:11px;" title="حذف رسالة غير لائقة"><i class="ri-delete-bin-6-line"></i></button>
           </span>
         </div>

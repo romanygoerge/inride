@@ -140,6 +140,7 @@ class NotificationService {
     if (type == 'wallet' ||
         type == 'charge' ||
         type == 'charge_pending' ||
+        type == 'charge_rejected' ||
         type == 'payout' ||
         type == 'payment' ||
         type == 'deposit') {
@@ -158,6 +159,18 @@ class NotificationService {
         MaterialPageRoute(builder: (context) => const DriverHomePage()),
         (route) => false,
       );
+      return;
+    }
+
+    // 7. رفض طلب الكابتن — يفتح الصفحة الرئيسية
+    if (type == 'driver_rejected') {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      return;
+    }
+
+    // 8. تغيير حالة الحساب (تعليق/حظر/تفعيل)
+    if (type == 'account_status') {
+      Navigator.of(context).popUntil((route) => route.isFirst);
       return;
     }
 

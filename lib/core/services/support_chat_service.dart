@@ -216,6 +216,20 @@ class SupportChatService {
     if (userId == null) return;
 
     try {
+      final chatRes = await _supabase
+          .from('support_chats')
+          .select('status')
+          .eq('id', userId)
+          .maybeSingle();
+
+      if (chatRes != null && chatRes['status'] == 'resolved') {
+        _currentMessages = [];
+        _processedMessageIds.clear();
+        _notifyListeners();
+        debugPrint('[SupportChat] Ticket resolved by admin, hiding messages on client');
+        return;
+      }
+
       final List<dynamic> response = await _supabase
           .from('support_messages')
           .select('*')

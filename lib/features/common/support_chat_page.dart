@@ -240,6 +240,25 @@ class _SupportChatPageState extends State<SupportChatPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (!isMe)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4.0),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'inRide',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.mediumBlue,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.verified, size: 14, color: AppColors.mediumBlue),
+                  ],
+                ),
+              ),
             Text(
               msg.message,
               style: GoogleFonts.cairo(

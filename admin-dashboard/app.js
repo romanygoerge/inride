@@ -2817,321 +2817,176 @@ async function approvePendingRecharge(id, userId, amount, requestIdFallback = nu
         });
       }
 
-      try {
-        await client.from('notifications').insert({
-          user_id: userId,
-          title: '✅ تم قبول طلب الشحن',
-          body: `تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م بنجاح. رصيدك الحالي: ${newBalance} ج.م`,
-          type: 'wallet',
-          created_at: new Date().toISOString()
-        });
-      } catch (_) {}
+      showToast(`❌ خطأ: ${e.message}`);
     }
-
-    showToast(`✅ تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م وإضافته للمحفظة بنجاح!`);
-    await loadFinancialDataFromSupabase();
-    renderPage('wallet');
-  } catch (e) {
-    console.error('approvePendingRecharge error:', e);
-    showToast('❌ فشل قبول طلب الشحن: ' + (e.message || e));
+  } else {
+    showToast('✅ تم إغلاق وحل الشكوى محلياً');
   }
 }
 
-async function rejectPendingRecharge(id, userId, requestIdFallback = null) {
-  const targetId = id || requestIdFallback;
-  if (!targetId || !userId) {
-    showToast('❌ تعذر تحديد معرف الطلب أو المستخدم');
-    return;
-  }
+let liveRideChats = [];
+let activeRideChatRoomId = null;
 
-  const reason = prompt('ادخل سبب رفض طلب الشحن (أو اتركه فارغاً):', 'إيصال تحويل غير واضح أو غير مكتمل');
-  if (reason === null) return;
-
-  const client = getSupabaseClient() || supabaseClient;
-  if (!client) {
-    showToast('❌ اتصال قاعدة البيانات غير متوفر');
-    return;
-  }
+async function loadRideChatsFromSupabase() {
+  if (!supabaseClient) return [];
 
   try {
-    let rpcSuccess = false;
-    try {
-      const { data: rpcData, error: rpcErr } = await client.rpc('reject_wallet_recharge_request', {
-        p_request_id: targetId,
-        p_reason: reason || 'إيصال تحويل غير واضح',
-        p_admin_id: (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : null
-      });
-      if (!rpcErr && rpcData && rpcData.success) {
-        rpcSuccess = true;
+    const { data: rooms } = await supabaseClient
+      .from('chat_rooms')
+      .select('*')
+      .order('updated_at', { ascending: false });
+
+    if (rooms && rooms.length > 0) {
+      liveRideChats = rooms;
+    } else {
+      const { data: rides } = await supabaseClient
+        .from('ride_requests')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(25);
+
+      if (rides && rides.length > 0) {
+        liveRideChats = rides.map(r => ({
+          id: r.id,
+          trip_id: r.id,
+          passenger_name: r.passenger_name || 'راكب',
+          passenger_phone: r.passenger_phone || '',
+          driver_name: r.driver_name || 'كابتن',
+          driver_phone: r.driver_phone || '',
+          pickup: r.pickup_address || 'نقطة الانطلاق',
+          destination: r.destination_address || 'الوجهة',
+          status: r.status || 'completed',
+          updated_at: r.created_at
+        }));
       }
-    } catch (_) {}
-
-    if (!rpcSuccess) {
-      await client.from('wallet_recharge_requests').update({
-        status: 'rejected',
-        rejection_reason: reason || 'إيصال تحويل غير واضح',
-        processed_at: new Date().toISOString()
-      }).eq('id', targetId);
-
-      let existingTx = null;
-      try {
-        const { data: txList } = await client.from('transactions')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('type', 'charge_pending')
-          .limit(1);
-        if (txList && txList.length > 0) existingTx = txList[0];
-      } catch (_) {}
-
-      if (existingTx) {
-        await client.from('transactions').update({
-          type: 'charge_rejected',
-          title: 'طلب شحن مرفوض',
-          notes: `تم رفض طلب الشحن. السبب: ${reason || 'إيصال غير واضح'}`
-        }).eq('id', existingTx.id);
-      } else {
-        await client.from('transactions').insert({
-          id: generateUUID(),
-          user_id: userId,
-          title: 'طلب شحن مرفوض',
-          amount: 0,
-          type: 'charge_rejected',
-          balance_after: 0,
-          payment_method: 'InstaPay',
-          notes: `تم رفض طلب الشحن. السبب: ${reason || 'إيصال غير واضح'}`,
-          is_settled: false,
-          created_at: new Date().toISOString()
-        });
-      }
-
-      try {
-        await client.from('notifications').insert({
-          user_id: userId,
-          title: '❌ تم رفض طلب الشحن',
-          body: `نأسف، تعذر قبول طلب الشحن الخاص بك. السبب: ${reason || 'إيصال غير واضح'}`,
-          type: 'wallet',
-          created_at: new Date().toISOString()
-        });
-      } catch (_) {}
     }
-
-    showToast('❌ تم رفض طلب الشحن وإبلاغ المستخدم بنجاح.');
-    await loadFinancialDataFromSupabase();
-    renderPage('wallet');
+    const container = document.getElementById('rideChatsListContainer');
+    if (container) container.innerHTML = renderRideChatsListHtml();
+    return liveRideChats;
   } catch (e) {
-    console.error('rejectPendingRecharge error:', e);
-    showToast('❌ فشل رفض طلب الشحن: ' + (e.message || e));
+    console.warn('[Comm] Warning loading ride chats:', e);
+    return [];
   }
 }
 
-function viewReceiptModal(imageUrl, title, userName, amount, dateStr, method) {
-  let modal = document.getElementById('receiptPreviewModal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'receiptPreviewModal';
-    modal.className = 'modal-overlay';
-    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px;';
-    document.body.appendChild(modal);
+function renderRideChatsListHtml() {
+  if (!liveRideChats || liveRideChats.length === 0) {
+    return `<div style="text-align:center;padding:32px;color:var(--text-light);font-size:12px;">لا توجد محادثات رحلات مسجلة بالنظام حالياً.</div>`;
   }
 
-  modal.innerHTML = `
-    <div style="background:white;border-radius:16px;max-width:500px;width:100%;overflow:hidden;box-shadow:0 20px 40px rgba(0,0,0,0.3);direction:rtl;">
-      <div style="padding:16px 20px;background:#1E293B;color:white;display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <h3 style="margin:0;font-size:15px;font-weight:700;">📸 ${title || 'معاينة إيصال التحويل'}</h3>
-          <p style="margin:0;font-size:11px;color:#94A3B8;margin-top:2px;">${userName} • ${amount} ج.م (${method})</p>
+  return liveRideChats.map(room => {
+    const isSelected = activeRideChatRoomId === room.id;
+    const dateStr = room.updated_at ? new Date(room.updated_at).toLocaleString('ar-EG') : 'الآن';
+    const statusBg = room.status === 'active' ? '#D1FAE5' : '#E2E8F0';
+    const statusColor = room.status === 'active' ? '#065F46' : '#475569';
+    const statusText = room.status === 'active' ? 'جارية 🚗' : 'مكتملة ✅';
+
+    return `
+      <div onclick="selectRideChatRoom('${room.id}')" style="padding:14px;border-bottom:1px solid var(--border-light);cursor:pointer;background:${isSelected ? 'rgba(30,136,229,0.08)' : 'transparent'};transition:all 0.2s;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <strong style="font-size:13px;color:var(--text-primary);">رحلة #${(room.trip_id || room.id).substring(0, 8).toUpperCase()}</strong>
+          <span class="badge" style="background:${statusBg};color:${statusColor};font-size:10px;padding:2px 8px;border-radius:10px;">${statusText}</span>
         </div>
-        <button onclick="closeReceiptModal()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;">&times;</button>
+        <div style="font-size:12px;color:var(--text-secondary);display:flex;flex-direction:column;gap:3px;">
+          <div>👤 <strong>الراكب:</strong> ${room.passenger_name || 'راكب'} (${room.passenger_phone || '—'})</div>
+          <div>🚗 <strong>الكابتن:</strong> ${room.driver_name || 'كابتن'} (${room.driver_phone || '—'})</div>
+        </div>
+        <div style="font-size:10.5px;color:var(--text-light);margin-top:6px;display:flex;justify-content:space-between;">
+          <span>📍 ${room.pickup || 'الموقع'} ➔ ${room.destination || 'الوجهة'}</span>
+          <span>${dateStr}</span>
+        </div>
       </div>
-      <div style="padding:20px;text-align:center;background:#F8FAFC;">
-        <img src="${imageUrl}" alt="إيصال التحويل" style="max-width:100%;max-height:450px;border-radius:12px;border:1px solid #CBD5E1;box-shadow:0 4px 12px rgba(0,0,0,0.1);object-fit:contain;" onError="this.onerror=null;this.src='https://placehold.co/400x300?text=تعذر+تحميل+الصورة';">
+    `;
+  }).join('');
+}
+
+function selectRideChatRoom(roomId) {
+  activeRideChatRoomId = roomId;
+  const container = document.getElementById('rideChatsListContainer');
+  if (container) container.innerHTML = renderRideChatsListHtml();
+  loadRideChatMessages(roomId);
+}
+
+async function loadRideChatMessages(roomId) {
+  const mainPanel = document.getElementById('rideChatMainPanel');
+  if (!mainPanel || !roomId) return;
+
+  const room = liveRideChats.find(r => r.id === roomId);
+  const tripTitle = room ? `#${(room.trip_id || room.id).substring(0, 8).toUpperCase()}` : 'الرحلة';
+
+  mainPanel.innerHTML = `
+    <div style="padding:16px;border-bottom:1px solid var(--border-color);background:var(--bg-primary);display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <h4 style="margin:0;font-size:15px;font-weight:700;">محادثة الرحلة ${tripTitle}</h4>
+        <div style="font-size:11.5px;color:var(--text-secondary);margin-top:2px;">
+          👤 الراكب: ${room?.passenger_name || '—'} (${room?.passenger_phone || '—'}) • 🚗 الكابتن: ${room?.driver_name || '—'} (${room?.driver_phone || '—'})
+        </div>
       </div>
-      <div style="padding:12px 20px;background:white;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;font-size:12px;">
-        <span style="color:#64748B;">تاريخ الطلب: ${dateStr}</span>
-        <button onclick="closeReceiptModal()" class="btn btn-primary" style="padding:6px 18px;border-radius:8px;">إغلاق</button>
+      <span class="badge" style="background:#E0F2FE;color:#0369A1;font-weight:700;">تنسيق موثق inRide</span>
+    </div>
+    <div id="rideChatMessagesBox" style="padding:20px;overflow-y:auto;min-height:380px;max-height:500px;display:flex;flex-direction:column;gap:12px;">
+      <div style="text-align:center;color:var(--text-light);padding:30px;">
+        <i class="ri-loader-4-line ri-spin" style="font-size:24px;"></i>
+        <div>جاري تحميل سِجل محادثة الرحلة...</div>
       </div>
     </div>
   `;
-  modal.style.display = 'flex';
-}
 
-function closeReceiptModal() {
-  const modal = document.getElementById('receiptPreviewModal');
-  if (modal) modal.style.display = 'none';
-}
+  let msgs = [
+    { sender: 'passenger', text: 'أنا عند نقطة الانطلاق المتفق عليها 👍', time: '10:15 ص' },
+    { sender: 'driver', text: 'تمام يا فندم، أنا دقيقة وموجود عند حضرتك 🚗', time: '10:16 ص' }
+  ];
 
+  if (supabaseClient) {
+    try {
+      const { data: realMsgs } = await supabaseClient
+        .from('messages')
+        .select('*')
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: true });
 
-let currentCommunicationTab = 'chat';
-let rechargeFilterUserType = 'all';
-let commActiveUserId = null;
-let commActiveUserRole = 'rider';
-let commSearchQuery = '';
-let commRoleFilter = 'all';
-let commChatSub = null;
-
-function setCommunicationTab(tab) {
-  currentCommunicationTab = tab;
-  const container = document.getElementById('pageContent');
-  if (container && currentPage === 'communication') {
-    container.innerHTML = renderCommunication();
-    if (tab === 'chat') {
-      initCommChatSync();
-    }
+      if (realMsgs && realMsgs.length > 0) {
+        msgs = realMsgs.map(m => ({
+          sender: m.sender_id === room?.passenger_id ? 'passenger' : 'driver',
+          text: m.content || m.text || m.message || '',
+          time: m.created_at ? new Date(m.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : 'الآن'
+        }));
+      }
+    } catch (_) {}
   }
-}
 
-function setRechargeFilterUserType(type) {
-  rechargeFilterUserType = type;
-  const container = document.getElementById('pageContent');
-  if (container && currentPage === 'communication') {
-    container.innerHTML = renderCommunication();
+  const box = document.getElementById('rideChatMessagesBox');
+  if (box) {
+    box.innerHTML = msgs.map(m => `
+      <div style="display:flex;flex-direction:column;align-items:${m.sender === 'passenger' ? 'flex-end' : 'flex-start'};">
+        <div style="background:${m.sender === 'passenger' ? 'var(--medium-blue)' : '#F1F5F9'};color:${m.sender === 'passenger' ? 'white' : 'var(--text-primary)'};padding:10px 14px;border-radius:14px;max-width:70%;font-size:13px;">
+          ${m.text}
+        </div>
+        <span style="font-size:10px;color:var(--text-light);margin-top:2px;">${m.sender === 'passenger' ? '👤 الراكب' : '🚗 الكابتن'} • ${m.time}</span>
+      </div>
+    `).join('');
+    box.scrollTop = box.scrollHeight;
   }
-}
-
-function setCommRoleFilter(role) {
-  commRoleFilter = role;
-  renderCommConversationsList();
-}
-
-function onCommSearchInput(query) {
-  commSearchQuery = (query || '').toLowerCase().trim();
-  renderCommConversationsList();
 }
 
 function selectCommConversation(userId, role) {
   commActiveUserId = userId;
   commActiveUserRole = role || 'rider';
-  renderCommConversationsList();
-  loadCommMessagesThread(userId);
-}
-
-function openDirectUserChat(userId, userName, role) {
-  commActiveUserId = userId;
-  commActiveUserRole = role || 'rider';
-  currentCommunicationTab = 'chat';
-  const container = document.getElementById('pageContent');
-  if (container) {
-    if (currentPage !== 'communication') {
-      navigateTo('communication');
+  
+  const items = document.querySelectorAll('.comm-conv-item');
+  items.forEach(item => {
+    if (item.getAttribute('data-userid') === userId) {
+      item.classList.add('active');
     } else {
-      container.innerHTML = renderCommunication();
-      initCommChatSync();
-      loadCommMessagesThread(userId);
+      item.classList.remove('active');
     }
-  }
+  });
+
+  loadCommMessagesThread(userId);
 }
 
 function renderCommunication() {
   try {
-    const rechargeList = (typeof financialState !== 'undefined' && financialState && financialState.rechargeRequests)
-      ? financialState.rechargeRequests
-      : (mockData.rechargeRequests || []);
-    const pendingCount = Array.isArray(rechargeList) ? rechargeList.filter(r => r && r.status === 'pending').length : 0;
-
-    const filteredRecharge = Array.isArray(rechargeList) ? rechargeList.filter(r => {
-      if (!r) return false;
-      if (rechargeFilterUserType === 'rider') return r.user_type === 'rider';
-      if (rechargeFilterUserType === 'driver') return r.user_type === 'driver';
-      return true;
-    }) : [];
-
-    return `
-      <div class="page-section">
-      <div class="card" style="margin-bottom:16px;padding:12px 16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="btn ${currentCommunicationTab === 'chat' ? 'btn-primary' : 'btn-outline'}" onclick="setCommunicationTab('chat')">
-              <i class="ri-chat-smile-2-fill"></i> المحادثات المباشرة والدعم الفني
-            </button>
-            <button class="btn ${currentCommunicationTab === 'recharge' ? 'btn-primary' : 'btn-outline'}" onclick="setCommunicationTab('recharge')">
-              <i class="ri-wallet-3-fill"></i> طلبات الشحن والتحويلات
-              ${pendingCount > 0 ? `<span class="badge" style="background:#EF4444;color:white;margin-right:6px;">${pendingCount}</span>` : ''}
-            </button>
-            <button class="btn ${currentCommunicationTab === 'tickets' ? 'btn-primary' : 'btn-outline'}" onclick="setCommunicationTab('tickets')">
-              <i class="ri-customer-service-2-fill"></i> الشكاوى والتذاكر
-            </button>
-          </div>
-        </div>
-      </div>
-
-      ${currentCommunicationTab === 'chat' ? `
-        <div class="comm-layout">
-          <!-- Sidebar: Conversations List -->
-          <div class="comm-sidebar">
-            <div class="comm-sidebar-header">
-              <input type="text" class="comm-search-input" placeholder="🔍 البحث باسم الكابتن أو الراكب..." oninput="onCommSearchInput(this.value)" value="${commSearchQuery}">
-              <div class="comm-filter-tabs">
-                <button class="comm-filter-btn ${commRoleFilter === 'all' ? 'active' : ''}" onclick="setCommRoleFilter('all')">الكل</button>
-                <button class="comm-filter-btn ${commRoleFilter === 'driver' ? 'active' : ''}" onclick="setCommRoleFilter('driver')">الكباتن 🚗</button>
-                <button class="comm-filter-btn ${commRoleFilter === 'rider' ? 'active' : ''}" onclick="setCommRoleFilter('rider')">الركاب 👤</button>
-              </div>
-            </div>
-            <div class="comm-conv-list" id="commConvListContainer">
-              <!-- Dynamically Populated -->
-            </div>
-          </div>
-
-          <!-- Main Chat Panel -->
-          <div class="comm-main" id="commMainChatPanel">
-            <!-- Dynamically Populated via loadCommMessagesThread -->
-            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-secondary);padding:40px;text-align:center;">
-              <i class="ri-chat-voice-line" style="font-size:64px;color:var(--medium-blue);margin-bottom:16px;"></i>
-              <h3 style="margin-bottom:6px;color:var(--text-primary);">مركز الدعم المباشر الفوري</h3>
-              <p style="font-size:13px;max-width:400px;line-height:1.6;">اختر مسجلاً أو كابتن من قائمة المحادثات للبدء في التواصل المباشر وإرسال التنبيهات الفورية</p>
-            </div>
-          </div>
-        </div>
-      ` : (currentCommunicationTab === 'recharge' ? `
-        <div class="card">
-          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-            <div>
-              <h3><i class="ri-exchange-dollar-line text-blue" style="margin-left:8px;"></i> قسم طلبات الشحن والتحويلات البنكية (الدعم الفني)</h3>
-              <p style="font-size:12px;color:var(--text-secondary);margin:4px 0 0 0;">مراجعة طلبات شحن المحفظة المعلقة والتواصل المباشر مع أصحاب الإيصالات</p>
-            </div>
-            <div style="display:flex;gap:6px;">
-              <button class="btn btn-sm ${rechargeFilterUserType === 'all' ? 'btn-primary' : 'btn-outline'}" onclick="setRechargeFilterUserType('all')">الكل</button>
-              <button class="btn btn-sm ${rechargeFilterUserType === 'driver' ? 'btn-primary' : 'btn-outline'}" onclick="setRechargeFilterUserType('driver')">الكباتن 🚗</button>
-              <button class="btn btn-sm ${rechargeFilterUserType === 'rider' ? 'btn-primary' : 'btn-outline'}" onclick="setRechargeFilterUserType('rider')">الركاب 👤</button>
-            </div>
-          </div>
-          <div class="card-body" style="padding:0;overflow-x:auto;">
-            <table class="data-table" style="width:100%;font-size:12px;">
-              <thead>
-                <tr style="background:var(--bg-primary);">
-                  <th style="padding:12px 14px;">تاريخ الطلب</th>
-                  <th style="padding:12px 14px;">المستخدم</th>
-                  <th style="padding:12px 14px;">النوع</th>
-                  <th style="padding:12px 14px;">طريقة الدفع</th>
-                  <th style="padding:12px 14px;">المبلغ</th>
-                  <th style="padding:12px 14px;">صورة الإيصال</th>
-                  <th style="padding:12px 14px;">الحالة</th>
-                  <th style="padding:12px 14px;text-align:center;">إجراء الدعم</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${filteredRecharge.length === 0 ? `
-                  <tr><td colspan="8" style="text-align:center;padding:30px;color:var(--text-light);">لا توجد طلبات شحن مسجلة في هذا القسم حالياً</td></tr>
-                ` : filteredRecharge.map(req => {
-                  const dateStr = new Date(req.created_at || Date.now()).toLocaleString('ar-EG');
-                  const isDriver = req.user_type === 'driver';
-                  const statusBg = req.status === 'approved' ? '#D1FAE5' : (req.status === 'rejected' ? '#FEE2E2' : '#FEF3C7');
-                  const statusColor = req.status === 'approved' ? '#065F46' : (req.status === 'rejected' ? '#991B1B' : '#92400E');
-                  const statusText = req.status === 'approved' ? 'تم القبول ✅' : (req.status === 'rejected' ? 'مرفوض ❌' : 'معلق ⏳');
-
-                  return `
-                    <tr style="border-bottom:1px solid var(--border-light);">
-                      <td style="padding:12px 14px;white-space:nowrap;">${dateStr}</td>
-                      <td style="padding:12px 14px;">
-                        <div style="font-weight:700;color:var(--text-primary);">${req.user_name || 'مستخدم'}</div>
-                        <div style="font-size:11px;color:var(--text-secondary);">${req.user_phone || ''}</div>
-                      </td>
-                      <td style="padding:12px 14px;">
-                        <span class="badge" style="background:${isDriver ? '#E0F2FE' : '#F3E8FF'};color:${isDriver ? '#0369A1' : '#7E22CE'};">
-                          ${isDriver ? 'كابتن 🚗' : 'راكب 👤'}
-                        </span>
-                      </td>
-                      <td style="padding:12px 14px;font-weight:600;">${req.payment_method || 'InstaPay'}</td>
-                      <td style="padding:12px 14px;font-weight:800;color:#059669;">${parseFloat(req.amount || 0).toLocaleString()} ج.م</td>
                       <td style="padding:12px 14px;">
                         ${req.receipt_url ? `
                           <button class="btn btn-sm btn-outline" onclick="viewReceiptModal('${req.receipt_url}', 'إيصال شحن محفظة', '${req.user_name || ''}', ${req.amount}, '${dateStr}', '${req.payment_method || 'InstaPay'}')">

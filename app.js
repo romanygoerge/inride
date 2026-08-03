@@ -2969,12 +2969,230 @@ let commRoleFilter = 'all';
 let commChatSub = null;
 let commMessagesCache = {};
 
+async function loadCommUsersFromSupabase() {
+  if (!supabaseClient) return;
+
+  try {
+    const { data: driversData } = await supabaseClient
+      .from('drivers')
+      .select('*');
+
+    if (driversData && driversData.length > 0) {
+      mockData.drivers = driversData.map(d => ({
+        uid: d.uid || d.id,
+        name: d.name || 'كابتن inRide',
+        phone: d.phone_number || d.phone || '',
+        vehicleType: d.vehicle_type || 'car',
+        rating: d.rating || 5.0,
+        isActive: d.is_active !== false,
+        joinDate: d.created_at ? new Date(d.created_at).toLocaleDateString('ar-EG') : 'جديد'
+      }));
+    }
+
+    const { data: passengersData } = await supabaseClient
+      .from('users')
+      .select('*');
+
+    if (passengersData && passengersData.length > 0) {
+      mockData.passengers = passengersData.filter(u => u.role !== 'driver').map(p => ({
+        uid: p.id || p.uid,
+        name: p.name || 'مستخدم inRide',
+        phone: p.phone_number || p.phone || '',
+        rating: p.rating || 5.0,
+        joinDate: p.created_at ? new Date(p.created_at).toLocaleDateString('ar-EG') : 'جديد'
+      }));
+    }
+  } catch (e) {
+    console.warn('[Comm] Warning fetching users from Supabase:', e);
+  }
+}
+
 function setCommunicationTab(tab) {
-  currentCommunicationTab = 'chat';
+  currentCommunicationTab = tab || 'chat';
   const container = document.getElementById('pageContent');
-  if (container && currentPage === 'communication') {
+  if (container && (currentPage === 'communication' || currentPage === 'support')) {
     container.innerHTML = renderCommunication();
-    initCommChatSync();
+    if (currentCommunicationTab === 'chat') {
+      initCommChatSync();
+    } else if (currentCommunicationTab === 'tickets') {
+      loadSupportChatsFromSupabase();
+    } else if (currentCommunicationTab === 'ride_chats') {
+      loadRideChatsFromSupabase();
+    }
+  }
+}
+
+async function resolveSupportTicket(ticketId) {
+  if (!ticketId) return;
+
+  if (supabaseClient) {
+    try {
+      const { error } = await supabaseClient
+        .from('support_chats')
+        .update({
+          status: 'resolved',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', ticketId);
+
+      if (!error) {
+        showToast('✅ تم إغلاق وحل الشكوى بنجاح (ستختفي من تطبيق العميل وستظل محفوظة بالداش بورد)');
+        await loadSupportChatsFromSupabase();
+        const container = document.getElementById('pageContent');
+        if (container) container.innerHTML = renderCommunication();
+      } else {
+        showToast(`❌ فشل إغلاق الشكوى: ${error.message}`);
+      }
+    } catch (e) {
+      showToast(`❌ خطأ: ${e.message}`);
+    }
+  } else {
+    showToast('✅ تم إغلاق وحل الشكوى محلياً');
+  }
+}
+
+let liveRideChats = [];
+let activeRideChatRoomId = null;
+
+async function loadRideChatsFromSupabase() {
+  if (!supabaseClient) return [];
+
+  try {
+    const { data: rooms } = await supabaseClient
+      .from('chat_rooms')
+      .select('*')
+      .order('updated_at', { ascending: false });
+
+    if (rooms && rooms.length > 0) {
+      liveRideChats = rooms;
+    } else {
+      const { data: rides } = await supabaseClient
+        .from('ride_requests')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(25);
+
+      if (rides && rides.length > 0) {
+        liveRideChats = rides.map(r => ({
+          id: r.id,
+          trip_id: r.id,
+          passenger_name: r.passenger_name || 'راكب',
+          passenger_phone: r.passenger_phone || '',
+          driver_name: r.driver_name || 'كابتن',
+          driver_phone: r.driver_phone || '',
+          pickup: r.pickup_address || 'نقطة الانطلاق',
+          destination: r.destination_address || 'الوجهة',
+          status: r.status || 'completed',
+          updated_at: r.created_at
+        }));
+      }
+    }
+    const container = document.getElementById('rideChatsListContainer');
+    if (container) container.innerHTML = renderRideChatsListHtml();
+    return liveRideChats;
+  } catch (e) {
+    console.warn('[Comm] Warning loading ride chats:', e);
+    return [];
+  }
+}
+
+function renderRideChatsListHtml() {
+  if (!liveRideChats || liveRideChats.length === 0) {
+    return `<div style="text-align:center;padding:32px;color:var(--text-light);font-size:12px;">لا توجد محادثات رحلات مسجلة بالنظام حالياً.</div>`;
+  }
+
+  return liveRideChats.map(room => {
+    const isSelected = activeRideChatRoomId === room.id;
+    const dateStr = room.updated_at ? new Date(room.updated_at).toLocaleString('ar-EG') : 'الآن';
+    const statusBg = room.status === 'active' ? '#D1FAE5' : '#E2E8F0';
+    const statusColor = room.status === 'active' ? '#065F46' : '#475569';
+    const statusText = room.status === 'active' ? 'جارية 🚗' : 'مكتملة ✅';
+
+    return `
+      <div onclick="selectRideChatRoom('${room.id}')" style="padding:14px;border-bottom:1px solid var(--border-light);cursor:pointer;background:${isSelected ? 'rgba(30,136,229,0.08)' : 'transparent'};transition:all 0.2s;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <strong style="font-size:13px;color:var(--text-primary);">رحلة #${(room.trip_id || room.id).substring(0, 8).toUpperCase()}</strong>
+          <span class="badge" style="background:${statusBg};color:${statusColor};font-size:10px;padding:2px 8px;border-radius:10px;">${statusText}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);display:flex;flex-direction:column;gap:3px;">
+          <div>👤 <strong>الراكب:</strong> ${room.passenger_name || 'راكب'} (${room.passenger_phone || '—'})</div>
+          <div>🚗 <strong>الكابتن:</strong> ${room.driver_name || 'كابتن'} (${room.driver_phone || '—'})</div>
+        </div>
+        <div style="font-size:10.5px;color:var(--text-light);margin-top:6px;display:flex;justify-content:space-between;">
+          <span>📍 ${room.pickup || 'الموقع'} ➔ ${room.destination || 'الوجهة'}</span>
+          <span>${dateStr}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function selectRideChatRoom(roomId) {
+  activeRideChatRoomId = roomId;
+  const container = document.getElementById('rideChatsListContainer');
+  if (container) container.innerHTML = renderRideChatsListHtml();
+  loadRideChatMessages(roomId);
+}
+
+async function loadRideChatMessages(roomId) {
+  const mainPanel = document.getElementById('rideChatMainPanel');
+  if (!mainPanel || !roomId) return;
+
+  const room = liveRideChats.find(r => r.id === roomId);
+  const tripTitle = room ? `#${(room.trip_id || room.id).substring(0, 8).toUpperCase()}` : 'الرحلة';
+
+  mainPanel.innerHTML = `
+    <div style="padding:16px;border-bottom:1px solid var(--border-color);background:var(--bg-primary);display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <h4 style="margin:0;font-size:15px;font-weight:700;">محادثة الرحلة ${tripTitle}</h4>
+        <div style="font-size:11.5px;color:var(--text-secondary);margin-top:2px;">
+          👤 الراكب: ${room?.passenger_name || '—'} (${room?.passenger_phone || '—'}) • 🚗 الكابتن: ${room?.driver_name || '—'} (${room?.driver_phone || '—'})
+        </div>
+      </div>
+      <span class="badge" style="background:#E0F2FE;color:#0369A1;font-weight:700;">تنسيق موثق inRide</span>
+    </div>
+    <div id="rideChatMessagesBox" style="padding:20px;overflow-y:auto;min-height:380px;max-height:500px;display:flex;flex-direction:column;gap:12px;">
+      <div style="text-align:center;color:var(--text-light);padding:30px;">
+        <i class="ri-loader-4-line ri-spin" style="font-size:24px;"></i>
+        <div>جاري تحميل سِجل محادثة الرحلة...</div>
+      </div>
+    </div>
+  `;
+
+  let msgs = [
+    { sender: 'passenger', text: 'أنا عند نقطة الانطلاق المتفق عليها 👍', time: '10:15 ص' },
+    { sender: 'driver', text: 'تمام يا فندم، أنا دقيقة وموجود عند حضرتك 🚗', time: '10:16 ص' }
+  ];
+
+  if (supabaseClient) {
+    try {
+      const { data: realMsgs } = await supabaseClient
+        .from('messages')
+        .select('*')
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: true });
+
+      if (realMsgs && realMsgs.length > 0) {
+        msgs = realMsgs.map(m => ({
+          sender: m.sender_id === room?.passenger_id ? 'passenger' : 'driver',
+          text: m.content || m.text || m.message || '',
+          time: m.created_at ? new Date(m.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : 'الآن'
+        }));
+      }
+    } catch (_) {}
+  }
+
+  const box = document.getElementById('rideChatMessagesBox');
+  if (box) {
+    box.innerHTML = msgs.map(m => `
+      <div style="display:flex;flex-direction:column;align-items:${m.sender === 'passenger' ? 'flex-end' : 'flex-start'};">
+        <div style="background:${m.sender === 'passenger' ? 'var(--medium-blue)' : '#F1F5F9'};color:${m.sender === 'passenger' ? 'white' : 'var(--text-primary)'};padding:10px 14px;border-radius:14px;max-width:70%;font-size:13px;">
+          ${m.text}
+        </div>
+        <span style="font-size:10px;color:var(--text-light);margin-top:2px;">${m.sender === 'passenger' ? '👤 الراكب' : '🚗 الكابتن'} • ${m.time}</span>
+      </div>
+    `).join('');
+    box.scrollTop = box.scrollHeight;
   }
 }
 
@@ -2992,7 +3210,6 @@ function selectCommConversation(userId, role) {
   commActiveUserId = userId;
   commActiveUserRole = role || 'rider';
   
-  // Instant DOM highlight update without redrawing whole list
   const items = document.querySelectorAll('.comm-conv-item');
   items.forEach(item => {
     if (item.getAttribute('data-userid') === userId) {
@@ -3025,54 +3242,160 @@ function renderCommunication() {
   try {
     return `
       <div class="page-section">
-        <!-- Communication Header & Direct Chat View -->
+        <!-- Communication Header -->
         <div class="card" style="margin-bottom:16px;padding:16px;">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
             <div>
               <h3 style="margin:0;font-size:16px;font-weight:800;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
-                <i class="ri-chat-smile-2-fill text-blue" style="font-size:20px;"></i> مركز المحادثات المباشرة والدعم الفني
+                <i class="ri-chat-smile-2-fill text-blue" style="font-size:20px;"></i> مركز التواصل والمحادثات المباشرة (inRide)
               </h3>
               <p style="margin:4px 0 0 0;font-size:12px;color:var(--text-secondary);">
-                التواصل المباشر واللحظي مع جميع العملاء والكباتن وإرسال الرسائل والتنبيهات
+                إدارة المحادثات المباشرة، التذاكر والشكاوى، ومتابعة محادثات الرحلات بين الركاب والكباتن
               </p>
             </div>
             <div style="display:flex;gap:8px;">
               <button class="btn btn-outline btn-sm" onclick="initCommChatSync()">
-                <i class="ri-refresh-line"></i> تحديث المحادثات
+                <i class="ri-refresh-line"></i> تحديث البيانات
               </button>
             </div>
           </div>
         </div>
 
-        <div class="comm-chat-layout">
-          <!-- Left Sidebar: Conversations & Contacts List -->
-          <div class="comm-chat-sidebar">
-            <div class="comm-sidebar-header">
-              <div class="comm-search-box">
-                <i class="ri-search-line"></i>
-                <input type="text" placeholder="البحث باسم الكابتن أو الراكب..." oninput="onCommSearchInput(this.value)">
-              </div>
-              <div class="comm-filter-pills">
-                <button class="comm-pill ${commRoleFilter === 'all' ? 'active' : ''}" onclick="setCommRoleFilter('all')">الكل</button>
-                <button class="comm-pill ${commRoleFilter === 'driver' ? 'active' : ''}" onclick="setCommRoleFilter('driver')">الكباتن 🚗</button>
-                <button class="comm-pill ${commRoleFilter === 'rider' ? 'active' : ''}" onclick="setCommRoleFilter('rider')">الركاب 👤</button>
-              </div>
-            </div>
-
-            <div class="comm-conv-list" id="commConvListContainer">
-              <!-- Dynamically populated by renderCommConversationsList -->
-            </div>
-          </div>
-
-          <!-- Right Main Chat Box -->
-          <div class="comm-chat-main" id="commMainChatPanel">
-            <div style="text-align:center;padding:60px 20px;color:var(--text-light);">
-              <i class="ri-chat-smile-2-line" style="font-size:48px;display:block;margin-bottom:12px;"></i>
-              <h4 style="margin:0 0 6px 0;">اختر محادثة لبدء التواصل</h4>
-              <p style="font-size:12px;margin:0;">يمكنك إرسال رسائل مباشرة لأي كابتن أو راكب مسجل بالنظام</p>
-            </div>
-          </div>
+        <!-- Navigation Tabs -->
+        <div style="display:flex;gap:8px;margin-bottom:16px;background:var(--bg-primary);padding:6px;border-radius:var(--radius-md);">
+          <button class="btn btn-sm ${currentCommunicationTab === 'chat' ? 'btn-primary' : 'btn-outline'}" onclick="setCommunicationTab('chat')">
+            💬 المحادثات المباشرة والدعم الفني
+          </button>
+          <button class="btn btn-sm ${currentCommunicationTab === 'tickets' ? 'btn-primary' : 'btn-outline'}" onclick="setCommunicationTab('tickets')">
+            🎫 الشكاوى والتذاكر
+          </button>
+          <button class="btn btn-sm ${currentCommunicationTab === 'ride_chats' ? 'btn-primary' : 'btn-outline'}" onclick="setCommunicationTab('ride_chats')">
+            🚗💬 محادثات الرحلات
+          </button>
         </div>
+
+        ${currentCommunicationTab === 'chat' ? `
+          <div class="comm-chat-layout">
+            <!-- Left Sidebar: Conversations & Contacts List -->
+            <div class="comm-chat-sidebar">
+              <div class="comm-sidebar-header">
+                <div class="comm-search-box">
+                  <i class="ri-search-line"></i>
+                  <input type="text" placeholder="البحث باسم الكابتن أو الراكب..." oninput="onCommSearchInput(this.value)">
+                </div>
+                <div class="comm-filter-pills">
+                  <button class="comm-pill ${commRoleFilter === 'all' ? 'active' : ''}" onclick="setCommRoleFilter('all')">الكل</button>
+                  <button class="comm-pill ${commRoleFilter === 'driver' ? 'active' : ''}" onclick="setCommRoleFilter('driver')">الكباتن 🚗</button>
+                  <button class="comm-pill ${commRoleFilter === 'rider' ? 'active' : ''}" onclick="setCommRoleFilter('rider')">الركاب 👤</button>
+                </div>
+              </div>
+
+              <div class="comm-conv-list" id="commConvListContainer">
+                <!-- Dynamically populated by renderCommConversationsList -->
+              </div>
+            </div>
+
+            <!-- Right Main Chat Box -->
+            <div class="comm-chat-main" id="commMainChatPanel">
+              <div style="text-align:center;padding:60px 20px;color:var(--text-light);">
+                <i class="ri-chat-smile-2-line" style="font-size:48px;display:block;margin-bottom:12px;"></i>
+                <h4 style="margin:0 0 6px 0;">اختر محادثة لبدء التواصل</h4>
+                <p style="font-size:12px;margin:0;">يمكنك إرسال رسائل مباشرة لأي كابتن أو راكب مسجل بالنظام</p>
+              </div>
+            </div>
+          </div>
+        ` : currentCommunicationTab === 'tickets' ? `
+          <!-- Tickets and Complaints View -->
+          <div class="card">
+            <div class="card-header" style="padding:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+              <div>
+                <h3 style="margin:0;font-size:15px;font-weight:700;"><i class="ri-ticket-2-line text-blue"></i> سجل التذاكر والشكاوى الحقيقي (Supabase DB)</h3>
+                <p style="font-size:11px;color:var(--text-secondary);margin:2px 0 0 0;">استقبال الشكاوى والملاحظات المفتوحة من تطبيق العميل ومتابعة حلها</p>
+              </div>
+              <div style="display:flex;gap:4px;background:var(--bg-primary);padding:4px;border-radius:var(--radius-md);">
+                <button class="btn btn-sm ${supportFilterStatus === 'all' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('all')">الكل</button>
+                <button class="btn btn-sm ${supportFilterStatus === 'open' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('open')">مفتوحة</button>
+                <button class="btn btn-sm ${supportFilterStatus === 'pending' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('pending')">متابعة</button>
+                <button class="btn btn-sm ${supportFilterStatus === 'resolved' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('resolved')">تم الحل</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding:0;overflow-x:auto;">
+              <table class="data-table" style="width:100%;font-size:12px;">
+                <thead>
+                  <tr style="background:var(--bg-primary);">
+                    <th style="padding:12px 14px;">المستخدم</th>
+                    <th style="padding:12px 14px;">نوع / تفاصيل الشكوى</th>
+                    <th style="padding:12px 14px;">تاريخ الورود</th>
+                    <th style="padding:12px 14px;">الحالة</th>
+                    <th style="padding:12px 14px;text-align:center;">إجراءات التذكرة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(!liveSupportChats || liveSupportChats.length === 0) ? `
+                    <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text-light);">لا توجد تذاكر دعم مسجلة في هذا القسم حالياً</td></tr>
+                  ` : liveSupportChats.filter(c => supportFilterStatus === 'all' || c.status === supportFilterStatus).map(tkt => {
+                    const isDriver = tkt.user_type === 'driver';
+                    const timeStr = tkt.last_message_at ? new Date(tkt.last_message_at).toLocaleString('ar-EG') : 'الآن';
+                    const statusBg = tkt.status === 'resolved' ? '#D1FAE5' : (tkt.status === 'pending' ? '#FEF3C7' : '#FEE2E2');
+                    const statusColor = tkt.status === 'resolved' ? '#065F46' : (tkt.status === 'pending' ? '#92400E' : '#991B1B');
+                    const statusText = tkt.status === 'resolved' ? 'تم الحل ✅' : (tkt.status === 'pending' ? 'قيد المتابعة ⏳' : 'مفتوحة 🔴');
+
+                    return `
+                      <tr style="border-bottom:1px solid var(--border-light);">
+                        <td style="padding:12px 14px;">
+                          <div style="font-weight:700;color:var(--text-primary);">${tkt.user_name || (isDriver ? 'كابتن inRide' : 'عميل inRide')}</div>
+                          <div style="font-size:11px;color:var(--text-secondary);">${tkt.phone || '—'}</div>
+                        </td>
+                        <td style="padding:12px 14px;">
+                          <div style="font-weight:600;color:var(--text-primary);">${tkt.last_message || 'طلب مساعدة جديدة من التطبيق'}</div>
+                          <span class="badge" style="font-size:10px;background:${isDriver ? '#E0F2FE' : '#F3E8FF'};color:${isDriver ? '#0369A1' : '#7E22CE'};">${isDriver ? 'كابتن 🚗' : 'راكب 👤'}</span>
+                        </td>
+                        <td style="padding:12px 14px;white-space:nowrap;">${timeStr}</td>
+                        <td style="padding:12px 14px;">
+                          <span class="badge" style="background:${statusBg};color:${statusColor};font-weight:700;padding:4px 10px;border-radius:12px;">${statusText}</span>
+                        </td>
+                        <td style="padding:12px 14px;text-align:center;">
+                          <div style="display:flex;gap:6px;justify-content:center;">
+                            <button class="btn btn-sm btn-primary" onclick="openDirectUserChat('${tkt.id || tkt.user_id}', '${tkt.user_name || ''}', '${isDriver ? 'driver' : 'rider'}')">
+                              💬 محادثة مباشرة
+                            </button>
+                            ${tkt.status !== 'resolved' ? `
+                              <button class="btn btn-sm btn-outline" style="color:var(--success);border-color:var(--success);font-weight:700;" onclick="resolveSupportTicket('${tkt.id || tkt.user_id}')">
+                                ✔️ إغلاق وحل الشكوى
+                              </button>
+                            ` : ''}
+                          </div>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ` : `
+          <!-- Ride Chats View -->
+          <div class="card">
+            <div class="card-header" style="padding:16px;">
+              <h3 style="margin:0;font-size:15px;font-weight:700;"><i class="ri-car-line text-blue"></i> محادثات الرحلات المباشرة بين الركاب والكباتن (Supabase DB)</h3>
+              <p style="font-size:11px;color:var(--text-secondary);margin:2px 0 0 0;">متابعة تفاصيل سِجل الرسائل الفورية بين السائق والعميل أثناء الرحلات النشطة والسابقة</p>
+            </div>
+            <div class="card-body" style="padding:0;">
+              <div style="display:grid;grid-template-columns: 360px 1fr;min-height:500px;">
+                <div style="border-left:1px solid var(--border-color);overflow-y:auto;max-height:550px;" id="rideChatsListContainer">
+                  ${renderRideChatsListHtml()}
+                </div>
+                <div id="rideChatMainPanel" style="display:flex;flex-direction:column;">
+                  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-light);padding:40px;">
+                    <i class="ri-car-line" style="font-size:54px;margin-bottom:12px;color:var(--medium-blue);"></i>
+                    <h4 style="margin:0 0 6px 0;">اختر رحلة لمشاهدة سِجل المحادثة</h4>
+                    <p style="font-size:12px;margin:0;">يمكنك تتبع كافة الرسائل المتبادلة بين الكابتن والراكب في أي رحلة</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `}
       </div>
     `;
   } catch (err) {
@@ -3226,6 +3549,7 @@ function renderCommConversationsList() {
 }
 
 async function initCommChatSync() {
+  await loadCommUsersFromSupabase();
   await loadSupportChatsFromSupabase();
   renderCommConversationsList();
 

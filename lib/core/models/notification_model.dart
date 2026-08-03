@@ -21,6 +21,13 @@ class NotificationModel {
 
   /// Check whether this notification is relevant to the active user role (Rider vs Driver).
   bool matchesRole(UserRole role) {
+    // 1. Check explicit target_role in payload data
+    final targetRole = (data['target_role'] ?? data['role'] ?? data['user_type'])?.toString().toLowerCase();
+    if (targetRole != null && targetRole.isNotEmpty) {
+      if (role == UserRole.driver && targetRole == 'rider') return false;
+      if (role == UserRole.rider && targetRole == 'driver') return false;
+    }
+
     final t = type.trim().toLowerCase();
 
     // Notification types intended exclusively for Drivers
@@ -32,6 +39,8 @@ class NotificationModel {
       'driver_online',
       'driver_offline',
       'reject_offer',
+      'driver_approved',
+      'driver_rejected',
     };
 
     // Notification types intended exclusively for Riders

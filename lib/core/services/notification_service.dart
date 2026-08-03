@@ -34,12 +34,25 @@ class NotificationService {
   // ────────────────────────────────────────────────────────────────────
   Future<void> handleNotificationClick(Map<String, dynamic> data) async {
     final String type = (data['type'] ?? 'admin_notifications').toString();
-    debugPrint('[NotificationService] Handling tap type: $type, data: $data');
+    final String targetRoleStr = (data['target_role'] ?? data['role'] ?? data['user_type'] ?? '').toString().toLowerCase();
+
+    debugPrint('[NotificationService] Handling tap type: $type, targetRole: $targetRoleStr, data: $data');
 
     final context = navigatorKey.currentContext;
     if (context == null || !context.mounted) {
       debugPrint('[NotificationService] Context not available');
       return;
+    }
+
+    // Automatic role switching for dual-role users when tapping notification
+    if (targetRoleStr.isNotEmpty) {
+      if (targetRoleStr == 'driver' && GlobalState.instance.currentRole != UserRole.driver) {
+        debugPrint('[NotificationService] Switching mode to driver for notification');
+        await GlobalState.instance.selectRole(UserRole.driver);
+      } else if (targetRoleStr == 'rider' && GlobalState.instance.currentRole != UserRole.rider) {
+        debugPrint('[NotificationService] Switching mode to rider for notification');
+        await GlobalState.instance.selectRole(UserRole.rider);
+      }
     }
 
     // 1. رسالة دردشة بين الركاب والسائقين
@@ -137,7 +150,18 @@ class NotificationService {
       return;
     }
 
-    // 6. روابط خارجية أو عروض
+    // 6. توثيق وقبول / رفض الكابتن
+    if (type == 'driver_approved' || type == 'driver_verified') {
+      await GlobalState.instance.selectRole(UserRole.driver);
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const DriverHomePage()),
+        (route) => false,
+      );
+      return;
+    }
+
+    // 7. روابط خارجية أو عروض
     final urlStr = data['url'] ?? data['link'];
     if (urlStr != null && urlStr.toString().isNotEmpty) {
       final url = Uri.parse(urlStr.toString());
@@ -149,7 +173,7 @@ class NotificationService {
 
     if (!context.mounted) return;
 
-    // 7. إذا كان فيه tripId بالبيانات المرفقة -> افتح الرحلة
+    // 8. إذا كان فيه tripId بالبيانات المرفقة -> افتح الرحلة
     if (data['tripId'] != null || data['requestId'] != null) {
       if (GlobalState.instance.currentRole == UserRole.rider) {
         Navigator.push(

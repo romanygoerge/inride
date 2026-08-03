@@ -1672,8 +1672,8 @@ function renderDrivers() {
   `;
 }
 
-async function sendPushNotificationBackend({ recipientId, title, body, type = 'driver_status' }) {
-  console.log(`[PushNotificationLog] Sending push to ${recipientId} | Title: "${title}" | Body: "${body}"`);
+async function sendPushNotificationBackend({ recipientId, title, body, type = 'driver_status', targetRole = '' }) {
+  console.log(`[PushNotificationLog] Sending push to ${recipientId} | Title: "${title}" | Body: "${body}" | TargetRole: "${targetRole}"`);
   try {
     if (supabaseClient && recipientId) {
       await supabaseClient.from('notifications').insert({
@@ -1684,7 +1684,7 @@ async function sendPushNotificationBackend({ recipientId, title, body, type = 'd
         type: type,
         is_read: false,
         created_at: new Date().toISOString(),
-        data: { recipientId, title, body, type }
+        data: { recipientId, title, body, type, target_role: targetRole }
       });
     }
 
@@ -1697,7 +1697,7 @@ async function sendPushNotificationBackend({ recipientId, title, body, type = 'd
         title: title,
         body: body,
         type: type,
-        data: { recipientId, title, body, type }
+        data: { recipientId, title, body, type, target_role: targetRole }
       })
     });
     const resData = await res.json();

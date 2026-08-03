@@ -618,47 +618,76 @@ function generateUUID() {
 
 function getFilteredTrips() {
   return mockData.trips.filter(trip => {
-    // If the trip doesn't have an associated Firestore/Supabase request record with created_at, default to showing it
-    const createdStr = mockData.tripsDataMap && mockData.tripsDataMap[trip.requestId] 
+    // Determine the creation date for this trip
+    const createdStr = (mockData.tripsDataMap && mockData.tripsDataMap[trip.requestId]) 
       ? mockData.tripsDataMap[trip.requestId].created_at 
-      : null;
-    if (!createdStr) return true;
-    const date = new Date(createdStr);
+      : (trip.createdAt || trip.created_at || null);
     
+    let date = null;
+    if (createdStr) {
+      date = new Date(createdStr);
+    } else if (trip.date) {
+      if (trip.date.startsWith("اليوم")) {
+        date = new Date();
+      } else if (trip.date.startsWith("أمس")) {
+        date = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      } else {
+        const parsed = new Date(trip.date);
+        if (!isNaN(parsed.getTime())) {
+          date = parsed;
+        }
+      }
+    }
+
+    if (dateFilter === 'all' || !dateFilter) return true;
+    if (!date || isNaN(date.getTime())) return true;
+
+    const now = new Date();
+
     if (dateFilter === 'today') {
-      const today = new Date();
-      return date.getDate() === today.getDate() &&
-             date.getMonth() === today.getMonth() &&
-             date.getFullYear() === today.getFullYear();
+      return date.getDate() === now.getDate() &&
+             date.getMonth() === now.getMonth() &&
+             date.getFullYear() === now.getFullYear();
     }
+
     if (dateFilter === 'week') {
-      const now = new Date();
-      const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      return date >= oneWeekAgo;
+      const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
+      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      return date >= startOfWeek && date <= endOfDay;
     }
+
     if (dateFilter === 'month') {
-      const today = new Date();
-      return date.getMonth() === today.getMonth() &&
-             date.getFullYear() === today.getFullYear();
+      return date.getMonth() === now.getMonth() &&
+             date.getFullYear() === now.getFullYear();
     }
+
     if (dateFilter === 'custom') {
-      if (!customDateStart || !customDateEnd) return true;
-      const start = new Date(customDateStart);
-      start.setHours(0,0,0,0);
-      const end = new Date(customDateEnd);
-      end.setHours(23,59,59,999);
+      if (!customDateStart && !customDateEnd) return true;
+      let valid = true;
+      if (customDateStart) {
+        const start = new Date(customDateStart);
+        start.setHours(0, 0, 0, 0);
+        valid = valid && (date >= start);
+      }
+      if (customDateEnd) {
+        const end = new Date(customDateEnd);
+        end.setHours(23, 59, 59, 999);
+        valid = valid && (date <= end);
+      }
+      return valid;
     }
+
     return true;
   }).sort((a, b) => {
-    const createdStrA = mockData.tripsDataMap && mockData.tripsDataMap[a.requestId] 
+    const createdStrA = (mockData.tripsDataMap && mockData.tripsDataMap[a.requestId]) 
       ? mockData.tripsDataMap[a.requestId].created_at 
-      : null;
-    const createdStrB = mockData.tripsDataMap && mockData.tripsDataMap[b.requestId] 
+      : (a.createdAt || a.created_at || null);
+    const createdStrB = (mockData.tripsDataMap && mockData.tripsDataMap[b.requestId]) 
       ? mockData.tripsDataMap[b.requestId].created_at 
-      : null;
+      : (b.createdAt || b.created_at || null);
     const dateA = createdStrA ? new Date(createdStrA).getTime() : 0;
     const dateB = createdStrB ? new Date(createdStrB).getTime() : 0;
-    return dateB - dateA; // Descending
+    return dateB - dateA;
   });
 }
 
@@ -666,7 +695,10 @@ function getDashboardStats() {
   const filtered = getFilteredTrips();
   let revenue = 0;
   filtered.forEach(t => {
-    if (t.status === 'مكتملة') revenue += t.price;
+    const st = (t.status || '').toLowerCase();
+    if (st === 'مكتملة' || st === 'completed' || st === 'finished') {
+      revenue += parseFloat(t.price || 0);
+    }
   });
   return {
     totalTrips: filtered.length,
@@ -678,6 +710,10 @@ function getDashboardStats() {
 
 function setDateFilter(filter) {
   dateFilter = filter;
+  if (filter !== 'custom') {
+    customDateStart = '';
+    customDateEnd = '';
+  }
   renderPage(currentPage);
 }
 
@@ -689,6 +725,7 @@ function setCustomDateRange(start, end) {
 }
 
 function renderDateFilterBar() {
+  const isCustom = dateFilter === 'custom';
   return `
     <div class="date-filter-bar" style="display:flex;align-items:center;justify-content:space-between;background:white;padding:16px;border-radius:var(--radius-lg);margin-bottom:20px;border:1px solid var(--border-color);gap:16px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:10px;">
@@ -700,11 +737,11 @@ function renderDateFilterBar() {
         <button class="btn btn-sm ${dateFilter === 'today' ? 'btn-primary' : 'btn-outline'}" onclick="setDateFilter('today')">اليوم الجاري</button>
         <button class="btn btn-sm ${dateFilter === 'week' ? 'btn-primary' : 'btn-outline'}" onclick="setDateFilter('week')">هذا الأسبوع</button>
         <button class="btn btn-sm ${dateFilter === 'month' ? 'btn-primary' : 'btn-outline'}" onclick="setDateFilter('month')">هذا الشهر</button>
-        <div style="display:flex;align-items:center;gap:4px;">
-          <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">مخصص:</span>
-          <input type="date" id="dateStart" value="${customDateStart || ''}" class="settings-input" style="padding:6px;font-size:11px;" onchange="setCustomDateRange(this.value, document.getElementById('dateEnd').value)">
-          <span style="font-size:11px;">إلى</span>
-          <input type="date" id="dateEnd" value="${customDateEnd || ''}" class="settings-input" style="padding:6px;font-size:11px;" onchange="setCustomDateRange(document.getElementById('dateStart').value, this.value)">
+        <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:var(--radius-md);border:1.5px solid ${isCustom ? 'var(--medium-blue, #2563eb)' : 'var(--border-color)'};background:${isCustom ? 'rgba(37,99,235,0.06)' : 'transparent'};transition:all 0.2s ease;">
+          <button class="btn btn-sm ${isCustom ? 'btn-primary' : 'btn-outline'}" style="padding:3px 8px;font-size:12px;" onclick="setDateFilter('custom')">مخصص:</button>
+          <input type="date" id="dateStart" value="${customDateStart || ''}" class="settings-input" style="padding:5px 8px;font-size:11px;border-radius:4px;" onchange="setCustomDateRange(this.value, document.getElementById('dateEnd').value)">
+          <span style="font-size:11px;font-weight:600;color:var(--text-secondary);">إلى</span>
+          <input type="date" id="dateEnd" value="${customDateEnd || ''}" class="settings-input" style="padding:5px 8px;font-size:11px;border-radius:4px;" onchange="setCustomDateRange(document.getElementById('dateStart').value, this.value)">
         </div>
       </div>
     </div>
@@ -915,6 +952,7 @@ function renderPage(page) {
       container.innerHTML = renderPricing();
       break;
     case 'communication':
+    case 'support':
       container.innerHTML = renderCommunication();
       if (currentCommunicationTab === 'chat') {
         initCommChatSync();
@@ -923,9 +961,6 @@ function renderPage(page) {
     case 'messages':
       container.innerHTML = renderMessages();
       initMessagesPage();
-      break;
-    case 'support':
-      container.innerHTML = renderSupport();
       break;
     case 'content':
       container.innerHTML = renderContent();
@@ -947,10 +982,39 @@ function renderPage(page) {
 
 // ---- DASHBOARD ----
 function renderDashboard() {
-  const maxTrips = mockData.weeklyActivity.length > 0 
-    ? Math.max(...mockData.weeklyActivity.map(d => d.trips)) 
-    : 0;
+  const filteredTrips = getFilteredTrips();
   const stats = getDashboardStats();
+
+  // Weekly activity breakdown dynamically calculated from filtered trips
+  const daysOfWeek = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  const activityMap = { 'السبت': 0, 'الأحد': 0, 'الاثنين': 0, 'الثلاثاء': 0, 'الأربعاء': 0, 'الخميس': 0, 'الجمعة': 0 };
+
+  filteredTrips.forEach(t => {
+    const createdStr = (mockData.tripsDataMap && mockData.tripsDataMap[t.requestId])
+      ? mockData.tripsDataMap[t.requestId].created_at
+      : (t.createdAt || t.created_at || null);
+    let d = createdStr ? new Date(createdStr) : null;
+    if (!d || isNaN(d.getTime())) {
+      if (t.date && t.date.startsWith("أمس")) {
+        d = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      } else {
+        d = new Date();
+      }
+    }
+    const dayName = daysOfWeek[d.getDay()];
+    if (activityMap[dayName] !== undefined) {
+      activityMap[dayName]++;
+    }
+  });
+
+  const weeklyActivity = Object.keys(activityMap).map(day => ({ day, trips: activityMap[day] }));
+  const maxTrips = Math.max(...weeklyActivity.map(d => d.trips), 1);
+
+  const carTripsCount = filteredTrips.filter(t => t.vehicle === 'عربية' || t.vehicle === 'car').length;
+  const scooterTripsCount = filteredTrips.filter(t => t.vehicle === 'اسكوتر' || t.vehicle === 'scooter').length;
+  const motorcycleTripsCount = filteredTrips.filter(t => t.vehicle === 'موتوسيكل' || t.vehicle === 'motorcycle').length;
+  const completedCount = filteredTrips.filter(t => t.status === 'مكتملة' || (t.status || '').toLowerCase() === 'completed').length;
+  const completionRate = filteredTrips.length > 0 ? Math.round((completedCount / filteredTrips.length) * 100) : 0;
 
   return `
     <div class="page-section">
@@ -997,7 +1061,7 @@ function renderDashboard() {
         <!-- Weekly Activity Chart -->
         <div class="card">
           <div class="card-header">
-            <h3><i class="ri-bar-chart-grouped-fill text-blue" style="margin-left:8px;"></i> نشاط الرحلات - هذا الأسبوع</h3>
+            <h3><i class="ri-bar-chart-grouped-fill text-blue" style="margin-left:8px;"></i> نشاط الرحلات للفترة المحددة</h3>
             <div class="live-indicator">
               <span class="live-dot"></span>
               مباشر
@@ -1005,13 +1069,13 @@ function renderDashboard() {
           </div>
           <div class="card-body">
             <div class="activity-bars">
-              ${mockData.weeklyActivity.map((d) => `
+              ${weeklyActivity.map((d) => `
                 <div class="activity-bar" style="height: ${maxTrips > 0 ? (d.trips / maxTrips) * 100 : 0}%;" 
                      data-tooltip="${d.trips} رحلة" title="${d.day}: ${d.trips} رحلة"></div>
               `).join('')}
             </div>
             <div class="activity-labels">
-              ${mockData.weeklyActivity.map(d => `<span>${d.day}</span>`).join('')}
+              ${weeklyActivity.map(d => `<span>${d.day}</span>`).join('')}
             </div>
           </div>
         </div>
@@ -1019,7 +1083,7 @@ function renderDashboard() {
         <!-- Quick Stats Sidebar -->
         <div class="card">
           <div class="card-header">
-            <h3><i class="ri-pie-chart-fill text-blue" style="margin-left:8px;"></i> ملخص سريع</h3>
+            <h3><i class="ri-pie-chart-fill text-blue" style="margin-left:8px;"></i> ملخص سريع للفترة</h3>
           </div>
           <div class="card-body">
             <div style="display:flex;flex-direction:column;gap:16px;">
@@ -1028,28 +1092,28 @@ function renderDashboard() {
                   <i class="ri-car-fill" style="color:var(--medium-blue);font-size:20px;"></i>
                   <span style="font-weight:600;font-size:13px;">رحلات العربيات</span>
                 </div>
-                <span class="font-outfit fw-900" style="color:var(--medium-blue);">${mockData.trips.filter(t => t.vehicle === 'عربية').length}</span>
+                <span class="font-outfit fw-900" style="color:var(--medium-blue);">${carTripsCount}</span>
               </div>
               <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg-primary);border-radius:var(--radius-md);">
                 <div style="display:flex;align-items:center;gap:10px;">
                   <i class="ri-e-bike-2-fill" style="color:var(--light-blue);font-size:20px;"></i>
                   <span style="font-weight:600;font-size:13px;">رحلات الاسكوتر</span>
                 </div>
-                <span class="font-outfit fw-900" style="color:var(--light-blue);">${mockData.trips.filter(t => t.vehicle === 'اسكوتر').length}</span>
+                <span class="font-outfit fw-900" style="color:var(--light-blue);">${scooterTripsCount}</span>
               </div>
               <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg-primary);border-radius:var(--radius-md);">
                 <div style="display:flex;align-items:center;gap:10px;">
                   <i class="ri-motorbike-fill" style="color:var(--dark-blue);font-size:20px;"></i>
                   <span style="font-weight:600;font-size:13px;">رحلات الموتوسيكل</span>
                 </div>
-                <span class="font-outfit fw-900" style="color:var(--dark-blue);">${mockData.trips.filter(t => t.vehicle === 'موتوسيكل').length}</span>
+                <span class="font-outfit fw-900" style="color:var(--dark-blue);">${motorcycleTripsCount}</span>
               </div>
               <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--success-bg);border-radius:var(--radius-md);">
                 <div style="display:flex;align-items:center;gap:10px;">
                   <i class="ri-check-double-fill" style="color:var(--success);font-size:20px;"></i>
                   <span style="font-weight:600;font-size:13px;">نسبة الإكمال</span>
                 </div>
-                <span class="font-outfit fw-900" style="color:var(--success);">${mockData.trips.length > 0 ? Math.round((mockData.trips.filter(t => t.status === 'مكتملة').length / mockData.trips.length) * 100) : 0}%</span>
+                <span class="font-outfit fw-900" style="color:var(--success);">${completionRate}%</span>
               </div>
               <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--warning-bg);border-radius:var(--radius-md);">
                 <div style="display:flex;align-items:center;gap:10px;">
@@ -1066,7 +1130,7 @@ function renderDashboard() {
       <!-- Recent Trips Table -->
       <div class="card">
         <div class="card-header">
-          <h3><i class="ri-history-fill text-blue" style="margin-left:8px;"></i> آخر الرحلات</h3>
+          <h3><i class="ri-history-fill text-blue" style="margin-left:8px;"></i> رحلات الفترة المختارة</h3>
           <button class="btn btn-outline btn-sm" onclick="navigateTo('trips')">
             عرض الكل <i class="ri-arrow-left-s-line"></i>
           </button>
@@ -1086,8 +1150,8 @@ function renderDashboard() {
                 </tr>
               </thead>
               <tbody>
-                ${mockData.trips.length === 0 ? `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-light);">لا توجد رحلات حالياً في النظام</td></tr>` : ''}
-                ${mockData.trips.slice(0, 5).map(trip => `
+                ${filteredTrips.length === 0 ? `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-light);">لا توجد رحلات لهذه الفترة الزمانية المحددة</td></tr>` : ''}
+                ${filteredTrips.slice(0, 5).map(trip => `
                   <tr>
                     <td><span class="font-outfit fw-700" style="color:var(--medium-blue);">${trip.id}</span></td>
                     <td>
@@ -2571,6 +2635,19 @@ async function loadFinancialDataFromSupabase() {
   const client = getSupabaseClient() || supabaseClient;
   if (!client) return;
 
+  if (!window._pmRealtimeSubscribed) {
+    window._pmRealtimeSubscribed = true;
+    try {
+      client.channel('public:payment_methods')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_methods' }, () => {
+          loadFinancialDataFromSupabase().then(() => {
+            if (currentPage === 'wallet') renderPage('wallet');
+          });
+        })
+        .subscribe();
+    } catch (_) {}
+  }
+
   try {
     const { data: pmData } = await client.from('payment_methods').select('*').order('created_at', { ascending: true });
     if (pmData && pmData.length > 0) {
@@ -2578,9 +2655,9 @@ async function loadFinancialDataFromSupabase() {
     } else {
       financialState.paymentMethods = [
         { id: '1', name: 'فودافون كاش', code: 'vodafone_cash', account_details: '01000000000', is_active: true, icon_name: 'ri-smartphone-line' },
-        { id: '2', name: 'إنستا باي (InstaPay)', code: 'instapay', account_details: 'username@instapay', is_active: true, icon_name: 'ri-flashlight-line' },
+        { id: '2', name: 'إنستا باي (InstaPay)', code: 'instapay', account_details: '01204062941', is_active: true, icon_name: 'ri-flashlight-line' },
         { id: '3', name: 'تحويل بنكي', code: 'bank_transfer', account_details: 'EG00000000000000000000', is_active: true, icon_name: 'ri-bank-line' },
-        { id: '4', name: 'نقداً (كاش)', code: 'cash', account_details: 'الدفع نقداً في المقر', is_active: true, icon_name: 'ri-money-dollar-circle-line' }
+        { id: '4', name: 'نقداً (كاش)', code: 'cash', account_details: 'الدفع نقداً في المقر أو مع السائق', is_active: true, icon_name: 'ri-money-dollar-circle-line' }
       ];
     }
 
@@ -2650,56 +2727,108 @@ function setFinancialPeriodFilter(period, startDate = null, endDate = null) {
   renderPage('wallet');
 }
 
-async function approvePendingRecharge(id, userId, amount) {
-  if (!confirm(`هل تريد تأكيد قبول طلب الشحن بمبلغ ${amount} ج.م وإضافته لحساب المستخدم؟`)) return;
+async function approvePendingRecharge(id, userId, amount, requestIdFallback = null) {
+  const targetId = id || requestIdFallback;
+  if (!targetId || !userId) {
+    showToast('❌ تعذر تحديد معرف الطلب أو المستخدم');
+    return;
+  }
+  const numericAmount = parseFloat(amount || 0);
+  if (!confirm(`هل تريد تأكيد قبول طلب الشحن بمبلغ ${numericAmount.toLocaleString()} ج.م وإضافته لحساب المستخدم؟`)) return;
 
   const client = getSupabaseClient() || supabaseClient;
-  if (!client) return;
+  if (!client) {
+    showToast('❌ اتصال قاعدة البيانات غير متوفر');
+    return;
+  }
 
   try {
-    const numericAmount = parseFloat(amount || 0);
-
-    // 1. Try stored function first if it's a wallet_recharge_request ID
+    // 1. Try stored RPC function first
+    let rpcSuccess = false;
     try {
       const { data: rpcData, error: rpcErr } = await client.rpc('approve_wallet_recharge_request', {
-        p_request_id: id,
+        p_request_id: targetId,
         p_admin_id: (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : null
       });
       if (!rpcErr && rpcData && rpcData.success) {
-        showToast(`✅ ${rpcData.message || 'تم قبول طلب الشحن وإضافة الرصيد بنجاح'}`);
-        await loadFinancialDataFromSupabase();
-        renderPage('wallet');
-        return;
+        rpcSuccess = true;
       }
     } catch (_) {}
 
-    // 2. Fallback manual update logic
-    const { data: userRecord, error: userFetchErr } = await client
-      .from('users')
-      .select('wallet_balance, name')
-      .eq('id', userId)
-      .maybeSingle();
+    // 2. Guaranteed Client-side Fallback
+    if (!rpcSuccess) {
+      let reqObj = null;
+      try {
+        const { data: rData } = await client.from('wallet_recharge_requests').select('*').eq('id', targetId).maybeSingle();
+        reqObj = rData;
+      } catch (_) {}
 
-    if (userFetchErr) throw userFetchErr;
+      const { data: userRecord } = await client
+        .from('users')
+        .select('wallet_balance, name')
+        .eq('id', userId)
+        .maybeSingle();
 
-    const currentBalance = parseFloat(userRecord?.wallet_balance || 0);
-    const newBalance = currentBalance + numericAmount;
+      const currentBalance = parseFloat(userRecord?.wallet_balance || 0);
+      const newBalance = currentBalance + numericAmount;
 
-    await client.from('users').update({ wallet_balance: newBalance }).eq('id', userId);
-    await client.from('wallet_recharge_requests').update({ status: 'approved', processed_at: new Date().toISOString() }).eq('id', id).catch(() => {});
-    await client.from('transactions').update({ type: 'charge', title: 'شحن رصيد مقبول', balance_after: newBalance, notes: 'تم قبول طلب الشحن وتفعيل الرصيد بواسطة إدارة inRide' }).eq('id', id).catch(() => {});
+      await client.from('users').update({ wallet_balance: newBalance }).eq('id', userId);
+      try {
+        await client.from('profiles').update({ wallet_balance: newBalance }).eq('id', userId);
+      } catch (_) {}
 
-    // Notification to user
-    try {
-      await client.from('notifications').insert({
-        user_id: userId,
-        title: '✅ تم شحن رصيد محفظتك',
-        body: `تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م بنجاح. رصيدك الحالي: ${newBalance} ج.م`,
-        type: 'wallet'
-      });
-    } catch (e) {}
+      await client.from('wallet_recharge_requests').update({
+        status: 'approved',
+        processed_at: new Date().toISOString()
+      }).eq('id', targetId);
 
-    showToast(`✅ تم قبول طلب الشحن وإضافة ${numericAmount} ج.م إلى محفظة ${userRecord?.name || 'المستخدم'} بنجاح!`);
+      let existingTx = null;
+      try {
+        const { data: txList } = await client.from('transactions')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('type', 'charge_pending')
+          .limit(1);
+        if (txList && txList.length > 0) existingTx = txList[0];
+      } catch (_) {}
+
+      if (existingTx) {
+        await client.from('transactions').update({
+          type: 'charge',
+          title: 'شحن رصيد مقبول',
+          balance_after: newBalance,
+          notes: 'تم قبول طلب الشحن وتفعيل الرصيد بواسطة إدارة inRide',
+          payment_method: reqObj?.payment_method || 'InstaPay',
+          receipt_url: reqObj?.receipt_url || ''
+        }).eq('id', existingTx.id);
+      } else {
+        await client.from('transactions').insert({
+          id: generateUUID(),
+          user_id: userId,
+          title: 'شحن رصيد مقبول',
+          amount: numericAmount,
+          type: 'charge',
+          balance_after: newBalance,
+          payment_method: reqObj?.payment_method || 'InstaPay',
+          receipt_url: reqObj?.receipt_url || '',
+          notes: 'تم قبول طلب الشحن وإضافة الرصيد للمحفظة بواسطة الإدارة',
+          is_settled: false,
+          created_at: new Date().toISOString()
+        });
+      }
+
+      try {
+        await client.from('notifications').insert({
+          user_id: userId,
+          title: '✅ تم قبول طلب الشحن',
+          body: `تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م بنجاح. رصيدك الحالي: ${newBalance} ج.م`,
+          type: 'wallet',
+          created_at: new Date().toISOString()
+        });
+      } catch (_) {}
+    }
+
+    showToast(`✅ تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م وإضافته للمحفظة بنجاح!`);
     await loadFinancialDataFromSupabase();
     renderPage('wallet');
   } catch (e) {
@@ -2708,43 +2837,85 @@ async function approvePendingRecharge(id, userId, amount) {
   }
 }
 
-async function rejectPendingRecharge(id, userId) {
+async function rejectPendingRecharge(id, userId, requestIdFallback = null) {
+  const targetId = id || requestIdFallback;
+  if (!targetId || !userId) {
+    showToast('❌ تعذر تحديد معرف الطلب أو المستخدم');
+    return;
+  }
+
   const reason = prompt('ادخل سبب رفض طلب الشحن (أو اتركه فارغاً):', 'إيصال تحويل غير واضح أو غير مكتمل');
   if (reason === null) return;
 
   const client = getSupabaseClient() || supabaseClient;
-  if (!client) return;
+  if (!client) {
+    showToast('❌ اتصال قاعدة البيانات غير متوفر');
+    return;
+  }
 
   try {
-    // 1. Try stored RPC function first
+    let rpcSuccess = false;
     try {
       const { data: rpcData, error: rpcErr } = await client.rpc('reject_wallet_recharge_request', {
-        p_request_id: id,
+        p_request_id: targetId,
         p_reason: reason || 'إيصال تحويل غير واضح',
         p_admin_id: (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : null
       });
       if (!rpcErr && rpcData && rpcData.success) {
-        showToast('❌ تم رفض طلب الشحن وإبلاغ المستخدم.');
-        await loadFinancialDataFromSupabase();
-        renderPage('wallet');
-        return;
+        rpcSuccess = true;
       }
     } catch (_) {}
 
-    // 2. Fallback manual update logic
-    await client.from('wallet_recharge_requests').update({ status: 'rejected', rejection_reason: reason, processed_at: new Date().toISOString() }).eq('id', id).catch(() => {});
-    await client.from('transactions').update({ type: 'rejected', title: 'طلب شحن مرفوض', notes: `مرفوض: ${reason}` }).eq('id', id).catch(() => {});
+    if (!rpcSuccess) {
+      await client.from('wallet_recharge_requests').update({
+        status: 'rejected',
+        rejection_reason: reason || 'إيصال تحويل غير واضح',
+        processed_at: new Date().toISOString()
+      }).eq('id', targetId);
 
-    try {
-      await client.from('notifications').insert({
-        user_id: userId,
-        title: '❌ تم رفض طلب الشحن',
-        body: `نأسف، تعذر قبول طلب الشحن الخاص بك. السبب: ${reason}`,
-        type: 'wallet'
-      });
-    } catch (e) {}
+      let existingTx = null;
+      try {
+        const { data: txList } = await client.from('transactions')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('type', 'charge_pending')
+          .limit(1);
+        if (txList && txList.length > 0) existingTx = txList[0];
+      } catch (_) {}
 
-    showToast('❌ تم رفض طلب الشحن وإبلاغ المستخدم.');
+      if (existingTx) {
+        await client.from('transactions').update({
+          type: 'charge_rejected',
+          title: 'طلب شحن مرفوض',
+          notes: `تم رفض طلب الشحن. السبب: ${reason || 'إيصال غير واضح'}`
+        }).eq('id', existingTx.id);
+      } else {
+        await client.from('transactions').insert({
+          id: generateUUID(),
+          user_id: userId,
+          title: 'طلب شحن مرفوض',
+          amount: 0,
+          type: 'charge_rejected',
+          balance_after: 0,
+          payment_method: 'InstaPay',
+          notes: `تم رفض طلب الشحن. السبب: ${reason || 'إيصال غير واضح'}`,
+          is_settled: false,
+          created_at: new Date().toISOString()
+        });
+      }
+
+      try {
+        await client.from('notifications').insert({
+          user_id: userId,
+          title: '❌ تم رفض طلب الشحن',
+          body: `نأسف، تعذر قبول طلب الشحن الخاص بك. السبب: ${reason || 'إيصال غير واضح'}`,
+          type: 'wallet',
+          created_at: new Date().toISOString()
+        });
+      } catch (_) {}
+    }
+
+    showToast('❌ تم رفض طلب الشحن وإبلاغ المستخدم بنجاح.');
     await loadFinancialDataFromSupabase();
     renderPage('wallet');
   } catch (e) {
@@ -3067,12 +3238,11 @@ function renderCommConversationsList() {
   const container = document.getElementById('commConvListContainer');
   if (!container) return;
 
-  // Combine drivers and passengers into a clean unified contacts list
-  let contacts = [];
+  let contactsMap = {};
   
   if (mockData.drivers) {
     mockData.drivers.forEach(d => {
-      contacts.push({
+      contactsMap[d.uid] = {
         id: d.uid,
         name: d.name || 'كابتن',
         phone: d.phone || '',
@@ -3080,16 +3250,17 @@ function renderCommConversationsList() {
         roleAr: 'كابتن 🚗',
         rating: (parseFloat(d.rating) || 5.0).toFixed(1),
         avatar: (d.name || 'ك').charAt(0),
-        lastMessage: 'مرحباً، أحتاج مساعدة في الحساب',
+        lastMessage: 'بدء محادثة مباشرة مع الكابتن',
         lastTime: d.joinDate || 'الآن',
+        lastTimestamp: 0,
         unread: 0
-      });
+      };
     });
   }
 
   if (mockData.passengers) {
     mockData.passengers.forEach(p => {
-      contacts.push({
+      contactsMap[p.uid] = {
         id: p.uid,
         name: p.name || 'راكب',
         phone: p.phone || '',
@@ -3097,12 +3268,49 @@ function renderCommConversationsList() {
         roleAr: 'راكب 👤',
         rating: (parseFloat(p.rating) || 5.0).toFixed(1),
         avatar: (p.name || 'ر').charAt(0),
-        lastMessage: 'أود الاستفسار عن رصيد المحفظة',
+        lastMessage: 'بدء محادثة مباشرة مع الراكب',
         lastTime: p.joinDate || 'الآن',
+        lastTimestamp: 0,
         unread: 0
-      });
+      };
     });
   }
+
+  // Merge live support chats from Supabase
+  if (liveSupportChats && liveSupportChats.length > 0) {
+    liveSupportChats.forEach(chat => {
+      const uId = chat.id || chat.user_id;
+      if (!uId) return;
+
+      const timeStr = chat.last_message_at ? new Date(chat.last_message_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : 'الآن';
+      const ts = chat.last_message_at ? new Date(chat.last_message_at).getTime() : Date.now();
+      const isDriver = chat.user_type === 'driver';
+
+      if (contactsMap[uId]) {
+        contactsMap[uId].lastMessage = chat.last_message || contactsMap[uId].lastMessage;
+        contactsMap[uId].lastTime = timeStr;
+        contactsMap[uId].lastTimestamp = ts;
+        if (chat.user_name) contactsMap[uId].name = chat.user_name;
+      } else {
+        contactsMap[uId] = {
+          id: uId,
+          name: chat.user_name || (isDriver ? 'كابتن inRide' : 'مستخدم inRide'),
+          phone: chat.phone || '',
+          role: isDriver ? 'driver' : 'rider',
+          roleAr: isDriver ? 'كابتن 🚗' : 'راكب 👤',
+          rating: '5.0',
+          avatar: (chat.user_name || 'م').charAt(0),
+          lastMessage: chat.last_message || 'رسالة جديدة من التطبيق',
+          lastTime: timeStr,
+          lastTimestamp: ts,
+          unread: 0
+        };
+      }
+    });
+  }
+
+  let contacts = Object.values(contactsMap);
+  contacts.sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
 
   // Filter contacts
   const filtered = contacts.filter(c => {
@@ -3128,8 +3336,14 @@ function renderCommConversationsList() {
 
   let html = filtered.map(c => {
     const isActive = commActiveUserId === c.id;
+    const cacheMsgs = commMessagesCache[c.id];
+    let previewText = c.lastMessage;
+    if (cacheMsgs && cacheMsgs.length > 0) {
+      previewText = cacheMsgs[cacheMsgs.length - 1].text || previewText;
+    }
+
     return `
-      <div class="comm-conv-item ${isActive ? 'active' : ''}" onclick="selectCommConversation('${c.id}', '${c.role}')">
+      <div class="comm-conv-item ${isActive ? 'active' : ''}" data-userid="${c.id}" onclick="selectCommConversation('${c.id}', '${c.role}')">
         <div class="comm-avatar ${c.role === 'driver' ? 'driver' : ''}">
           ${c.avatar}
           <div class="comm-avatar-badge"></div>
@@ -3140,10 +3354,13 @@ function renderCommConversationsList() {
             <span class="comm-conv-time">${c.lastTime}</span>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;">
-            <span class="comm-conv-preview">${c.lastMessage}</span>
-            <span class="badge" style="font-size:10px;padding:2px 6px;background:${c.role === 'driver' ? '#E0F2FE' : '#F3E8FF'};color:${c.role === 'driver' ? '#0369A1' : '#7E22CE'}; font-weight:700;">
-              ${c.roleAr}
-            </span>
+            <span class="comm-conv-preview" style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${previewText}</span>
+            <div style="display:flex;align-items:center;gap:4px;">
+              ${c.unread > 0 ? `<span class="badge" style="background:#EF4444;color:white;font-size:10px;">${c.unread}</span>` : ''}
+              <span class="badge" style="font-size:10px;padding:2px 6px;background:${c.role === 'driver' ? '#E0F2FE' : '#F3E8FF'};color:${c.role === 'driver' ? '#0369A1' : '#7E22CE'}; font-weight:700;">
+                ${c.roleAr}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -3154,9 +3371,14 @@ function renderCommConversationsList() {
 }
 
 async function initCommChatSync() {
+  await loadSupportChatsFromSupabase();
   renderCommConversationsList();
+
   if (!commActiveUserId) {
-    if (mockData.drivers && mockData.drivers.length > 0) {
+    if (liveSupportChats && liveSupportChats.length > 0) {
+      commActiveUserId = liveSupportChats[0].id || liveSupportChats[0].user_id;
+      commActiveUserRole = liveSupportChats[0].user_type === 'driver' ? 'driver' : 'rider';
+    } else if (mockData.drivers && mockData.drivers.length > 0) {
       commActiveUserId = mockData.drivers[0].uid;
       commActiveUserRole = 'driver';
     } else if (mockData.passengers && mockData.passengers.length > 0) {
@@ -3164,8 +3386,36 @@ async function initCommChatSync() {
       commActiveUserRole = 'rider';
     }
   }
+
   if (commActiveUserId) {
     loadCommMessagesThread(commActiveUserId);
+  }
+  if (typeof updateCommunicationBadge === 'function') updateCommunicationBadge();
+
+  if (supabaseClient && !window._commRealtimeSubscribed) {
+    window._commRealtimeSubscribed = true;
+    try {
+      supabaseClient
+        .channel('admin_comm_realtime_channel')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, payload => {
+          const newMsg = payload.new;
+          if (newMsg) {
+            const targetId = newMsg.user_id || newMsg.sender_id || newMsg.conversation_id;
+            if (targetId && currentPage === 'communication' && commActiveUserId === targetId) {
+              loadCommMessagesThread(targetId);
+            }
+            loadSupportChatsFromSupabase().then(() => {
+              if (currentPage === 'communication') renderCommConversationsList();
+            });
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'support_chats' }, () => {
+          loadSupportChatsFromSupabase().then(() => {
+            if (currentPage === 'communication') renderCommConversationsList();
+          });
+        })
+        .subscribe();
+    } catch (_) {}
   }
 }
 
@@ -3362,6 +3612,11 @@ function renderWallet() {
 }
 
 
+function setFinancialTxStatusFilter(filter) {
+  financialState.txStatusFilter = filter;
+  renderPage('wallet');
+}
+
 function renderWalletContentHtml() {
   const filteredTx = getFilteredTransactions();
   const pendingRequests = (financialState.rechargeRequests || []).filter(r => r.status === 'pending');
@@ -3397,10 +3652,13 @@ function renderWalletContentHtml() {
     badgeEl.style.display = pendingRechargeList.length > 0 ? 'inline-block' : 'none';
   }
 
+  // Active (unsettled) transactions for current period statistics
+  const activeTx = filteredTx.filter(t => !t.is_settled);
+
   let totalIncome = 0;
   let totalExpense = 0;
 
-  filteredTx.forEach(t => {
+  activeTx.forEach(t => {
     const amt = parseFloat(t.amount || 0);
     if (amt > 0) totalIncome += amt;
     else totalExpense += Math.abs(amt);
@@ -3408,6 +3666,12 @@ function renderWalletContentHtml() {
 
   const netBalance = totalIncome - totalExpense;
   const activeMethods = financialState.paymentMethods || [];
+
+  // Table filter for transactions ledger
+  const txFilter = financialState.txStatusFilter || 'all';
+  let displayTx = filteredTx;
+  if (txFilter === 'active') displayTx = filteredTx.filter(t => !t.is_settled);
+  else if (txFilter === 'settled') displayTx = filteredTx.filter(t => t.is_settled);
 
   return `
     <div class="page-section">
@@ -3459,7 +3723,7 @@ function renderWalletContentHtml() {
             <div class="stat-card-icon"><i class="ri-wallet-3-fill"></i></div>
           </div>
           <div class="stat-card-value">${netBalance.toLocaleString()}</div>
-          <div class="stat-card-label">صافي رصيد الفترة (ج.م)</div>
+          <div class="stat-card-label">صافي رصيد الفترة النشط (ج.م)</div>
         </div>
         <div class="stat-card green">
           <div class="stat-card-header">
@@ -3480,7 +3744,7 @@ function renderWalletContentHtml() {
             <div class="stat-card-icon"><i class="ri-shield-check-fill"></i></div>
           </div>
           <div class="stat-card-value">${filteredTx.filter(t => t.is_settled).length}</div>
-          <div class="stat-card-label">المعاملات المصفاة والمغلقة</div>
+          <div class="stat-card-label">المعاملات المصفاة والمؤرشفة</div>
         </div>
       </div>
 
@@ -3618,7 +3882,7 @@ function renderWalletContentHtml() {
                   </div>
                   <div style="text-align:left;">
                     <div style="font-weight:700;font-size:12px;color:var(--medium-blue);">${parseFloat(st.net_balance || 0).toLocaleString()} ج.م</div>
-                    <div style="font-size:10px;color:var(--success);">مصفاة وموثقة</div>
+                    <div style="font-size:10px;color:var(--success);">مصفاة وموثقة بالأرشيف</div>
                   </div>
                 </div>
               `).join('')
@@ -3629,9 +3893,16 @@ function renderWalletContentHtml() {
 
       <!-- Financial Ledger / Transactions History Table -->
       <div class="card">
-        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-          <h3><i class="ri-exchange-funds-fill text-blue" style="margin-left:8px;"></i> سجل المعاملات المالية المكتمل والريسيتات المرفقة</h3>
-          <span class="text-light" style="font-size:12px;">${filteredTx.length} معاملة بالفترة المحددة</span>
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+          <div>
+            <h3 style="margin:0;"><i class="ri-exchange-funds-fill text-blue" style="margin-left:8px;"></i> سجل المعاملات المالية المكتمل والريسيتات المرفقة</h3>
+            <span class="text-light" style="font-size:11px;">عرض وتتبع كافة السجلات المالية والعمليات المصفاة</span>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button class="btn btn-sm ${txFilter === 'all' ? 'btn-primary' : 'btn-outline'}" onclick="setFinancialTxStatusFilter('all')">الكل (${filteredTx.length})</button>
+            <button class="btn btn-sm ${txFilter === 'active' ? 'btn-primary' : 'btn-outline'}" onclick="setFinancialTxStatusFilter('active')">النشطة والجارية (${filteredTx.filter(t => !t.is_settled).length})</button>
+            <button class="btn btn-sm ${txFilter === 'settled' ? 'btn-primary' : 'btn-outline'}" onclick="setFinancialTxStatusFilter('settled')">الأرشيف والمصفاة (${filteredTx.filter(t => t.is_settled).length})</button>
+          </div>
         </div>
         <div class="card-body" style="padding:0;overflow-x:auto;">
           <table class="data-table" style="width:100%;font-size:12px;">
@@ -3643,12 +3914,12 @@ function renderWalletContentHtml() {
                 <th>صورة الريسيت والإثبات</th>
                 <th>المبلغ</th>
                 <th>الرصيد بعد</th>
-                <th>حالة التصفية</th>
+                <th>حالة التصفية والأرشيف</th>
               </tr>
             </thead>
             <tbody>
-              ${filteredTx.length === 0 ? `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-light);">لا توجد معاملات مالية بالفترة المحددة</td></tr>` : 
-                filteredTx.map(tx => {
+              ${displayTx.length === 0 ? `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-light);">لا توجد معاملات مالية مطابقة للفترات المحددة</td></tr>` : 
+                displayTx.map(tx => {
                   const amt = parseFloat(tx.amount || 0);
                   const isInc = amt > 0;
                   const dateStr = new Date(tx.created_at || Date.now()).toLocaleString('ar-EG');
@@ -3669,7 +3940,7 @@ function renderWalletContentHtml() {
                       </td>
                       <td>
                         ${tx.receipt_url ? 
-                          `<button class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:10px;" onclick="viewReceiptModal('${tx.receipt_url}', '${tx.reference_code || ''}', '${userObj.name}', ${amt}, '${dateStr}', '${tx.payment_method || ''}')">
+                          `<button class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:10px;" onclick="viewReceiptModal('${tx.receipt_url}', '${tx.reference_code || 'إيصال تحويل'}', '${userObj.name}', ${amt}, '${dateStr}', '${tx.payment_method || ''}')">
                              📷 معاينة الريسيت
                            </button>` : 
                           `<span style="color:var(--text-light);font-size:10px;">بدون ريسيت</span>`
@@ -3682,8 +3953,8 @@ function renderWalletContentHtml() {
                         ${parseFloat(tx.balance_after || 0).toLocaleString()} ج.م
                       </td>
                       <td>
-                        <span class="badge" style="padding:2px 7px;border-radius:10px;font-size:10px;background:${tx.is_settled ? '#E0E7FF' : '#D1FAE5'};color:${tx.is_settled ? '#3730A3' : '#065F46'};">
-                          ${tx.is_settled ? 'مصفاة ومغلقة' : 'نشطة/جارية'}
+                        <span class="badge" style="padding:3px 9px;border-radius:10px;font-size:10px;background:${tx.is_settled ? '#E0E7FF' : '#D1FAE5'};color:${tx.is_settled ? '#3730A3' : '#065F46'};font-weight:700;">
+                          ${tx.is_settled ? 'مصفاة وموثقة بالأرشيف' : 'نشطة/جارية'}
                         </span>
                       </td>
                     </tr>
@@ -3927,6 +4198,11 @@ async function executePeriodReset(periodType) {
   const filteredTx = getFilteredTransactions();
   const unsettleTx = filteredTx.filter(t => !t.is_settled);
 
+  if (unsettleTx.length === 0) {
+    showToast('ℹ️ لا توجد معاملات نشطة في هذه الفترة لتصفيتها. جميع الحسابات مصفاة أو تاريخية بالفعل.');
+    return;
+  }
+
   let totalIncome = 0;
   let totalPayouts = 0;
 
@@ -3949,7 +4225,7 @@ async function executePeriodReset(periodType) {
       total_income: totalIncome,
       total_payouts: totalPayouts,
       net_balance: netBalance,
-      settled_by: currentAdminUser ? currentAdminUser.email : 'مدير النظام',
+      settled_by: currentAdminUser ? (currentAdminUser.name || currentAdminUser.email) : 'مدير النظام',
       notes: `تصفير الأرقام وتصفية الحسابات للفترة: ${periodType}`
     });
 
@@ -3961,10 +4237,11 @@ async function executePeriodReset(periodType) {
       }).in('id', txIds);
     }
 
-    showToast(`✅ تم تصفير الأرقام وتصفية حسابات الفترة (${periodType}) بنجاح`);
+    showToast(`✅ تم تصفير الأرقام وتصفية حسابات الفترة (${periodType}) بنجاح وتحويل المعاملات للأرشيف`);
     await loadFinancialDataFromSupabase();
     renderPage('wallet');
   } catch (err) {
+    console.error('executePeriodReset error:', err);
     showToast(`❌ فشل التصفير: ${err.message}`);
   }
 }
@@ -4235,35 +4512,45 @@ function viewReceiptModal(receiptUrl, refCode, userName, amount, dateStr, pmName
     document.body.appendChild(modalEl);
   }
 
+  const amtNum = parseFloat(amount || 0);
+  const amtFormatted = isNaN(amtNum) ? (amount || 0) : amtNum.toLocaleString();
+
   modalEl.style.display = 'flex';
   modalEl.innerHTML = `
-    <div class="modal-content" style="max-width:550px;width:90%;border-radius:12px;padding:24px;background:white;position:relative;">
+    <div class="modal-content" style="max-width:550px;width:90%;border-radius:14px;padding:24px;background:white;position:relative;direction:rtl;box-shadow:0 20px 40px rgba(0,0,0,0.25);">
       <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #E5E7EB;padding-bottom:12px;margin-bottom:16px;">
-        <h3 style="margin:0;font-size:16px;">إيصال التحويل والريسيت الرقمي</h3>
-        <button class="btn btn-outline btn-sm" onclick="closeFinancialModal('receiptViewModal')">✕ إغلاق</button>
+        <h3 style="margin:0;font-size:16px;font-weight:800;color:var(--text-primary);">📸 ${refCode || 'معاينة إيصال التحويل ورسيت العملية'}</h3>
+        <button class="btn btn-outline btn-sm" onclick="closeFinancialModal('receiptViewModal')" style="border-radius:50%;width:30px;height:30px;padding:0;">✕</button>
       </div>
-      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <div><strong>العميل / المستفيد:</strong> ${userName || 'غير محدد'}</div>
-        <div><strong>المبلغ:</strong> ${amount || 0} ج.م</div>
-        <div><strong>طريقة الدفع:</strong> ${pmName || 'تحويل'}</div>
-        <div><strong>رقم المرجع:</strong> ${refCode || 'بدون مرجع'}</div>
-        <div style="grid-column:span 2;"><strong>تاريخ التحويل:</strong> ${dateStr || ''}</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px;background:#F8FAFC;padding:12px 14px;border-radius:10px;border:1px solid #E2E8F0;">
+        <div><strong>👤 المستفيد:</strong> ${userName || 'غير محدد'}</div>
+        <div><strong>💰 المبلغ:</strong> ${amtFormatted} ج.م</div>
+        <div><strong>💳 طريقة الدفع:</strong> ${pmName || 'InstaPay'}</div>
+        <div><strong>🧾 البيان / المرجع:</strong> ${refCode || 'إيصال تحويل'}</div>
+        <div style="grid-column:span 2;"><strong>📅 التاريخ والوقت:</strong> ${dateStr || ''}</div>
       </div>
-      <div style="text-align:center;background:#F9FAFB;padding:16px;border-radius:8px;border:1px dashed #D1D5DB;max-height:380px;overflow:auto;">
+      <div style="text-align:center;background:#0F172A;padding:16px;border-radius:10px;max-height:380px;overflow:auto;">
         ${receiptUrl ? 
-          `<img src="${receiptUrl}" style="max-width:100%;max-height:340px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);" alt="الريسيت" />` : 
-          `<div style="padding:32px;color:#9CA3AF;"><i class="ri-file-unknow-line" style="font-size:48px;"></i><p>لا توجد صورة ريسيت مرفقة لهذه المعاملة</p></div>`
+          `<img src="${receiptUrl}" style="max-width:100%;max-height:340px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,0.4);object-fit:contain;" alt="الريسيت" onError="this.onerror=null;this.src='https://placehold.co/400x300?text=تعذر+تحميل+الصورة';" />` : 
+          `<div style="padding:32px;color:#94A3B8;"><i class="ri-file-unknow-line" style="font-size:48px;display:block;margin-bottom:8px;"></i><p style="margin:0;">لا توجد صورة ريسيت مرفقة لهذه المعاملة</p></div>`
         }
       </div>
-      ${receiptUrl ? `
-        <div style="margin-top:16px;text-align:center;">
-          <a href="${receiptUrl}" download="receipt_${refCode || 'transfer'}.png" target="_blank" class="btn btn-primary btn-sm" style="text-decoration:none;">
-            <i class="ri-download-line"></i> تنزيل صورة الريسيت
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
+        ${receiptUrl && receiptUrl.startsWith('http') ? `
+          <a href="${receiptUrl}" download="receipt.png" target="_blank" class="btn btn-outline btn-sm" style="text-decoration:none;">
+            <i class="ri-download-line"></i> فتح الصورة الكاملة
           </a>
-        </div>
-      ` : ''}
+        ` : '<div></div>'}
+        <button class="btn btn-primary" onclick="closeFinancialModal('receiptViewModal')" style="padding:6px 20px;">إغلاق</button>
+      </div>
     </div>
   `;
+}
+
+function closeReceiptModal() {
+  closeFinancialModal('receiptViewModal');
+  const oldModal = document.getElementById('receiptPreviewModal');
+  if (oldModal) oldModal.style.display = 'none';
 }
 
 // ---- SETTINGS ----
@@ -4467,7 +4754,72 @@ function updateSetting(key, value) {
   if (mockData.settings[key] !== parsedVal) {
     mockData.settings[key] = parsedVal;
     settingsDirty = true;
-    renderPage(currentPage);
+    const btnContainer = document.getElementById('pricing-save-container');
+    if (btnContainer) btnContainer.style.display = 'flex';
+  }
+}
+
+function toggleSurgePricing(enabled) {
+  mockData.settings.surge_enabled = enabled;
+  settingsDirty = true;
+  const btnContainer = document.getElementById('pricing-save-container');
+  if (btnContainer) btnContainer.style.display = 'flex';
+  logAction(`تغيير وضع Surge pricing إلى ${enabled ? 'مفعل' : 'معطل'}`);
+}
+
+function addRegionPricing() {
+  const name = prompt('أدخل اسم المنطقة الجديدة (مثال: مدينة السادات):');
+  if (!name || !name.trim()) return;
+  const surchargeStr = prompt(`أدخل الزيادة الإضافية للمنطقة (${name}) بالجنيه المصري (مثال: 10):`, '0');
+  const surcharge = parseFloat(surchargeStr || 0);
+
+  if (!mockData.settings.region_fares) {
+    mockData.settings.region_fares = [
+      { id: '1', name: 'القاهرة الكبرى', surcharge: 0, is_default: true }
+    ];
+  }
+
+  mockData.settings.region_fares.push({
+    id: 'reg_' + Date.now(),
+    name: name.trim(),
+    surcharge: surcharge,
+    is_default: false
+  });
+
+  settingsDirty = true;
+  renderPage('pricing');
+  showToast(`✅ تم إضافة المنطقة (${name})، اضغط "حفظ إعدادات الأسعار" لتأكيد التغييرات`);
+}
+
+function editRegionPricing(id) {
+  const regions = mockData.settings.region_fares || [];
+  const target = regions.find(r => r.id === id);
+  if (!target) return;
+
+  const newSurchargeStr = prompt(`تعديل الزيادة الإضافية لمنطقة (${target.name}) بالجنيه:`, target.surcharge);
+  if (newSurchargeStr === null) return;
+  target.surcharge = parseFloat(newSurchargeStr || 0);
+
+  settingsDirty = true;
+  renderPage('pricing');
+  showToast(`✅ تم تعديل سعر المنطقة (${target.name})، اضغط "حفظ إعدادات الأسعار" للتأكيد`);
+}
+
+function deleteRegionPricing(id) {
+  const regions = mockData.settings.region_fares || [];
+  const targetIndex = regions.findIndex(r => r.id === id);
+  if (targetIndex === -1) return;
+
+  if (regions[targetIndex].is_default) {
+    showToast('⚠️ لا يمكن حذف المنطقة الافتراضية');
+    return;
+  }
+
+  if (confirm(`هل أنت تأكد من حذف المنطقة (${regions[targetIndex].name})؟`)) {
+    regions.splice(targetIndex, 1);
+    settingsDirty = true;
+    renderPage('pricing');
+    showToast('✅ تم حذف المنطقة، اضغط "حفظ إعدادات الأسعار" للتأكيد');
   }
 }
 
@@ -4486,7 +4838,9 @@ async function saveSettings() {
         ac_km_fare: mockData.settings.ac_km_fare || 1,
         heat_hour_km_fare: mockData.settings.heat_hour_km_fare || 1,
         heat_start_hour: mockData.settings.heat_start_hour || 11,
-        heat_end_hour: mockData.settings.heat_end_hour || 15
+        heat_end_hour: mockData.settings.heat_end_hour || 15,
+        surge_enabled: mockData.settings.surge_enabled !== false,
+        region_fares: mockData.settings.region_fares || []
       };
 
       const { error } = await supabaseClient
@@ -4496,7 +4850,7 @@ async function saveSettings() {
       if (!error) {
         settingsDirty = false;
         renderPage(currentPage);
-        showToast('✅ تم حفظ الإعدادات في Supabase بنجاح');
+        showToast('✅ تم حفظ كافة إعدادات الأسعار والمناطق في Supabase بنجاح');
       } else {
         showToast(`❌ فشل حفظ الإعدادات في Supabase: ${error.message}`);
       }
@@ -4671,28 +5025,41 @@ function renderPricing() {
         <!-- Surge Pricing and Regions -->
         <div class="card">
           <div class="card-header">
-            <h3><i class="ri-map-pin-2-line text-blue" style="margin-left:8px;"></i> ذروة الأسعار (Surge)</h3>
+            <h3><i class="ri-map-pin-2-line text-blue" style="margin-left:8px;"></i> ذروة الأسعار (Surge) والمناطق</h3>
           </div>
           <div class="card-body">
             <div style="background:var(--bg-primary);padding:14px;border-radius:var(--radius-md);margin-bottom:16px;">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-                <span style="font-weight:700;font-size:13px;">تفعيل ذروة الأسعار الذكي</span>
-                <input type="checkbox" checked style="width:40px;height:20px;cursor:pointer;" onchange="logAction('تغيير وضع Surge pricing المجدول')">
+                <span style="font-weight:700;font-size:13px;">تفعيل ذروة الأسعار الذكي (Surge)</span>
+                <input type="checkbox" ${mockData.settings.surge_enabled !== false ? 'checked' : ''} style="width:20px;height:20px;cursor:pointer;" onchange="toggleSurgePricing(this.checked)">
               </div>
-              <p style="font-size:11px;color:var(--text-secondary);">يقوم برفع الأسعار بنسبة 1.2x إلى 1.8x تلقائياً في حالة زيادة طلبات العملاء عن السائقين المتاحين.</p>
+              <p style="font-size:11px;color:var(--text-secondary);margin:0;">يقوم برفع الأسعار بنسبة 1.2x إلى 1.8x تلقائياً في حالة زيادة طلبات العملاء عن السائقين المتاحين.</p>
             </div>
 
             <div style="border-top:1px solid var(--border-color);padding-top:14px;">
-              <h4 style="font-size:13px;font-weight:700;margin-bottom:12px;">تسعير خاص بالمناطق</h4>
-              <div style="display:flex;gap:6px;flex-direction:column;">
-                <div style="display:flex;justify-content:space-between;font-size:12px;padding:8px 0;border-bottom:1px solid var(--border-light);">
-                  <span>القاهرة الكبرى</span>
-                  <span style="font-weight:700;color:var(--medium-blue);">افتراضي</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;font-size:12px;padding:8px 0;border-bottom:1px solid var(--border-light);">
-                  <span>الإسكندرية (الساحل)</span>
-                  <span style="font-weight:700;color:var(--success);">+5 ج.م (إضافي)</span>
-                </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h4 style="font-size:13px;font-weight:700;margin:0;">تسعير خاص بالمناطق (تزامن الداتا بيس)</h4>
+                <button class="btn btn-sm btn-outline" style="font-size:11px;padding:3px 10px;font-weight:700;color:var(--medium-blue);" onclick="addRegionPricing()">+ إضافة منطقة</button>
+              </div>
+              <div style="display:flex;gap:8px;flex-direction:column;">
+                ${(mockData.settings.region_fares || [
+                  { id: '1', name: 'القاهرة الكبرى', surcharge: 0, is_default: true },
+                  { id: '2', name: 'الإسكندرية (الساحل)', surcharge: 5, is_default: false }
+                ]).map(reg => `
+                  <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:10px 12px;background:var(--bg-primary);border-radius:8px;border:1px solid var(--border-color);">
+                    <div>
+                      <strong style="color:var(--text-primary);">${reg.name}</strong>
+                      ${reg.is_default ? '<span style="font-size:10.5px;color:var(--text-light);margin-right:6px;">(الافتراضي)</span>' : ''}
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <span style="font-weight:800;font-size:12px;color:${reg.surcharge > 0 ? 'var(--success)' : 'var(--medium-blue)'};">
+                        ${reg.surcharge > 0 ? `+${reg.surcharge} ج.م (إضافي)` : 'افتراضي'}
+                      </span>
+                      <button class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:10px;font-weight:700;" onclick="editRegionPricing('${reg.id}')">تعديل</button>
+                      ${!reg.is_default ? `<button class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:10px;color:var(--error);border-color:var(--error);font-weight:700;" onclick="deleteRegionPricing('${reg.id}')">حذف</button>` : ''}
+                    </div>
+                  </div>
+                `).join('')}
               </div>
             </div>
           </div>
@@ -5316,43 +5683,7 @@ async function loadSupportChatsFromSupabase() {
 }
 
 function renderSupport() {
-  initSupportRealtimeSystem();
-
-  return `
-    <div class="page-section">
-      <div style="display:grid;grid-template-columns: 380px 1fr; gap:20px;">
-        <!-- Complaints / Conversations list -->
-        <div class="card" style="max-height:720px;display:flex;flex-direction:column;">
-          <div class="card-header" style="padding:16px;border-bottom:1px solid var(--border-light);display:flex;flex-direction:column;gap:10px;">
-            <h3 style="margin:0;font-size:16px;font-weight:700;">تذاكر الدعم والشكاوى</h3>
-            <input type="text" id="supportSearchInput" placeholder="بحث باسم العميل أو رقم الهاتف..." 
-                   value="${supportSearchQuery}" 
-                   oninput="onSupportSearchInput(this.value)" 
-                   style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-size:12px;" />
-            <div style="display:flex;gap:4px;background:var(--bg-primary);padding:4px;border-radius:var(--radius-md);">
-              <button class="btn btn-sm ${supportFilterStatus === 'all' ? 'btn-primary' : 'btn-outline'}" style="flex:1;padding:5px 4px;font-size:11px;text-align:center;" onclick="setSupportFilter('all')">الكل</button>
-              <button class="btn btn-sm ${supportFilterStatus === 'open' ? 'btn-primary' : 'btn-outline'}" style="flex:1;padding:5px 4px;font-size:11px;text-align:center;" onclick="setSupportFilter('open')">مفتوحة</button>
-              <button class="btn btn-sm ${supportFilterStatus === 'pending' ? 'btn-primary' : 'btn-outline'}" style="flex:1;padding:5px 4px;font-size:11px;text-align:center;" onclick="setSupportFilter('pending')">متابعة</button>
-              <button class="btn btn-sm ${supportFilterStatus === 'resolved' ? 'btn-primary' : 'btn-outline'}" style="flex:1;padding:5px 4px;font-size:11px;text-align:center;" onclick="setSupportFilter('resolved')">تم الحل</button>
-            </div>
-          </div>
-          <div id="supportConversationsList" class="card-body" style="padding:0;overflow-y:auto;flex:1;">
-            ${renderConversationsListHtml()}
-          </div>
-        </div>
-
-        <!-- Ticket details and active chat -->
-        <div class="card" id="activeSupportChatContainer" style="display:flex;flex-direction:column;min-height:580px;">
-          ${activeTicketId ? renderTicketChatHtml() : `
-            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-light);">
-              <i class="ri-customer-service-2-line" style="font-size:64px;margin-bottom:16px;color:var(--medium-blue);"></i>
-              <p style="font-weight:600;">اختر محادثة من القائمة الجانبية للتواصل المباشر مع العميل</p>
-            </div>
-          `}
-        </div>
-      </div>
-    </div>
-  `;
+  return renderCommunication();
 }
 
 function renderConversationsListHtml() {
@@ -7755,14 +8086,15 @@ function addLocalProfileChatMessage(uid, text) {
 // ---- REALTIME DASHBOARD SYSTEM NOTIFICATIONS ----
 let dashboardNotifications = [];
 
-function addDashboardNotification(title, body, type, iconClass, targetPage) {
+function addDashboardNotification(title, body, type, iconClass, targetPage, userId = null) {
   const notif = {
     id: generateUUID(),
     title: title,
     body: body,
     type: type,
     icon: iconClass || 'ri-notification-3-line',
-    targetPage: targetPage || 'dashboard',
+    targetPage: targetPage || 'communication',
+    userId: userId,
     timestamp: new Date()
   };
 
@@ -7814,8 +8146,9 @@ function renderDashboardNotifications() {
   let html = '';
   dashboardNotifications.forEach(notif => {
     const timeStr = notif.timestamp.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    const uParam = notif.userId ? notif.userId : '';
     html += `
-      <div onclick="clickDashboardNotification('${notif.targetPage}', '${notif.id}')" style="display:flex; gap:10px; padding:10px; border-bottom:1px solid var(--border-color); cursor:pointer; align-items:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(30,136,229,0.05)'" onmouseout="this.style.background='transparent'">
+      <div onclick="clickDashboardNotification('${notif.targetPage}', '${notif.id}', '${uParam}')" style="display:flex; gap:10px; padding:10px; border-bottom:1px solid var(--border-color); cursor:pointer; align-items:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(30,136,229,0.05)'" onmouseout="this.style.background='transparent'">
         <div style="background:rgba(30,136,229,0.1); width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--medium-blue); flex-shrink:0;">
           <i class="${notif.icon}"></i>
         </div>
@@ -7831,13 +8164,17 @@ function renderDashboardNotifications() {
   container.innerHTML = html;
 }
 
-function clickDashboardNotification(page, notifId) {
-  // Hide dropdown
+function clickDashboardNotification(page, notifId, userId) {
   const dropdown = document.getElementById('dashboardNotifDropdown');
   if (dropdown) dropdown.style.display = 'none';
 
-  // Navigate to target page if renderPage function exists
-  if (typeof renderPage === 'function') {
+  if (page === 'communication' || page === 'support' || page === 'chat') {
+    if (userId) {
+      openDirectUserChat(userId);
+    } else {
+      navigateTo('communication');
+    }
+  } else if (typeof renderPage === 'function') {
     renderPage(page);
   } else {
     showToast(`الانتقال إلى صفحة: ${page}`);
@@ -7876,13 +8213,23 @@ function initDashboardRealtimeTriggers() {
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_messages' }, payload => {
       const msg = payload.new;
       if (msg && !msg.is_admin && msg.sender_type !== 'admin') {
+        const uId = msg.user_id || msg.sender_id || msg.conversation_id;
         addDashboardNotification(
           'رسالة دعم جديدة 💬',
           msg.message || msg.text || 'رسالة جديدة من مستخدم',
-          'support',
+          'communication',
           'ri-message-3-fill',
-          'support'
+          'communication',
+          uId
         );
+        if (currentPage === 'communication') {
+          loadSupportChatsFromSupabase().then(() => {
+            renderCommConversationsList();
+          });
+          if (commActiveUserId === uId) {
+            loadCommMessagesThread(uId);
+          }
+        }
       }
     })
     .subscribe();

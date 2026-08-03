@@ -104,6 +104,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   GlobalState._internal() {
     _initAuthListener();
     _initSettingsListener();
+    _initPaymentMethodsListener();
     _startConnectivityMonitor();
     WidgetsBinding.instance.addObserver(this);
   }
@@ -866,6 +867,80 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  // Dynamic Payment Methods State (Synced with Supabase DB)
+  List<Map<String, dynamic>> paymentMethods = [
+    {
+      'id': '1',
+      'name': 'فودافون كاش',
+      'code': 'vodafone_cash',
+      'account_details': '01000000000',
+      'is_active': true,
+      'icon_name': 'ri-smartphone-line'
+    },
+    {
+      'id': '2',
+      'name': 'إنستا باي (InstaPay)',
+      'code': 'instapay',
+      'account_details': '01204062941',
+      'is_active': true,
+      'icon_name': 'ri-flashlight-line'
+    },
+    {
+      'id': '3',
+      'name': 'تحويل بنكي',
+      'code': 'bank_transfer',
+      'account_details': 'EG00000000000000000000',
+      'is_active': true,
+      'icon_name': 'ri-bank-line'
+    },
+    {
+      'id': '4',
+      'name': 'نقداً (كاش)',
+      'code': 'cash',
+      'account_details': 'الدفع نقداً في المقر أو مع السائق',
+      'is_active': true,
+      'icon_name': 'ri-money-dollar-circle-line'
+    }
+  ];
+
+  List<Map<String, dynamic>> get activePaymentMethods =>
+      paymentMethods.where((pm) => pm['is_active'] == true).toList();
+
+  static const String officialInstaPayNumber = '01204062941';
+
+  Future<void> _initPaymentMethodsListener() async {
+    try {
+      final data = await _supabase
+          .from('payment_methods')
+          .select()
+          .order('created_at', ascending: true);
+      if (data.isNotEmpty) {
+        paymentMethods = List<Map<String, dynamic>>.from(data);
+        notifyListeners();
+        debugPrint('[GlobalState] Initial payment methods fetched: ${paymentMethods.length}');
+      }
+    } catch (e) {
+      debugPrint('[GlobalState] Error fetching payment methods from database: $e');
+    }
+
+    try {
+      _supabase
+          .from('payment_methods')
+          .stream(primaryKey: ['id'])
+          .listen((dataList) {
+            if (dataList.isNotEmpty) {
+              paymentMethods = List<Map<String, dynamic>>.from(dataList);
+              notifyListeners();
+              debugPrint('[GlobalState] Realtime payment methods updated: ${paymentMethods.length}');
+            }
+          }, onError: (e) {
+            debugPrint('[GlobalState] Realtime payment methods stream error: $e');
+          });
+    } catch (e) {
+      debugPrint('[GlobalState] Realtime payment methods stream setup failed: $e');
+    }
+  }
+
   Future<void> _initSettingsListener() async {
     // AppSettings defaults
     appSettings = {
@@ -875,12 +950,17 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       'heat_hour_km_fare': 1.0,
       'heat_start_hour': 11,
       'heat_end_hour': 15,
-      'defaultFareCar': 45.0,
-      'defaultFareScooter': 20.0,
-      'defaultFareMotorcycle': 15.0,
+      'defaultFareCar': 25.0,
+      'defaultFareScooter': 19.0,
+      'defaultFareMotorcycle': 20.0,
       'commissionRate': 10.0,
-      'minFare': 10.0,
-      'maxFare': 500.0,
+      'minFare': 20.0,
+      'maxFare': 10000.0,
+      'surge_enabled': true,
+      'region_fares': [
+        {'id': '1', 'name': 'القاهرة الكبرى', 'surcharge': 0, 'is_default': true},
+        {'id': '2', 'name': 'الإسكندرية (الساحل)', 'surcharge': 5, 'is_default': false}
+      ]
     };
 
     try {
@@ -919,7 +999,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     required double distanceInKm,
     required String vehicleType,
     bool hasAC = false,
+    double regionSurcharge = 0.0,
   }) {
+    final surgeEnabled = (appSettings['surge_enabled'] as bool?) ?? true;
     final firstKmFare = (appSettings['first_km_fare'] as num?)?.toDouble() ?? 20.0;
     final extraKmFare = (appSettings['extra_km_fare'] as num?)?.toDouble() ?? 5.0;
     final acKmFare = (appSettings['ac_km_fare'] as num?)?.toDouble() ?? 1.0;
@@ -939,17 +1021,22 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         perKmRate += acKmFare;
       }
 
-      // Apply Heat Surge if trip time is between 11:00 AM and 3:00 PM (15:00)
-      final nowHour = DateTime.now().hour;
-      if (nowHour >= heatStart && nowHour < heatEnd) {
-        perKmRate += heatHourKmFare;
+      // Apply Heat Surge if enabled and trip time is between 11:00 AM and 3:00 PM (15:00)
+      if (surgeEnabled) {
+        final nowHour = DateTime.now().hour;
+        if (nowHour >= heatStart && nowHour < heatEnd) {
+          perKmRate += heatHourKmFare;
+        }
       }
 
       fare = firstKmFare + (extraKm * perKmRate);
     }
 
-    final minFare = (appSettings['minFare'] as num?)?.toDouble() ?? 10.0;
-    final maxFare = (appSettings['maxFare'] as num?)?.toDouble() ?? 500.0;
+    // Apply region surcharge if provided
+    fare += regionSurcharge;
+
+    final minFare = (appSettings['min_fare'] as num?)?.toDouble() ?? (appSettings['minFare'] as num?)?.toDouble() ?? 20.0;
+    final maxFare = (appSettings['max_fare'] as num?)?.toDouble() ?? (appSettings['maxFare'] as num?)?.toDouble() ?? 10000.0;
     return fare.clamp(minFare, maxFare);
   }
 
@@ -1885,30 +1972,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         
         if (request.driverId != null && acceptedOffer == null && !_isCancelling) {
           try {
-            final driverUserRes = await _supabase.from('users').select().eq('id', request.driverId!).maybeSingle();
-            final driverRes = await _supabase.from('drivers').select().eq('id', request.driverId!).maybeSingle();
-            
-            final uMap = driverUserRes != null ? Map<String, dynamic>.from(driverUserRes) : {};
-            final dMap = driverRes != null ? Map<String, dynamic>.from(driverRes) : {};
-            
-            final driverName = uMap['name'] ?? 'سائق';
-            final driverPhone = (uMap['phone_number'] ?? uMap['phone'] ?? dMap['phone_number'] ?? dMap['phone'] ?? '').toString();
-            final rating = (uMap['rating'] as num?)?.toDouble() ?? 5.0;
-            final vName = dMap['vehicle_name'] ?? 'سيارة';
-            final vNum = dMap['vehicle_number'] ?? '';
+            final driverInfo = await fetchDriverInfo(request.driverId!, defaultVehicleType: request.vehicleType);
 
             acceptedOffer = DriverOffer(
               driverId: request.driverId!,
-              driver: DriverInfo(
-                name: driverName,
-                rating: rating,
-                vehicleType: request.vehicleType == 'scooter' ? 'اسكوتر' : (request.vehicleType == 'motorcycle' ? 'موتوسيكل' : 'عربية'),
-                vehicleName: vName,
-                vehicleColor: 'فضي',
-                licensePlate: vNum,
-                avatar: uMap['avatar_url'] ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200',
-                phoneNumber: driverPhone,
-              ),
+              driver: driverInfo,
               price: request.offeredFare,
               etaMinutes: 3,
             );
@@ -2108,28 +2176,132 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> acceptDriverOffer(DriverOffer offer) async {
-    String dPhone = offer.driver.phoneNumber;
-    if (dPhone.isEmpty) {
+  /// Fetch comprehensive real-time driver profile info directly from Supabase
+  Future<DriverInfo> fetchDriverInfo(String driverId, {String? defaultVehicleType}) async {
+    try {
+      final driverUserRes = await _supabase.from('users').select().eq('id', driverId).maybeSingle();
+      final driverRes = await _supabase.from('drivers').select().eq('id', driverId).maybeSingle();
+
+      final uMap = driverUserRes != null ? Map<String, dynamic>.from(driverUserRes) : {};
+      final dMap = driverRes != null ? Map<String, dynamic>.from(driverRes) : {};
+
+      // Vehicle table check if vehicle_id exists
+      Map<String, dynamic> vMap = {};
+      final vehicleId = dMap['vehicle_id'] ?? dMap['vehicleId'];
+      if (vehicleId != null && vehicleId.toString().trim().isNotEmpty) {
+        try {
+          final vRes = await _supabase.from('vehicles').select().eq('id', vehicleId.toString().trim()).maybeSingle();
+          if (vRes != null) vMap = Map<String, dynamic>.from(vRes);
+        } catch (_) {}
+      }
+
+      // Name resolution: check users & drivers tables, filter out generic placeholders
+      String rawName = (uMap['name'] ?? uMap['full_name'] ?? dMap['name'] ?? dMap['driver_name'] ?? dMap['full_name'] ?? '').toString().trim();
+      if (rawName.isEmpty || rawName.toLowerCase() == 'in ride' || rawName.toLowerCase() == 'inride' || rawName == 'مستخدم') {
+        final fallbackName = (dMap['name'] ?? dMap['driver_name'] ?? uMap['name'] ?? '').toString().trim();
+        rawName = (fallbackName.isNotEmpty && fallbackName.toLowerCase() != 'in ride' && fallbackName.toLowerCase() != 'inride')
+            ? fallbackName
+            : 'كابتن inRide';
+      }
+
+      // Phone resolution
+      final phone = (uMap['phone_number'] ?? uMap['phone'] ?? dMap['phone_number'] ?? dMap['phone'] ?? '').toString();
+
+      // Rating resolution
+      double rating = (dMap['rating'] as num?)?.toDouble() ??
+                      (dMap['driver_rating'] as num?)?.toDouble() ??
+                      (uMap['rating'] as num?)?.toDouble() ??
+                      5.0;
+      if (rating <= 0.0) rating = 5.0;
+
+      int ratingCount = (uMap['rating_count'] ?? uMap['total_ratings'] ?? dMap['rating_count'] ?? dMap['total_ratings'] as num?)?.toInt() ?? 0;
+
+      // Vehicle details
+      final vTypeRaw = (dMap['vehicle_category'] ?? dMap['vehicle_type'] ?? vMap['type'] ?? defaultVehicleType ?? 'car').toString().toLowerCase();
+      final vType = vTypeRaw.contains('scooter') ? 'اسكوتر' : (vTypeRaw.contains('motorcycle') ? 'موتوسيكل' : 'سيارة');
+      final vName = (dMap['vehicle_name'] ?? dMap['vehicle_model'] ?? vMap['model'] ?? 'سيارة').toString();
+      final vColor = (dMap['vehicle_color'] ?? vMap['color'] ?? 'أبيض').toString();
+      final licensePlate = (dMap['vehicle_number'] ?? dMap['license_plate'] ?? vMap['number_plate'] ?? '').toString();
+
+      // Avatar resolution
+      String avatar = (uMap['avatar_url'] ?? uMap['avatar'] ?? dMap['avatar_url'] ?? '').toString();
+      if (avatar.isEmpty) {
+        avatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200';
+      }
+
+      // Completed Trips & Deliveries resolution
+      int completedTrips = (dMap['completed_trips'] ?? dMap['completedTrips'] ?? dMap['total_trips'] as num?)?.toInt() ?? 0;
+      int completedDeliveries = (dMap['completed_deliveries'] ?? dMap['completedDeliveries'] ?? dMap['total_deliveries'] as num?)?.toInt() ?? 0;
+
+      // Realtime count query from ride_requests table to verify actual completed rides count
       try {
-        final uRes = await _supabase.from('users').select('phone_number, phone').eq('id', offer.driverId).maybeSingle();
-        dPhone = (uRes?['phone_number'] ?? uRes?['phone'] ?? '').toString();
-      } catch (_) {}
+        final reqsRes = await _supabase
+            .from('ride_requests')
+            .select('service_type')
+            .eq('driver_id', driverId)
+            .eq('status', 'Completed');
+        if (reqsRes.isNotEmpty) {
+          int tripsCount = 0;
+          int deliveriesCount = 0;
+          for (final item in reqsRes) {
+            final sType = (item['service_type'] ?? '').toString().toLowerCase();
+            if (sType == 'delivery') {
+              deliveriesCount++;
+            } else {
+              tripsCount++;
+            }
+          }
+          if (tripsCount > completedTrips) completedTrips = tripsCount;
+          if (deliveriesCount > completedDeliveries) completedDeliveries = deliveriesCount;
+        }
+      } catch (e) {
+        debugPrint('[fetchDriverInfo] Error counting completed rides: $e');
+      }
+
+      return DriverInfo(
+        name: rawName,
+        rating: rating,
+        ratingCount: ratingCount,
+        vehicleType: vType,
+        vehicleName: vName,
+        vehicleColor: vColor,
+        licensePlate: licensePlate,
+        avatar: avatar,
+        phoneNumber: phone,
+        completedTrips: completedTrips,
+        completedDeliveries: completedDeliveries,
+      );
+    } catch (e) {
+      debugPrint('[fetchDriverInfo] Error: $e');
+      return DriverInfo(
+        name: 'كابتن inRide',
+        rating: 5.0,
+        vehicleType: 'سيارة',
+        vehicleName: 'سيارة',
+        vehicleColor: 'أبيض',
+        licensePlate: '',
+        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200',
+      );
     }
+  }
+
+  Future<void> acceptDriverOffer(DriverOffer offer) async {
+    // Fetch full driver info with real database numbers
+    final fullDriverInfo = await fetchDriverInfo(offer.driverId, defaultVehicleType: offer.driver.vehicleType);
 
     acceptedOffer = DriverOffer(
       driverId: offer.driverId,
       driver: DriverInfo(
-        name: offer.driver.name,
-        rating: offer.driver.rating,
-        vehicleType: offer.driver.vehicleType,
-        vehicleName: offer.driver.vehicleName,
-        vehicleColor: offer.driver.vehicleColor,
-        licensePlate: offer.driver.licensePlate,
-        avatar: offer.driver.avatar,
-        phoneNumber: dPhone,
-        completedTrips: offer.driver.completedTrips,
-        completedDeliveries: offer.driver.completedDeliveries,
+        name: fullDriverInfo.name.isNotEmpty && fullDriverInfo.name != 'كابتن inRide' ? fullDriverInfo.name : (offer.driver.name.isNotEmpty ? offer.driver.name : fullDriverInfo.name),
+        rating: fullDriverInfo.rating > 0 ? fullDriverInfo.rating : offer.driver.rating,
+        vehicleType: fullDriverInfo.vehicleType,
+        vehicleName: fullDriverInfo.vehicleName.isNotEmpty ? fullDriverInfo.vehicleName : offer.driver.vehicleName,
+        vehicleColor: fullDriverInfo.vehicleColor.isNotEmpty ? fullDriverInfo.vehicleColor : offer.driver.vehicleColor,
+        licensePlate: fullDriverInfo.licensePlate.isNotEmpty ? fullDriverInfo.licensePlate : offer.driver.licensePlate,
+        avatar: fullDriverInfo.avatar.isNotEmpty ? fullDriverInfo.avatar : offer.driver.avatar,
+        phoneNumber: fullDriverInfo.phoneNumber.isNotEmpty ? fullDriverInfo.phoneNumber : offer.driver.phoneNumber,
+        completedTrips: fullDriverInfo.completedTrips > 0 ? fullDriverInfo.completedTrips : offer.driver.completedTrips,
+        completedDeliveries: fullDriverInfo.completedDeliveries > 0 ? fullDriverInfo.completedDeliveries : offer.driver.completedDeliveries,
       ),
       price: offer.price,
       etaMinutes: offer.etaMinutes,
@@ -2793,6 +2965,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       final nameStr = userName ?? passengerName ?? 'مستخدم';
       final phoneStr = phoneNumber ?? _supabase.auth.currentUser?.phone ?? '';
 
+      // Use UTC timestamp for consistency with server/dashboard
+      final nowUtc = DateTime.now().toUtc().toIso8601String();
+
       bool insertedReq = false;
       // 1. Insert into wallet_recharge_requests for Admin Dashboard Review
       try {
@@ -2805,8 +2980,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'payment_method': method,
           'receipt_url': finalReceiptUrl,
           'status': 'pending',
-          'created_at': DateTime.now().toIso8601String(),
-        }).timeout(const Duration(seconds: 10));
+          'created_at': nowUtc,
+        }).timeout(const Duration(seconds: 15));
         insertedReq = true;
       } catch (e) {
         debugPrint('[GlobalState] Error writing to wallet_recharge_requests: $e');
@@ -2823,12 +2998,14 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'payment_method': method,
           'receipt_url': finalReceiptUrl,
           'notes': 'طلب شحن محفظة عبر $method',
-          'created_at': DateTime.now().toIso8601String(),
-        }).timeout(const Duration(seconds: 8));
+          'created_at': nowUtc,
+        }).timeout(const Duration(seconds: 15));
       } catch (e) {
         debugPrint('[GlobalState] Error writing to transactions: $e');
       }
 
+      // Refresh transactions list so the UI updates immediately
+      await fetchWalletTransactions();
       notifyListeners();
       return insertedReq;
     } catch (e) {

@@ -92,9 +92,16 @@ class SupportChatService {
   final Set<String> _processedMessageIds = {};
   final _messagesController = StreamController<List<SupportChatMessage>>.broadcast();
   List<SupportChatMessage> _currentMessages = [];
+  final ValueNotifier<int> unreadCountNotifier = ValueNotifier<int>(0);
 
   Stream<List<SupportChatMessage>> get messagesStream => _messagesController.stream;
   List<SupportChatMessage> get currentMessages => List.unmodifiable(_currentMessages);
+  int get unreadCount => unreadCountNotifier.value;
+
+  void _updateUnreadCount() {
+    final count = _currentMessages.where((m) => m.isAdmin && m.status != 'read').length;
+    unreadCountNotifier.value = count;
+  }
 
   static String _generateUuid() {
     final random = Random.secure();
@@ -362,6 +369,27 @@ class SupportChatService {
         'unread_user_count': 0,
       }).eq('id', userId);
 
+      for (int i = 0; i < _currentMessages.length; i++) {
+        if (_currentMessages[i].isAdmin) {
+          _currentMessages[i] = SupportChatMessage(
+            id: _currentMessages[i].id,
+            conversationId: _currentMessages[i].conversationId,
+            userId: _currentMessages[i].userId,
+            senderId: _currentMessages[i].senderId,
+            receiverId: _currentMessages[i].receiverId,
+            senderType: _currentMessages[i].senderType,
+            message: _currentMessages[i].message,
+            status: 'read',
+            createdAt: _currentMessages[i].createdAt,
+            deliveredAt: _currentMessages[i].deliveredAt,
+            readAt: DateTime.now(),
+            isAdmin: true,
+          );
+        }
+      }
+      unreadCountNotifier.value = 0;
+      _notifyListeners();
+
       debugPrint('[SupportChat] Unread Count Updated: reset for user $userId');
     } catch (e) {
       debugPrint('[SupportChat] Error marking messages read: $e');
@@ -387,6 +415,7 @@ class SupportChatService {
   }
 
   void _notifyListeners() {
+    _updateUnreadCount();
     if (!_messagesController.isClosed) {
       _messagesController.add(List.unmodifiable(_currentMessages));
     }

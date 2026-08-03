@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/repositories/ride_repository.dart';
-import '../../../../core/state/global_state.dart' show DriverInfo, DriverOffer;
+import '../../../../core/state/global_state.dart' show DriverInfo, DriverOffer, GlobalState;
 import '../../../../core/utils/map_coordinates_helper.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/utils/app_logger.dart';
@@ -10,7 +9,6 @@ import 'ride_matching_state.dart';
 
 class RideMatchingCubit extends Cubit<RideMatchingState> {
   final RideRepository _rideRepository;
-  final SupabaseClient _supabase = Supabase.instance.client;
   StreamSubscription? _rideSubscription;
 
   RideMatchingCubit(this._rideRepository) : super(RideMatchingInitial());
@@ -72,30 +70,11 @@ class RideMatchingCubit extends Cubit<RideMatchingState> {
         emit(RideSearching(requestId: requestId, request: request));
         _queryDrivers(requestId, request, offeredFare, vehicleType);
       } else if (request.status == 'Accepted') {
-        final driverUserDoc = await _supabase.from('users').select().eq('id', request.driverId!).maybeSingle();
-        final driverDoc = await _supabase.from('drivers').select().eq('id', request.driverId!).maybeSingle();
-
-        final uMap = driverUserDoc != null ? Map<String, dynamic>.from(driverUserDoc) : {};
-        final dMap = driverDoc != null ? Map<String, dynamic>.from(driverDoc) : {};
-
-        final driverName = uMap['name'] ?? 'سائق';
-        final ratingCount = (uMap['rating_count'] ?? uMap['total_ratings'] as num?)?.toInt() ?? 0;
-        final rating = (uMap['rating'] as num?)?.toDouble() ?? 0.0;
-        final vName = dMap['vehicle_name'] ?? dMap['vehicleName'] ?? 'سيارة';
-        final vNum = dMap['vehicle_number'] ?? dMap['vehicleNumber'] ?? '';
+        final driverInfo = await GlobalState.instance.fetchDriverInfo(request.driverId!, defaultVehicleType: request.vehicleType);
 
         final offer = DriverOffer(
           driverId: request.driverId!,
-          driver: DriverInfo(
-            name: driverName,
-            rating: rating,
-            ratingCount: ratingCount,
-            vehicleType: request.vehicleType == 'scooter' ? 'اسكوتر' : (request.vehicleType == 'motorcycle' ? 'موتوسيكل' : 'عربية'),
-            vehicleName: vName,
-            vehicleColor: 'فضي',
-            licensePlate: vNum,
-            avatar: uMap['avatar_url'] ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200',
-          ),
+          driver: driverInfo,
           price: request.offeredFare,
           etaMinutes: 3,
         );

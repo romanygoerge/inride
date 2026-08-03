@@ -1172,16 +1172,31 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
           style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
         ),
         const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _buildPaymentOption('كاش', Icons.money_rounded),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildPaymentOption('انستا باي', Icons.account_balance_outlined),
-            ),
-          ],
+        Builder(
+          builder: (context) {
+            final activeMethods = GlobalState.instance.activePaymentMethods;
+            if (activeMethods.isEmpty) {
+              return Text(
+                'كاش',
+                style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              );
+            }
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: activeMethods.map((pm) {
+                final name = pm['name'] as String? ?? 'كاش';
+                final code = pm['code'] as String? ?? 'cash';
+                final icon = code == 'instapay'
+                    ? Icons.account_balance_outlined
+                    : (code == 'vodafone_cash' ? Icons.phone_android_outlined : Icons.money_rounded);
+                return SizedBox(
+                  width: (MediaQuery.of(context).size.width - 60) / 2,
+                  child: _buildPaymentOption(name, icon),
+                );
+              }).toList(),
+            );
+          },
         ),
         const SizedBox(height: 28),
 

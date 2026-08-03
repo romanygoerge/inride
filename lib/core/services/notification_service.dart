@@ -307,6 +307,15 @@ class NotificationService {
     }
     stringifiedData['type'] = type;
 
+    // Determine if this is a critical trip notification
+    const criticalTypes = {
+      'new_trip', 'new_ride', 'delivery_request',
+      'accept_trip', 'ride_accepted', 'delivery_accepted',
+      'driver_arrived', 'captain_arrived', 'trip_started',
+      'new_offer', 'driver_offer', 'counter_offer',
+    };
+    final isCritical = criticalTypes.contains(type.trim().toLowerCase());
+
     // Build the OneSignal payload — always include external_id targeting
     // (works even without subscription_ids if user is logged in via OneSignal.login)
     final payload = <String, dynamic>{
@@ -320,6 +329,11 @@ class NotificationService {
       'priority': 10,
       'ttl': 86400,
       'small_icon': 'ic_launcher',
+      // Banner-style notification enhancements
+      'android_group': 'inride_${type.contains('chat') || type.contains('message') ? 'messages' : 'trips'}',
+      'android_group_message': {'en': '\$[notif_count] new notifications', 'ar': '\$[notif_count] إشعارات جديدة'},
+      // iOS interruption level for critical notifications
+      if (isCritical) 'ios_interruption_level': 'time_sensitive',
     };
 
     // Always target by external_id (set via OneSignal.login(userId) on device)

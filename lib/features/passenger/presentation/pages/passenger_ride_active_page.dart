@@ -29,6 +29,28 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
   void initState() {
     super.initState();
     GlobalState.instance.addListener(_onStateChange);
+    _refreshDriverInfo();
+  }
+
+  void _refreshDriverInfo() async {
+    final state = GlobalState.instance;
+    final driverId = state.acceptedOffer?.driverId ?? state.currentRideRequest?.driverId;
+    if (driverId != null && driverId.isNotEmpty) {
+      final info = await state.fetchDriverInfo(driverId);
+      if (mounted) {
+        setState(() {
+          if (state.acceptedOffer != null) {
+            state.acceptedOffer = DriverOffer(
+              driverId: driverId,
+              driver: info,
+              price: state.acceptedOffer!.price,
+              etaMinutes: state.acceptedOffer!.etaMinutes,
+              status: state.acceptedOffer!.status,
+            );
+          }
+        });
+      }
+    }
   }
 
   void _callEmergency() async {

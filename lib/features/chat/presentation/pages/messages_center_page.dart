@@ -9,6 +9,7 @@ import '../../domain/entities/chat_room.dart';
 import 'chat_page.dart';
 import '../../../../generated/app_localizations.dart';
 import '../../../../core/localization/locale_controller.dart';
+import '../../../../core/services/support_chat_service.dart';
 
 class MessagesCenterPage extends StatefulWidget {
   const MessagesCenterPage({super.key});
@@ -130,7 +131,23 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                           ],
                         ),
                       ),
-                      const Icon(Icons.arrow_forward_ios, color: AppColors.textLight, size: 16),
+                      ValueListenableBuilder<int>(
+                        valueListenable: SupportChatService.instance.unreadCountNotifier,
+                        builder: (context, count, _) {
+                          if (count <= 0) return const Icon(Icons.arrow_forward_ios, color: AppColors.textLight, size: 16);
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.error,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '$count جديد',
+                              style: GoogleFonts.cairo(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),

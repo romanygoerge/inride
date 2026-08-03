@@ -66,6 +66,7 @@ class _WalletPageState extends State<WalletPage> {
             Widget buildStepContent() {
               if (currentStep == 1) {
                 // Step 1: Choose Payment Method
+                final activeMethods = state.activePaymentMethods;
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -75,68 +76,67 @@ class _WalletPageState extends State<WalletPage> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
-                    // InstaPay Option
-                    Container(
-                      decoration: BoxDecoration(
-                        color: selectedMethod == 'InstaPay' ? AppColors.mediumBlue.withValues(alpha: 0.08) : Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: selectedMethod == 'InstaPay' ? AppColors.mediumBlue : AppColors.border,
-                          width: selectedMethod == 'InstaPay' ? 2 : 1,
+                    if (activeMethods.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text(
+                          isArabic ? 'لا توجد وسائل شحن متاحة حالياً' : 'No top-up methods currently available',
+                          style: GoogleFonts.cairo(color: AppColors.textSecondary),
                         ),
-                      ),
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: Colors.purple,
-                          child: Icon(Icons.account_balance, color: Colors.white, size: 20),
-                        ),
-                        title: Text(
-                          isArabic ? 'انستا باي (InstaPay)' : 'InstaPay',
-                          style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
-                        ),
-                        subtitle: Text(
-                          isArabic ? 'شحن يدوي سريع وآمن بلقطة شاشة الإيصال' : 'Fast and safe top-up with receipt screenshot',
-                          style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
-                        ),
-                        trailing: Icon(
-                          selectedMethod == 'InstaPay' ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                          color: selectedMethod == 'InstaPay' ? AppColors.mediumBlue : AppColors.textSecondary,
-                        ),
-                        onTap: () {
-                          setDialogState(() {
-                            selectedMethod = 'InstaPay';
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Credit Card Option (Disabled / Coming Soon)
-                    Opacity(
-                      opacity: 0.5,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: ListTile(
-                          leading: const CircleAvatar(
-                            backgroundColor: Colors.blueGrey,
-                            child: Icon(Icons.credit_card, color: Colors.white, size: 20),
+                      )
+                    else
+                      ...activeMethods.map((pm) {
+                        final code = pm['code'] as String? ?? 'InstaPay';
+                        final name = pm['name'] as String? ?? 'إنستا باي';
+                        final details = pm['account_details'] as String? ?? '';
+                        final isSelected = selectedMethod.toLowerCase() == code.toLowerCase() ||
+                            (code.toLowerCase() == 'instapay' && selectedMethod == 'InstaPay');
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          decoration: BoxDecoration(
+                            color: isSelected ? AppColors.mediumBlue.withValues(alpha: 0.08) : Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isSelected ? AppColors.mediumBlue : AppColors.border,
+                              width: isSelected ? 2 : 1,
+                            ),
                           ),
-                          title: Text(
-                            isArabic ? 'بطاقة ائتمان (قريباً)' : 'Credit Card (Coming Soon)',
-                            style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: code == 'instapay'
+                                  ? Colors.purple
+                                  : (code == 'vodafone_cash' ? Colors.red : AppColors.mediumBlue),
+                              child: Icon(
+                                code == 'instapay'
+                                    ? Icons.account_balance
+                                    : (code == 'vodafone_cash' ? Icons.phone_android : Icons.credit_card),
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                            title: Text(
+                              name,
+                              style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
+                            ),
+                            subtitle: Text(
+                              details.isNotEmpty
+                                  ? details
+                                  : (isArabic ? 'شحن فوري وآمن' : 'Instant & secure top-up'),
+                              style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
+                            ),
+                            trailing: Icon(
+                              isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                              color: isSelected ? AppColors.mediumBlue : AppColors.textSecondary,
+                            ),
+                            onTap: () {
+                              setDialogState(() {
+                                selectedMethod = code;
+                              });
+                            },
                           ),
-                          subtitle: Text(
-                            isArabic ? 'فيزا، ماستركارد، ميزة' : 'Visa, Mastercard, Meeza',
-                            style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
-                          ),
-                          trailing: const Icon(Icons.lock_outline, size: 18),
-                          onTap: () {},
-                        ),
-                      ),
-                    ),
+                        );
+                      }),
                   ],
                 );
               } else if (currentStep == 2) {
@@ -206,7 +206,7 @@ class _WalletPageState extends State<WalletPage> {
               } else {
                 // Step 3: InstaPay Details & Camera Capture
                 final finalAmt = isCustom ? (double.tryParse(customAmountController.text) ?? 0.0) : selectedAmount;
-                const instapayAddr = 'inride@instapay';
+                const instapayAddr = '01204062941';
 
                 return Column(
                   mainAxisSize: MainAxisSize.min,
@@ -219,32 +219,31 @@ class _WalletPageState extends State<WalletPage> {
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      isArabic ? 'يرجى تحويل مبلغ $finalAmt ج.م للعنوان التالي:' : 'Please transfer $finalAmt EGP to this address:',
+                      isArabic ? 'يرجى تحويل مبلغ $finalAmt ج.م لرقم إنستا باي الرسمي:' : 'Please transfer $finalAmt EGP to official InstaPay number:',
                       style: GoogleFonts.cairo(fontSize: 13, color: AppColors.textPrimary),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 10),
                     // Copy Address Row
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                       decoration: BoxDecoration(
-                        color: AppColors.background,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.border),
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.mediumBlue.withValues(alpha: 0.3), width: 1.5),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          IconButton(
-                            icon: const Icon(Icons.copy_rounded, color: AppColors.mediumBlue, size: 20),
-                            onPressed: () async {
+                          InkWell(
+                            onTap: () async {
                               await Clipboard.setData(const ClipboardData(text: instapayAddr));
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(
-                                      isArabic ? 'تم نسخ عنوان انستا باي: $instapayAddr' : 'InstaPay address copied: $instapayAddr',
-                                      style: GoogleFonts.cairo(),
+                                      isArabic ? 'تم نسخ رقم إنستا باي: $instapayAddr' : 'InstaPay number copied: $instapayAddr',
+                                      style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
                                     ),
                                     backgroundColor: AppColors.success,
                                     duration: const Duration(seconds: 2),
@@ -252,10 +251,27 @@ class _WalletPageState extends State<WalletPage> {
                                 );
                               }
                             },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: AppColors.mediumBlue,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.copy_rounded, color: Colors.white, size: 16),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    isArabic ? 'نسخ الرقم' : 'Copy',
+                                    style: GoogleFonts.cairo(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                          Text(
+                          SelectableText(
                             instapayAddr,
-                            style: GoogleFonts.outfit(fontWeight: FontWeight.w900, fontSize: 15, color: AppColors.textPrimary),
+                            style: GoogleFonts.outfit(fontWeight: FontWeight.w900, fontSize: 18, color: AppColors.mediumBlue, letterSpacing: 1.2),
                           ),
                         ],
                       ),
@@ -432,16 +448,20 @@ class _WalletPageState extends State<WalletPage> {
                                 return;
                               }
 
+                              // Capture the root navigator and scaffold messenger BEFORE closing the dialog
+                              // because after Navigator.pop, the dialog's context becomes unmounted
+                              final rootNav = Navigator.of(context, rootNavigator: true);
+                              final scaffoldMsg = ScaffoldMessenger.of(context);
+                              final parentContext = Navigator.of(context).context;
+
                               Navigator.pop(context); // Close step dialog
 
-                              bool isLoaderShowing = true;
+                              // Show loader using the parent page context (which is still mounted)
                               showDialog(
-                                context: context,
+                                context: parentContext,
                                 barrierDismissible: false,
-                                builder: (context) => const Center(child: CircularProgressIndicator(color: AppColors.mediumBlue)),
-                              ).then((_) {
-                                isLoaderShowing = false;
-                              });
+                                builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.mediumBlue)),
+                              );
 
                               bool success = false;
                               try {
@@ -449,60 +469,64 @@ class _WalletPageState extends State<WalletPage> {
                               } catch (e) {
                                 debugPrint('chargeWalletPending error: $e');
                                 success = false;
-                              } finally {
-                                if (isLoaderShowing && context.mounted) {
-                                  Navigator.of(context, rootNavigator: true).pop();
-                                  isLoaderShowing = false;
-                                }
                               }
 
-                              if (success && context.mounted) {
-                                showDialog(
-                                  context: context,
-                                  builder: (context) {
-                                    return AlertDialog(
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                      title: const Icon(Icons.check_circle_outline, color: Colors.green, size: 64),
-                                      content: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            isArabic ? 'تم تقديم طلب الشحن بنجاح!' : 'Top-up request submitted successfully!',
-                                            style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textPrimary),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                          const SizedBox(height: 10),
-                                          Text(
-                                            isArabic
-                                                ? 'لقد استلمنا إيصال تحويل InstaPay الخاص بك بقيمة $finalAmt ج.م. سيتم مراجعة الطلب وتفعيل الرصيد في محفظتك خلال دقائق قليلة.'
-                                                : 'We received your InstaPay transfer receipt of $finalAmt EGP. It will be reviewed and activated in your wallet shortly.',
-                                            style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
-                                            textAlign: TextAlign.center,
+                              // Dismiss the loader - use rootNavigator to ensure we pop the loading dialog
+                              try {
+                                rootNav.pop();
+                              } catch (e) {
+                                debugPrint('Error dismissing loader: $e');
+                              }
+
+                              if (success) {
+                                if (parentContext.mounted) {
+                                  showDialog(
+                                    context: parentContext,
+                                    builder: (ctx) {
+                                      return AlertDialog(
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                        title: const Icon(Icons.check_circle_outline, color: Colors.green, size: 64),
+                                        content: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              isArabic ? 'تم تقديم طلب الشحن بنجاح!' : 'Top-up request submitted successfully!',
+                                              style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textPrimary),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                            const SizedBox(height: 10),
+                                            Text(
+                                              isArabic
+                                                  ? 'لقد استلمنا إيصال تحويل InstaPay الخاص بك بقيمة $finalAmt ج.م. سيتم مراجعة الطلب وتفعيل الرصيد في محفظتك خلال دقائق قليلة.'
+                                                  : 'We received your InstaPay transfer receipt of $finalAmt EGP. It will be reviewed and activated in your wallet shortly.',
+                                              style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          ],
+                                        ),
+                                        actions: [
+                                          Center(
+                                            child: ElevatedButton(
+                                              onPressed: () {
+                                                Navigator.pop(ctx);
+                                              },
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: AppColors.mediumBlue,
+                                                foregroundColor: Colors.white,
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                              ),
+                                              child: Text(isArabic ? 'حسناً' : 'OK', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                                            ),
                                           ),
                                         ],
-                                      ),
-                                      actions: [
-                                        Center(
-                                          child: ElevatedButton(
-                                            onPressed: () {
-                                              Navigator.pop(context);
-                                            },
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: AppColors.mediumBlue,
-                                              foregroundColor: Colors.white,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                            ),
-                                            child: Text(isArabic ? 'حسناً' : 'OK', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                );
+                                      );
+                                    },
+                                  );
+                                }
 
                                 _loadTransactions();
-                              } else if (!success && context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
+                              } else {
+                                scaffoldMsg.showSnackBar(
                                   SnackBar(
                                     content: Text(
                                       isArabic ? 'تعذر تقديم طلب الشحن حالياً، يرجى المحاولة مرة أخرى' : 'Failed to submit top-up request, please try again',
@@ -537,35 +561,37 @@ class _WalletPageState extends State<WalletPage> {
     final isDriver = state.currentRole == UserRole.driver;
     final isArabic = LocaleController.instance.isArabic;
 
-    final List<Map<String, dynamic>> paymentMethods = isDriver
-        ? [
-            {
-              'id': 'instapay',
-              'title': isArabic ? 'انستا باي' : 'InstaPay',
-              'subtitle': isArabic ? 'الدفع الفوري عبر تطبيق انستا باي' : 'Instant payment via InstaPay app',
-              'icon': Icons.account_balance_outlined,
-            },
-          ]
-        : [
-            {
-              'id': 'cash',
-              'title': isArabic ? 'كاش' : 'Cash',
-              'subtitle': isArabic ? 'الدفع نقداً عند الوصول' : 'Pay cash upon arrival',
-              'icon': Icons.payments_outlined,
-            },
-            {
-              'id': 'instapay',
-              'title': isArabic ? 'انستا باي' : 'InstaPay',
-              'subtitle': isArabic ? 'الدفع الفوري عبر تطبيق انستا باي' : 'Instant payment via InstaPay app',
-              'icon': Icons.account_balance_outlined,
-            },
-            {
-              'id': 'wallet',
-              'title': isArabic ? 'المحفظة' : 'Wallet',
-              'subtitle': '${state.walletBalance.toStringAsFixed(2)} ${isArabic ? "ج.م" : "EGP"}',
-              'icon': Icons.account_balance_wallet_outlined,
-            },
-          ];
+    final List<Map<String, dynamic>> dynamicMethods = state.activePaymentMethods.map((pm) {
+      final code = pm['code'] as String? ?? 'cash';
+      final name = pm['name'] as String? ?? 'كاش';
+      final details = pm['account_details'] as String? ?? '';
+      IconData icon = Icons.payments_outlined;
+      if (code == 'instapay') {
+        icon = Icons.account_balance_outlined;
+      } else if (code == 'vodafone_cash') {
+        icon = Icons.phone_android_outlined;
+      } else if (code == 'bank_transfer') {
+        icon = Icons.account_balance_rounded;
+      }
+
+      return {
+        'id': code,
+        'title': name,
+        'subtitle': details.isNotEmpty ? details : (isArabic ? 'وسيلة دفع مقبولة' : 'Accepted payment method'),
+        'icon': icon,
+      };
+    }).toList();
+
+    if (!isDriver && !dynamicMethods.any((m) => m['id'] == 'wallet')) {
+      dynamicMethods.add({
+        'id': 'wallet',
+        'title': isArabic ? 'المحفظة' : 'Wallet',
+        'subtitle': '${state.walletBalance.toStringAsFixed(2)} ${isArabic ? "ج.م" : "EGP"}',
+        'icon': Icons.account_balance_wallet_outlined,
+      });
+    }
+
+    final List<Map<String, dynamic>> paymentMethods = dynamicMethods;
 
     return Scaffold(
       backgroundColor: AppColors.background,

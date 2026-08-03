@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
@@ -101,11 +102,15 @@ class AppNotificationService {
         return;
       }
 
+      // Generate integer ID from the string notificationId
+      final int notifIntId = notif.notificationId.hashCode.abs() % 100000;
+
       // 1. Display system heads-up notification banner with sound & vibration
       showLocalNotification(
-        id: (notif.notificationId as int?) ?? (DateTime.now().millisecondsSinceEpoch % 100000),
+        id: notifIntId,
         title: title,
         body: body,
+        type: type,
         data: data,
       );
 
@@ -116,6 +121,7 @@ class AppNotificationService {
           context,
           title: title,
           body: body,
+          type: type,
           onTap: () {
             debugPrint('[Notification] Notification opened: $data');
             NotificationService.instance.handleNotificationClick(data);
@@ -123,7 +129,7 @@ class AppNotificationService {
         );
       }
 
-      debugPrint('[AppNotificationService] Foreground notification handled with heads-up banner: $title');
+      debugPrint('[AppNotificationService] Foreground notification handled with banner: type=$type, title=$title');
     });
 
     // ── 4. Notification Tap Handler (Background / Terminated) ──
@@ -163,16 +169,30 @@ class AppNotificationService {
     await DeviceTokenService.instance.deactivateCurrentDeviceToken(userId);
   }
 
-  /// عرض إشعار محلي (يُستخدم للـ Foreground)
+  /// Check if notification type is trip-critical (requires immediate attention)
+  bool _isTripCritical(String type) {
+    const criticalTypes = {
+      'new_trip', 'new_ride', 'delivery_request',
+      'accept_trip', 'ride_accepted', 'delivery_accepted',
+      'driver_arrived', 'captain_arrived', 'trip_started',
+      'new_offer', 'driver_offer', 'counter_offer',
+    };
+    return criticalTypes.contains(type.trim().toLowerCase());
+  }
+
+  /// عرض إشعار محلي احترافي بانر (يُستخدم للـ Foreground)
   void showLocalNotification({
     required int id,
     required String title,
     required String body,
+    String type = 'info',
     Map<String, dynamic>? data,
   }) {
     if (kIsWeb) return;
-    _localNotifications.show(
 
+    final isCritical = _isTripCritical(type);
+
+    _localNotifications.show(
       id,
       title,
       body,
@@ -186,11 +206,32 @@ class AppNotificationService {
           priority: Priority.high,
           playSound: true,
           enableVibration: true,
+          // BigTextStyle allows the notification to expand and show full body text
+          styleInformation: BigTextStyleInformation(
+            body,
+            htmlFormatBigText: false,
+            contentTitle: title,
+            htmlFormatContentTitle: false,
+            summaryText: 'inRide',
+            htmlFormatSummaryText: false,
+          ),
+          // Full screen intent for critical trip notifications (driver incoming, etc.)
+          fullScreenIntent: isCritical,
+          // Category for proper notification grouping
+          category: isCritical ? AndroidNotificationCategory.call : AndroidNotificationCategory.message,
+          // Auto-cancel when tapped
+          autoCancel: true,
+          // Show timestamp
+          showWhen: true,
+          // Accent color matching app theme
+          color: const Color(0xFF1976D2),
         ),
         iOS: const DarwinNotificationDetails(
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
+          // Banner presentation on iOS
+          interruptionLevel: InterruptionLevel.timeSensitive,
         ),
       ),
       payload: data != null ? jsonEncode(data) : null,

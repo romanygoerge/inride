@@ -3769,6 +3769,16 @@ async function loadCommMessagesThread(userId) {
   if (container) container.scrollTop = container.scrollHeight;
 }
 
+function generateUUID() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 async function sendCommChatMessage() {
   const input = document.getElementById('commChatInput');
   if (!input || !input.value.trim() || !commActiveUserId) return;
@@ -3799,28 +3809,12 @@ async function sendCommChatMessage() {
   // Send to Supabase if connected
   if (supabaseClient) {
     try {
-      const msgId = typeof generateUUID === 'function' ? generateUUID() : Date.now().toString();
+      const msgId = generateUUID();
+      const adminUuid = (currentAdminUser && currentAdminUser.id && currentAdminUser.id.length > 20)
+        ? currentAdminUser.id
+        : '00000000-0000-0000-0000-000000000000';
 
-      // 1. Insert message into support_messages
-      const { error: msgErr } = await supabaseClient.from('support_messages').insert({
-        id: msgId,
-        user_id: commActiveUserId,
-        conversation_id: commActiveUserId,
-        sender_id: (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : 'admin',
-        receiver_id: commActiveUserId,
-        sender_type: 'admin',
-        sender_role: 'admin',
-        sender_name: 'inRide',
-        message: msgText,
-        text: msgText,
-        is_admin: true,
-        status: 'delivered',
-        created_at: new Date().toISOString()
-      });
-
-      if (msgErr) console.warn('[Comm] Insert message error:', msgErr);
-
-      // 2. Upsert ticket in support_chats table so status is open and app client syncs immediately
+      // 1. Re-open ticket in support_chats table so status is open and app client syncs immediately
       try {
         await supabaseClient.from('support_chats').upsert({
           id: commActiveUserId,
@@ -3832,20 +3826,61 @@ async function sendCommChatMessage() {
           status: 'open',
           updated_at: new Date().toISOString()
         });
-      } catch (_) {}
+      } catch (chatErr) {
+        console.warn('[Comm] Upsert support_chats warning:', chatErr);
+      }
+
+      // 2. Insert message into support_messages
+      try {
+        const { error: insertErr } = await supabaseClient.from('support_messages').insert({
+          id: msgId,
+          conversation_id: commActiveUserId,
+          user_id: commActiveUserId,
+          sender_id: adminUuid,
+          receiver_id: commActiveUserId,
+          sender_type: 'admin',
+          sender_role: 'admin',
+          sender_name: 'inRide',
+          message: msgText,
+          text: msgText,
+          is_admin: true,
+          status: 'delivered',
+          created_at: new Date().toISOString()
+        });
+
+        if (insertErr) {
+          console.warn('[Comm] Retrying simplified insert into support_messages:', insertErr);
+          await supabaseClient.from('support_messages').insert({
+            id: msgId,
+            conversation_id: commActiveUserId,
+            user_id: commActiveUserId,
+            sender_type: 'admin',
+            message: msgText,
+            text: msgText,
+            is_admin: true,
+            status: 'delivered',
+            created_at: new Date().toISOString()
+          });
+        }
+      } catch (msgErr) {
+        console.warn('[Comm] Error inserting support_messages:', msgErr);
+      }
 
       // 3. Send notification trigger
       try {
         await supabaseClient.from('notifications').insert({
+          id: generateUUID(),
           user_id: commActiveUserId,
           title: 'inRide',
           body: msgText,
           type: 'support_chat',
           created_at: new Date().toISOString()
         });
-      } catch (_) {}
+      } catch (notifErr) {
+        console.warn('[Comm] Insert notification warning:', notifErr);
+      }
     } catch (err) {
-      console.error('Error storing support message:', err);
+      console.error('[Comm] Critical error in sendCommChatMessage:', err);
     }
   }
 

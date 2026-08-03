@@ -909,8 +909,8 @@ function toggleSidebar() {
 function closeSidebar() {
   const sidebar = document.getElementById('sidebar');
   const overlay = document.getElementById('overlay');
-  if (sidebar) sidebar.classList.remove('open');
-  if (overlay) overlay.classList.remove('active');
+  if (sidebar && sidebar.classList) sidebar.classList.remove('open');
+  if (overlay && overlay.classList) overlay.classList.remove('active');
 }
 
 // ============================================
@@ -2817,6 +2817,233 @@ async function approvePendingRecharge(id, userId, amount, requestIdFallback = nu
         });
       }
 
+      try {
+        await client.from('notifications').insert({
+          user_id: userId,
+          title: '✅ تم قبول طلب الشحن',
+          body: `تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م بنجاح. رصيدك الحالي: ${newBalance} ج.م`,
+          type: 'wallet',
+          created_at: new Date().toISOString()
+        });
+      } catch (_) {}
+    }
+
+    showToast(`✅ تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م وإضافته للمحفظة بنجاح!`);
+    await loadFinancialDataFromSupabase();
+    renderPage('wallet');
+  } catch (e) {
+    console.error('approvePendingRecharge error:', e);
+    showToast('❌ فشل قبول طلب الشحن: ' + (e.message || e));
+  }
+}
+
+async function rejectPendingRecharge(id, userId, requestIdFallback = null) {
+  const targetId = id || requestIdFallback;
+  if (!targetId || !userId) {
+    showToast('❌ تعذر تحديد معرف الطلب أو المستخدم');
+    return;
+  }
+
+  const reason = prompt('ادخل سبب رفض طلب الشحن (أو اتركه فارغاً):', 'إيصال تحويل غير واضح أو غير مكتمل');
+  if (reason === null) return;
+
+  const client = getSupabaseClient() || supabaseClient;
+  if (!client) {
+    showToast('❌ اتصال قاعدة البيانات غير متوفر');
+    return;
+  }
+
+  try {
+    let rpcSuccess = false;
+    try {
+      const { data: rpcData, error: rpcErr } = await client.rpc('reject_wallet_recharge_request', {
+        p_request_id: targetId,
+        p_reason: reason || 'إيصال تحويل غير واضح',
+        p_admin_id: (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : null
+      });
+      if (!rpcErr && rpcData && rpcData.success) {
+        rpcSuccess = true;
+      }
+    } catch (_) {}
+
+    if (!rpcSuccess) {
+      await client.from('wallet_recharge_requests').update({
+        status: 'rejected',
+        rejection_reason: reason || 'إيصال تحويل غير واضح',
+        processed_at: new Date().toISOString()
+      }).eq('id', targetId);
+
+      let existingTx = null;
+      try {
+        const { data: txList } = await client.from('transactions')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('type', 'charge_pending')
+          .limit(1);
+        if (txList && txList.length > 0) existingTx = txList[0];
+      } catch (_) {}
+
+      if (existingTx) {
+        await client.from('transactions').update({
+          type: 'charge_rejected',
+          title: 'طلب شحن مرفوض',
+          notes: `تم رفض طلب الشحن. السبب: ${reason || 'إيصال غير واضح'}`
+        }).eq('id', existingTx.id);
+      } else {
+        await client.from('transactions').insert({
+          id: generateUUID(),
+          user_id: userId,
+          title: 'طلب شحن مرفوض',
+          amount: 0,
+          type: 'charge_rejected',
+          balance_after: 0,
+          payment_method: 'InstaPay',
+          notes: `تم رفض طلب الشحن. السبب: ${reason || 'إيصال غير واضح'}`,
+          is_settled: false,
+          created_at: new Date().toISOString()
+        });
+      }
+
+      try {
+        await client.from('notifications').insert({
+          user_id: userId,
+          title: '❌ تم رفض طلب الشحن',
+          body: `نأسف، تعذر قبول طلب الشحن الخاص بك. السبب: ${reason || 'إيصال غير واضح'}`,
+          type: 'wallet',
+          created_at: new Date().toISOString()
+        });
+      } catch (_) {}
+    }
+
+    showToast('❌ تم رفض طلب الشحن وإبلاغ المستخدم بنجاح.');
+    await loadFinancialDataFromSupabase();
+    renderPage('wallet');
+  } catch (e) {
+    console.error('rejectPendingRecharge error:', e);
+    showToast('❌ فشل رفض طلب الشحن: ' + (e.message || e));
+  }
+}
+
+function viewReceiptModal(imageUrl, title, userName, amount, dateStr, method) {
+  let modal = document.getElementById('receiptPreviewModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'receiptPreviewModal';
+    modal.className = 'modal-overlay';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px;';
+    document.body.appendChild(modal);
+  }
+
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;max-width:500px;width:100%;overflow:hidden;box-shadow:0 20px 40px rgba(0,0,0,0.3);direction:rtl;">
+      <div style="padding:16px 20px;background:#1E293B;color:white;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h3 style="margin:0;font-size:15px;font-weight:700;">📸 ${title || 'معاينة إيصال التحويل'}</h3>
+          <p style="margin:0;font-size:11px;color:#94A3B8;margin-top:2px;">${userName} • ${amount} ج.م (${method})</p>
+        </div>
+        <button onclick="closeReceiptModal()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;">&times;</button>
+      </div>
+      <div style="padding:20px;text-align:center;background:#F8FAFC;">
+        <img src="${imageUrl}" alt="إيصال التحويل" style="max-width:100%;max-height:450px;border-radius:12px;border:1px solid #CBD5E1;box-shadow:0 4px 12px rgba(0,0,0,0.1);object-fit:contain;" onError="this.onerror=null;this.src='https://placehold.co/400x300?text=تعذر+تحميل+الصورة';">
+      </div>
+      <div style="padding:12px 20px;background:white;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;font-size:12px;">
+        <span style="color:#64748B;">تاريخ الطلب: ${dateStr}</span>
+        <button onclick="closeReceiptModal()" class="btn btn-primary" style="padding:6px 18px;border-radius:8px;">إغلاق</button>
+      </div>
+    </div>
+  `;
+  modal.style.display = 'flex';
+}
+
+function closeReceiptModal() {
+  const modal = document.getElementById('receiptPreviewModal');
+  if (modal) modal.style.display = 'none';
+}
+
+let currentCommunicationTab = 'chat';
+let rechargeFilterUserType = 'all';
+let commActiveUserId = null;
+let commActiveUserRole = 'rider';
+let commSearchQuery = '';
+let commRoleFilter = 'all';
+let commChatSub = null;
+let commMessagesCache = {};
+
+async function loadCommUsersFromSupabase() {
+  if (!supabaseClient) return;
+
+  try {
+    const { data: driversData } = await supabaseClient
+      .from('drivers')
+      .select('*');
+
+    if (driversData && driversData.length > 0) {
+      mockData.drivers = driversData.map(d => ({
+        uid: d.uid || d.id,
+        name: d.name || 'كابتن inRide',
+        phone: d.phone_number || d.phone || '',
+        vehicleType: d.vehicle_type || 'car',
+        rating: d.rating || 5.0,
+        isActive: d.is_active !== false,
+        joinDate: d.created_at ? new Date(d.created_at).toLocaleDateString('ar-EG') : 'جديد'
+      }));
+    }
+
+    const { data: passengersData } = await supabaseClient
+      .from('users')
+      .select('*');
+
+    if (passengersData && passengersData.length > 0) {
+      mockData.passengers = passengersData.filter(u => u.role !== 'driver').map(p => ({
+        uid: p.id || p.uid,
+        name: p.name || 'مستخدم inRide',
+        phone: p.phone_number || p.phone || '',
+        rating: p.rating || 5.0,
+        joinDate: p.created_at ? new Date(p.created_at).toLocaleDateString('ar-EG') : 'جديد'
+      }));
+    }
+  } catch (e) {
+    console.warn('[Comm] Warning fetching users from Supabase:', e);
+  }
+}
+
+function setCommunicationTab(tab) {
+  currentCommunicationTab = tab || 'chat';
+  const container = document.getElementById('pageContent');
+  if (container && (currentPage === 'communication' || currentPage === 'support')) {
+    container.innerHTML = renderCommunication();
+    if (currentCommunicationTab === 'chat') {
+      initCommChatSync();
+    } else if (currentCommunicationTab === 'tickets') {
+      loadSupportChatsFromSupabase();
+    } else if (currentCommunicationTab === 'ride_chats') {
+      loadRideChatsFromSupabase();
+    }
+  }
+}
+
+async function resolveSupportTicket(ticketId) {
+  if (!ticketId) return;
+
+  if (supabaseClient) {
+    try {
+      const { error } = await supabaseClient
+        .from('support_chats')
+        .update({
+          status: 'resolved',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', ticketId);
+
+      if (!error) {
+        showToast('✅ تم إغلاق وحل الشكوى بنجاح (ستختفي من تطبيق العميل وستظل محفوظة بالداش بورد)');
+        await loadSupportChatsFromSupabase();
+        const container = document.getElementById('pageContent');
+        if (container) container.innerHTML = renderCommunication();
+      } else {
+        showToast(`❌ فشل إغلاق الشكوى: ${error.message}`);
+      }
+    } catch (e) {
       showToast(`❌ خطأ: ${e.message}`);
     }
   } else {
@@ -2969,6 +3196,16 @@ async function loadRideChatMessages(roomId) {
   }
 }
 
+function setCommRoleFilter(role) {
+  commRoleFilter = role;
+  renderCommConversationsList();
+}
+
+function onCommSearchInput(query) {
+  commSearchQuery = (query || '').toLowerCase().trim();
+  renderCommConversationsList();
+}
+
 function selectCommConversation(userId, role) {
   commActiveUserId = userId;
   commActiveUserRole = role || 'rider';
@@ -2985,96 +3222,182 @@ function selectCommConversation(userId, role) {
   loadCommMessagesThread(userId);
 }
 
+function openDirectUserChat(userId, userName, role) {
+  commActiveUserId = userId;
+  commActiveUserRole = role || 'rider';
+  currentCommunicationTab = 'chat';
+  const container = document.getElementById('pageContent');
+  if (container) {
+    if (currentPage !== 'communication') {
+      navigateTo('communication');
+    } else {
+      container.innerHTML = renderCommunication();
+      initCommChatSync();
+      loadCommMessagesThread(userId);
+    }
+  }
+}
+
 function renderCommunication() {
   try {
-                      <td style="padding:12px 14px;">
-                        ${req.receipt_url ? `
-                          <button class="btn btn-sm btn-outline" onclick="viewReceiptModal('${req.receipt_url}', 'إيصال شحن محفظة', '${req.user_name || ''}', ${req.amount}, '${dateStr}', '${req.payment_method || 'InstaPay'}')">
-                            📸 معاينة
-                          </button>
-                        ` : '<span style="color:var(--text-light);">بدون صورة</span>'}
-                      </td>
-                      <td style="padding:12px 14px;">
-                        <span class="badge" style="background:${statusBg};color:${statusColor};font-weight:700;padding:4px 10px;border-radius:12px;">
-                          ${statusText}
-                        </span>
-                      </td>
-                      <td style="padding:12px 14px;text-align:center;">
-                        <div style="display:flex;gap:6px;justify-content:center;">
-                          ${req.status === 'pending' ? `
-                            <button class="btn btn-sm btn-primary" style="background:#059669;padding:4px 10px;" onclick="approvePendingRecharge(null, '${req.user_id}', ${req.amount}, '${req.id}')">
-                              قبول
-                            </button>
-                            <button class="btn btn-sm btn-outline" style="color:var(--error);border-color:var(--error);padding:4px 10px;" onclick="rejectPendingRecharge(null, '${req.user_id}', '${req.id}')">
-                              رفض
-                            </button>
-                          ` : ''}
-                          <button class="btn btn-sm btn-outline" onclick="openDirectUserChat('${req.user_id}', '${req.user_name || 'مستخدم'}', '${isDriver ? 'driver' : 'rider'}')">
-                            💬 محادثة مباشرة
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  `;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ` : `
-        <div class="card">
-          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    return `
+      <div class="page-section">
+        <!-- Communication Header -->
+        <div class="card" style="margin-bottom:16px;padding:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
             <div>
-              <h3><i class="ri-customer-service-2-line text-blue" style="margin-left:8px;"></i> سجل التذاكر والشكاوى العامة</h3>
-              <p style="font-size:12px;color:var(--text-secondary);margin:4px 0 0 0;">استقبال الشكاوى والملاحظات من الركاب والسائقين ومتابعة حلها</p>
+              <h3 style="margin:0;font-size:16px;font-weight:800;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
+                <i class="ri-chat-smile-2-fill text-blue" style="font-size:20px;"></i> مركز التواصل والمحادثات المباشرة (inRide)
+              </h3>
+              <p style="margin:4px 0 0 0;font-size:12px;color:var(--text-secondary);">
+                إدارة المحادثات المباشرة، التذاكر والشكاوى، ومتابعة محادثات الرحلات بين الركاب والكباتن
+              </p>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-outline btn-sm" onclick="initCommChatSync()">
+                <i class="ri-refresh-line"></i> تحديث البيانات
+              </button>
             </div>
           </div>
-          <div class="card-body" style="padding:0;overflow-x:auto;">
-            <table class="data-table" style="width:100%;font-size:12px;">
-              <thead>
-                <tr style="background:var(--bg-primary);">
-                  <th style="padding:12px 14px;">المستخدم</th>
-                  <th style="padding:12px 14px;">نوع الشكوى</th>
-                  <th style="padding:12px 14px;">تفاصيل التذكرة</th>
-                  <th style="padding:12px 14px;">الأولوية</th>
-                  <th style="padding:12px 14px;">الحالة</th>
-                  <th style="padding:12px 14px;text-align:center;">إجراءات التذكرة</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr style="border-bottom:1px solid var(--border-light);">
-                  <td style="padding:12px 14px;">
-                    <div style="font-weight:700;color:var(--text-primary);">أحمد محمود (كابتن)</div>
-                    <div style="font-size:11px;color:var(--text-secondary);">01012345678</div>
-                  </td>
-                  <td style="padding:12px 14px;font-weight:600;">استفسار عن عمولة الرحلة</td>
-                  <td style="padding:12px 14px;">برجاء توضيح نسبة الخصم للرحلة رقم #TR-8921</td>
-                  <td style="padding:12px 14px;"><span class="badge" style="background:#FEF3C7;color:#92400E;">متوسطة</span></td>
-                  <td style="padding:12px 14px;"><span class="badge" style="background:#D1FAE5;color:#065F46;">قيد المتابعة</span></td>
-                  <td style="padding:12px 14px;text-align:center;">
-                    <button class="btn btn-sm btn-primary" onclick="openDirectUserChat('driver_1', 'أحمد محمود', 'driver')">💬 محادثة الكابتن</button>
-                  </td>
-                </tr>
-                <tr style="border-bottom:1px solid var(--border-light);">
-                  <td style="padding:12px 14px;">
-                    <div style="font-weight:700;color:var(--text-primary);">سارة علي (راكب)</div>
-                    <div style="font-size:11px;color:var(--text-secondary);">01198765432</div>
-                  </td>
-                  <td style="padding:12px 14px;font-weight:600;">تأخير الكابتن عن موعد الوصل</td>
-                  <td style="padding:12px 14px;">الكابتن تأخر أكثر من 15 دقيقة في الوصول للوجهة</td>
-                  <td style="padding:12px 14px;"><span class="badge" style="background:#FEE2E2;color:#991B1B;">عالية</span></td>
-                  <td style="padding:12px 14px;"><span class="badge" style="background:#FEF3C7;color:#92400E;">مفتوحة</span></td>
-                  <td style="padding:12px 14px;text-align:center;">
-                    <button class="btn btn-sm btn-primary" onclick="openDirectUserChat('rider_1', 'سارة علي', 'rider')">💬 محادثة الراكب</button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
         </div>
-      `)}
-    </div>
-  `;
+
+        <!-- Navigation Tabs -->
+        <div style="display:flex;gap:8px;margin-bottom:16px;background:var(--bg-primary);padding:6px;border-radius:var(--radius-md);">
+          <button class="btn btn-sm ${currentCommunicationTab === 'chat' ? 'btn-primary' : 'btn-outline'}" onclick="setCommunicationTab('chat')">
+            💬 المحادثات المباشرة والدعم الفني
+          </button>
+          <button class="btn btn-sm ${currentCommunicationTab === 'tickets' ? 'btn-primary' : 'btn-outline'}" onclick="setCommunicationTab('tickets')">
+            🎫 الشكاوى والتذاكر
+          </button>
+          <button class="btn btn-sm ${currentCommunicationTab === 'ride_chats' ? 'btn-primary' : 'btn-outline'}" onclick="setCommunicationTab('ride_chats')">
+            🚗💬 محادثات الرحلات
+          </button>
+        </div>
+
+        ${currentCommunicationTab === 'chat' ? `
+          <div class="comm-chat-layout">
+            <!-- Left Sidebar: Conversations & Contacts List -->
+            <div class="comm-chat-sidebar">
+              <div class="comm-sidebar-header">
+                <div class="comm-search-box">
+                  <i class="ri-search-line"></i>
+                  <input type="text" placeholder="البحث باسم الكابتن أو الراكب..." oninput="onCommSearchInput(this.value)">
+                </div>
+                <div class="comm-filter-pills">
+                  <button class="comm-pill ${commRoleFilter === 'all' ? 'active' : ''}" onclick="setCommRoleFilter('all')">الكل</button>
+                  <button class="comm-pill ${commRoleFilter === 'driver' ? 'active' : ''}" onclick="setCommRoleFilter('driver')">الكباتن 🚗</button>
+                  <button class="comm-pill ${commRoleFilter === 'rider' ? 'active' : ''}" onclick="setCommRoleFilter('rider')">الركاب 👤</button>
+                </div>
+              </div>
+
+              <div class="comm-conv-list" id="commConvListContainer">
+                <!-- Dynamically populated by renderCommConversationsList -->
+              </div>
+            </div>
+
+            <!-- Right Main Chat Box -->
+            <div class="comm-chat-main" id="commMainChatPanel">
+              <div style="text-align:center;padding:60px 20px;color:var(--text-light);">
+                <i class="ri-chat-smile-2-line" style="font-size:48px;display:block;margin-bottom:12px;"></i>
+                <h4 style="margin:0 0 6px 0;">اختر محادثة لبدء التواصل</h4>
+                <p style="font-size:12px;margin:0;">يمكنك إرسال رسائل مباشرة لأي كابتن أو راكب مسجل بالنظام</p>
+              </div>
+            </div>
+          </div>
+        ` : currentCommunicationTab === 'tickets' ? `
+          <!-- Tickets and Complaints View -->
+          <div class="card">
+            <div class="card-header" style="padding:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+              <div>
+                <h3 style="margin:0;font-size:15px;font-weight:700;"><i class="ri-ticket-2-line text-blue"></i> سجل التذاكر والشكاوى الحقيقي (Supabase DB)</h3>
+                <p style="font-size:11px;color:var(--text-secondary);margin:2px 0 0 0;">استقبال الشكاوى والملاحظات المفتوحة من تطبيق العميل ومتابعة حلها</p>
+              </div>
+              <div style="display:flex;gap:4px;background:var(--bg-primary);padding:4px;border-radius:var(--radius-md);">
+                <button class="btn btn-sm ${supportFilterStatus === 'all' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('all')">الكل</button>
+                <button class="btn btn-sm ${supportFilterStatus === 'open' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('open')">مفتوحة</button>
+                <button class="btn btn-sm ${supportFilterStatus === 'pending' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('pending')">متابعة</button>
+                <button class="btn btn-sm ${supportFilterStatus === 'resolved' ? 'btn-primary' : 'btn-outline'}" onclick="setSupportFilter('resolved')">تم الحل</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding:0;overflow-x:auto;">
+              <table class="data-table" style="width:100%;font-size:12px;">
+                <thead>
+                  <tr style="background:var(--bg-primary);">
+                    <th style="padding:12px 14px;">المستخدم</th>
+                    <th style="padding:12px 14px;">نوع / تفاصيل الشكوى</th>
+                    <th style="padding:12px 14px;">تاريخ الورود</th>
+                    <th style="padding:12px 14px;">الحالة</th>
+                    <th style="padding:12px 14px;text-align:center;">إجراءات التذكرة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(!liveSupportChats || liveSupportChats.length === 0) ? `
+                    <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text-light);">لا توجد تذاكر دعم مسجلة في هذا القسم حالياً</td></tr>
+                  ` : liveSupportChats.filter(c => supportFilterStatus === 'all' || c.status === supportFilterStatus).map(tkt => {
+                    const isDriver = tkt.user_type === 'driver';
+                    const timeStr = tkt.last_message_at ? new Date(tkt.last_message_at).toLocaleString('ar-EG') : 'الآن';
+                    const statusBg = tkt.status === 'resolved' ? '#D1FAE5' : (tkt.status === 'pending' ? '#FEF3C7' : '#FEE2E2');
+                    const statusColor = tkt.status === 'resolved' ? '#065F46' : (tkt.status === 'pending' ? '#92400E' : '#991B1B');
+                    const statusText = tkt.status === 'resolved' ? 'تم الحل ✅' : (tkt.status === 'pending' ? 'قيد المتابعة ⏳' : 'مفتوحة 🔴');
+
+                    return `
+                      <tr style="border-bottom:1px solid var(--border-light);">
+                        <td style="padding:12px 14px;">
+                          <div style="font-weight:700;color:var(--text-primary);">${tkt.user_name || (isDriver ? 'كابتن inRide' : 'عميل inRide')}</div>
+                          <div style="font-size:11px;color:var(--text-secondary);">${tkt.phone || '—'}</div>
+                        </td>
+                        <td style="padding:12px 14px;">
+                          <div style="font-weight:600;color:var(--text-primary);">${tkt.last_message || 'طلب مساعدة جديدة من التطبيق'}</div>
+                          <span class="badge" style="font-size:10px;background:${isDriver ? '#E0F2FE' : '#F3E8FF'};color:${isDriver ? '#0369A1' : '#7E22CE'};">${isDriver ? 'كابتن 🚗' : 'راكب 👤'}</span>
+                        </td>
+                        <td style="padding:12px 14px;white-space:nowrap;">${timeStr}</td>
+                        <td style="padding:12px 14px;">
+                          <span class="badge" style="background:${statusBg};color:${statusColor};font-weight:700;padding:4px 10px;border-radius:12px;">${statusText}</span>
+                        </td>
+                        <td style="padding:12px 14px;text-align:center;">
+                          <div style="display:flex;gap:6px;justify-content:center;">
+                            <button class="btn btn-sm btn-primary" onclick="openDirectUserChat('${tkt.id || tkt.user_id}', '${tkt.user_name || ''}', '${isDriver ? 'driver' : 'rider'}')">
+                              💬 محادثة مباشرة
+                            </button>
+                            ${tkt.status !== 'resolved' ? `
+                              <button class="btn btn-sm btn-outline" style="color:var(--success);border-color:var(--success);font-weight:700;" onclick="resolveSupportTicket('${tkt.id || tkt.user_id}')">
+                                ✔️ إغلاق وحل الشكوى
+                              </button>
+                            ` : ''}
+                          </div>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ` : `
+          <!-- Ride Chats View -->
+          <div class="card">
+            <div class="card-header" style="padding:16px;">
+              <h3 style="margin:0;font-size:15px;font-weight:700;"><i class="ri-car-line text-blue"></i> محادثات الرحلات المباشرة بين الركاب والكباتن (Supabase DB)</h3>
+              <p style="font-size:11px;color:var(--text-secondary);margin:2px 0 0 0;">متابعة تفاصيل سِجل الرسائل الفورية بين السائق والعميل أثناء الرحلات النشطة والسابقة</p>
+            </div>
+            <div class="card-body" style="padding:0;">
+              <div style="display:grid;grid-template-columns: 360px 1fr;min-height:500px;">
+                <div style="border-left:1px solid var(--border-color);overflow-y:auto;max-height:550px;" id="rideChatsListContainer">
+                  ${renderRideChatsListHtml()}
+                </div>
+                <div id="rideChatMainPanel" style="display:flex;flex-direction:column;">
+                  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-light);padding:40px;">
+                    <i class="ri-car-line" style="font-size:54px;margin-bottom:12px;color:var(--medium-blue);"></i>
+                    <h4 style="margin:0 0 6px 0;">اختر رحلة لمشاهدة سِجل المحادثة</h4>
+                    <p style="font-size:12px;margin:0;">يمكنك تتبع كافة الرسائل المتبادلة بين الكابتن والراكب في أي رحلة</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `}
+      </div>
+    `;
   } catch (err) {
     console.error('Error rendering communication page:', err);
     return `
@@ -3226,6 +3549,7 @@ function renderCommConversationsList() {
 }
 
 async function initCommChatSync() {
+  await loadCommUsersFromSupabase();
   await loadSupportChatsFromSupabase();
   renderCommConversationsList();
 
@@ -3245,7 +3569,7 @@ async function initCommChatSync() {
   if (commActiveUserId) {
     loadCommMessagesThread(commActiveUserId);
   }
-  if (typeof updateCommunicationBadge === 'function') updateCommunicationBadge();
+  updateCommunicationBadge();
 
   if (supabaseClient && !window._commRealtimeSubscribed) {
     window._commRealtimeSubscribed = true;
@@ -3289,9 +3613,37 @@ async function loadCommMessagesThread(userId) {
   const ratingVal = userObj ? (parseFloat(userObj.rating) || 5.0).toFixed(1) : '5.0';
   const roleText = isDriver ? 'كابتن 🚗' : 'راكب 👤';
 
+  // Fast optimistic / cached render if available
+  if (!commMessagesCache[userId]) {
+    mainPanel.innerHTML = `
+      <div class="comm-chat-header">
+        <div class="comm-chat-user-details">
+          <div class="comm-avatar ${isDriver ? 'driver' : ''}">
+            ${userName.charAt(0)}
+            <div class="comm-avatar-badge"></div>
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <h4 style="margin:0;font-size:15px;font-weight:700;color:var(--text-primary);">${userName}</h4>
+              <span class="badge" style="font-size:11px;background:${isDriver ? '#E0F2FE' : '#F3E8FF'};color:${isDriver ? '#0369A1' : '#7E22CE'};font-weight:700;">
+                ${roleText}
+              </span>
+            </div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">📱 ${userPhone} • ID: ${userId.substring(0, 8).toUpperCase()}</div>
+          </div>
+        </div>
+      </div>
+      <div class="comm-chat-messages" style="display:flex;align-items:center;justify-content:center;min-height:300px;">
+        <div style="text-align:center;color:var(--text-light);">
+          <i class="ri-loader-4-line ri-spin" style="font-size:28px;display:block;margin-bottom:8px;color:var(--medium-blue);"></i>
+          <span>جاري فتح المحادثة...</span>
+        </div>
+      </div>
+    `;
+  }
+
   let messagesList = [
-    { sender: 'user', text: `أهلاً بك، أريد المساعدة بخصوص الحساب.`, time: '10:30 ص' },
-    { sender: 'admin', text: `أهلاً بك يا ${userName}! يسعدنا خدمتك، كيف يمكننا مساعدتك اليوم؟`, time: '10:31 ص' }
+    { sender: 'admin', text: `أهلاً بك يا ${userName}! يسعدنا تواصلك معنا، كيف يمكننا مساعدتك اليوم؟`, time: 'الآن' }
   ];
 
   // Try loading real messages from Supabase support_messages table if connected

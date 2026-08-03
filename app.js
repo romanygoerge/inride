@@ -909,8 +909,8 @@ function toggleSidebar() {
 function closeSidebar() {
   const sidebar = document.getElementById('sidebar');
   const overlay = document.getElementById('overlay');
-  if (sidebar) sidebar.classList.remove('open');
-  if (overlay) overlay.classList.remove('active');
+  if (sidebar && sidebar.classList) sidebar.classList.remove('open');
+  if (overlay && overlay.classList) overlay.classList.remove('active');
 }
 
 // ============================================

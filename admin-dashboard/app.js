@@ -2979,7 +2979,7 @@ async function loadCommUsersFromSupabase() {
 
     if (driversData && driversData.length > 0) {
       mockData.drivers = driversData.map(d => ({
-        uid: d.uid || d.id,
+        uid: d.user_id || d.id || d.uid,
         name: d.name || 'كابتن inRide',
         phone: d.phone_number || d.phone || '',
         vehicleType: d.vehicle_type || 'car',
@@ -2995,7 +2995,7 @@ async function loadCommUsersFromSupabase() {
 
     if (passengersData && passengersData.length > 0) {
       mockData.passengers = passengersData.filter(u => u.role !== 'driver').map(p => ({
-        uid: p.id || p.uid,
+        uid: p.id || p.uid || p.user_id,
         name: p.name || 'مستخدم inRide',
         phone: p.phone_number || p.phone || '',
         rating: p.rating || 5.0,
@@ -3058,35 +3058,54 @@ async function loadRideChatsFromSupabase() {
   if (!supabaseClient) return [];
 
   try {
-    const { data: rooms } = await supabaseClient
-      .from('chat_rooms')
+    const { data: rides } = await supabaseClient
+      .from('ride_requests')
       .select('*')
-      .order('updated_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(30);
 
-    if (rooms && rooms.length > 0) {
-      liveRideChats = rooms;
-    } else {
-      const { data: rides } = await supabaseClient
-        .from('ride_requests')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(25);
+    if (rides && rides.length > 0) {
+      const pIds = rides.map(r => r.passenger_id).filter(Boolean);
+      const dIds = rides.map(r => r.driver_id).filter(Boolean);
 
-      if (rides && rides.length > 0) {
-        liveRideChats = rides.map(r => ({
+      let pMap = {}, dMap = {};
+
+      if (pIds.length > 0) {
+        const { data: pUsers } = await supabaseClient.from('users').select('id, name, phone_number').in('id', pIds);
+        (pUsers || []).forEach(u => { pMap[u.id] = { name: u.name || 'راكب', phone: u.phone_number || '—' }; });
+      }
+
+      if (dIds.length > 0) {
+        const { data: dUsers } = await supabaseClient.from('drivers').select('id, user_id, name, phone_number').in('id', dIds);
+        (dUsers || []).forEach(d => { 
+          const key = d.user_id || d.id;
+          dMap[key] = { name: d.name || 'كابتن', phone: d.phone_number || '—' }; 
+          dMap[d.id] = { name: d.name || 'كابتن', phone: d.phone_number || '—' }; 
+        });
+      }
+
+      liveRideChats = rides.map(r => {
+        const pInfo = pMap[r.passenger_id] || {};
+        const dInfo = dMap[r.driver_id] || {};
+        return {
           id: r.id,
           trip_id: r.id,
-          passenger_name: r.passenger_name || 'راكب',
-          passenger_phone: r.passenger_phone || '',
-          driver_name: r.driver_name || 'كابتن',
-          driver_phone: r.driver_phone || '',
+          passenger_id: r.passenger_id,
+          driver_id: r.driver_id,
+          passenger_name: pInfo.name || r.passenger_name || 'راكب',
+          passenger_phone: pInfo.phone || r.passenger_phone || '—',
+          driver_name: dInfo.name || r.driver_name || 'كابتن',
+          driver_phone: dInfo.phone || r.driver_phone || '—',
           pickup: r.pickup_address || 'نقطة الانطلاق',
           destination: r.destination_address || 'الوجهة',
           status: r.status || 'completed',
           updated_at: r.created_at
-        }));
-      }
+        };
+      });
+    } else {
+      liveRideChats = [];
     }
+
     const container = document.getElementById('rideChatsListContainer');
     if (container) container.innerHTML = renderRideChatsListHtml();
     return liveRideChats;
@@ -3154,27 +3173,24 @@ async function loadRideChatMessages(roomId) {
     <div id="rideChatMessagesBox" style="padding:20px;overflow-y:auto;min-height:380px;max-height:500px;display:flex;flex-direction:column;gap:12px;">
       <div style="text-align:center;color:var(--text-light);padding:30px;">
         <i class="ri-loader-4-line ri-spin" style="font-size:24px;"></i>
-        <div>جاري تحميل سِجل محادثة الرحلة...</div>
+        <div>جاري تحميل سِجل محادثة الرحلة الحقيقي...</div>
       </div>
     </div>
   `;
 
-  let msgs = [
-    { sender: 'passenger', text: 'أنا عند نقطة الانطلاق المتفق عليها 👍', time: '10:15 ص' },
-    { sender: 'driver', text: 'تمام يا فندم، أنا دقيقة وموجود عند حضرتك 🚗', time: '10:16 ص' }
-  ];
+  let msgs = [];
 
   if (supabaseClient) {
     try {
       const { data: realMsgs } = await supabaseClient
         .from('messages')
         .select('*')
-        .eq('room_id', roomId)
+        .or(`room_id.eq.${roomId},trip_id.eq.${roomId}`)
         .order('created_at', { ascending: true });
 
       if (realMsgs && realMsgs.length > 0) {
         msgs = realMsgs.map(m => ({
-          sender: m.sender_id === room?.passenger_id ? 'passenger' : 'driver',
+          sender: (m.sender_id === room?.passenger_id || m.sender_type === 'rider') ? 'passenger' : 'driver',
           text: m.content || m.text || m.message || '',
           time: m.created_at ? new Date(m.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : 'الآن'
         }));
@@ -3184,14 +3200,22 @@ async function loadRideChatMessages(roomId) {
 
   const box = document.getElementById('rideChatMessagesBox');
   if (box) {
-    box.innerHTML = msgs.map(m => `
-      <div style="display:flex;flex-direction:column;align-items:${m.sender === 'passenger' ? 'flex-end' : 'flex-start'};">
-        <div style="background:${m.sender === 'passenger' ? 'var(--medium-blue)' : '#F1F5F9'};color:${m.sender === 'passenger' ? 'white' : 'var(--text-primary)'};padding:10px 14px;border-radius:14px;max-width:70%;font-size:13px;">
-          ${m.text}
+    if (msgs.length === 0) {
+      box.innerHTML = `
+        <div style="text-align:center;padding:40px;color:var(--text-light);font-size:13px;">
+          <i class="ri-chat-delete-line" style="font-size:36px;display:block;margin-bottom:8px;color:var(--medium-blue);"></i>
+          لا توجد رسائل نصية متبادلة بين الكابتن والراكب في هذه الرحلة حتى الآن.
+        </div>`;
+    } else {
+      box.innerHTML = msgs.map(m => `
+        <div style="display:flex;flex-direction:column;align-items:${m.sender === 'passenger' ? 'flex-end' : 'flex-start'};">
+          <div style="background:${m.sender === 'passenger' ? 'var(--medium-blue)' : '#F1F5F9'};color:${m.sender === 'passenger' ? 'white' : 'var(--text-primary)'};padding:10px 14px;border-radius:14px;max-width:70%;font-size:13px;">
+            ${m.text}
+          </div>
+          <span style="font-size:10px;color:var(--text-light);margin-top:2px;">${m.sender === 'passenger' ? '👤 الراكب' : '🚗 الكابتن'} • ${m.time}</span>
         </div>
-        <span style="font-size:10px;color:var(--text-light);margin-top:2px;">${m.sender === 'passenger' ? '👤 الراكب' : '🚗 الكابتن'} • ${m.time}</span>
-      </div>
-    `).join('');
+      `).join('');
+    }
     box.scrollTop = box.scrollHeight;
   }
 }

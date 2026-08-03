@@ -350,7 +350,7 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
       packageDescription: packageDesc,
       deliveryNotes: notes.isNotEmpty ? notes : null,
       isDeliveryLocationConfirmed: false,
-      recipientPhone: null,
+      recipientPhone: _recipientPhoneController.text.trim().isNotEmpty ? _recipientPhoneController.text.trim() : null,
       recipientRegion: null,
       recipientStreet: null,
       recipientBuilding: null,
@@ -415,12 +415,19 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
       }
     } else {
       if (_formKey.currentState!.validate()) {
-        _submitOrderAndShowShareSheet();
+        setState(() {
+          _isReviewMode = true;
+        });
       }
     }
   }
 
   void _onOrderDeliveryPressed() async {
+    if (_recipientWillSpecifyLocation) {
+      _submitOrderAndShowShareSheet();
+      return;
+    }
+
     final hasLocPermission = await LocationService.instance.checkPermission();
     if (!mounted) return;
     if (!hasLocPermission) {
@@ -704,8 +711,6 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
                     setState(() {
                       _deliveryLocationMode = DeliveryLocationMode.recipient;
                     });
-                    // Immediately trigger order placement and sharing sheet
-                    _submitOrderAndShowShareSheet();
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 10),

@@ -21,6 +21,7 @@ import '../../../../core/services/search_history_service.dart';
 import 'passenger_ride_matching_page.dart';
 import 'passenger_delivery_booking_page.dart';
 import '../../../common/notifications_page.dart';
+import '../../../common/wallet_page.dart';
 import '../../../../generated/app_localizations.dart';
 
 
@@ -287,7 +288,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
 
   double get _dynamicBottomPadding {
     if (_mode == PassengerMode.dashboard) {
-      return _showVehicleSelection ? 270.0 : 190.0;
+      return _showVehicleSelection ? 300.0 : 240.0;
     } else if (_mode == PassengerMode.rideBooking) {
       return _toText.isEmpty ? 220.0 : 380.0;
     } else {
@@ -666,6 +667,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                                 eta: '~${l10n.durationMinutes(durationCar)}',
                                 baseFare: '${_getDefaultFare('car').round()} ${l10n.egp}',
                                 icon: Icons.directions_car,
+                                imageAsset: 'assets/images/ride_3d.png',
                               ),
                               const SizedBox(width: 12),
                               _buildVehicleOption(
@@ -674,6 +676,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                                 eta: '~${l10n.durationMinutes(durationMotorcycle)}',
                                 baseFare: '${_getDefaultFare('motorcycle').round()} ${l10n.egp}',
                                 icon: Icons.motorcycle,
+                                imageAsset: 'assets/images/bike_3d.png',
                               ),
                             ],
                           );
@@ -938,25 +941,31 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.mediumBlue.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.account_balance_wallet_outlined, color: AppColors.mediumBlue, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${balance.round()} ${l10n.egp}',
-                        style: GoogleFonts.outfit(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.mediumBlue,
+                InkWell(
+                  onTap: () {
+                    Navigator.push(context, SnappyPageRoute(page: const WalletPage()));
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.mediumBlue.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.account_balance_wallet_outlined, color: AppColors.mediumBlue, size: 16),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${balance.round()} ${l10n.egp}',
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.mediumBlue,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -969,6 +978,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                     title: l10n.privateCarOption,
                     description: l10n.privateCarDesc,
                     icon: Icons.directions_car_rounded,
+                    imageAsset: 'assets/images/ride_3d.png',
                     iconColor: AppColors.mediumBlue,
                     isSelected: _selectedVehicle == 'car',
                     onTap: () {
@@ -988,6 +998,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                     title: l10n.bikeOption,
                     description: l10n.bikeDesc,
                     icon: Icons.motorcycle_rounded,
+                    imageAsset: 'assets/images/bike_3d.png',
                     iconColor: AppColors.mediumBlue,
                     isSelected: _selectedVehicle == 'motorcycle',
                     onTap: () {
@@ -1034,25 +1045,31 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.mediumBlue.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.account_balance_wallet_outlined, color: AppColors.mediumBlue, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${balance.round()} ${l10n.egp}',
-                        style: GoogleFonts.outfit(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.mediumBlue,
+                InkWell(
+                  onTap: () {
+                    Navigator.push(context, SnappyPageRoute(page: const WalletPage()));
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.mediumBlue.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.account_balance_wallet_outlined, color: AppColors.mediumBlue, size: 16),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${balance.round()} ${l10n.egp}',
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.mediumBlue,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -1065,6 +1082,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                     title: l10n.rideOption,
                     description: l10n.rideDesc,
                     icon: Icons.directions_car_rounded,
+                    imageAsset: 'assets/images/ride_3d.png',
                     iconColor: AppColors.mediumBlue,
                     backgroundColor: AppColors.mediumBlue.withValues(alpha: 0.08),
                     borderColor: AppColors.mediumBlue.withValues(alpha: 0.15),
@@ -1081,6 +1099,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                     title: l10n.deliveryOption,
                     description: l10n.deliveryDesc,
                     icon: Icons.inventory_2_outlined,
+                    imageAsset: 'assets/images/delivery_3d.png',
                     iconColor: AppColors.darkBlue,
                     backgroundColor: AppColors.darkBlue.withValues(alpha: 0.06),
                     borderColor: AppColors.darkBlue.withValues(alpha: 0.15),
@@ -1107,6 +1126,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
     required String eta,
     required String baseFare,
     required IconData icon,
+    String? imageAsset,
   }) {
     bool isSelected = _selectedVehicle == type;
 
@@ -1125,11 +1145,24 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
           ),
           child: Column(
             children: [
-              Icon(
-                icon,
-                color: isSelected ? AppColors.mediumBlue : AppColors.textSecondary,
-                size: 28,
-              ),
+              if (imageAsset != null)
+                Image.asset(
+                  imageAsset,
+                  width: 36,
+                  height: 36,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => Icon(
+                    icon,
+                    color: isSelected ? AppColors.mediumBlue : AppColors.textSecondary,
+                    size: 28,
+                  ),
+                )
+              else
+                Icon(
+                  icon,
+                  color: isSelected ? AppColors.mediumBlue : AppColors.textSecondary,
+                  size: 28,
+                ),
               const SizedBox(height: 8),
               Text(
                 title,
@@ -1663,6 +1696,7 @@ class _DashboardServiceCard extends StatefulWidget {
   final String title;
   final String description;
   final IconData icon;
+  final String? imageAsset;
   final Color iconColor;
   final Color backgroundColor;
   final Color borderColor;
@@ -1672,6 +1706,7 @@ class _DashboardServiceCard extends StatefulWidget {
     required this.title,
     required this.description,
     required this.icon,
+    this.imageAsset,
     required this.iconColor,
     required this.backgroundColor,
     required this.borderColor,
@@ -1714,58 +1749,75 @@ class _DashboardServiceCardState extends State<_DashboardServiceCard> with Singl
       child: ScaleTransition(
         scale: _scaleAnimation,
         child: Container(
-          height: 180,
-          padding: const EdgeInsets.all(18),
+          height: 200,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: widget.borderColor, width: 1.5),
+            border: Border.all(color: widget.borderColor, width: 1.8),
             boxShadow: [
               BoxShadow(
-                color: widget.iconColor.withValues(alpha: 0.05),
-                blurRadius: 16,
+                color: widget.iconColor.withValues(alpha: 0.12),
+                blurRadius: 20,
+                spreadRadius: 1,
                 offset: const Offset(0, 8),
               ),
             ],
           ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Icon Container
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: widget.backgroundColor,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(
-                  widget.icon,
-                  color: widget.iconColor,
-                  size: 28,
+              // Large Floating 3D Image Graphic
+              Expanded(
+                child: Center(
+                  child: widget.imageAsset != null
+                      ? Image.asset(
+                          widget.imageAsset!,
+                          height: 95,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) => Icon(
+                            widget.icon,
+                            color: widget.iconColor,
+                            size: 48,
+                          ),
+                        )
+                      : Icon(
+                          widget.icon,
+                          color: widget.iconColor,
+                          size: 48,
+                        ),
                 ),
               ),
-              
-              // Text Content
+              const SizedBox(height: 8),
+              // Text Content with Badge Styling
               Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    widget.title,
-                    style: GoogleFonts.cairo(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: widget.backgroundColor,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      widget.title,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.cairo(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: widget.iconColor,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Text(
                     widget.description,
                     style: GoogleFonts.cairo(
-                      fontSize: 10,
-                      height: 1.3,
+                      fontSize: 10.5,
+                      height: 1.2,
                       color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
                     ),
+                    textAlign: TextAlign.center,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1783,6 +1835,7 @@ class _VehicleSelectionCard extends StatelessWidget {
   final String title;
   final String description;
   final IconData icon;
+  final String? imageAsset;
   final Color iconColor;
   final bool isSelected;
   final VoidCallback onTap;
@@ -1791,6 +1844,7 @@ class _VehicleSelectionCard extends StatelessWidget {
     required this.title,
     required this.description,
     required this.icon,
+    this.imageAsset,
     required this.iconColor,
     required this.isSelected,
     required this.onTap,
@@ -1801,62 +1855,81 @@ class _VehicleSelectionCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 170,
-        padding: const EdgeInsets.all(16),
+        height: 195,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
             color: isSelected ? iconColor : AppColors.border,
-            width: isSelected ? 2.0 : 1.0,
+            width: isSelected ? 2.5 : 1.0,
           ),
           boxShadow: [
             BoxShadow(
               color: isSelected
-                  ? iconColor.withValues(alpha: 0.08)
-                  : Colors.black.withValues(alpha: 0.02),
-              blurRadius: 12,
+                  ? iconColor.withValues(alpha: 0.15)
+                  : Colors.black.withValues(alpha: 0.03),
+              blurRadius: 16,
+              spreadRadius: isSelected ? 1 : 0,
               offset: const Offset(0, 6),
             ),
           ],
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? iconColor.withValues(alpha: 0.15)
-                    : iconColor.withValues(alpha: 0.05),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                color: iconColor,
-                size: 24,
+            // Large 3D Vehicle Graphic
+            Expanded(
+              child: Center(
+                child: imageAsset != null
+                    ? Image.asset(
+                        imageAsset!,
+                        height: 90,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) => Icon(
+                          icon,
+                          color: iconColor,
+                          size: 44,
+                        ),
+                      )
+                    : Icon(
+                        icon,
+                        color: iconColor,
+                        size: 44,
+                      ),
               ),
             ),
+            const SizedBox(height: 6),
             Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: GoogleFonts.cairo(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? iconColor.withValues(alpha: 0.15)
+                        : AppColors.background,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.cairo(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                      color: isSelected ? iconColor : AppColors.textPrimary,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   description,
                   style: GoogleFonts.cairo(
-                    fontSize: 10.5,
-                    height: 1.3,
+                    fontSize: 10,
+                    height: 1.2,
                     color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w500,
                   ),
+                  textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),

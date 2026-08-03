@@ -25,7 +25,42 @@
   <!-- Mobile Overlay -->
   <div class="overlay" id="overlay"></div>
 
-  <div class="app-layout">
+  <!-- Login Screen Overlay -->
+  <div class="login-screen" id="loginScreen">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo">iR</div>
+        <h2>لوحة التحكم | inRide</h2>
+        <p>تسجيل الدخول إلى حساب الإدارة</p>
+      </div>
+
+      <div class="login-alert alert-danger" id="loginAlert" style="display: none;"></div>
+
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label for="loginEmail">البريد الإلكتروني</label>
+          <div class="input-wrapper">
+            <i class="ri-mail-line"></i>
+            <input type="email" id="loginEmail" placeholder="romanygoerge48@gmail.com" required dir="ltr">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="loginPassword">كلمة المرور</label>
+          <div class="input-wrapper">
+            <i class="ri-lock-line"></i>
+            <input type="password" id="loginPassword" placeholder="••••••••••••" required dir="ltr">
+          </div>
+        </div>
+
+        <button type="submit" class="login-btn" id="loginSubmitBtn">
+          <span id="loginSubmitText">تسجيل الدخول</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="app-layout hidden-layout">
     <!-- ============================================
          SIDEBAR
          ============================================ -->

@@ -72,9 +72,9 @@
 		<string>remote-notification</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>نحتاج للوصول إلى الكاميرا لالتقاط صورتك الشخصية وتحديث حسابك.</string>
+	<string>نحتاج للوصول إلى الكاميرا لالتقاط الصورة الشخصية، وتصوير إيصالات شحن المحفظة، ورفع وثائق تسجيل السائق.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>نحتاج للوصول إلى معرض الصور لاختيار صورتك الشخصية وتحديث حسابك.</string>
+	<string>نحتاج للوصول إلى معرض الصور لاختيار الصورة الشخصية، وإيصالات الشحن، وثائق تسجيل السائق.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>نحتاج للوصول إلى موقعك الجغرافي لتحديد موقع الركوب والوجهة وتتبع الرحلة.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

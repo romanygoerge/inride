@@ -211,6 +211,73 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
               const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () {
+                  final isArabic = LocaleController.instance.isArabic;
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      title: Row(
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 28),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              isArabic ? 'حذف الحساب نهائياً' : 'Delete Account Permanently',
+                              style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.error),
+                            ),
+                          ),
+                        ],
+                      ),
+                      content: Text(
+                        isArabic
+                            ? 'هل أنت تأكد من رغبتك في حذف حسابك؟ وسيؤدي هذا إلى إلغاء جميع بياناتك وسجلات رحلاتك ورصيد محفظتك نهائياً طبقاً لسياسات الخصوصية.'
+                            : 'Are you sure you want to delete your account? This will permanently delete your profile, trip history, and wallet balance in accordance with store privacy policies.',
+                        style: GoogleFonts.cairo(fontSize: 13, color: AppColors.textPrimary),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: Text(isArabic ? 'إلغاء' : 'Cancel', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                        ),
+                        ElevatedButton(
+                          onPressed: () async {
+                            Navigator.pop(ctx);
+                            try {
+                              final uid = GlobalState.instance.userUid;
+                              if (uid != null) {
+                                await GlobalState.instance.deleteUserAccount();
+                              }
+                            } catch (_) {}
+                            GlobalState.instance.reset();
+                            if (context.mounted) {
+                              Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.error,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: Text(isArabic ? 'تأكيد الحذف' : 'Confirm Delete', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.delete_forever_outlined, color: AppColors.error, size: 18),
+                label: Text(
+                  LocaleController.instance.isArabic ? 'حذف الحساب والبيانات' : 'Delete Account & Data',
+                  style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.error),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: AppColors.error.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 12),
               Center(
                 child: Text(
                   '${l10n.version} 1.0.0 (2026)',

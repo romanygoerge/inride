@@ -1048,7 +1048,9 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                             }
                                           } else if (state.rideStatus == RideStatus.tripStarted) {
                                             if (_isCompleting) return;
-                                            _isCompleting = true;
+                                            setState(() {
+                                              _isCompleting = true;
+                                            });
                                             if (state.currentServiceType == 'delivery') {
                                               showDialog<String>(
                                                 context: context,
@@ -1059,14 +1061,28 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                                 ),
                                               ).then((photoUrl) async {
                                                 if (photoUrl != null && photoUrl.isNotEmpty) {
-                                                  await state.submitDeliveryPhoto(photoUrl);
-                                                  await state.completeTrip();
+                                                  try {
+                                                    await state.submitDeliveryPhoto(photoUrl);
+                                                    await state.completeTrip();
+                                                    if (mounted) setState(() { _lastRideStatus = RideStatus.completed; });
+                                                  } catch (e) {
+                                                    debugPrint('Error completing delivery trip: $e');
+                                                  } finally {
+                                                    if (mounted) setState(() { _isCompleting = false; });
+                                                  }
                                                 } else {
-                                                  _isCompleting = false;
+                                                  if (mounted) setState(() { _isCompleting = false; });
                                                 }
                                               });
                                             } else {
-                                              await state.completeTrip();
+                                              try {
+                                                await state.completeTrip();
+                                                if (mounted) setState(() { _lastRideStatus = RideStatus.completed; });
+                                              } catch (e) {
+                                                debugPrint('Error completing trip: $e');
+                                              } finally {
+                                                if (mounted) setState(() { _isCompleting = false; });
+                                              }
                                             }
                                           }
                                         },

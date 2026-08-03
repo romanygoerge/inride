@@ -2,8 +2,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/supabase_config.dart';
 import 'core/localization/locale_controller.dart';
+import 'core/router/admin_router.dart';
 import 'generated/app_localizations.dart';
 
 import 'core/theme/app_theme.dart';
@@ -115,14 +117,41 @@ void main() async {
     }
   }
   await di.init();
-  runApp(const InRideApp());
+  runApp(
+    const ProviderScope(
+      child: InRideApp(),
+    ),
+  );
 }
 
-class InRideApp extends StatelessWidget {
+class InRideApp extends ConsumerWidget {
   const InRideApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (kIsWeb) {
+      final router = ref.watch(adminRouterProvider);
+      return ListenableBuilder(
+        listenable: LocaleController.instance,
+        builder: (context, _) {
+          return MaterialApp.router(
+            routerConfig: router,
+            title: 'inRide Admin Dashboard',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.lightTheme,
+            locale: LocaleController.instance.locale,
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: const [
+              AppLocalizations.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+          );
+        },
+      );
+    }
+
     return ListenableBuilder(
       listenable: LocaleController.instance,
       builder: (context, _) {

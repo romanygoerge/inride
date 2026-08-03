@@ -903,8 +903,49 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     }
   ];
 
-  List<Map<String, dynamic>> get activePaymentMethods =>
-      paymentMethods.where((pm) => pm['is_active'] == true).toList();
+  List<Map<String, dynamic>> get activePaymentMethods {
+    final list = paymentMethods.where((pm) {
+      final active = pm['is_active'];
+      if (active == null) return true;
+      if (active is bool) return active;
+      if (active is num) return active == 1;
+      if (active is String) return active.toLowerCase() == 'true' || active == '1';
+      return true;
+    }).toList();
+    if (list.isEmpty) {
+      return [
+        {
+          'id': '1',
+          'name': 'إنستا باي (InstaPay)',
+          'code': 'instapay',
+          'account_details': officialInstaPayNumber,
+          'is_active': true,
+        },
+        {
+          'id': '2',
+          'name': 'فودافون كاش',
+          'code': 'vodafone_cash',
+          'account_details': officialInstaPayNumber,
+          'is_active': true,
+        },
+        {
+          'id': '3',
+          'name': 'تحويل بنكي',
+          'code': 'bank_transfer',
+          'account_details': 'EG00000000000000000000',
+          'is_active': true,
+        },
+        {
+          'id': '4',
+          'name': 'نقداً (كاش)',
+          'code': 'cash',
+          'account_details': 'الدفع نقداً في المقر أو مع السائق',
+          'is_active': true,
+        }
+      ];
+    }
+    return list;
+  }
 
   static const String officialInstaPayNumber = '01204062941';
 
@@ -1931,6 +1972,12 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         currentPickupPhotoUrl = request.pickupPhotoUrl;
         currentDeliveryPhotoUrl = request.deliveryPhotoUrl;
         
+        // Prevent status regression if ride is already completed
+        if (rideStatus == RideStatus.completed && request.status != 'Cancelled' && request.status != 'cancelled') {
+          debugPrint('[Ride] Ignoring status update (${request.status}) because ride is already completed');
+          return;
+        }
+
         if (request.status == 'Pending' || request.status == 'Searching') {
           rideStatus = RideStatus.searching;
         } else if (request.status == 'Accepted') {
@@ -2708,6 +2755,12 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           // (unless we don't have a current request yet - fresh accept)
           if (currentRequestId != null && currentRequestId != reqId) continue;
 
+          // Prevent status regression if ride is already completed
+          if (rideStatus == RideStatus.completed && status != 'Cancelled' && status != 'cancelled') {
+            debugPrint('[DriverAssignedRides] Ignoring status update ($status) for completed ride $reqId');
+            continue;
+          }
+
           if (status == 'Accepted' || status == 'DriverArriving' || status == 'TripStarted') {
             currentRequestId = reqId;
             activePassengerId = map['passenger_id'] as String?;
@@ -2724,6 +2777,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
               rideStatus = RideStatus.tripStarted;
             }
             notifyListeners();
+          } else if (status == 'Completed' || status == 'completed') {
+            if (rideStatus != RideStatus.completed) {
+              rideStatus = RideStatus.completed;
+              notifyListeners();
+            }
           } else if (status == 'Cancelled' || status == 'cancelled') {
             if (currentRequestId == reqId) {
               rideStatus = RideStatus.cancelled;
@@ -3023,6 +3081,38 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         await _supabase.from('passengers').update({'name': newName}).eq('id', userUid!);
       }
       await _supabase.from('users').update({'name': newName}).eq('id', userUid!);
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateAddress(String newAddress) async {
+    final trimmed = newAddress.trim();
+    if (userUid != null) {
+      passengerAddress = trimmed;
+      driverAddress = trimmed;
+
+      try {
+        await _supabase.from('users').update({'address': trimmed}).eq('id', userUid!);
+      } catch (e) {
+        debugPrint('[GlobalState] updateAddress users table error: $e');
+      }
+
+      if (currentRole == UserRole.rider || hasPassengerProfile) {
+        try {
+          await _supabase.from('passengers').update({'address': trimmed}).eq('id', userUid!);
+        } catch (e) {
+          debugPrint('[GlobalState] updateAddress passengers table error: $e');
+        }
+      }
+
+      if (currentRole == UserRole.driver || verificationStatus != DriverVerificationStatus.unregistered) {
+        try {
+          await _supabase.from('drivers').update({'address': trimmed}).eq('id', userUid!);
+        } catch (e) {
+          debugPrint('[GlobalState] updateAddress drivers table error: $e');
+        }
+      }
+
       notifyListeners();
     }
   }
@@ -3349,6 +3439,20 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     final random = Random.secure();
     final values = List<int>.generate(16, (i) => random.nextInt(256));
     return values.map((e) => e.toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  Future<void> deleteUserAccount() async {
+    final uid = userUid;
+    if (uid == null) return;
+    try {
+      await _supabase.from('users').delete().eq('id', uid);
+      try {
+        await _supabase.from('profiles').delete().eq('id', uid);
+      } catch (_) {}
+      await _supabase.auth.signOut();
+    } catch (e) {
+      debugPrint('[GlobalState] Error deleting account: $e');
+    }
   }
 }
 

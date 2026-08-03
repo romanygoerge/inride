@@ -24,11 +24,6 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isEditingName = false;
   late TextEditingController _nameController;
 
-  // Advertising & App Options toggles
-  bool _receivePromos = true;
-  bool _personalizedAds = true;
-  bool _partnerAlerts = false;
-
   final List<String> avatarPresets = [
     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200',
     'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=200',
@@ -440,6 +435,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         icon: Icons.location_on_outlined,
                         label: isArabic ? 'العنوان المسجل' : 'Registered Address',
                         value: (isRider ? state.passengerAddress : state.driverAddress) ?? state.driverAddress ?? state.passengerAddress ?? (isArabic ? 'غير محدد' : 'Not set'),
+                        onEdit: () => _showEditAddressDialog(context, state),
                       ),
                       const Divider(color: AppColors.border, height: 16),
                       _buildInfoTile(
@@ -491,6 +487,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           icon: Icons.home_outlined,
                           label: isArabic ? 'العنوان المفضل' : 'Preferred Address',
                           value: state.passengerAddress ?? (isArabic ? 'القاهرة، مصر' : 'Cairo, Egypt'),
+                          onEdit: () => _showEditAddressDialog(context, state),
                         ),
                       ],
                     ],
@@ -562,9 +559,9 @@ class _ProfilePageState extends State<ProfilePage> {
               ],
               const SizedBox(height: 24),
 
-              // 3. Settings / Options / Ads
+              // 3. Settings / Options
               Text(
-                isArabic ? 'خيارات التطبيق والإعلان' : 'App & Advertising Options',
+                isArabic ? 'إعدادات التطبيق' : 'App Settings',
                 style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 10),
@@ -575,84 +572,11 @@ class _ProfilePageState extends State<ProfilePage> {
                   borderRadius: BorderRadius.circular(16),
                   side: const BorderSide(color: AppColors.border),
                 ),
-                child: Column(
-                  children: [
-                    _buildSettingsTile(
-                      icon: Icons.language_outlined,
-                      title: l10n.language,
-                      trailing: LocaleController.instance.isArabic ? 'العربية (مصر)' : 'English (US)',
-                      onTap: () => _showLanguageDialog(context),
-                    ),
-                    const Divider(color: AppColors.border, height: 1),
-                    _buildSettingsTile(
-                      icon: Icons.notifications_none_outlined,
-                      title: isArabic ? 'إعدادات الإشعارات' : 'Notification Settings',
-                    ),
-                    const Divider(color: AppColors.border, height: 1),
-                    _buildSettingsTile(
-                      icon: Icons.verified_user_outlined,
-                      title: isArabic ? 'الأمان والخصوصية' : 'Security & Privacy',
-                    ),
-                    if (isRider) ...[
-                      const Divider(color: AppColors.border, height: 1),
-                      SwitchListTile(
-                        activeTrackColor: AppColors.mediumBlue.withValues(alpha: 0.3),
-                        activeThumbColor: AppColors.mediumBlue,
-                        title: Text(
-                          isArabic ? 'تلقي العروض الترويجية والإعلانات' : 'Receive Promotional Offers & Ads',
-                          style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-                        ),
-                        subtitle: Text(
-                          isArabic ? 'تلقي إشعارات بالخصومات والعروض الحصرية' : 'Receive notifications for discounts & exclusive offers',
-                          style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
-                        ),
-                        value: _receivePromos,
-                        onChanged: (val) {
-                          setState(() {
-                            _receivePromos = val;
-                          });
-                        },
-                      ),
-                      const Divider(color: AppColors.border, height: 1),
-                      SwitchListTile(
-                        activeTrackColor: AppColors.mediumBlue.withValues(alpha: 0.3),
-                        activeThumbColor: AppColors.mediumBlue,
-                        title: Text(
-                          isArabic ? 'إعلانات مخصصة حسب اهتماماتك' : 'Personalized Ads',
-                          style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-                        ),
-                        subtitle: Text(
-                          isArabic ? 'تحسين تجربة الإعلانات لتلائم احتياجاتك' : 'Tailor advertising experience to match your interests',
-                          style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
-                        ),
-                        value: _personalizedAds,
-                        onChanged: (val) {
-                          setState(() {
-                            _personalizedAds = val;
-                          });
-                        },
-                      ),
-                      const Divider(color: AppColors.border, height: 1),
-                      SwitchListTile(
-                        activeTrackColor: AppColors.mediumBlue.withValues(alpha: 0.3),
-                        activeThumbColor: AppColors.mediumBlue,
-                        title: Text(
-                          isArabic ? 'إشعارات وتنبيهات الشركاء' : 'Partner Alerts & Notifications',
-                          style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-                        ),
-                        subtitle: Text(
-                          isArabic ? 'تلقي إعلانات وتحديثات من شركائنا الموثوقين' : 'Receive announcements & updates from trusted partners',
-                          style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
-                        ),
-                        value: _partnerAlerts,
-                        onChanged: (val) {
-                          setState(() {
-                            _partnerAlerts = val;
-                          });
-                        },
-                      ),
-                    ],
-                  ],
+                child: _buildSettingsTile(
+                  icon: Icons.language_outlined,
+                  title: l10n.language,
+                  trailing: LocaleController.instance.isArabic ? 'العربية (مصر)' : 'English (US)',
+                  onTap: () => _showLanguageDialog(context),
                 ),
               ),
               const SizedBox(height: 20),
@@ -668,32 +592,168 @@ class _ProfilePageState extends State<ProfilePage> {
     required String label,
     required String value,
     Color? valueColor,
+    VoidCallback? onEdit,
   }) {
+    final isArabic = LocaleController.instance.isArabic;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
           Icon(icon, color: AppColors.textLight, size: 20),
           const SizedBox(width: 14),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
-              ),
-              Text(
-                value,
-                style: GoogleFonts.cairo(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: valueColor ?? AppColors.textPrimary,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
                 ),
-              ),
-            ],
+                Text(
+                  value,
+                  style: GoogleFonts.cairo(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: valueColor ?? AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
           ),
+          if (onEdit != null)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, color: AppColors.mediumBlue, size: 20),
+              onPressed: onEdit,
+              tooltip: isArabic ? 'تعديل' : 'Edit',
+            ),
         ],
       ),
+    );
+  }
+
+  void _showEditAddressDialog(BuildContext context, GlobalState state) {
+    final isRider = state.currentRole == UserRole.rider;
+    final currentAddress = (isRider ? state.passengerAddress : state.driverAddress) ??
+        state.driverAddress ??
+        state.passengerAddress ??
+        '';
+    final controller = TextEditingController(text: currentAddress);
+    final isArabic = LocaleController.instance.isArabic;
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Row(
+                children: [
+                  const Icon(Icons.location_on_outlined, color: AppColors.mediumBlue),
+                  const SizedBox(width: 8),
+                  Text(
+                    isArabic ? 'تعديل العنوان' : 'Edit Address',
+                    style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isArabic ? 'أدخل عنوانك (المدينة، المنطقة، الشارع):' : 'Enter your address:',
+                    style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      hintText: isArabic ? 'مثال: القاهرة، مدينة نصر' : 'e.g. Cairo, Nasr City',
+                      hintStyle: GoogleFonts.cairo(fontSize: 13, color: AppColors.textLight),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
+                    style: GoogleFonts.cairo(fontSize: 14),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving ? null : () => Navigator.pop(dialogCtx),
+                  child: Text(
+                    isArabic ? 'إلغاء' : 'Cancel',
+                    style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          final newAddress = controller.text.trim();
+                          if (newAddress.isEmpty) return;
+                          final messenger = ScaffoldMessenger.of(context);
+                          final dialogNavigator = Navigator.of(dialogCtx);
+                          setDialogState(() {
+                            isSaving = true;
+                          });
+                          try {
+                            await state.updateAddress(newAddress);
+                            if (dialogCtx.mounted) {
+                              dialogNavigator.pop();
+                            }
+                            if (mounted) {
+                              setState(() {});
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    isArabic ? 'تم تحديث العنوان بنجاح!' : 'Address updated successfully!',
+                                    style: GoogleFonts.cairo(),
+                                  ),
+                                  backgroundColor: AppColors.success,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            setDialogState(() {
+                              isSaving = false;
+                            });
+                            if (dialogCtx.mounted) {
+                              ScaffoldMessenger.of(dialogCtx).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    isArabic ? 'فشل تحديث العنوان: $e' : 'Failed to update address: $e',
+                                    style: GoogleFonts.cairo(),
+                                  ),
+                                  backgroundColor: AppColors.error,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.mediumBlue,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : Text(
+                          isArabic ? 'حفظ' : 'Save',
+                          style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

@@ -28,6 +28,11 @@ let isSyncStarted = false;
 function showLoginAlert(message, type = 'danger') {
   const alertEl = document.getElementById('loginAlert');
   if (!alertEl) return;
+  if (!message || message.trim() === '') {
+    alertEl.style.display = 'none';
+    alertEl.innerHTML = '';
+    return;
+  }
   alertEl.className = `login-alert alert-${type}`;
   alertEl.innerHTML = `<i class="ri-error-warning-line"></i> <span>${message}</span>`;
   alertEl.style.display = 'flex';
@@ -42,17 +47,36 @@ function clearLoginAlert() {
 }
 
 function showLoginView(message = null, type = 'danger') {
-  showDashboardView();
-}
-
-function showDashboardView() {
   const loginScreen = document.getElementById('loginScreen');
   const appLayout = document.querySelector('.app-layout');
 
-  if (loginScreen) loginScreen.style.display = 'none';
+  if (appLayout) {
+    appLayout.classList.add('hidden-layout');
+    appLayout.style.setProperty('display', 'none', 'important');
+  }
+  if (loginScreen) {
+    loginScreen.classList.remove('hidden-login');
+    loginScreen.style.setProperty('display', 'flex', 'important');
+  }
+  if (message && message.trim() !== '') {
+    showLoginAlert(message, type);
+  } else {
+    clearLoginAlert();
+  }
+}
+
+function showDashboardView() {
+  clearLoginAlert();
+  const loginScreen = document.getElementById('loginScreen');
+  const appLayout = document.querySelector('.app-layout');
+
+  if (loginScreen) {
+    loginScreen.classList.add('hidden-login');
+    loginScreen.style.setProperty('display', 'none', 'important');
+  }
   if (appLayout) {
     appLayout.classList.remove('hidden-layout');
-    appLayout.style.display = 'flex';
+    appLayout.style.setProperty('display', 'flex', 'important');
   }
 }
 
@@ -64,27 +88,67 @@ async function verifyAndApplyAdminSession(session) {
 
   try {
     const userId = session.user.id;
+    const userEmail = (session.user.email || '').toLowerCase().trim();
 
-    // Retrieve authenticated user profile from 'users' table
-    let { data: userProfile, error } = await supabaseClient
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+    // 1. Query admins table by email
+    let adminRecord = null;
+    try {
+      const { data: byEmail } = await supabaseClient
+        .from('admins')
+        .select('*')
+        .eq('email', userEmail)
+        .maybeSingle();
+      adminRecord = byEmail;
+    } catch (_) {}
 
-    if (error) {
-      console.warn("Error fetching user profile:", error);
+    // 2. Fallback query by auth_user_id
+    if (!adminRecord) {
+      try {
+        const { data: byId } = await supabaseClient
+          .from('admins')
+          .select('*')
+          .eq('auth_user_id', userId)
+          .maybeSingle();
+        adminRecord = byId;
+      } catch (_) {}
     }
 
-    currentAdminUser = session.user;
-    currentAdminProfile = userProfile || {
-      id: userId,
-      name: session.user.email ? session.user.email.split('@')[0] : 'مدير النظام',
-      role: 'admin',
-      email: session.user.email
-    };
+    if (!adminRecord) {
+      console.warn("No matching admin record found in admins table.");
+      await supabaseClient.auth.signOut();
+      showLoginView("عفواً، هذا الحساب غير مسجل كمدير للنظام (Access Denied).");
+      return false;
+    }
 
+    if (!adminRecord.is_active) {
+      await supabaseClient.auth.signOut();
+      showLoginView("عفواً، تم إيقاف حساب المدير الخاص بك.");
+      return false;
+    }
+
+    // Sync auth_user_id if not set
+    if (adminRecord.auth_user_id !== userId) {
+      try {
+        await supabaseClient
+          .from('admins')
+          .update({ auth_user_id: userId })
+          .eq('id', adminRecord.id);
+        adminRecord.auth_user_id = userId;
+      } catch (_) {}
+    }
+
+    // Update last_login
+    try {
+      await supabaseClient
+        .from('admins')
+        .update({ last_login: new Date().toISOString() })
+        .eq('id', adminRecord.id);
+    } catch (_) {}
+
+    currentAdminUser = session.user;
+    currentAdminProfile = adminRecord;
     isAuthenticatedAdmin = true;
+
     showDashboardView();
 
     // Update UI sidebar user details
@@ -92,19 +156,23 @@ async function verifyAndApplyAdminSession(session) {
     const userEmailEl = document.getElementById('sidebarUserEmail');
     const userAvatarEl = document.getElementById('sidebarUserAvatar');
 
-    if (userNameEl) userNameEl.textContent = currentAdminProfile.name || 'مدير النظام';
-    if (userEmailEl) userEmailEl.textContent = session.user.email || 'admin@inride.com';
-    if (userAvatarEl) userAvatarEl.textContent = (currentAdminProfile.name || 'م').charAt(0).toUpperCase();
+    if (userNameEl) userNameEl.textContent = adminRecord.name || 'مدير النظام';
+    if (userEmailEl) userEmailEl.textContent = session.user.email || adminRecord.email;
+    if (userAvatarEl) userAvatarEl.textContent = (adminRecord.name || 'م').charAt(0).toUpperCase();
 
     if (!isSyncStarted) {
       isSyncStarted = true;
-      initSupabaseSync();
-      initDriversRealtimeSync();
+      try { initSupabaseSync(); } catch (_) {}
+      try { initDriversRealtimeSync(); } catch (_) {}
     }
 
-    const savedPage = sessionStorage.getItem('admin_currentPage') || 'dashboard';
-    renderPage(savedPage);
-    updateHeaderTitle(savedPage);
+    try {
+      const savedPage = sessionStorage.getItem('admin_currentPage') || 'dashboard';
+      if (typeof renderPage === 'function') renderPage(savedPage);
+      if (typeof updateHeaderTitle === 'function') updateHeaderTitle(savedPage);
+    } catch (e) {
+      console.warn("Error rendering dashboard view:", e);
+    }
 
     return true;
   } catch (err) {
@@ -293,17 +361,15 @@ async function handleLogin(event) {
 
     if (error) {
       console.error("Login error from Supabase Auth:", error);
-      let errorMsg = "حدث خطأ أثناء تسجيل الدخول.";
+      let errorMsg = "بيانات الدخول غير صحيحة. يرجى التأكد من البريد الإلكتروني وكلمة المرور.";
       
       const msg = (error.message || '').toLowerCase();
-      if (msg.includes('invalid login credentials') || msg.includes('invalid credentials') || msg.includes('user not found') || msg.includes('wrong password')) {
-        errorMsg = "بيانات الدخول غير صحيحة. يرجى التأكد من البريد الإلكتروني وكلمة المرور.";
-      } else if (msg.includes('invalid email') || msg.includes('unable to validate email address')) {
-        errorMsg = "صيغة البريد الإلكتروني غير صحيحة.";
-      } else if (msg.includes('network') || msg.includes('failed to fetch') || msg.includes('rate limit')) {
-        errorMsg = "تعذر الاتصال بالخادم. يرجى التأكد من الاتصال بالإنترنت والمحاولة مجدداً.";
-      } else {
-        errorMsg = "خطأ في تسجيل الدخول: " + error.message;
+      if (msg.includes('email not confirmed')) {
+        errorMsg = "لم يتم تأكيد البريد الإلكتروني بعد. يرجى مراجعة البريد أو إيقاف Confirm Email في Supabase Auth Settings.";
+      } else if (msg.includes('invalid login credentials') || msg.includes('invalid credentials') || msg.includes('user not found') || msg.includes('wrong password')) {
+        errorMsg = "كلمة المرور أو البريد الإلكتروني غير صحيح. يرجى التأكد من كلمة المرور التي أدخلتها عند إنشاء الحساب في Supabase.";
+      } else if (msg.includes('network') || msg.includes('failed to fetch')) {
+        errorMsg = "تعذر الاتصال بسيرفر Supabase. يرجى التأكد من الاتصال بالإنترنت.";
       }
 
       showLoginAlert(errorMsg, "danger");
@@ -338,24 +404,18 @@ async function handleLogout() {
 }
 
 async function initAdminAuth() {
-  showDashboardView();
-
-  const userNameEl = document.getElementById('sidebarUserName');
-  const userEmailEl = document.getElementById('sidebarUserEmail');
-  const userAvatarEl = document.getElementById('sidebarUserAvatar');
-
-  if (userNameEl) userNameEl.textContent = 'مدير النظام';
-  if (userEmailEl) userEmailEl.textContent = 'admin@inride.com';
-  if (userAvatarEl) userAvatarEl.textContent = 'م';
-
-  if (!isSyncStarted) {
-    isSyncStarted = true;
-    initSupabaseSync();
-    initDriversRealtimeSync();
+  if (supabaseClient && supabaseClient.auth) {
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      if (data && data.session) {
+        const success = await verifyAndApplyAdminSession(data.session);
+        if (success) return;
+      }
+    } catch (e) {
+      console.warn("Session check error:", e);
+    }
   }
-
-  const savedPage = sessionStorage.getItem('admin_currentPage') || 'dashboard';
-  navigateTo(savedPage);
+  showLoginView();
 }
 
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
@@ -3846,7 +3906,7 @@ async function sendCommChatMessage() {
     const bubble = document.createElement('div');
     bubble.className = 'comm-bubble-wrapper admin';
     bubble.innerHTML = `
-      <div class="comm-bubble">${msgText}</div>
+      <div class="comm-bubble" style="background:#E0F2FE !important; color:#000000 !important; border:1px solid #BAE6FD !important; font-weight:700;">${msgText}</div>
       <div class="comm-bubble-meta"><i class="ri-check-double-line text-blue"></i> الدعم الفني • ${nowStr}</div>
     `;
     container.appendChild(bubble);
@@ -6209,7 +6269,7 @@ async function renderTicketChatHtmlAsync() {
 
           return `
             <div style="align-self:${isAdmin ? 'flex-end' : 'flex-start'};max-width:75%;">
-              <div style="padding:10px 16px;border-radius:var(--radius-md);background:${isAdmin ? 'var(--medium-blue)' : 'white'};color:${isAdmin ? 'white' : 'var(--text-primary)'};box-shadow:var(--shadow-sm);font-size:13px;border:${isAdmin ? 'none' : '1px solid var(--border-color)'};">
+              <div style="padding:10px 16px;border-radius:var(--radius-md);background:${isAdmin ? '#E0F2FE' : '#FFFFFF'};color:#000000;box-shadow:var(--shadow-sm);font-size:13.5px;font-weight:700;border:${isAdmin ? '1px solid #BAE6FD' : '1px solid #CBD5E1'};">
                 ${escapeHtml(text)}
               </div>
               <div style="font-size:10px;color:var(--text-light);text-align:${isAdmin ? 'left' : 'right'};margin-top:4px;display:flex;align-items:center;justify-content:${isAdmin ? 'flex-start' : 'flex-end'};gap:4px;">
@@ -8275,7 +8335,7 @@ async function renderSupabaseProfileChat(uid) {
         
         html += `
           <div style="align-self: ${isSupport ? 'flex-end' : 'flex-start'}; max-width: 75%; margin-bottom: 12px; display: flex; flex-direction: column;">
-            <div style="padding: 10px 14px; border-radius: var(--radius-md); background: ${isSupport ? 'var(--medium-blue)' : 'white'}; color: ${isSupport ? 'white' : 'var(--text-primary)'}; box-shadow: var(--shadow-sm); font-size: 13px; border: ${isSupport ? 'none' : '1px solid var(--border-color)'};">
+            <div style="padding: 10px 14px; border-radius: var(--radius-md); background: ${isSupport ? '#E0F2FE' : '#FFFFFF'}; color: #000000; box-shadow: var(--shadow-sm); font-size: 13.5px; font-weight: 700; border: ${isSupport ? '1px solid #BAE6FD' : '1px solid #CBD5E1'};">
               ${text}
             </div>
             <div style="font-size: 10px; color: var(--text-light); text-align: ${isSupport ? 'left' : 'right'}; margin-top: 4px; display:flex; align-items:center; justify-content:${isSupport ? 'flex-start' : 'flex-end'}; gap:4px;">
@@ -8314,7 +8374,7 @@ function renderLocalProfileChat(uid) {
     const time = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString('ar-EG', {hour: '2-digit', minute:'2-digit'}) : '';
     html += `
       <div style="align-self: ${isSupport ? 'flex-end' : 'flex-start'}; max-width: 75%; margin-bottom: 12px; display: flex; flex-direction: column;">
-        <div style="padding: 10px 14px; border-radius: var(--radius-md); background: ${isSupport ? 'var(--medium-blue)' : 'white'}; color: ${isSupport ? 'white' : 'var(--text-primary)'}; box-shadow: var(--shadow-sm); font-size: 13px; border: ${isSupport ? 'none' : '1px solid var(--border-color)'};">
+        <div style="padding: 10px 14px; border-radius: var(--radius-md); background: ${isSupport ? '#E0F2FE' : '#FFFFFF'}; color: #000000; box-shadow: var(--shadow-sm); font-size: 13.5px; font-weight: 700; border: ${isSupport ? '1px solid #BAE6FD' : '1px solid #CBD5E1'};">
           ${msg.text}
         </div>
         <div style="font-size: 10px; color: var(--text-light); text-align: ${isSupport ? 'left' : 'right'}; margin-top: 4px;">

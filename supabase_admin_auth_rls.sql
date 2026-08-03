@@ -1,183 +1,115 @@
 -- ====================================================================
--- INRIDE ADMIN DASHBOARD AUTHENTICATION & ROW LEVEL SECURITY (RLS) POLICIES
+-- SUPABASE SQL MIGRATION: ADMIN AUTHENTICATION & RLS SECURITY POLICIES
 -- ====================================================================
--- Run this entire script in the Supabase SQL Editor:
--- Dashboard -> SQL Editor -> New Query -> Run
+-- Description: Creates clean `admins` table, enables RLS, allows authenticated
+-- users to query `admins` by email or auth_user_id, and inserts Super Admin.
 -- ====================================================================
 
--- 1. Ensure `role` column constraint in `public.users` permits 'admin'
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-          AND table_name = 'users' 
-          AND column_name = 'role'
-    ) THEN
-        ALTER TABLE public.users ADD COLUMN role TEXT DEFAULT 'rider';
-    END IF;
-END $$;
+-- 1. DROP EXISTING TABLE AND ALL LEGACY CONSTRAINTS
+DROP TABLE IF EXISTS public.admins CASCADE;
 
-CREATE INDEX IF NOT EXISTS idx_users_role ON public.users(role);
+-- 2. CREATE CLEAN ADMINS TABLE
+CREATE TABLE public.admins (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    auth_user_id UUID,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL CHECK (role IN ('super_admin', 'admin')) DEFAULT 'admin',
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    last_login TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
--- 2. Helper function to check if current authenticated user is an Admin
-CREATE OR REPLACE FUNCTION public.is_admin()
+-- 3. CREATE PERFORMANCE INDEXES
+CREATE INDEX idx_admins_auth_user_id ON public.admins(auth_user_id);
+CREATE INDEX idx_admins_email ON public.admins(email);
+CREATE INDEX idx_admins_is_active ON public.admins(is_active);
+CREATE INDEX idx_admins_role ON public.admins(role);
+
+-- 4. HELPER SECURITY DEFINER FUNCTIONS (STABLE & SECURE)
+CREATE OR REPLACE FUNCTION public.is_active_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
   RETURN EXISTS (
     SELECT 1 
-    FROM public.users 
-    WHERE id = auth.uid() 
-      AND role = 'admin'
+    FROM public.admins 
+    WHERE (auth_user_id = auth.uid() OR LOWER(email) = LOWER(auth.jwt() ->> 'email'))
+      AND is_active = true
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 
--- ====================================================================
--- 3. ENABLE ROW LEVEL SECURITY (RLS) ON ALL TABLES
--- ====================================================================
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.passengers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.drivers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.vehicles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.trips ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ride_requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.wallets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.admin_notifications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.admin_notification_receipts ENABLE ROW LEVEL SECURITY;
+CREATE OR REPLACE FUNCTION public.is_super_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 
+    FROM public.admins 
+    WHERE (auth_user_id = auth.uid() OR LOWER(email) = LOWER(auth.jwt() ->> 'email'))
+      AND role = 'super_admin'
+      AND is_active = true
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 
--- Create missing administrative tables if not existing
-CREATE TABLE IF NOT EXISTS public.admin_notifications (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title TEXT NOT NULL,
-    message TEXT NOT NULL,
-    target_type TEXT DEFAULT 'all',
-    type TEXT DEFAULT 'admin_notifications',
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- 5. ENABLE ROW LEVEL SECURITY (RLS)
+ALTER TABLE public.admins ENABLE ROW LEVEL SECURITY;
 
-CREATE TABLE IF NOT EXISTS public.admin_notification_receipts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    notification_id UUID REFERENCES public.admin_notifications(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
-    read_at TIMESTAMPTZ DEFAULT NOW(),
-    admin_id TEXT
-);
+-- 6. CREATE SECURE RLS POLICIES FOR ADMINS TABLE
 
-ALTER TABLE public.admin_notifications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.admin_notification_receipts ENABLE ROW LEVEL SECURITY;
-
--- ====================================================================
--- 4. RLS POLICIES FOR USERS TABLE
--- ====================================================================
-DROP POLICY IF EXISTS "Admins have full access to users" ON public.users;
-CREATE POLICY "Admins have full access to users"
-ON public.users
-FOR ALL
-TO authenticated
-USING (public.is_admin())
-WITH CHECK (public.is_admin());
-
-DROP POLICY IF EXISTS "Users can read own profile" ON public.users;
-CREATE POLICY "Users can read own profile"
-ON public.users
-FOR SELECT
-TO authenticated
-USING (auth.uid() = id);
-
--- ====================================================================
--- 5. RLS POLICIES FOR DRIVERS TABLE
--- ====================================================================
-DROP POLICY IF EXISTS "Admins have full access to drivers" ON public.drivers;
-CREATE POLICY "Admins have full access to drivers"
-ON public.drivers
-FOR ALL
-TO authenticated
-USING (public.is_admin())
-WITH CHECK (public.is_admin());
-
--- ====================================================================
--- 6. RLS POLICIES FOR PASSENGERS TABLE
--- ====================================================================
-DROP POLICY IF EXISTS "Admins have full access to passengers" ON public.passengers;
-CREATE POLICY "Admins have full access to passengers"
-ON public.passengers
-FOR ALL
-TO authenticated
-USING (public.is_admin())
-WITH CHECK (public.is_admin());
-
--- ====================================================================
--- 7. RLS POLICIES FOR VEHICLES TABLE
--- ====================================================================
-DROP POLICY IF EXISTS "Admins have full access to vehicles" ON public.vehicles;
-CREATE POLICY "Admins have full access to vehicles"
-ON public.vehicles
-FOR ALL
-TO authenticated
-USING (public.is_admin())
-WITH CHECK (public.is_admin());
-
--- ====================================================================
--- 8. RLS POLICIES FOR TRIPS TABLE
--- ====================================================================
-DROP POLICY IF EXISTS "Admins have full access to trips" ON public.trips;
-CREATE POLICY "Admins have full access to trips"
-ON public.trips
-FOR ALL
-TO authenticated
-USING (public.is_admin())
-WITH CHECK (public.is_admin());
-
--- ====================================================================
--- 9. RLS POLICIES FOR ADMIN NOTIFICATIONS TABLE
--- ====================================================================
-DROP POLICY IF EXISTS "Admins full access to admin_notifications" ON public.admin_notifications;
-CREATE POLICY "Admins full access to admin_notifications"
-ON public.admin_notifications
-FOR ALL
-TO authenticated
-USING (public.is_admin())
-WITH CHECK (public.is_admin());
-
-DROP POLICY IF EXISTS "Users can view admin notifications" ON public.admin_notifications;
-CREATE POLICY "Users can view admin notifications"
-ON public.admin_notifications
-FOR SELECT
-TO authenticated
+DROP POLICY IF EXISTS "Allow authenticated read admins" ON public.admins;
+CREATE POLICY "Allow authenticated read admins"
+ON public.admins FOR SELECT TO authenticated
 USING (true);
 
--- ====================================================================
--- 10. RLS POLICIES FOR ADMIN NOTIFICATION RECEIPTS TABLE
--- ====================================================================
-DROP POLICY IF EXISTS "Admins full access to receipts" ON public.admin_notification_receipts;
-CREATE POLICY "Admins full access to receipts"
-ON public.admin_notification_receipts
-FOR ALL
-TO authenticated
-USING (public.is_admin())
-WITH CHECK (public.is_admin());
+DROP POLICY IF EXISTS "Admins can update their own profile" ON public.admins;
+CREATE POLICY "Admins can update their own profile"
+ON public.admins FOR UPDATE TO authenticated
+USING (auth_user_id = auth.uid() OR LOWER(email) = LOWER(auth.jwt() ->> 'email'))
+WITH CHECK (auth_user_id = auth.uid() OR LOWER(email) = LOWER(auth.jwt() ->> 'email'));
 
-DROP POLICY IF EXISTS "Users can insert own receipt" ON public.admin_notification_receipts;
-CREATE POLICY "Users can insert own receipt"
-ON public.admin_notification_receipts
-FOR INSERT
-TO authenticated
-WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Super Admins can insert new admins" ON public.admins;
+CREATE POLICY "Super Admins can insert new admins"
+ON public.admins FOR INSERT TO authenticated WITH CHECK (public.is_super_admin());
 
--- ====================================================================
--- 11. ASSIGN ADMINISTRATOR ROLE TO USER UID: d8daab61-f140-4c1d-a90e-2657499c94ad
--- ====================================================================
-INSERT INTO public.users (id, name, email, role, created_at, updated_at)
+DROP POLICY IF EXISTS "Super Admins can delete admins" ON public.admins;
+CREATE POLICY "Super Admins can delete admins"
+ON public.admins FOR DELETE TO authenticated USING (public.is_super_admin());
+
+-- 7. APPLY RLS TO OTHER DASHBOARD TABLES (IF THEY EXIST)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users') THEN
+        ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS "Active Admins full access to users" ON public.users;
+        CREATE POLICY "Active Admins full access to users" ON public.users FOR ALL TO authenticated USING (public.is_active_admin());
+    END IF;
+    
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'drivers') THEN
+        ALTER TABLE public.drivers ENABLE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS "Active Admins full access to drivers" ON public.drivers;
+        CREATE POLICY "Active Admins full access to drivers" ON public.drivers FOR ALL TO authenticated USING (public.is_active_admin());
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'trips') THEN
+        ALTER TABLE public.trips ENABLE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS "Active Admins full access to trips" ON public.trips;
+        CREATE POLICY "Active Admins full access to trips" ON public.trips FOR ALL TO authenticated USING (public.is_active_admin());
+    END IF;
+END $$;
+
+-- 8. INSERT OR UPDATE SUPER ADMIN RECORD FOR romanygoerge48@gmail.com
+INSERT INTO public.admins (auth_user_id, name, email, role, is_active, created_at)
 VALUES (
-    'd8daab61-f140-4c1d-a90e-2657499c94ad',
-    'مدير النظام',
-    'admin@inride.com',
-    'admin',
-    NOW(),
+    'fbf9e436-3ca0-4950-ab0e-11367a24c162',
+    'Romany George',
+    'romanygoerge48@gmail.com',
+    'super_admin',
+    true,
     NOW()
 )
-ON CONFLICT (id) DO UPDATE SET
-    role = 'admin',
-    updated_at = NOW();
-
+ON CONFLICT (email) DO UPDATE SET
+    auth_user_id = EXCLUDED.auth_user_id,
+    role = 'super_admin',
+    is_active = true,
+    name = EXCLUDED.name;

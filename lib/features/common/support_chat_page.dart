@@ -263,7 +263,8 @@ class _SupportChatPageState extends State<SupportChatPage> {
               msg.message,
               style: GoogleFonts.cairo(
                 fontSize: 14,
-                color: isMe ? Colors.white : AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+                color: isMe ? Colors.white : const Color(0xFF0F172A),
               ),
             ),
             const SizedBox(height: 4),

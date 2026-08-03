@@ -170,7 +170,7 @@ class TransactionsListSkeleton extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey[200]!),
+            border: Border.all(color: Colors.grey[200] ?? Colors.grey),
           ),
           child: Row(
             children: [

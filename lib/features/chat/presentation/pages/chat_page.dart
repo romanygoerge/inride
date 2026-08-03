@@ -583,7 +583,8 @@ class _ChatPageState extends State<ChatPage> {
                 msg.text,
                 style: GoogleFonts.cairo(
                   fontSize: 13.5,
-                  color: isMe ? Colors.white : AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  color: isMe ? Colors.white : const Color(0xFF0F172A),
                 ),
               ),
 

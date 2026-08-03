@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
 import '../../shared/widgets/camera_capture_dialog.dart';
@@ -40,17 +41,22 @@ class _WalletPageState extends State<WalletPage> {
   }
 
   void _loadTransactions() async {
-    await GlobalState.instance.fetchWalletTransactions();
-    if (mounted) {
-      setState(() {
-        _isLoadingTransactions = false;
-      });
+    try {
+      await GlobalState.instance.fetchWalletTransactions();
+    } catch (e) {
+      debugPrint('Error loading wallet transactions: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingTransactions = false;
+        });
+      }
     }
   }
 
   void _showChargeDialog(BuildContext context, GlobalState state) {
-    int currentStep = 1; // 1: Method, 2: Amount, 3: InstaPay Details & Receipt Upload
-    String selectedMethod = 'InstaPay';
+    int currentStep = 1; // 1: Method, 2: Amount, 3: Details & Receipt Upload
+    String selectedMethod = 'instapay';
     double selectedAmount = 100.0;
     final customAmountController = TextEditingController();
     bool isCustom = false;
@@ -60,13 +66,37 @@ class _WalletPageState extends State<WalletPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) {
+      builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
+          builder: (dialogContext, setDialogState) {
+            final activeMethods = state.activePaymentMethods.where((pm) => pm['code'] != 'cash').toList();
+            if (activeMethods.isEmpty) {
+              activeMethods.addAll([
+                {
+                  'id': '1',
+                  'name': 'إنستا باي (InstaPay)',
+                  'code': 'instapay',
+                  'account_details': '01204062941',
+                  'is_active': true,
+                },
+                {
+                  'id': '2',
+                  'name': 'فودافون كاش',
+                  'code': 'vodafone_cash',
+                  'account_details': '01000000000',
+                  'is_active': true,
+                },
+              ]);
+            }
+
+            final selectedMethodData = activeMethods.firstWhere(
+              (m) => (m['code'] as String? ?? '').toLowerCase() == selectedMethod.toLowerCase(),
+              orElse: () => activeMethods.first,
+            );
+
             Widget buildStepContent() {
               if (currentStep == 1) {
                 // Step 1: Choose Payment Method
-                final activeMethods = state.activePaymentMethods;
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -76,67 +106,57 @@ class _WalletPageState extends State<WalletPage> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
-                    if (activeMethods.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Text(
-                          isArabic ? 'لا توجد وسائل شحن متاحة حالياً' : 'No top-up methods currently available',
-                          style: GoogleFonts.cairo(color: AppColors.textSecondary),
-                        ),
-                      )
-                    else
-                      ...activeMethods.map((pm) {
-                        final code = pm['code'] as String? ?? 'InstaPay';
-                        final name = pm['name'] as String? ?? 'إنستا باي';
-                        final details = pm['account_details'] as String? ?? '';
-                        final isSelected = selectedMethod.toLowerCase() == code.toLowerCase() ||
-                            (code.toLowerCase() == 'instapay' && selectedMethod == 'InstaPay');
+                    ...activeMethods.map((pm) {
+                      final code = pm['code'] as String? ?? 'instapay';
+                      final name = pm['name'] as String? ?? 'إنستا باي';
+                      final details = pm['account_details'] as String? ?? '';
+                      final isSelected = selectedMethod.toLowerCase() == code.toLowerCase();
 
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          decoration: BoxDecoration(
-                            color: isSelected ? AppColors.mediumBlue.withValues(alpha: 0.08) : Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: isSelected ? AppColors.mediumBlue : AppColors.border,
-                              width: isSelected ? 2 : 1,
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppColors.mediumBlue.withValues(alpha: 0.08) : Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isSelected ? AppColors.mediumBlue : AppColors.border,
+                            width: isSelected ? 2 : 1,
+                          ),
+                        ),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: code == 'instapay'
+                                ? Colors.purple
+                                : (code == 'vodafone_cash' ? Colors.red : AppColors.mediumBlue),
+                            child: Icon(
+                              code == 'instapay'
+                                  ? Icons.account_balance
+                                  : (code == 'vodafone_cash' ? Icons.phone_android : Icons.credit_card),
+                              color: Colors.white,
+                              size: 20,
                             ),
                           ),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: code == 'instapay'
-                                  ? Colors.purple
-                                  : (code == 'vodafone_cash' ? Colors.red : AppColors.mediumBlue),
-                              child: Icon(
-                                code == 'instapay'
-                                    ? Icons.account_balance
-                                    : (code == 'vodafone_cash' ? Icons.phone_android : Icons.credit_card),
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                            ),
-                            title: Text(
-                              name,
-                              style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
-                            ),
-                            subtitle: Text(
-                              details.isNotEmpty
-                                  ? details
-                                  : (isArabic ? 'شحن فوري وآمن' : 'Instant & secure top-up'),
-                              style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
-                            ),
-                            trailing: Icon(
-                              isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                              color: isSelected ? AppColors.mediumBlue : AppColors.textSecondary,
-                            ),
-                            onTap: () {
-                              setDialogState(() {
-                                selectedMethod = code;
-                              });
-                            },
+                          title: Text(
+                            name,
+                            style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
                           ),
-                        );
-                      }),
+                          subtitle: Text(
+                            details.isNotEmpty
+                                ? details
+                                : (isArabic ? 'شحن فوري وآمن' : 'Instant & secure top-up'),
+                            style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
+                          ),
+                          trailing: Icon(
+                            isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                            color: isSelected ? AppColors.mediumBlue : AppColors.textSecondary,
+                          ),
+                          onTap: () {
+                            setDialogState(() {
+                              selectedMethod = code;
+                            });
+                          },
+                        ),
+                      );
+                    }),
                   ],
                 );
               } else if (currentStep == 2) {
@@ -204,9 +224,12 @@ class _WalletPageState extends State<WalletPage> {
                   ],
                 );
               } else {
-                // Step 3: InstaPay Details & Camera Capture
+                // Step 3: Method Details & Receipt Upload
                 final finalAmt = isCustom ? (double.tryParse(customAmountController.text) ?? 0.0) : selectedAmount;
-                const instapayAddr = '01204062941';
+                final methodName = selectedMethodData['name'] as String? ?? 'إنستا باي';
+                final accountNum = (selectedMethodData['account_details'] as String? ?? '').isNotEmpty
+                    ? selectedMethodData['account_details'] as String
+                    : '01204062941';
 
                 return Column(
                   mainAxisSize: MainAxisSize.min,
@@ -219,7 +242,7 @@ class _WalletPageState extends State<WalletPage> {
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      isArabic ? 'يرجى تحويل مبلغ $finalAmt ج.م لرقم إنستا باي الرسمي:' : 'Please transfer $finalAmt EGP to official InstaPay number:',
+                      isArabic ? 'يرجى تحويل مبلغ $finalAmt ج.م لـ ($methodName):' : 'Please transfer $finalAmt EGP to ($methodName):',
                       style: GoogleFonts.cairo(fontSize: 13, color: AppColors.textPrimary),
                       textAlign: TextAlign.center,
                     ),
@@ -237,12 +260,12 @@ class _WalletPageState extends State<WalletPage> {
                         children: [
                           InkWell(
                             onTap: () async {
-                              await Clipboard.setData(const ClipboardData(text: instapayAddr));
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
+                              await Clipboard.setData(ClipboardData(text: accountNum));
+                              if (dialogContext.mounted) {
+                                ScaffoldMessenger.of(dialogContext).showSnackBar(
                                   SnackBar(
                                     content: Text(
-                                      isArabic ? 'تم نسخ رقم إنستا باي: $instapayAddr' : 'InstaPay number copied: $instapayAddr',
+                                      isArabic ? 'تم نسخ الرقم: $accountNum' : 'Copied: $accountNum',
                                       style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
                                     ),
                                     backgroundColor: AppColors.success,
@@ -262,7 +285,7 @@ class _WalletPageState extends State<WalletPage> {
                                   const Icon(Icons.copy_rounded, color: Colors.white, size: 16),
                                   const SizedBox(width: 4),
                                   Text(
-                                    isArabic ? 'نسخ الرقم' : 'Copy',
+                                    isArabic ? 'نسخ' : 'Copy',
                                     style: GoogleFonts.cairo(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                                   ),
                                 ],
@@ -270,7 +293,7 @@ class _WalletPageState extends State<WalletPage> {
                             ),
                           ),
                           SelectableText(
-                            instapayAddr,
+                            accountNum,
                             style: GoogleFonts.outfit(fontWeight: FontWeight.w900, fontSize: 18, color: AppColors.mediumBlue, letterSpacing: 1.2),
                           ),
                         ],
@@ -278,7 +301,7 @@ class _WalletPageState extends State<WalletPage> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      isArabic ? 'بعد التحويل، التقط صورة للإيصال لتأكيد العملية:' : 'After transfer, take a photo of receipt to confirm:',
+                      isArabic ? 'بعد التحويل، التقط صورة للإيصال أو اختره من المعرض:' : 'After transfer, take a photo or pick receipt photo:',
                       style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
                       textAlign: TextAlign.center,
                     ),
@@ -286,18 +309,79 @@ class _WalletPageState extends State<WalletPage> {
                     // Photo Picker Container
                     GestureDetector(
                       onTap: () async {
-                        final photo = await showDialog<String>(
-                          context: context,
-                          builder: (context) => CameraCaptureDialog(
-                            title: isArabic ? 'تصوير إيصال التحويل' : 'Capture Receipt Photo',
-                            isPickup: true,
-                            isReceipt: true,
+                        final source = await showModalBottomSheet<ImageSource>(
+                          context: dialogContext,
+                          backgroundColor: Colors.white,
+                          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                          builder: (sheetCtx) => Padding(
+                            padding: const EdgeInsets.all(20.0),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  isArabic ? 'اختر مصدر صورة الإيصال' : 'Select Receipt Source',
+                                  style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 15),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                  children: [
+                                    ElevatedButton.icon(
+                                      onPressed: () => Navigator.pop(sheetCtx, ImageSource.camera),
+                                      icon: const Icon(Icons.camera_alt),
+                                      label: Text(isArabic ? 'الكاميرا' : 'Camera', style: GoogleFonts.cairo()),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.mediumBlue,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      ),
+                                    ),
+                                    ElevatedButton.icon(
+                                      onPressed: () => Navigator.pop(sheetCtx, ImageSource.gallery),
+                                      icon: const Icon(Icons.photo_library),
+                                      label: Text(isArabic ? 'المعرض' : 'Gallery', style: GoogleFonts.cairo()),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.mediumBlue,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
                         );
-                        if (photo != null) {
-                          setDialogState(() {
-                            receiptImagePath = photo;
-                          });
+
+                        if (source == null) return;
+                        if (!dialogContext.mounted) return;
+
+                        if (source == ImageSource.camera) {
+                          final photo = await showDialog<String>(
+                            context: dialogContext,
+                            builder: (ctx) => CameraCaptureDialog(
+                              title: isArabic ? 'تصوير إيصال التحويل' : 'Capture Receipt Photo',
+                              isPickup: true,
+                              isReceipt: true,
+                            ),
+                          );
+                          if (photo != null) {
+                            setDialogState(() {
+                              receiptImagePath = photo;
+                            });
+                          }
+                        } else {
+                          try {
+                            final picker = ImagePicker();
+                            final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+                            if (image != null) {
+                              setDialogState(() {
+                                receiptImagePath = image.path;
+                              });
+                            }
+                          } catch (e) {
+                            debugPrint('Gallery pick error: $e');
+                          }
                         }
                       },
                       child: Container(
@@ -314,7 +398,7 @@ class _WalletPageState extends State<WalletPage> {
                                   const Icon(Icons.camera_alt_outlined, size: 36, color: AppColors.textLight),
                                   const SizedBox(height: 8),
                                   Text(
-                                    isArabic ? 'اضغط لتصوير إيصال التحويل 📸' : 'Tap to take photo of receipt 📸',
+                                    isArabic ? 'اضغط لتصوير أو اختيار إيصال التحويل 📸' : 'Tap to take or choose photo 📸',
                                     style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.bold),
                                   ),
                                 ],
@@ -332,12 +416,7 @@ class _WalletPageState extends State<WalletPage> {
                                               return Container(
                                                 color: AppColors.mediumBlue.withValues(alpha: 0.1),
                                                 alignment: Alignment.center,
-                                                child: const Column(
-                                                  mainAxisAlignment: MainAxisAlignment.center,
-                                                  children: [
-                                                    Icon(Icons.receipt_long_rounded, color: AppColors.mediumBlue, size: 40),
-                                                  ],
-                                                ),
+                                                child: const Icon(Icons.receipt_long_rounded, color: AppColors.mediumBlue, size: 40),
                                               );
                                             },
                                           )
@@ -348,12 +427,7 @@ class _WalletPageState extends State<WalletPage> {
                                               return Container(
                                                 color: AppColors.mediumBlue.withValues(alpha: 0.1),
                                                 alignment: Alignment.center,
-                                                child: const Column(
-                                                  mainAxisAlignment: MainAxisAlignment.center,
-                                                  children: [
-                                                    Icon(Icons.receipt_long_rounded, color: AppColors.mediumBlue, size: 40),
-                                                  ],
-                                                ),
+                                                child: const Icon(Icons.receipt_long_rounded, color: AppColors.mediumBlue, size: 40),
                                               );
                                             },
                                           ),
@@ -383,16 +457,20 @@ class _WalletPageState extends State<WalletPage> {
               }
             }
 
+            final dialogTitleMethod = selectedMethodData['name'] as String? ?? (isArabic ? 'المحفظة' : 'Wallet');
+
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
               title: Text(
-                isArabic ? 'شحن المحفظة (انستا باي)' : 'Top Up Wallet (InstaPay)',
+                isArabic ? 'شحن المحفظة ($dialogTitleMethod)' : 'Top Up Wallet ($dialogTitleMethod)',
                 style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16),
                 textAlign: TextAlign.center,
               ),
-              content: SizedBox(
-                width: 320,
-                child: buildStepContent(),
+              content: SingleChildScrollView(
+                child: SizedBox(
+                  width: 320,
+                  child: buildStepContent(),
+                ),
               ),
               actionsPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               actions: [
@@ -415,7 +493,7 @@ class _WalletPageState extends State<WalletPage> {
                       children: [
                         TextButton(
                           onPressed: () {
-                            Navigator.pop(context);
+                            Navigator.pop(dialogContext);
                           },
                           child: Text(isArabic ? 'إلغاء' : 'Cancel', style: GoogleFonts.cairo(color: Colors.red[600], fontWeight: FontWeight.bold)),
                         ),
@@ -436,52 +514,44 @@ class _WalletPageState extends State<WalletPage> {
                               // Final Step: Submit
                               final finalAmt = isCustom ? (double.tryParse(customAmountController.text) ?? 0.0) : selectedAmount;
                               if (finalAmt <= 0) {
-                                ScaffoldMessenger.of(context).showSnackBar(
+                                ScaffoldMessenger.of(dialogContext).showSnackBar(
                                   SnackBar(content: Text(isArabic ? 'يرجى إدخال مبلغ صحيح' : 'Please enter a valid amount', style: GoogleFonts.cairo())),
                                 );
                                 return;
                               }
                               if (receiptImagePath == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(isArabic ? 'يرجى تصوير إيصال التحويل للمتابعة' : 'Please upload a receipt photo to proceed', style: GoogleFonts.cairo())),
+                                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                  SnackBar(content: Text(isArabic ? 'يرجى تصوير أو اختيار صورة الإيصال للمتابعة' : 'Please select a receipt photo to proceed', style: GoogleFonts.cairo())),
                                 );
                                 return;
                               }
 
-                              // Capture the root navigator and scaffold messenger BEFORE closing the dialog
-                              // because after Navigator.pop, the dialog's context becomes unmounted
-                              final rootNav = Navigator.of(context, rootNavigator: true);
                               final scaffoldMsg = ScaffoldMessenger.of(context);
-                              final parentContext = Navigator.of(context).context;
+                              Navigator.pop(dialogContext); // Close step dialog
 
-                              Navigator.pop(context); // Close step dialog
-
-                              // Show loader using the parent page context (which is still mounted)
                               showDialog(
-                                context: parentContext,
+                                context: context,
                                 barrierDismissible: false,
                                 builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.mediumBlue)),
                               );
 
                               bool success = false;
                               try {
-                                success = await state.chargeWalletPending(finalAmt, receiptImagePath!, 'InstaPay');
+                                final methodCode = selectedMethodData['name'] as String? ?? 'InstaPay';
+                                success = await state.chargeWalletPending(finalAmt, receiptImagePath!, methodCode);
                               } catch (e) {
                                 debugPrint('chargeWalletPending error: $e');
                                 success = false;
                               }
 
-                              // Dismiss the loader - use rootNavigator to ensure we pop the loading dialog
-                              try {
-                                rootNav.pop();
-                              } catch (e) {
-                                debugPrint('Error dismissing loader: $e');
+                              if (context.mounted) {
+                                Navigator.of(context, rootNavigator: true).pop(); // Dismiss loader
                               }
 
                               if (success) {
-                                if (parentContext.mounted) {
+                                if (context.mounted) {
                                   showDialog(
-                                    context: parentContext,
+                                    context: context,
                                     builder: (ctx) {
                                       return AlertDialog(
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -497,8 +567,8 @@ class _WalletPageState extends State<WalletPage> {
                                             const SizedBox(height: 10),
                                             Text(
                                               isArabic
-                                                  ? 'لقد استلمنا إيصال تحويل InstaPay الخاص بك بقيمة $finalAmt ج.م. سيتم مراجعة الطلب وتفعيل الرصيد في محفظتك خلال دقائق قليلة.'
-                                                  : 'We received your InstaPay transfer receipt of $finalAmt EGP. It will be reviewed and activated in your wallet shortly.',
+                                                  ? 'لقد استلمنا إيصال تحويل $dialogTitleMethod بقيمة $finalAmt ج.م. سيتم مراجعة الطلب وتفعيل الرصيد في محفظتك خلال دقائق قليلة.'
+                                                  : 'We received your $dialogTitleMethod transfer receipt of $finalAmt EGP. It will be reviewed and activated in your wallet shortly.',
                                               style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
                                               textAlign: TextAlign.center,
                                             ),
@@ -560,11 +630,18 @@ class _WalletPageState extends State<WalletPage> {
     final state = GlobalState.instance;
     final isDriver = state.currentRole == UserRole.driver;
     final isArabic = LocaleController.instance.isArabic;
+    final l10n = AppLocalizations.of(context);
+
+    final walletTitleText = l10n?.wallet ?? (isArabic ? 'المحفظة والدفع' : 'Wallet & Payment');
+    final walletBalanceTitleText = l10n?.walletBalance ?? (isArabic ? 'رصيد المحفظة' : 'Wallet Balance');
+    final egpText = l10n?.egp ?? (isArabic ? 'ج.م' : 'EGP');
+    final addFundsText = l10n?.addFunds ?? (isArabic ? 'شحن المحفظة' : 'Top Up Wallet');
+    final paymentMethodsTitleText = l10n?.paymentMethods ?? (isArabic ? 'طرق الدفع' : 'Payment Methods');
 
     final List<Map<String, dynamic>> dynamicMethods = state.activePaymentMethods.map((pm) {
-      final code = pm['code'] as String? ?? 'cash';
-      final name = pm['name'] as String? ?? 'كاش';
-      final details = pm['account_details'] as String? ?? '';
+      final code = (pm['code'] ?? 'cash').toString();
+      final name = (pm['name'] ?? (isArabic ? 'كاش' : 'Cash')).toString();
+      final details = (pm['account_details'] ?? '').toString();
       IconData icon = Icons.payments_outlined;
       if (code == 'instapay') {
         icon = Icons.account_balance_outlined;
@@ -586,7 +663,7 @@ class _WalletPageState extends State<WalletPage> {
       dynamicMethods.add({
         'id': 'wallet',
         'title': isArabic ? 'المحفظة' : 'Wallet',
-        'subtitle': '${state.walletBalance.toStringAsFixed(2)} ${isArabic ? "ج.م" : "EGP"}',
+        'subtitle': '${state.walletBalance.toStringAsFixed(2)} $egpText',
         'icon': Icons.account_balance_wallet_outlined,
       });
     }
@@ -597,7 +674,7 @@ class _WalletPageState extends State<WalletPage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          AppLocalizations.of(context)!.wallet,
+          walletTitleText,
           style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         leading: IconButton(
@@ -636,7 +713,7 @@ class _WalletPageState extends State<WalletPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          AppLocalizations.of(context)!.walletBalance,
+                          walletBalanceTitleText,
                           style: GoogleFonts.cairo(fontSize: 14, color: Colors.white70),
                         ),
                         const Icon(Icons.account_balance_wallet, color: Colors.white, size: 28),
@@ -644,7 +721,7 @@ class _WalletPageState extends State<WalletPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      '${state.walletBalance.toStringAsFixed(2)} ${AppLocalizations.of(context)!.egp}',
+                      '${state.walletBalance.toStringAsFixed(2)} $egpText',
                       style: GoogleFonts.outfit(
                         fontSize: 32, 
                         fontWeight: FontWeight.w900, 
@@ -654,7 +731,7 @@ class _WalletPageState extends State<WalletPage> {
                     if (state.currentRole == UserRole.driver) ...[
                       const SizedBox(height: 4),
                       Text(
-                        '${isArabic ? "الحد الائتماني" : "Credit Limit"}: ${state.creditLimit.toStringAsFixed(2)} ${AppLocalizations.of(context)!.egp}',
+                        '${isArabic ? "الحد الائتماني" : "Credit Limit"}: ${state.creditLimit.toStringAsFixed(2)} $egpText',
                         style: GoogleFonts.cairo(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -670,7 +747,7 @@ class _WalletPageState extends State<WalletPage> {
                             onPressed: () => _showChargeDialog(context, state),
                             icon: const Icon(Icons.add, size: 18),
                             label: Text(
-                              AppLocalizations.of(context)!.addFunds,
+                              addFundsText,
                               style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                             style: ElevatedButton.styleFrom(
@@ -689,7 +766,7 @@ class _WalletPageState extends State<WalletPage> {
 
               // 2. Title Payment Methods
               Text(
-                AppLocalizations.of(context)!.paymentMethods,
+                paymentMethodsTitleText,
                 style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 12),
@@ -701,7 +778,14 @@ class _WalletPageState extends State<WalletPage> {
                 itemCount: paymentMethods.length,
                 itemBuilder: (context, index) {
                   final method = paymentMethods[index];
-                  bool isSelected = state.selectedPaymentMethod == method['title'];
+                  final titleText = (method['title'] ?? '').toString();
+                  final subtitleText = (method['subtitle'] ?? '').toString();
+                  final iconData = (method['icon'] is IconData) ? (method['icon'] as IconData) : Icons.payment;
+
+                  bool isSelected = state.selectedPaymentMethod == titleText ||
+                      (state.selectedPaymentMethod == 'كاش' && method['id'] == 'cash') ||
+                      (state.selectedPaymentMethod == 'انستا باي' && method['id'] == 'instapay') ||
+                      (state.selectedPaymentMethod == 'المحفظة' && method['id'] == 'wallet');
 
                   return Card(
                     elevation: 0,
@@ -720,14 +804,14 @@ class _WalletPageState extends State<WalletPage> {
                           color: isSelected ? AppColors.mediumBlue.withValues(alpha: 0.1) : AppColors.background,
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(method['icon'] as IconData, color: isSelected ? AppColors.mediumBlue : AppColors.textSecondary),
+                        child: Icon(iconData, color: isSelected ? AppColors.mediumBlue : AppColors.textSecondary),
                       ),
                       title: Text(
-                        method['title'] as String,
+                        titleText,
                         style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                       ),
                       subtitle: Text(
-                        method['subtitle'] as String,
+                        subtitleText,
                         style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
                       ),
                       trailing: Icon(
@@ -736,7 +820,7 @@ class _WalletPageState extends State<WalletPage> {
                       ),
                       onTap: () {
                         setState(() {
-                          state.selectedPaymentMethod = method['title'] as String;
+                          state.selectedPaymentMethod = titleText;
                         });
                         state.update();
                       },
@@ -749,10 +833,10 @@ class _WalletPageState extends State<WalletPage> {
               
               // 4. Add Payment Method
               OutlinedButton.icon(
-                onPressed: () {},
+                onPressed: () => _showChargeDialog(context, state),
                 icon: const Icon(Icons.add, size: 18),
                 label: Text(
-                  isArabic ? 'إضافة طريقة دفع جديدة' : 'Add New Payment Method',
+                  isArabic ? 'إضافة طريقة دفع / شحن جديدة' : 'Add Top Up Method',
                   style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -813,10 +897,10 @@ class _WalletPageState extends State<WalletPage> {
                           itemCount: state.walletTransactions.length,
                           itemBuilder: (context, index) {
                             final tx = state.walletTransactions[index];
-                            final double amt = tx['amount'] as double;
+                            final double amt = (tx['amount'] as num?)?.toDouble() ?? 0.0;
                             final bool isDebit = amt < 0;
                             final bool isPending = tx['type'] == 'charge_pending';
-                            final String rawDesc = tx['description'] as String;
+                            final String rawDesc = (tx['description'] as String?) ?? (isArabic ? 'معاملة مالية' : 'Transaction');
                             final String desc = isArabic
                                 ? rawDesc
                                 : rawDesc
@@ -862,7 +946,7 @@ class _WalletPageState extends State<WalletPage> {
                                   ),
                                 ),
                                 subtitle: Text(
-                                  tx['date'] as String,
+                                  (tx['date'] as String?) ?? '',
                                   style: GoogleFonts.outfit(
                                     fontSize: 11,
                                     color: AppColors.textLight,

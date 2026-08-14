@@ -7054,8 +7054,8 @@ function initSupabaseSync() {
         supabaseClient.from('vehicles').select('*'),
         supabaseClient.from('ride_requests').select('*').order('created_at', { ascending: false }),
         supabaseClient.from('ratings').select('*').order('created_at', { ascending: false }),
-        supabaseClient.from('app_settings').select('*').eq('id', 'default').maybeSingle().catch(() => ({ data: null })),
-        supabaseClient.from('passengers').select('*').catch(() => ({ data: [] }))
+        (async () => { try { return await supabaseClient.from('app_settings').select('*').eq('id', 'default').maybeSingle(); } catch(_) { return { data: null }; } })(),
+        (async () => { try { return await supabaseClient.from('passengers').select('*'); } catch(_) { return { data: [] }; } })()
       ]);
 
       // Check for race conditions before applying state

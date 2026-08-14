@@ -133,6 +133,18 @@ class _PassengerProfileSetupPageState extends State<PassengerProfileSetupPage> {
 
   void _onConfirmPressed() async {
     if (_formKey.currentState!.validate()) {
+      if (GlobalState.instance.isOffline) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'لا يوجد اتصال بالإنترنت. يرجى التحقق من الشبكة وإعادة المحاولة.',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: Colors.redAccent.shade700,
+          ),
+        );
+        return;
+      }
       setState(() {
         _isLoading = true;
       });

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/models/rating_model.dart';
 import '../../../core/models/rating_stats_model.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/localization/locale_controller.dart';
 
 class RatingBreakdownCard extends StatelessWidget {
   final RatingStatsModel stats;
@@ -18,6 +19,7 @@ class RatingBreakdownCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isAr = LocaleController.instance.isArabic;
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
       padding: const EdgeInsets.all(20),
@@ -41,7 +43,7 @@ class RatingBreakdownCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'التقييمات والمراجعات',
+                isAr ? 'التقييمات والمراجعات' : 'Ratings & Reviews',
                 style: GoogleFonts.cairo(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -107,7 +109,9 @@ class RatingBreakdownCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      stats.ratingCount > 0 ? '${stats.ratingCount} تقييم' : 'جديد (بدون تقييم)',
+                      stats.ratingCount > 0
+                          ? (isAr ? '${stats.ratingCount} تقييم' : '${stats.ratingCount} ratings')
+                          : (isAr ? 'جديد (بدون تقييم)' : 'New (No ratings)'),
                       style: GoogleFonts.cairo(
                         fontSize: 11,
                         color: AppColors.textSecondary,
@@ -137,7 +141,7 @@ class RatingBreakdownCard extends StatelessWidget {
             if (recentReviews.isNotEmpty) ...[
               const SizedBox(height: 16),
               Text(
-                'أحدث أراء وتعليقات المستخدمين',
+                isAr ? 'أحدث أراء وتعليقات المستخدمين' : 'Latest User Reviews',
                 style: GoogleFonts.cairo(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
@@ -145,12 +149,12 @@ class RatingBreakdownCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              ...recentReviews.take(4).map((review) => _buildReviewItem(review)),
+              ...recentReviews.take(4).map((review) => _buildReviewItem(review, isAr)),
             ] else ...[
               const SizedBox(height: 16),
               Center(
                 child: Text(
-                  'لا توجد تعليقات مكتوبة حتى الآن.',
+                  isAr ? 'لا توجد تعليقات مكتوبة حتى الآن.' : 'No written reviews yet.',
                   style: GoogleFonts.cairo(
                     fontSize: 12,
                     color: Colors.grey.shade500,
@@ -213,7 +217,7 @@ class RatingBreakdownCard extends StatelessWidget {
     );
   }
 
-  Widget _buildReviewItem(RatingModel review) {
+  Widget _buildReviewItem(RatingModel review, bool isAr) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -231,7 +235,7 @@ class RatingBreakdownCard extends StatelessWidget {
               Row(
                 children: [
                   Text(
-                    'مستخدم التطبيق',
+                    isAr ? 'مستخدم التطبيق' : 'App User',
                     style: GoogleFonts.cairo(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
@@ -252,7 +256,7 @@ class RatingBreakdownCard extends StatelessWidget {
                         const Icon(Icons.verified_rounded, size: 10, color: Colors.green),
                         const SizedBox(width: 2),
                         Text(
-                          'رحلة موثقة',
+                          isAr ? 'رحلة موثقة' : 'Verified Trip',
                           style: GoogleFonts.cairo(
                             fontSize: 9,
                             fontWeight: FontWeight.bold,

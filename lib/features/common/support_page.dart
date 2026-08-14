@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
 import '../../core/services/support_chat_service.dart';
+import '../../core/localization/locale_controller.dart';
 import '../../generated/app_localizations.dart';
 
 class SupportPage extends StatefulWidget {
@@ -149,7 +150,6 @@ class _SupportPageState extends State<SupportPage> {
                       colors: AppColors.blueGradient,
                     ),
                   ),
-
                   child: ElevatedButton(
                     onPressed: _isSubmitting ? null : _submitComplaint,
                     style: ElevatedButton.styleFrom(
@@ -164,7 +164,7 @@ class _SupportPageState extends State<SupportPage> {
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
                         : Text(
-                            'إرسال البلاغ الآن',
+                            LocaleController.instance.isArabic ? 'إرسال البلاغ الآن' : 'Submit Ticket Now',
                             style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
                           ),
                   ),
@@ -173,7 +173,7 @@ class _SupportPageState extends State<SupportPage> {
 
                 // FAQ Quick Actions
                 Text(
-                  'روابط تواصل سريعة',
+                  LocaleController.instance.isArabic ? 'روابط تواصل سريعة' : 'Quick Contact Links',
                   style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                 ),
                 const SizedBox(height: 10),
@@ -187,7 +187,10 @@ class _SupportPageState extends State<SupportPage> {
                     children: [
                       ListTile(
                         leading: const Icon(Icons.help_outline, color: AppColors.mediumBlue),
-                        title: Text('الأسئلة الشائعة FAQ', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600)),
+                        title: Text(
+                          LocaleController.instance.isArabic ? 'الأسئلة الشائعة FAQ' : 'Frequently Asked Questions (FAQ)',
+                          style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
                         trailing: const Icon(Icons.arrow_forward_ios_outlined, size: 12),
                         onTap: () {},
                       ),

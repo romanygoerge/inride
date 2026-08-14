@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
+import '../../../../core/localization/locale_controller.dart';
 
 class ProfileHeaderCard extends StatelessWidget {
   final GlobalState state;
@@ -16,11 +17,12 @@ class ProfileHeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isAr = LocaleController.instance.isArabic;
     final avatarUrl = state.userAvatarUrl;
     final name = state.userName ??
         (state.currentRole == UserRole.rider
-            ? (state.passengerName ?? 'مستخدم')
-            : 'كابتن');
+            ? (state.passengerName ?? (isAr ? 'مستخدم' : 'User'))
+            : (isAr ? 'كابتن' : 'Captain'));
     final phone = state.phoneNumber ?? '';
 
     return Container(
@@ -44,7 +46,7 @@ class ProfileHeaderCard extends StatelessWidget {
                 radius: 44,
                 backgroundColor: AppColors.primary.withAlpha(25),
                 backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
-                    ? CachedNetworkImageProvider(avatarUrl) as ImageProvider
+                    ? CachedNetworkImageProvider(avatarUrl, maxWidth: 300, maxHeight: 300) as ImageProvider
                     : null,
                 child: (avatarUrl == null || avatarUrl.isEmpty)
                     ? const Icon(
@@ -116,8 +118,12 @@ class ProfileHeaderCard extends StatelessWidget {
                 const SizedBox(width: 4),
                 Text(
                   state.userTotalRatingsCount > 0
-                      ? '${state.userRating.toStringAsFixed(1)} (${state.userTotalRatingsCount} تقييم • ${state.userCompletedTripsCount} رحلة)'
-                      : 'جديد (بدون تقييم • ${state.userCompletedTripsCount} رحلة)',
+                      ? (isAr
+                          ? '${state.userRating.toStringAsFixed(1)} (${state.userTotalRatingsCount} تقييم • ${state.userCompletedTripsCount} رحلة)'
+                          : '${state.userRating.toStringAsFixed(1)} (${state.userTotalRatingsCount} ratings • ${state.userCompletedTripsCount} trips)')
+                      : (isAr
+                          ? 'جديد (بدون تقييم • ${state.userCompletedTripsCount} رحلة)'
+                          : 'New (No ratings • ${state.userCompletedTripsCount} trips)'),
                   style: GoogleFonts.cairo(
                     fontSize: 12.5,
                     fontWeight: FontWeight.bold,

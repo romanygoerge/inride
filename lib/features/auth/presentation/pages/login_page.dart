@@ -15,6 +15,7 @@ import '../../../../shared/widgets/app_logo.dart';
 import '../../../../features/common/legal_pages.dart';
 import '../../../../core/utils/snappy_page_route.dart';
 import '../../../../generated/app_localizations.dart';
+import '../../../../core/localization/locale_controller.dart';
 
 
 class LoginPage extends StatefulWidget {
@@ -569,6 +570,34 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             ],
                           ),
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                // Instant Demo Passenger Mode Entry Button
+                OutlinedButton.icon(
+                  onPressed: () {
+                    final state = GlobalState.instance;
+                    state.currentRole = UserRole.rider;
+                    state.passengerName = 'راكب تجريبي';
+                    state.userName = 'راكب تجريبي';
+                    state.update();
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (context) => const PassengerHomePage()),
+                      (route) => false,
+                    );
+                  },
+                  icon: const Icon(Icons.flash_on_rounded, color: AppColors.mediumBlue, size: 20),
+                  label: Text(
+                    LocaleController.instance.isArabic ? 'تصفح وضع الراكب / المحفظة والشحن 💳' : 'Explore Passenger Mode & Wallet 💳',
+                    style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.mediumBlue),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    side: const BorderSide(color: AppColors.mediumBlue, width: 1.5),
                   ),
                 ),
 

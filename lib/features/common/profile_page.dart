@@ -11,6 +11,8 @@ import '../../generated/app_localizations.dart';
 import 'ratings_page.dart';
 import '../driver_registration/presentation/pages/doc_upload_page.dart';
 import '../driver_registration/presentation/pages/review_pending_page.dart';
+import '../../core/services/delete_account_service.dart';
+import '../../shared/widgets/in_app_notification.dart';
 
 
 class ProfilePage extends StatefulWidget {
@@ -149,41 +151,42 @@ class _ProfilePageState extends State<ProfilePage> {
       builder: (context) {
         final hasAvatar = state.userAvatarUrl != null && state.userAvatarUrl!.isNotEmpty;
 
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'الصورة الشخصية',
-                style: GoogleFonts.cairo(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
+              final isAr = LocaleController.instance.isArabic;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      isAr ? 'الصورة الشخصية' : 'Profile Picture',
+                      style: GoogleFonts.cairo(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 20),
 
-              ListTile(
-                leading: const Icon(Icons.camera_alt_outlined, color: AppColors.mediumBlue),
-                title: Text('التقاط صورة بالكاميرا', style: GoogleFonts.cairo(fontWeight: FontWeight.w600)),
-                onTap: () => _onPickImage(ImageSource.camera, state),
-              ),
-              const Divider(color: AppColors.border, height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.camera_alt_outlined, color: AppColors.mediumBlue),
+                      title: Text(isAr ? 'التقاط صورة بالكاميرا' : 'Take photo with Camera', style: GoogleFonts.cairo(fontWeight: FontWeight.w600)),
+                      onTap: () => _onPickImage(ImageSource.camera, state),
+                    ),
+                    const Divider(color: AppColors.border, height: 1),
 
-              ListTile(
-                leading: const Icon(Icons.photo_library_outlined, color: AppColors.mediumBlue),
-                title: Text('اختيار من معرض الصور', style: GoogleFonts.cairo(fontWeight: FontWeight.w600)),
-                onTap: () => _onPickImage(ImageSource.gallery, state),
-              ),
+                    ListTile(
+                      leading: const Icon(Icons.photo_library_outlined, color: AppColors.mediumBlue),
+                      title: Text(isAr ? 'اختيار من معرض الصور' : 'Choose from Gallery', style: GoogleFonts.cairo(fontWeight: FontWeight.w600)),
+                      onTap: () => _onPickImage(ImageSource.gallery, state),
+                    ),
 
-              if (hasAvatar) ...[
-                const Divider(color: AppColors.border, height: 1),
-                ListTile(
-                  leading: const Icon(Icons.delete_outline, color: AppColors.error),
-                  title: Text('حذف الصورة الحالية', style: GoogleFonts.cairo(fontWeight: FontWeight.w600, color: AppColors.error)),
+                    if (hasAvatar) ...[
+                      const Divider(color: AppColors.border, height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.delete_outline, color: AppColors.error),
+                        title: Text(isAr ? 'حذف الصورة الحالية' : 'Delete current photo', style: GoogleFonts.cairo(fontWeight: FontWeight.w600, color: AppColors.error)),
                   onTap: () async {
                     final navigator = Navigator.of(context);
                     final messenger = ScaffoldMessenger.of(context);
@@ -229,7 +232,7 @@ class _ProfilePageState extends State<ProfilePage> {
     if (hasAvatar) {
       return CircleAvatar(
         radius: radius,
-        backgroundImage: CachedNetworkImageProvider(state.userAvatarUrl!),
+        backgroundImage: CachedNetworkImageProvider(state.userAvatarUrl!, maxWidth: 300, maxHeight: 300),
         backgroundColor: AppColors.background,
       );
     } else {
@@ -572,11 +575,23 @@ class _ProfilePageState extends State<ProfilePage> {
                   borderRadius: BorderRadius.circular(16),
                   side: const BorderSide(color: AppColors.border),
                 ),
-                child: _buildSettingsTile(
-                  icon: Icons.language_outlined,
-                  title: l10n.language,
-                  trailing: LocaleController.instance.isArabic ? 'العربية (مصر)' : 'English (US)',
-                  onTap: () => _showLanguageDialog(context),
+                child: Column(
+                  children: [
+                    _buildSettingsTile(
+                      icon: Icons.language_outlined,
+                      title: l10n.language,
+                      trailing: LocaleController.instance.isArabic ? 'العربية (مصر)' : 'English (US)',
+                      onTap: () => _showLanguageDialog(context),
+                    ),
+                    const Divider(color: AppColors.border, height: 1),
+                    _buildSettingsTile(
+                      icon: Icons.delete_forever_outlined,
+                      title: isArabic ? 'حذف الحساب نهائياً' : 'Delete Account',
+                      titleColor: Colors.red.shade700,
+                      iconColor: Colors.red.shade700,
+                      onTap: () => _showDeleteAccountDialog(context),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 20),
@@ -799,17 +814,145 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  void _showDeleteAccountDialog(BuildContext context) {
+    final isArabic = LocaleController.instance.isArabic;
+    bool isDeleting = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.delete_forever_rounded, color: Colors.red.shade700, size: 24),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    isArabic ? 'حذف الحساب نهائياً' : 'Delete Account',
+                    style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red.shade800),
+                  ),
+                ],
+              ),
+              content: Text(
+                isArabic
+                    ? 'سيتم حذف حسابك وجميع بياناتك الشخصية بشكل نهائي ولا يمكن التراجع عن هذا الإجراء.'
+                    : 'Your account and all personal data will be permanently deleted. This action cannot be undone.',
+                style: GoogleFonts.cairo(fontSize: 13, height: 1.5, color: AppColors.textPrimary),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isDeleting ? null : () => Navigator.pop(dialogCtx),
+                  child: Text(
+                    isArabic ? 'إلغاء' : 'Cancel',
+                    style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: isDeleting
+                      ? null
+                      : () async {
+                          setDialogState(() {
+                            isDeleting = true;
+                          });
+
+                          final result = await DeleteAccountService.instance.deleteAccount(isArabic: isArabic);
+
+                          if (!context.mounted) return;
+
+                          if (dialogCtx.mounted) {
+                            Navigator.pop(dialogCtx);
+                          }
+
+                          if (result.success) {
+                            InAppNotificationWidget.show(
+                              context,
+                              title: isArabic ? 'تم حذف الحساب' : 'Account Deleted',
+                              body: result.message,
+                              type: 'success',
+                              onTap: () {},
+                            );
+                            Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                          } else {
+                            showDialog(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                                title: Row(
+                                  children: [
+                                    Icon(
+                                      result.isActiveTrip ? Icons.directions_car_rounded : Icons.error_outline_rounded,
+                                      color: AppColors.error,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        isArabic ? 'تعذر حذف الحساب' : 'Cannot Delete Account',
+                                        style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 15),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                content: Text(
+                                  result.message,
+                                  style: GoogleFonts.cairo(fontSize: 13),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx),
+                                    child: Text(isArabic ? 'حسناً' : 'OK', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade700,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: isDeleting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : Text(
+                          isArabic ? 'نعم، احذف حسابي' : 'Yes, Delete Account',
+                          style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildSettingsTile({
     required IconData icon,
     required String title,
     String? trailing,
+    Color? titleColor,
+    Color? iconColor,
     VoidCallback? onTap,
   }) {
     return ListTile(
-      leading: Icon(icon, color: AppColors.textSecondary, size: 20),
+      leading: Icon(icon, color: iconColor ?? AppColors.textSecondary, size: 20),
       title: Text(
         title,
-        style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+        style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600, color: titleColor ?? AppColors.textPrimary),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -821,7 +964,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
             const SizedBox(width: 8),
           ],
-          const Icon(Icons.arrow_forward_ios_outlined, color: AppColors.textLight, size: 12),
+          Icon(Icons.arrow_forward_ios_outlined, color: iconColor ?? AppColors.textLight, size: 12),
         ],
       ),
       dense: true,
@@ -853,6 +996,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 imageUrl: url,
                 width: 60,
                 height: 50,
+                memCacheWidth: 200,
+                memCacheHeight: 160,
                 fit: BoxFit.cover,
                 placeholder: (context, url) => const SizedBox(
                   width: 24, height: 24,

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
+import '../../../../core/localization/locale_controller.dart';
 import '../../../../core/utils/vehicle_helper.dart';
 import '../../../../shared/widgets/osm_map_widget.dart';
 import 'passenger_ride_active_page.dart';
@@ -590,8 +591,10 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                           const SizedBox(width: 2),
                           Text(
                             offer.driver.ratingCount > 0
-                                ? '${offer.driver.rating.toStringAsFixed(1)} (${offer.driver.ratingCount} تقييم)'
-                                : 'جديد (بدون تقييم)',
+                                ? (LocaleController.instance.isArabic 
+                                    ? '${offer.driver.rating.toStringAsFixed(1)} (${offer.driver.ratingCount} تقييم)' 
+                                    : '${offer.driver.rating.toStringAsFixed(1)} (${offer.driver.ratingCount} ratings)')
+                                : (LocaleController.instance.isArabic ? 'جديد (بدون تقييم)' : 'New (No ratings)'),
                             style: GoogleFonts.cairo(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
@@ -603,7 +606,9 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                       const SizedBox(height: 2),
                       // Trips & Deliveries
                       Text(
-                        '${offer.driver.completedTrips} رحلة مكتملة',
+                        LocaleController.instance.isArabic
+                            ? '${offer.driver.completedTrips} رحلة مكتملة'
+                            : '${offer.driver.completedTrips} completed trips',
                         style: GoogleFonts.cairo(
                           fontSize: 11,
                           color: AppColors.textSecondary,
@@ -661,7 +666,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '${offer.price.round()} ج.م',
+                      '${offer.price.round()} ${LocaleController.instance.isArabic ? "ج.م" : "EGP"}',
                       style: GoogleFonts.outfit(
                         fontSize: 20,
                         fontWeight: FontWeight.w900,
@@ -681,7 +686,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                           Icon(Icons.access_time_rounded, size: 12, color: AppColors.success),
                           const SizedBox(width: 3),
                           Text(
-                            '${offer.etaMinutes} د',
+                            '${offer.etaMinutes} ${LocaleController.instance.isArabic ? "د" : "min"}',
                             style: GoogleFonts.cairo(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
@@ -879,206 +884,211 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
+        final isArabic = LocaleController.instance.isArabic;
         return Container(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 24,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Handle bar
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
+                padding: EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                  top: 24,
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
                 ),
-              ),
-              const SizedBox(height: 20),
-              
-              // Title
-              Text(
-                'تفاوض على السعر',
-                style: GoogleFonts.cairo(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'عرض الكابتن ${offer.driver.name} الحالي: ${offer.price.round()} ج.م',
-                style: GoogleFonts.cairo(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Price Input
-              TextField(
-                controller: controller,
-                keyboardType: const TextInputType.numberWithOptions(decimal: false),
-                textAlign: TextAlign.center,
-                style: GoogleFonts.outfit(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.mediumBlue,
-                ),
-                decoration: InputDecoration(
-                  suffixText: 'ج.م',
-                  suffixStyle: GoogleFonts.cairo(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textSecondary,
-                  ),
-                  hintText: 'اكتب السعر',
-                  hintStyle: GoogleFonts.cairo(
-                    fontSize: 16,
-                    color: AppColors.textLight,
-                  ),
-                  filled: true,
-                  fillColor: AppColors.background,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: AppColors.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: AppColors.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: AppColors.mediumBlue, width: 2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // Quick price adjustment buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <int>[-10, -5, 5, 10].map((int amount) {
-                  final bool isNegative = amount < 0;
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: GestureDetector(
-                      onTap: () {
-                        final current = double.tryParse(controller.text) ?? offer.price;
-                        final double minFare = (GlobalState.instance.appSettings['minFare'] as num?)?.toDouble() ?? 10.0;
-                        final double maxFare = (GlobalState.instance.appSettings['maxFare'] as num?)?.toDouble() ?? 500.0;
-                        final newValue = (current + amount).clamp(minFare, maxFare);
-                        controller.text = newValue.round().toString();
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: isNegative
-                              ? AppColors.error.withValues(alpha: 0.08)
-                              : AppColors.success.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: isNegative
-                                ? AppColors.error.withValues(alpha: 0.3)
-                                : AppColors.success.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        child: Text(
-                          '${amount > 0 ? "+" : ""}$amount',
-                          style: GoogleFonts.outfit(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: isNegative ? AppColors.error : AppColors.success,
-                          ),
-                        ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Handle bar
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 20),
-
-              // Submit button
-              SizedBox(
-                width: double.infinity,
-                child: GestureDetector(
-                  onTap: () async {
-                    final newPrice = double.tryParse(controller.text);
-                    if (newPrice != null && newPrice > 0) {
-                      Navigator.pop(ctx);
-                      try {
-                        // Send counter-offer to Firestore so driver receives it
-                        await GlobalState.instance.submitCounterOffer(offer.driverId, newPrice);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'تم إرسال عرضك: ${newPrice.round()} ج.م للكابتن ${offer.driver.name}',
-                                style: GoogleFonts.cairo(),
-                              ),
-                              backgroundColor: AppColors.success,
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'فشل إرسال العرض. حاول مرة أخرى.',
-                                style: GoogleFonts.cairo(),
-                              ),
-                              backgroundColor: AppColors.error,
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                          );
-                        }
-                      }
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      gradient: const LinearGradient(
-                        colors: AppColors.blueGradient,
+                    const SizedBox(height: 20),
+                    
+                    // Title
+                    Text(
+                      isArabic ? 'تفاوض على السعر' : 'Negotiate Fare',
+                      style: GoogleFonts.cairo(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.mediumBlue.withValues(alpha: 0.3),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
                     ),
-                    child: Center(
-                      child: Text(
-                        'إرسال العرض',
-                        style: GoogleFonts.cairo(
-                          fontSize: 15,
+                    const SizedBox(height: 6),
+                    Text(
+                      isArabic 
+                          ? 'عرض الكابتن ${offer.driver.name} الحالي: ${offer.price.round()} ج.م'
+                          : 'Captain ${offer.driver.name} current offer: ${offer.price.round()} EGP',
+                      style: GoogleFonts.cairo(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Price Input
+                    TextField(
+                      controller: controller,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: false),
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.outfit(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.mediumBlue,
+                      ),
+                      decoration: InputDecoration(
+                        suffixText: isArabic ? 'ج.م' : 'EGP',
+                        suffixStyle: GoogleFonts.cairo(
+                          fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: AppColors.textSecondary,
+                        ),
+                        hintText: isArabic ? 'اكتب السعر' : 'Enter amount',
+                        hintStyle: GoogleFonts.cairo(
+                          fontSize: 16,
+                          color: AppColors.textLight,
+                        ),
+                        filled: true,
+                        fillColor: AppColors.background,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: AppColors.border),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: AppColors.border),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: AppColors.mediumBlue, width: 2),
                         ),
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 8),
+
+                    // Quick price adjustment buttons
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <int>[-10, -5, 5, 10].map((int amount) {
+                        final bool isNegative = amount < 0;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: GestureDetector(
+                            onTap: () {
+                              final current = double.tryParse(controller.text) ?? offer.price;
+                              final double minFare = (GlobalState.instance.appSettings['minFare'] as num?)?.toDouble() ?? 10.0;
+                              final double maxFare = (GlobalState.instance.appSettings['maxFare'] as num?)?.toDouble() ?? 500.0;
+                              final newValue = (current + amount).clamp(minFare, maxFare);
+                              controller.text = newValue.round().toString();
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isNegative
+                                    ? AppColors.error.withValues(alpha: 0.08)
+                                    : AppColors.success.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: isNegative
+                                      ? AppColors.error.withValues(alpha: 0.3)
+                                      : AppColors.success.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Text(
+                                '${amount > 0 ? "+" : ""}$amount',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: isNegative ? AppColors.error : AppColors.success,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Submit button
+                    SizedBox(
+                      width: double.infinity,
+                      child: GestureDetector(
+                        onTap: () async {
+                          final newPrice = double.tryParse(controller.text);
+                          if (newPrice != null && newPrice > 0) {
+                            Navigator.pop(ctx);
+                            try {
+                              // Send counter-offer to Firestore so driver receives it
+                              await GlobalState.instance.submitCounterOffer(offer.driverId, newPrice);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      isArabic 
+                                          ? 'تم إرسال عرضك: ${newPrice.round()} ج.م للكابتن ${offer.driver.name}'
+                                          : 'Sent counter offer: ${newPrice.round()} EGP to Captain ${offer.driver.name}',
+                                      style: GoogleFonts.cairo(),
+                                    ),
+                                    backgroundColor: AppColors.success,
+                                    behavior: SnackBarBehavior.floating,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      isArabic ? 'فشل إرسال العرض. حاول مرة أخرى.' : 'Failed to send offer. Try again.',
+                                      style: GoogleFonts.cairo(),
+                                    ),
+                                    backgroundColor: AppColors.error,
+                                    behavior: SnackBarBehavior.floating,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                );
+                              }
+                            }
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            gradient: const LinearGradient(
+                              colors: AppColors.blueGradient,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.mediumBlue.withValues(alpha: 0.3),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Text(
+                              isArabic ? 'إرسال العرض' : 'Send Counter Offer',
+                              style: GoogleFonts.cairo(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
-        );
+              );
       },
     );
   }

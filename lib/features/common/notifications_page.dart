@@ -8,6 +8,7 @@ import '../../core/models/notification_model.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/utils/snappy_page_route.dart';
 import '../../generated/app_localizations.dart';
+import '../../core/localization/locale_controller.dart';
 import 'notification_details_page.dart';
 
 class NotificationsPage extends StatefulWidget {
@@ -174,6 +175,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   // Empty state view
   Widget _buildEmptyState() {
+    final isAr = LocaleController.instance.isArabic;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -194,7 +196,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
             ),
             const SizedBox(height: 24),
             Text(
-              'صندوق الوارد فارغ',
+              isAr ? 'صندوق الوارد فارغ' : 'Inbox is Empty',
               style: GoogleFonts.cairo(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -203,7 +205,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              'لا توجد لديك إشعارات جديدة في الوقت الحالي. سنقوم بتنبيهك بمجرد وجود أي جديد!',
+              isAr
+                  ? 'لا توجد لديك إشعارات جديدة في الوقت الحالي. سنقوم بتنبيهك بمجرد وجود أي جديد!'
+                  : 'You have no new notifications at the moment. We will notify you when something comes up!',
               style: GoogleFonts.cairo(
                 fontSize: 13,
                 color: AppColors.textSecondary,
@@ -219,6 +223,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   // Single Notification Card UI with Swipe-to-Dismiss support
   Widget _buildNotificationCard(NotificationModel notif) {
+    final isAr = LocaleController.instance.isArabic;
     final iconData = _getIconForType(notif.type);
     final iconColor = _getColorForType(notif.type);
 
@@ -229,7 +234,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _controller.deleteNotification(notif.id);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('تم حذف الإشعار بنجاح.', style: GoogleFonts.cairo()),
+            content: Text(
+              isAr ? 'تم حذف الإشعار بنجاح.' : 'Notification deleted successfully.',
+              style: GoogleFonts.cairo(),
+            ),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -423,36 +431,55 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
   }
 
-  // Beautiful Arabic relative time helper
+  // Relative time helper
   String _formatTimeAgo(DateTime dateTime) {
+    final isAr = LocaleController.instance.isArabic;
     final now = DateTime.now();
     final difference = now.difference(dateTime);
 
     if (difference.inSeconds < 60) {
-      return 'الآن';
+      return isAr ? 'الآن' : 'Just now';
     } else if (difference.inMinutes < 60) {
       final minutes = difference.inMinutes;
-      if (minutes == 1) return 'منذ دقيقة';
-      if (minutes == 2) return 'منذ دقيقتين';
-      if (minutes <= 10) return 'منذ $minutes دقائق';
-      return 'منذ $minutes دقيقة';
+      if (isAr) {
+        if (minutes == 1) return 'منذ دقيقة';
+        if (minutes == 2) return 'منذ دقيقتين';
+        if (minutes <= 10) return 'منذ $minutes دقائق';
+        return 'منذ $minutes دقيقة';
+      } else {
+        return '$minutes min ago';
+      }
     } else if (difference.inHours < 24) {
       final hours = difference.inHours;
-      if (hours == 1) return 'منذ ساعة';
-      if (hours == 2) return 'منذ ساعتين';
-      if (hours <= 10) return 'منذ $hours ساعات';
-      return 'منذ $hours ساعة';
+      if (isAr) {
+        if (hours == 1) return 'منذ ساعة';
+        if (hours == 2) return 'منذ ساعتين';
+        if (hours <= 10) return 'منذ $hours ساعات';
+        return 'منذ $hours ساعة';
+      } else {
+        return '$hours hr ago';
+      }
     } else if (difference.inDays < 7) {
       final days = difference.inDays;
-      if (days == 1) return 'أمس';
-      if (days == 2) return 'منذ يومين';
-      return 'منذ $days أيام';
+      if (isAr) {
+        if (days == 1) return 'أمس';
+        if (days == 2) return 'منذ يومين';
+        return 'منذ $days أيام';
+      } else {
+        if (days == 1) return 'Yesterday';
+        return '$days days ago';
+      }
     } else {
-      final months = [
+      final arMonths = [
         'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
         'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
       ];
-      return '${dateTime.day} ${months[dateTime.month - 1]} ${dateTime.year}';
+      final enMonths = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ];
+      final monthStr = isAr ? arMonths[dateTime.month - 1] : enMonths[dateTime.month - 1];
+      return '${dateTime.day} $monthStr ${dateTime.year}';
     }
   }
 }

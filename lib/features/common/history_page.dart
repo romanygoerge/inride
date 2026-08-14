@@ -189,7 +189,7 @@ class _HistoryPageState extends State<HistoryPage> {
                                     ],
                                   ),
                                   Text(
-                                    '${(trip['price'] as double).round()} ج.م',
+                                    '${(trip['price'] as double).round()} ${l10n.egp}',
                                     style: GoogleFonts.outfit(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w900,

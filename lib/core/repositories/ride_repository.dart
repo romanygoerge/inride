@@ -142,15 +142,9 @@ class RideRepository {
         double? driverLat = driverModel.currentLatitude ?? (driverMap['current_latitude'] as num?)?.toDouble();
         double? driverLng = driverModel.currentLongitude ?? (driverMap['current_longitude'] as num?)?.toDouble();
 
-        if (driverLat == null || driverLng == null) {
-          final devLoc = MapCoordinatesHelper.deviceLocation;
-          if (devLoc != null) {
-            driverLat = devLoc.latitude;
-            driverLng = devLoc.longitude;
-          } else {
-            AppLogger.driverCheckLog(driverId.toString(), false, 'Location coordinates null and no device fallback');
-            continue;
-          }
+        if (driverLat == null || driverLng == null || driverLat == 0.0 || driverLng == 0.0) {
+          AppLogger.driverCheckLog(driverId.toString(), false, 'Location coordinates null or zero');
+          continue;
         }
 
         double distance = LocationService.instance.calculateDistance(
@@ -552,26 +546,25 @@ class RideRepository {
     String collectionName = 'Drivers',
   }) {
     debugPrint('[Realtime] Subscribing to streamNearbyDrivers for lat=$lat, lng=$lng, radius=$radiusInKm');
+    final currentUserId = _supabase.auth.currentUser?.id;
+
     return _supabase
         .from('drivers')
         .stream(primaryKey: ['id'])
         .eq('is_online', true)
         .map((list) {
       return list.map((item) => Map<String, dynamic>.from(item)).where((driver) {
+        final driverId = driver['id'] ?? driver['uid'];
+        if (currentUserId != null && driverId == currentUserId) return false;
+
         final bool isAvailable = driver['is_available'] ?? driver['isAvailable'] ?? true;
         if (!isAvailable) return false;
 
         double? dLat = ((driver['current_latitude'] ?? driver['currentLatitude']) as num?)?.toDouble();
         double? dLng = ((driver['current_longitude'] ?? driver['currentLongitude']) as num?)?.toDouble();
         
-        if (dLat == null || dLng == null) {
-          final devLoc = MapCoordinatesHelper.deviceLocation;
-          if (devLoc != null) {
-            dLat = devLoc.latitude;
-            dLng = devLoc.longitude;
-          } else {
-            return false;
-          }
+        if (dLat == null || dLng == null || dLat == 0.0 || dLng == 0.0) {
+          return false;
         }
 
         final distance = LocationService.instance.calculateDistance(lat, lng, dLat, dLng);

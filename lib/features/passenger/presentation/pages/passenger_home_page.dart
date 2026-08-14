@@ -23,6 +23,7 @@ import 'passenger_delivery_booking_page.dart';
 import '../../../common/notifications_page.dart';
 import '../../../common/wallet_page.dart';
 import '../../../../generated/app_localizations.dart';
+import '../../../../core/localization/locale_controller.dart';
 
 
 
@@ -61,7 +62,8 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
     // Request location permissions and cache current position early
     _initializeLocation();
     // Initialize default pickup and destination in GlobalState if they are null
-    GlobalState.instance.fromAddress ??= 'موقعي الحالي';
+    final isAr = LocaleController.instance.isArabic;
+    GlobalState.instance.fromAddress ??= isAr ? 'موقعي الحالي' : 'Current Location';
     GlobalState.instance.toAddress ??= '';
   }
 
@@ -72,7 +74,8 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
       if (pos != null) {
         MapCoordinatesHelper.deviceLocation = LatLng(pos.latitude, pos.longitude);
         final geocoded = await MapCoordinatesHelper.reverseGeocode(pos.latitude, pos.longitude);
-        if (geocoded.isNotEmpty && (GlobalState.instance.fromAddress == null || GlobalState.instance.fromAddress == 'موقعي الحالي' || GlobalState.instance.fromAddress == 'الموقع الحالي')) {
+        final currentFrom = GlobalState.instance.fromAddress;
+        if (geocoded.isNotEmpty && (currentFrom == null || currentFrom == 'موقعي الحالي' || currentFrom == 'الموقع الحالي' || currentFrom == 'Current Location')) {
           GlobalState.instance.fromAddress = geocoded;
         }
       }
@@ -806,7 +809,64 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 14),
+
+                      // Payment Method & Top Up Wallet Row
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.account_balance_wallet_outlined, color: AppColors.mediumBlue, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${LocaleController.instance.isArabic ? "طريقة الدفع" : "Payment"}: ${GlobalState.instance.selectedPaymentMethod}',
+                                  style: GoogleFonts.cairo(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            InkWell(
+                              onTap: () {
+                                Navigator.push(context, SnappyPageRoute(page: const WalletPage()));
+                              },
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: AppColors.mediumBlue.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.add_card_rounded, color: AppColors.mediumBlue, size: 14),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      LocaleController.instance.isArabic ? 'شحن المحفظة' : 'Top Up Wallet',
+                                      style: GoogleFonts.cairo(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.mediumBlue,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
 
                       // Confirm button (Gradient Blue)
                       ScaleButton(

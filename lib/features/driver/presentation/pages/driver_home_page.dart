@@ -81,29 +81,36 @@ class _DriverHomePageState extends State<DriverHomePage> {
     }
   }
 
+  void _navigateToActivePageIfNeeded() {
+    if (!mounted) return;
+    final state = GlobalState.instance;
+    final isActiveRide = state.rideStatus == RideStatus.driverOnWay ||
+                         state.rideStatus == RideStatus.arrived ||
+                         state.rideStatus == RideStatus.tripStarted;
+
+    if (isActiveRide && !_isNavigatingToActivePage && !_isAcceptingRide) {
+      _isNavigatingToActivePage = true;
+
+      try {
+        final modalRoute = ModalRoute.of(context);
+        if (modalRoute != null && !modalRoute.isCurrent) {
+          Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst || route is! PopupRoute);
+        }
+      } catch (_) {}
+
+      Navigator.push(
+        context,
+        SnappyPageRoute(page: const DriverRideActivePage()),
+      ).then((_) {
+        _isNavigatingToActivePage = false;
+      });
+    }
+  }
+
   void _onStateChange() {
     if (mounted) {
       setState(() {});
-      
-      final state = GlobalState.instance;
-      final isActiveRide = state.rideStatus == RideStatus.driverOnWay ||
-                           state.rideStatus == RideStatus.arrived ||
-                           state.rideStatus == RideStatus.tripStarted;
-      
-      // Only navigate if not already navigating AND we are not in the middle of accepting
-      // (acceptance flow handles its own navigation after dialog dismissal)
-      if (isActiveRide && !_isNavigatingToActivePage && !_isAcceptingRide) {
-        final currentRoute = ModalRoute.of(context);
-        if (currentRoute != null && currentRoute.isCurrent) {
-          _isNavigatingToActivePage = true;
-          Navigator.push(
-            context,
-            SnappyPageRoute(page: const DriverRideActivePage()),
-          ).then((_) {
-            _isNavigatingToActivePage = false;
-          });
-        }
-      }
+      _navigateToActivePageIfNeeded();
     }
   }
 
@@ -132,7 +139,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'يرجى تفعيل صلاحيات الموقع للبدء بالعمل.',
+            LocaleController.instance.isArabic 
+                ? 'يرجى تفعيل صلاحيات الموقع للبدء بالعمل.'
+                : 'Please enable location permissions to start.',
             style: GoogleFonts.cairo(),
           ),
           backgroundColor: AppColors.error,
@@ -360,22 +369,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
             AppLogger.error('DriverAccept', 'Error popping accept dialog context', err);
           }
         }
-        // Navigate to active ride page AFTER dialog is dismissed, using postFrameCallback
-        // to ensure the widget tree is stable before navigating
+        // Navigate to active ride page AFTER dialog is dismissed
         if (acceptSuccess && mounted) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted || _isNavigatingToActivePage) return;
-            final currentRoute = ModalRoute.of(context);
-            if (currentRoute != null && currentRoute.isCurrent) {
-              _isNavigatingToActivePage = true;
-              Navigator.push(
-                context,
-                SnappyPageRoute(page: const DriverRideActivePage()),
-              ).then((_) {
-                _isNavigatingToActivePage = false;
-              });
-            }
-          });
+          _navigateToActivePageIfNeeded();
         }
       }
     }
@@ -782,7 +778,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
                         ? Padding(
                             padding: const EdgeInsets.symmetric(vertical: 30.0),
                             child: Text(
-                              'لا توجد طلبات رحلات حالياً في منطقتك...',
+                              LocaleController.instance.isArabic 
+                                  ? 'لا توجد طلبات رحلات حالياً في منطقتك...' 
+                                  : 'No trip requests in your area right now...',
                               style: GoogleFonts.cairo(
                                 fontSize: 13,
                                 color: AppColors.textLight,
@@ -1071,7 +1069,7 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                     CircleAvatar(
                       radius: 22,
                       backgroundImage: pAvatar != null && pAvatar.isNotEmpty 
-                          ? CachedNetworkImageProvider(pAvatar) as ImageProvider
+                          ? CachedNetworkImageProvider(pAvatar, maxWidth: 200, maxHeight: 200) as ImageProvider
                           : null,
                       backgroundColor: AppColors.background,
                       child: pAvatar == null || pAvatar.isEmpty

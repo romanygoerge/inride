@@ -11,7 +11,8 @@ import '../../generated/app_localizations.dart';
 import '../../core/localization/locale_controller.dart';
 
 class WalletPage extends StatefulWidget {
-  const WalletPage({super.key});
+  final bool autoShowChargeDialog;
+  const WalletPage({super.key, this.autoShowChargeDialog = false});
 
   @override
   State<WalletPage> createState() => _WalletPageState();
@@ -38,6 +39,14 @@ class _WalletPageState extends State<WalletPage> {
       _isLoadingTransactions = false;
     }
     _loadTransactions();
+
+    if (widget.autoShowChargeDialog) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showChargeDialog(context, GlobalState.instance);
+        }
+      });
+    }
   }
 
   void _loadTransactions() async {
@@ -69,17 +78,20 @@ class _WalletPageState extends State<WalletPage> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) {
-            final activeMethods = state.activePaymentMethods.where((pm) => pm['code'] != 'cash').toList();
+            final List<Map<String, dynamic>> activeMethods = state.activePaymentMethods
+                .where((pm) => pm['code'] != 'cash')
+                .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+                .toList();
             if (activeMethods.isEmpty) {
-              activeMethods.addAll([
-                {
+              activeMethods.addAll(<Map<String, dynamic>>[
+                <String, dynamic>{
                   'id': '1',
                   'name': 'إنستا باي (InstaPay)',
                   'code': 'instapay',
                   'account_details': '01204062941',
                   'is_active': true,
                 },
-                {
+                <String, dynamic>{
                   'id': '2',
                   'name': 'فودافون كاش',
                   'code': 'vodafone_cash',
@@ -627,6 +639,46 @@ class _WalletPageState extends State<WalletPage> {
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: GlobalState.instance,
+      builder: (context, _) {
+        try {
+          return _buildBody(context);
+        } catch (e, stack) {
+          debugPrint('[WalletPage] Build error: $e\n$stack');
+          return Scaffold(
+            backgroundColor: AppColors.background,
+            appBar: AppBar(
+              title: Text('المحفظة', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text('حدث خطأ أثناء تحميل المحفظة', style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text('$e', style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary), textAlign: TextAlign.center),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => setState(() {}),
+                    child: Text('إعادة المحاولة', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+      },
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
     final state = GlobalState.instance;
     final isDriver = state.currentRole == UserRole.driver;
     final isArabic = LocaleController.instance.isArabic;
@@ -638,7 +690,7 @@ class _WalletPageState extends State<WalletPage> {
     final addFundsText = l10n?.addFunds ?? (isArabic ? 'شحن المحفظة' : 'Top Up Wallet');
     final paymentMethodsTitleText = l10n?.paymentMethods ?? (isArabic ? 'طرق الدفع' : 'Payment Methods');
 
-    final List<Map<String, dynamic>> dynamicMethods = state.activePaymentMethods.map((pm) {
+    final List<Map<String, dynamic>> dynamicMethods = state.activePaymentMethods.map<Map<String, dynamic>>((pm) {
       final code = (pm['code'] ?? 'cash').toString();
       final name = (pm['name'] ?? (isArabic ? 'كاش' : 'Cash')).toString();
       final details = (pm['account_details'] ?? '').toString();
@@ -651,7 +703,7 @@ class _WalletPageState extends State<WalletPage> {
         icon = Icons.account_balance_rounded;
       }
 
-      return {
+      return <String, dynamic>{
         'id': code,
         'title': name,
         'subtitle': details.isNotEmpty ? details : (isArabic ? 'وسيلة دفع مقبولة' : 'Accepted payment method'),
@@ -660,7 +712,7 @@ class _WalletPageState extends State<WalletPage> {
     }).toList();
 
     if (!isDriver && !dynamicMethods.any((m) => m['id'] == 'wallet')) {
-      dynamicMethods.add({
+      dynamicMethods.add(<String, dynamic>{
         'id': 'wallet',
         'title': isArabic ? 'المحفظة' : 'Wallet',
         'subtitle': '${state.walletBalance.toStringAsFixed(2)} $egpText',
@@ -668,7 +720,7 @@ class _WalletPageState extends State<WalletPage> {
       });
     }
 
-    final List<Map<String, dynamic>> paymentMethods = dynamicMethods;
+    final List<Map<String, dynamic>> paymentMethods = List<Map<String, dynamic>>.from(dynamicMethods);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -822,7 +874,6 @@ class _WalletPageState extends State<WalletPage> {
                         setState(() {
                           state.selectedPaymentMethod = titleText;
                         });
-                        state.update();
                       },
                     ),
                   );
@@ -897,7 +948,10 @@ class _WalletPageState extends State<WalletPage> {
                           itemCount: state.walletTransactions.length,
                           itemBuilder: (context, index) {
                             final tx = state.walletTransactions[index];
-                            final double amt = (tx['amount'] as num?)?.toDouble() ?? 0.0;
+                            final dynamic rawAmt = tx['amount'];
+                            final double amt = (rawAmt is num)
+                                ? rawAmt.toDouble()
+                                : (double.tryParse(rawAmt?.toString() ?? '0') ?? 0.0);
                             final bool isDebit = amt < 0;
                             final bool isPending = tx['type'] == 'charge_pending';
                             final String rawDesc = (tx['description'] as String?) ?? (isArabic ? 'معاملة مالية' : 'Transaction');

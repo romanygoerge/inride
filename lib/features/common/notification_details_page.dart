@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/models/notification_model.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/localization/locale_controller.dart';
 
 class NotificationDetailsPage extends StatelessWidget {
   final NotificationModel notification;
@@ -14,6 +15,7 @@ class NotificationDetailsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isAr = LocaleController.instance.isArabic;
     final iconData = _getIconForType(notification.type);
     final iconColor = _getColorForType(notification.type);
 
@@ -23,7 +25,7 @@ class NotificationDetailsPage extends StatelessWidget {
         backgroundColor: Colors.white,
         elevation: 0,
         title: Text(
-          'تفاصيل الإشعار',
+          isAr ? 'تفاصيل الإشعار' : 'Notification Details',
           style: GoogleFonts.cairo(
             fontWeight: FontWeight.bold,
             fontSize: 18,
@@ -84,7 +86,7 @@ class NotificationDetailsPage extends StatelessWidget {
                     const SizedBox(height: 8),
                     // Date & Time
                     Text(
-                      _formatDateTime(notification.createdAt),
+                      _formatDateTime(notification.createdAt, isAr),
                       style: GoogleFonts.outfit(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
@@ -113,7 +115,7 @@ class NotificationDetailsPage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'محتوى الرسالة',
+                      isAr ? 'محتوى الرسالة' : 'Message Content',
                       style: GoogleFonts.cairo(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
@@ -151,7 +153,7 @@ class NotificationDetailsPage extends StatelessWidget {
                   ),
                   icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
                   label: Text(
-                    'الانتقال إلى الصفحة المربوطة',
+                    isAr ? 'الانتقال إلى الصفحة المربوطة' : 'Go to Linked Page',
                     style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
                   onPressed: () {
@@ -210,14 +212,19 @@ class NotificationDetailsPage extends StatelessWidget {
     }
   }
 
-  String _formatDateTime(DateTime dt) {
-    final months = [
+  String _formatDateTime(DateTime dt, bool isAr) {
+    final arMonths = [
       'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
       'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
     ];
+    final enMonths = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
     final hour = dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
-    final period = dt.hour >= 12 ? 'م' : 'ص';
+    final period = isAr ? (dt.hour >= 12 ? 'م' : 'ص') : (dt.hour >= 12 ? 'PM' : 'AM');
     final minute = dt.minute.toString().padLeft(2, '0');
-    return '${dt.day} ${months[dt.month - 1]} ${dt.year} - $hour:$minute $period';
+    final monthStr = isAr ? arMonths[dt.month - 1] : enMonths[dt.month - 1];
+    return '${dt.day} $monthStr ${dt.year} - $hour:$minute $period';
   }
 }

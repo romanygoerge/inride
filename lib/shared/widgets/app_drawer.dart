@@ -123,7 +123,7 @@ class AppDrawer extends StatelessWidget {
                       state.userAvatarUrl != null && state.userAvatarUrl!.isNotEmpty
                           ? CircleAvatar(
                               radius: 30,
-                              backgroundImage: CachedNetworkImageProvider(state.userAvatarUrl!),
+                              backgroundImage: CachedNetworkImageProvider(state.userAvatarUrl!, maxWidth: 300, maxHeight: 300),
                               backgroundColor: AppColors.background,
                             )
                           : CircleAvatar(
@@ -202,64 +202,71 @@ class AppDrawer extends StatelessWidget {
           // Wallet Balance Card
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                gradient: const LinearGradient(
-                  colors: AppColors.blueGradient,
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+            child: InkWell(
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(context, SnappyPageRoute(page: const WalletPage()));
+              },
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  gradient: const LinearGradient(
+                    colors: AppColors.blueGradient,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.mediumBlue.withValues(alpha: 0.2),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.mediumBlue.withValues(alpha: 0.2),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        l10n.wallet,
-                        style: GoogleFonts.cairo(
-                          fontSize: 12,
-                          color: Colors.white70,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.wallet,
+                          style: GoogleFonts.cairo(
+                            fontSize: 12,
+                            color: Colors.white70,
+                          ),
                         ),
-                      ),
-                      Text(
-                        '${state.walletBalance.toStringAsFixed(2)} ${l10n.egp}',
-                        style: GoogleFonts.outfit(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                        Text(
+                          '${state.walletBalance.toStringAsFixed(2)} ${l10n.egp}',
+                          style: GoogleFonts.outfit(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
                         ),
+                      ],
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, SnappyPageRoute(page: const WalletPage()));
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white.withValues(alpha: 0.2),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                    ],
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, SnappyPageRoute(page: const WalletPage()));
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white.withValues(alpha: 0.2),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      child: Text(
+                        l10n.addFunds,
+                        style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
                     ),
-                    child: Text(
-                      l10n.addFunds,
-                      style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

@@ -53,3 +53,9 @@ assets/service_account.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Binaries & Load Test Tools
+load_tests/bin/
+*.exe
+*.zip
+

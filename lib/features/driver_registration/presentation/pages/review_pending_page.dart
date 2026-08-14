@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
+import '../../../../core/localization/locale_controller.dart';
 import '../../../../features/driver/presentation/pages/driver_home_page.dart';
 import 'doc_upload_page.dart';
 
@@ -22,13 +23,14 @@ class _ReviewPendingPageState extends State<ReviewPendingPage> {
         final status = state.verificationStatus;
         final rejectionReason = state.driverRejectionReason;
 
+        final isArabic = LocaleController.instance.isArabic;
         return Scaffold(
           backgroundColor: Colors.white,
           appBar: AppBar(
             backgroundColor: Colors.white,
             elevation: 0,
             title: Text(
-              'حالة حساب السائق',
+              isArabic ? 'حالة حساب السائق' : 'Driver Account Status',
               style: GoogleFonts.cairo(
                 fontWeight: FontWeight.bold,
                 color: AppColors.textPrimary,
@@ -71,7 +73,7 @@ class _ReviewPendingPageState extends State<ReviewPendingPage> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      'تم رفض طلب السائق',
+                      isArabic ? 'تم رفض طلب السائق' : 'Driver Request Rejected',
                       style: GoogleFonts.cairo(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -82,8 +84,8 @@ class _ReviewPendingPageState extends State<ReviewPendingPage> {
                     const SizedBox(height: 12),
                     Text(
                       (rejectionReason != null && rejectionReason.trim().isNotEmpty)
-                          ? 'سبب الرفض: $rejectionReason'
-                          : 'يرجى التأكد من وضوح كافة المستندات وصحة البيانات وتصوير الترخيص بشكل واضح.',
+                          ? (isArabic ? 'سبب الرفض: $rejectionReason' : 'Rejection Reason: $rejectionReason')
+                          : (isArabic ? 'يرجى التأكد من وضوح كافة المستندات وصحة البيانات وتصوير الترخيص بشكل واضح.' : 'Please ensure all documents are clear, valid and readable.'),
                       style: GoogleFonts.cairo(
                         fontSize: 14,
                         color: AppColors.textSecondary,
@@ -106,7 +108,7 @@ class _ReviewPendingPageState extends State<ReviewPendingPage> {
                       },
                       icon: const Icon(Icons.upload_file_outlined, color: Colors.white),
                       label: Text(
-                        'إعادة رفع المستندات والتراخيص',
+                        isArabic ? 'إعادة رفع المستندات والتراخيص' : 'Re-upload Documents & Licenses',
                         style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 15),
                       ),
                     ),
@@ -129,7 +131,7 @@ class _ReviewPendingPageState extends State<ReviewPendingPage> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      'تهانينا! تم اعتماد حسابك كسائق',
+                      isArabic ? 'تهانينا! تم اعتماد حسابك كسائق' : 'Congratulations! Account Verified',
                       style: GoogleFonts.cairo(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -139,7 +141,9 @@ class _ReviewPendingPageState extends State<ReviewPendingPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'تم التحقق من مستنداتك وتفعيل حسابك بنجاح. يمكنك الآن البدء في استقبال وتوصيل الرحلات.',
+                      isArabic 
+                          ? 'تم التحقق من مستنداتك وتفعيل حسابك بنجاح. يمكنك الآن البدء في استقبال وتوصيل الرحلات.'
+                          : 'Your documents have been verified and account activated. You can now start receiving trip offers.',
                       style: GoogleFonts.cairo(
                         fontSize: 14,
                         color: AppColors.textSecondary,
@@ -163,7 +167,7 @@ class _ReviewPendingPageState extends State<ReviewPendingPage> {
                       },
                       icon: const Icon(Icons.check_circle, color: Colors.white),
                       label: Text(
-                        'الانتقال للرئيسية واستقبال الرحلات',
+                        isArabic ? 'الانتقال للرئيسية واستقبال الرحلات' : 'Go to Home & Accept Rides',
                         style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 15),
                       ),
                     ),
@@ -186,7 +190,7 @@ class _ReviewPendingPageState extends State<ReviewPendingPage> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      'مستنداتك قيد المراجعة',
+                      isArabic ? 'مستنداتك قيد المراجعة' : 'Documents Under Review',
                       style: GoogleFonts.cairo(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -196,7 +200,9 @@ class _ReviewPendingPageState extends State<ReviewPendingPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'تم استلام طلبك ومستنداتك بنجاح! يتم فحص البيانات وتفعيل حسابك عبر الدعم الفني، وسيتم إخطارك بالإشعارات فور اعتماد الحساب.',
+                      isArabic 
+                          ? 'تم استلام طلبك ومستنداتك بنجاح! يتم فحص البيانات وتفعيل حسابك عبر الدعم الفني، وسيتم إخطارك بالإشعارات فور اعتماد الحساب.'
+                          : 'Your request & documents were received! Support is reviewing your application and you will be notified upon verification.',
                       style: GoogleFonts.cairo(
                         fontSize: 14,
                         color: AppColors.textSecondary,

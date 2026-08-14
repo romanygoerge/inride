@@ -140,9 +140,13 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
       }
     } catch (e) {
       if (mounted) {
+        final isAr = LocaleController.instance.isArabic;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('تعذر إجراء اتصال الطوارئ بالرقم 122', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            content: Text(
+              isAr ? 'تعذر إجراء اتصال الطوارئ بالرقم 122' : 'Could not make emergency call to 122',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
             backgroundColor: AppColors.error,
           ),
         );
@@ -151,10 +155,14 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
   }
 
   void _shareLiveLocation() async {
+    final isAr = LocaleController.instance.isArabic;
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(
       SnackBar(
-        content: Text('جاري جلب إحداثيات موقعك الجغرافي لمشاركته لايف... 📍', style: GoogleFonts.cairo()),
+        content: Text(
+          isAr ? 'جاري جلب إحداثيات موقعك الجغرافي لمشاركته لايف... 📍' : 'Fetching your live GPS coordinates to share... 📍',
+          style: GoogleFonts.cairo(),
+        ),
         backgroundColor: AppColors.mediumBlue,
         duration: const Duration(seconds: 2),
       ),
@@ -164,12 +172,14 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
       final pos = await LocationService.instance.getCurrentLocation();
       if (pos != null) {
         final shareUrl = 'https://www.google.com/maps/search/?api=1&query=${pos.latitude},${pos.longitude}';
-        final message = 'أنا كابتن في تطبيق inRide وعلى الطريق حالياً. يمكنك تتبع موقعي المباشر على الخريطة من هنا: $shareUrl';
+        final message = isAr
+            ? 'أنا كابتن في تطبيق inRide وعلى الطريق حالياً. يمكنك تتبع موقعي المباشر على الخريطة من هنا: $shareUrl'
+            : 'I am a Captain on inRide on the way. You can track my live location on the map here: $shareUrl';
         await SharePlus.instance.share(
           ShareParams(text: message),
         );
       } else {
-        throw 'تعذر الحصول على الموقع الجغرافي الحالي. تأكد من تشغيل الـ GPS.';
+        throw isAr ? 'تعذر الحصول على الموقع الجغرافي الحالي. تأكد من تشغيل الـ GPS.' : 'Unable to get current location. Make sure GPS is enabled.';
       }
     } catch (e) {
       if (mounted) {
@@ -939,7 +949,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                   destinationTarget = LatLng(destLoc.latitude, destLoc.longitude);
                                 }
 
-                                final bool isGoingToPickup = state.rideStatus == RideStatus.driverOnWay;
+                                final bool isGoingToPickup = state.rideStatus == RideStatus.driverOnWay || state.rideStatus == RideStatus.arrived;
                                 final bool isGoingToDestination = state.rideStatus == RideStatus.tripStarted;
 
                                 return Row(

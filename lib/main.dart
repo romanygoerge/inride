@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/supabase_config.dart';
 import 'core/localization/locale_controller.dart';
-import 'core/router/admin_router.dart';
 import 'generated/app_localizations.dart';
 
 import 'core/theme/app_theme.dart';
@@ -19,6 +18,7 @@ import 'features/driver_registration/presentation/pages/review_pending_page.dart
 import 'features/driver/presentation/pages/driver_home_page.dart';
 import 'features/passenger/presentation/pages/passenger_ride_matching_page.dart';
 import 'features/driver/presentation/pages/driver_ride_active_page.dart';
+import 'shared/widgets/no_internet_screen.dart';
 
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:url_launcher/url_launcher.dart' as import_url;
@@ -129,29 +129,6 @@ class InRideApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (kIsWeb) {
-      final router = ref.watch(adminRouterProvider);
-      return ListenableBuilder(
-        listenable: LocaleController.instance,
-        builder: (context, _) {
-          return MaterialApp.router(
-            routerConfig: router,
-            title: 'inRide Admin Dashboard',
-            debugShowCheckedModeBanner: false,
-            theme: AppTheme.lightTheme,
-            locale: LocaleController.instance.locale,
-            supportedLocales: AppLocalizations.supportedLocales,
-            localizationsDelegates: const [
-              AppLocalizations.delegate,
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
-          );
-        },
-      );
-    }
-
     return ListenableBuilder(
       listenable: LocaleController.instance,
       builder: (context, _) {
@@ -244,6 +221,9 @@ class _AuthGateState extends State<AuthGate> {
           // Phone number linking bypassed as per user requirement (Gmail/Google auth only)
           if (state.currentRole == UserRole.rider) {
             if (!state.hasPassengerProfile) {
+              if (state.isOffline) {
+                return const NoInternetScreen();
+              }
               return const PassengerProfileSetupPage();
             }
             if (state.rideStatus == RideStatus.searching ||
@@ -264,6 +244,9 @@ class _AuthGateState extends State<AuthGate> {
             } else if (state.verificationStatus == DriverVerificationStatus.submitted) {
               return const ReviewPendingPage();
             } else {
+              if (state.isOffline && !state.hasDriverProfile) {
+                return const NoInternetScreen();
+              }
               return const DocUploadPage();
             }
           }

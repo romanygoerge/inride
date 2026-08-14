@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/localization/locale_controller.dart';
 
 class DriverStatusHeader extends StatelessWidget {
   final bool isOnline;
@@ -16,6 +17,7 @@ class DriverStatusHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isArabic = LocaleController.instance.isArabic;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -43,7 +45,9 @@ class DriverStatusHeader extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    isOnline ? 'أنت متصل وحاهز للعمل 🟢' : 'أنت غير متصل 🔴',
+                    isOnline 
+                        ? (isArabic ? 'أنت متصل وجاهز للعمل 🟢' : 'You are Online 🟢')
+                        : (isArabic ? 'أنت غير متصل 🔴' : 'You are Offline 🔴'),
                     style: GoogleFonts.cairo(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
@@ -52,8 +56,8 @@ class DriverStatusHeader extends StatelessWidget {
                   ),
                   Text(
                     isOnline
-                        ? 'تلقي طلبات الرحلات والتوصيل'
-                        : 'قم بالتفعيل لبدء استقبال الطلبات',
+                        ? (isArabic ? 'تلقي طلبات الرحلات والتوصيل' : 'Receiving ride & delivery requests')
+                        : (isArabic ? 'قم بالتفعيل لبدء استقبال الطلبات' : 'Go online to receive request offers'),
                     style: GoogleFonts.cairo(
                       fontSize: 12,
                       color: AppColors.textSecondary,

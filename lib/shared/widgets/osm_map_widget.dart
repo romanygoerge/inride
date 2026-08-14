@@ -343,6 +343,14 @@ class _OsmMapWidgetState extends State<OsmMapWidget> with TickerProviderStateMix
   void _listenToNearbyDrivers() {
     _driversSubscription?.cancel();
     final state = GlobalState.instance;
+    if (state.currentRole == UserRole.driver) {
+      if (_nearbyDriversList.isNotEmpty) {
+        setState(() {
+          _nearbyDriversList = [];
+        });
+      }
+      return;
+    }
     final startLatLng = MapCoordinatesHelper.getLatLngForAddress(state.fromAddress);
 
     _driversSubscription = RideRepository.instance
@@ -455,8 +463,8 @@ class _OsmMapWidgetState extends State<OsmMapWidget> with TickerProviderStateMix
                       ),
                     ),
                     
-                  // Show nearby drivers only when idle
-                  if (state.rideStatus == RideStatus.idle)
+                  // Show nearby drivers only when idle and current role is passenger (rider)
+                  if (state.rideStatus == RideStatus.idle && state.currentRole == UserRole.rider)
                     for (final driverData in _nearbyDriversList)
                       fm.Marker(
                         point: ll.LatLng(driverData.lat, driverData.lng),

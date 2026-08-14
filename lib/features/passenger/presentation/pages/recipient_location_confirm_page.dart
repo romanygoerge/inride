@@ -7,6 +7,7 @@ import 'package:flutter_map/flutter_map.dart' as fm;
 import 'package:latlong2/latlong.dart' as ll;
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
+import '../../../../core/localization/locale_controller.dart';
 import '../../../../core/models/ride_request_model.dart';
 import '../../../../core/utils/map_coordinates_helper.dart';
 
@@ -33,12 +34,13 @@ class _RecipientLocationConfirmPageState extends State<RecipientLocationConfirmP
   VoidCallback? _retryCallback;
 
   RideRequestModel? _request;
-  String _senderName = 'مرسل الطرد';
+  String? _customSenderName;
+  String get _senderName => _customSenderName ?? (LocaleController.instance.isArabic ? 'مرسل الطرد' : 'Parcel Sender');
 
   // Map picker variables
   final fm.MapController _mapController = fm.MapController();
   ll.LatLng? _selectedLatLng;
-  String _resolvedAddress = 'جاري تحديد إحداثيات الموقع... 📍';
+  String _resolvedAddress = LocaleController.instance.isArabic ? 'جاري تحديد إحداثيات الموقع... 📍' : 'Locating coordinates... 📍';
   Timer? _debounceTimer;
 
   @override
@@ -55,6 +57,7 @@ class _RecipientLocationConfirmPageState extends State<RecipientLocationConfirmP
   }
 
   void _loadRequestDetails() async {
+    final isAr = LocaleController.instance.isArabic;
     setState(() {
       _state = ConfirmPageState.loading;
       _errorMessage = null;
@@ -74,7 +77,7 @@ class _RecipientLocationConfirmPageState extends State<RecipientLocationConfirmP
 
         if (req.recipientToken != null && req.recipientToken != widget.token) {
           setState(() {
-            _errorMessage = 'هذا الرابط غير صالح أو غير مصرح لك بالوصول ❌';
+            _errorMessage = isAr ? 'هذا الرابط غير صالح أو غير مصرح لك بالوصول ❌' : 'Invalid link or unauthorized access ❌';
             _state = ConfirmPageState.error;
             _retryCallback = null;
           });
@@ -83,7 +86,7 @@ class _RecipientLocationConfirmPageState extends State<RecipientLocationConfirmP
 
         if (req.status == 'Completed' || req.status == 'Cancelled' || req.status == 'Expired') {
           setState(() {
-            _errorMessage = 'انتهت صلاحية هذا الرابط لأن الطلب غير نشط أو مكتمل بالفعل ⚠️';
+            _errorMessage = isAr ? 'انتهت صلاحية هذا الرابط لأن الطلب غير نشط أو مكتمل بالفعل ⚠️' : 'Link expired as request is no longer active ⚠️';
             _state = ConfirmPageState.error;
             _retryCallback = null;
           });
@@ -93,7 +96,7 @@ class _RecipientLocationConfirmPageState extends State<RecipientLocationConfirmP
         final bool updatesAllowed = dataMap['allowLocationUpdate'] == true;
         if (req.isDeliveryLocationConfirmed && !updatesAllowed) {
           setState(() {
-            _errorMessage = 'تم تحديد وتأكيد الموقع مسبقاً لهذا الطلب ✅';
+            _errorMessage = isAr ? 'تم تحديد وتأكيد الموقع مسبقاً لهذا الطلب ✅' : 'Location has already been confirmed for this order ✅';
             _state = ConfirmPageState.error;
             _retryCallback = null;
           });
@@ -104,7 +107,7 @@ class _RecipientLocationConfirmPageState extends State<RecipientLocationConfirmP
         final name = passDoc != null ? (passDoc['name'] ?? 'مرسل الطرد') : 'مرسل الطرد';
 
         setState(() {
-          _senderName = name;
+          _customSenderName = name;
           _state = ConfirmPageState.intro;
         });
       } else {

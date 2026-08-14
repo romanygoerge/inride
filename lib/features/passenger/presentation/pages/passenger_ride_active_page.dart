@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
+import '../../../../core/localization/locale_controller.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/utils/map_coordinates_helper.dart';
 import '../../../../core/utils/snappy_page_route.dart';
@@ -63,9 +64,13 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
       }
     } catch (e) {
       if (mounted) {
+        final isAr = LocaleController.instance.isArabic;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('تعذر إجراء اتصال الطوارئ بالرقم 122', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            content: Text(
+              isAr ? 'تعذر إجراء اتصال الطوارئ بالرقم 122' : 'Could not make emergency call to 122',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
             backgroundColor: AppColors.error,
           ),
         );
@@ -74,10 +79,14 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
   }
 
   void _shareLiveLocation() async {
+    final isAr = LocaleController.instance.isArabic;
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(
       SnackBar(
-        content: Text('جاري جلب إحداثيات موقعك الجغرافي لمشاركته لايف... 📍', style: GoogleFonts.cairo()),
+        content: Text(
+          isAr ? 'جاري جلب إحداثيات موقعك الجغرافي لمشاركته لايف... 📍' : 'Fetching your live GPS coordinates to share... 📍',
+          style: GoogleFonts.cairo(),
+        ),
         backgroundColor: AppColors.mediumBlue,
         duration: const Duration(seconds: 2),
       ),
@@ -87,12 +96,14 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
       final pos = await LocationService.instance.getCurrentLocation();
       if (pos != null) {
         final shareUrl = 'https://www.google.com/maps/search/?api=1&query=${pos.latitude},${pos.longitude}';
-        final message = 'أنا في رحلة حالياً عبر تطبيق inRide. يمكنك تتبع موقعي المباشر على الخريطة من هنا: $shareUrl';
+        final message = isAr 
+            ? 'أنا في رحلة حالياً عبر تطبيق inRide. يمكنك تتبع موقعي المباشر على الخريطة من هنا: $shareUrl'
+            : 'I am currently on a ride via inRide. You can track my live location on the map here: $shareUrl';
         await SharePlus.instance.share(
           ShareParams(text: message),
         );
       } else {
-        throw 'تعذر الحصول على الموقع الجغرافي الحالي. تأكد من تشغيل الـ GPS.';
+        throw isAr ? 'تعذر الحصول على الموقع الجغرافي الحالي. تأكد من تشغيل الـ GPS.' : 'Unable to get current location. Make sure GPS is enabled.';
       }
     } catch (e) {
       if (mounted) {
@@ -554,7 +565,7 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
                                   children: [
                                     CircleAvatar(
                                       radius: 28,
-                                      backgroundImage: CachedNetworkImageProvider(offer.driver.avatar),
+                                      backgroundImage: CachedNetworkImageProvider(offer.driver.avatar, maxWidth: 250, maxHeight: 250),
                                       backgroundColor: AppColors.background,
                                     ),
                                     const SizedBox(width: 14),

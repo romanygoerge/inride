@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
 import '../../core/localization/locale_controller.dart';
+import '../../core/services/delete_account_service.dart';
 import '../../generated/app_localizations.dart';
 import 'legal_pages.dart';
 import '../../core/utils/snappy_page_route.dart';
@@ -18,10 +19,151 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _pushNotifications = true;
   bool _soundEffects = true;
   bool _darkMode = false;
+  bool _isDeletingAccount = false;
+
+  void _confirmDeleteAccount(BuildContext context) {
+    final isArabic = LocaleController.instance.isArabic;
+
+    showDialog(
+      context: context,
+      barrierDismissible: !_isDeletingAccount,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 28),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isArabic ? 'حذف الحساب' : 'Delete Account',
+                    style: GoogleFonts.cairo(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      color: AppColors.error,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            content: Text(
+              isArabic
+                  ? 'سيتم حذف حسابك وجميع بياناتك الشخصية بشكل نهائي، ولا يمكن التراجع عن هذا الإجراء.'
+                  : 'Your account and all personal data will be permanently deleted. This action cannot be undone.',
+              style: GoogleFonts.cairo(fontSize: 13.5, color: AppColors.textPrimary, height: 1.5),
+            ),
+            actions: [
+              TextButton(
+                onPressed: _isDeletingAccount ? null : () => Navigator.pop(ctx),
+                child: Text(
+                  isArabic ? 'إلغاء' : 'Cancel',
+                  style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: _isDeletingAccount
+                    ? null
+                    : () async {
+                        setDialogState(() {
+                          _isDeletingAccount = true;
+                        });
+
+                        final result = await DeleteAccountService.instance.deleteAccount(isArabic: isArabic);
+
+                        if (!context.mounted) return;
+
+                        if (ctx.mounted) {
+                          Navigator.pop(ctx);
+                        }
+
+                        setState(() {
+                          _isDeletingAccount = false;
+                        });
+
+                        if (result.success) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                result.message,
+                                style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+                              ),
+                              backgroundColor: AppColors.success,
+                              duration: const Duration(seconds: 4),
+                            ),
+                          );
+                          Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                        } else {
+                          showDialog(
+                            context: context,
+                            builder: (dialogCtx) => AlertDialog(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              title: Row(
+                                children: [
+                                  Icon(
+                                    result.isActiveTrip ? Icons.directions_car_rounded : Icons.error_outline_rounded,
+                                    color: AppColors.error,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      isArabic ? 'حذف الحساب' : 'Delete Account',
+                                      style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              content: Text(
+                                result.message,
+                                style: GoogleFonts.cairo(fontSize: 13, height: 1.5),
+                              ),
+                              actions: [
+                                ElevatedButton(
+                                  onPressed: () => Navigator.pop(dialogCtx),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.mediumBlue,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  child: Text(
+                                    isArabic ? 'حسناً' : 'OK',
+                                    style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
+                ),
+                child: _isDeletingAccount
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : Text(
+                        isArabic ? 'حذف الحساب' : 'Delete Account',
+                        style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final isArabic = LocaleController.instance.isArabic;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -40,7 +182,7 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. General Preferences
+              // 1. Account Settings (الإعدادات > الحساب)
               Text(
                 l10n.accountSettings,
                 style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
@@ -88,6 +230,18 @@ class _SettingsPageState extends State<SettingsPage> {
                           });
                         },
                       ),
+                      const Divider(color: AppColors.border, height: 16),
+                      // خيار حذف الحساب داخل الإعدادات > الحساب
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.delete_forever_outlined, color: AppColors.error, size: 22),
+                        title: Text(
+                          isArabic ? 'حذف الحساب' : 'Delete Account',
+                          style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.error),
+                        ),
+                        trailing: const Icon(Icons.arrow_forward_ios_outlined, color: AppColors.error, size: 14),
+                        onTap: () => _confirmDeleteAccount(context),
+                      ),
                     ],
                   ),
                 ),
@@ -113,7 +267,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                   ),
                   subtitle: Text(
-                    LocaleController.instance.isArabic ? l10n.arabic : l10n.english,
+                    isArabic ? l10n.arabic : l10n.english,
                     style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
                   ),
                   trailing: const Icon(Icons.arrow_forward_ios_outlined, color: AppColors.textLight, size: 14),
@@ -191,14 +345,14 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               const SizedBox(height: 32),
 
-              // 4. Danger Zone / Actions
+              // 4. Danger Zone / Logout & Account Deletion Actions
               ElevatedButton(
                 onPressed: () {
                   GlobalState.instance.reset();
                   Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.error.withValues(alpha:0.05),
+                  backgroundColor: AppColors.error.withValues(alpha: 0.05),
                   foregroundColor: AppColors.error,
                   side: const BorderSide(color: AppColors.error),
                   padding: const EdgeInsets.symmetric(vertical: 14),
@@ -212,63 +366,10 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
-                onPressed: () {
-                  final isArabic = LocaleController.instance.isArabic;
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      title: Row(
-                        children: [
-                          const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 28),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              isArabic ? 'حذف الحساب نهائياً' : 'Delete Account Permanently',
-                              style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.error),
-                            ),
-                          ),
-                        ],
-                      ),
-                      content: Text(
-                        isArabic
-                            ? 'هل أنت تأكد من رغبتك في حذف حسابك؟ وسيؤدي هذا إلى إلغاء جميع بياناتك وسجلات رحلاتك ورصيد محفظتك نهائياً طبقاً لسياسات الخصوصية.'
-                            : 'Are you sure you want to delete your account? This will permanently delete your profile, trip history, and wallet balance in accordance with store privacy policies.',
-                        style: GoogleFonts.cairo(fontSize: 13, color: AppColors.textPrimary),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: Text(isArabic ? 'إلغاء' : 'Cancel', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
-                        ),
-                        ElevatedButton(
-                          onPressed: () async {
-                            Navigator.pop(ctx);
-                            try {
-                              final uid = GlobalState.instance.userUid;
-                              if (uid != null) {
-                                await GlobalState.instance.deleteUserAccount();
-                              }
-                            } catch (_) {}
-                            GlobalState.instance.reset();
-                            if (context.mounted) {
-                              Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.error,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          child: Text(isArabic ? 'تأكيد الحذف' : 'Confirm Delete', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                onPressed: () => _confirmDeleteAccount(context),
                 icon: const Icon(Icons.delete_forever_outlined, color: AppColors.error, size: 18),
                 label: Text(
-                  LocaleController.instance.isArabic ? 'حذف الحساب والبيانات' : 'Delete Account & Data',
+                  isArabic ? 'حذف الحساب نهائياً' : 'Delete Account Permanently',
                   style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.error),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -300,7 +401,6 @@ class _SettingsPageState extends State<SettingsPage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-
         Row(
           children: [
             Icon(icon, color: AppColors.textSecondary, size: 20),
@@ -320,4 +420,3 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 }
-

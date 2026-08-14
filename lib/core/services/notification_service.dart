@@ -9,6 +9,7 @@ import '../../main.dart' show navigatorKey;
 import '../../features/chat/presentation/pages/chat_page.dart';
 import '../../features/passenger/presentation/pages/passenger_ride_active_page.dart';
 import '../../features/driver/presentation/pages/driver_home_page.dart';
+import '../../features/driver/presentation/pages/driver_ride_active_page.dart';
 import '../utils/snappy_page_route.dart';
 import '../../features/common/support_chat_page.dart';
 import '../../features/common/wallet_page.dart';
@@ -110,10 +111,13 @@ class NotificationService {
           SnappyPageRoute(page: const PassengerRideActivePage()),
         );
       } else {
-        Navigator.pushAndRemoveUntil(
+        final reqId = data['requestId']?.toString() ?? data['tripId']?.toString();
+        if (reqId != null && reqId.isNotEmpty) {
+          GlobalState.instance.currentRequestId = reqId;
+        }
+        Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => const DriverHomePage()),
-          (route) => false,
+          SnappyPageRoute(page: const DriverRideActivePage()),
         );
       }
       return;

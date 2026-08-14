@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
+import '../../../../core/localization/locale_controller.dart';
 import 'review_pending_page.dart';
 
 class DocUploadPage extends StatefulWidget {
@@ -113,7 +114,7 @@ class _DocUploadPageState extends State<DocUploadPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'اختر مصدر الصورة',
+              LocaleController.instance.isArabic ? 'اختر مصدر الصورة' : 'Select Image Source',
               style: GoogleFonts.cairo(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -124,13 +125,19 @@ class _DocUploadPageState extends State<DocUploadPage> {
             const SizedBox(height: 20),
             ListTile(
               leading: const Icon(Icons.camera_alt_outlined, color: AppColors.mediumBlue),
-              title: Text('التقاط صورة بالكاميرا', style: GoogleFonts.cairo(fontWeight: FontWeight.w600)),
+              title: Text(
+                LocaleController.instance.isArabic ? 'التقاط صورة بالكاميرا' : 'Take photo with Camera',
+                style: GoogleFonts.cairo(fontWeight: FontWeight.w600),
+              ),
               onTap: () => Navigator.pop(context, ImageSource.camera),
             ),
             const Divider(color: AppColors.border, height: 1),
             ListTile(
               leading: const Icon(Icons.photo_library_outlined, color: AppColors.mediumBlue),
-              title: Text('اختيار من معرض الصور', style: GoogleFonts.cairo(fontWeight: FontWeight.w600)),
+              title: Text(
+                LocaleController.instance.isArabic ? 'اختيار من معرض الصور' : 'Choose from Gallery',
+                style: GoogleFonts.cairo(fontWeight: FontWeight.w600),
+              ),
               onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
           ],

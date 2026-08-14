@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
+import '../../../../core/localization/locale_controller.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/utils/map_coordinates_helper.dart';
 import '../../../../core/models/place_location.dart';
@@ -45,18 +46,28 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
   bool get _recipientWillSpecifyLocation => _deliveryLocationMode == DeliveryLocationMode.recipient;
   String _selectedPaymentMethod = 'كاش'; // كاش, انستا باي
 
-  String get _fromAddress => GlobalState.instance.fromAddress ?? 'موقعي الحالي';
+  String get _fromAddress {
+    final isAr = LocaleController.instance.isArabic;
+    final addr = GlobalState.instance.fromAddress;
+    if (addr == null || addr == 'موقعي الحالي' || addr == 'Current Location') {
+      return isAr ? 'موقعي الحالي' : 'Current Location';
+    }
+    return addr;
+  }
 
   String get _toAddress {
+    final isAr = LocaleController.instance.isArabic;
     if (_deliveryLocationMode == DeliveryLocationMode.recipient) {
-      return 'بانتظار تحديد موقع المستلم';
+      return isAr ? 'بانتظار تحديد موقع المستلم' : 'Waiting for recipient location';
     }
     if (_deliveryLocationMode == DeliveryLocationMode.manual) {
       final region = _recipientRegionController.text.trim();
       final street = _recipientStreetController.text.trim();
       final building = _recipientBuildingController.text.trim();
       if (region.isNotEmpty || street.isNotEmpty) {
-        return '$region، شارع $street${building.isNotEmpty ? '، مبنى $building' : ''}';
+        return isAr 
+            ? '$region، شارع $street${building.isNotEmpty ? "، مبنى $building" : ""}'
+            : '$region, St $street${building.isNotEmpty ? ", Bldg $building" : ""}';
       }
     }
     return GlobalState.instance.toAddress ?? '';

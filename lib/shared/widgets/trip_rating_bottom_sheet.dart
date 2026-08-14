@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/repositories/ratings_repository.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/localization/locale_controller.dart';
 
 class TripRatingBottomSheet extends StatefulWidget {
   final String tripId;
@@ -119,17 +120,20 @@ class _TripRatingBottomSheetState extends State<TripRatingBottomSheet>
         } else {
           setState(() {
             _isSubmitting = false;
-            _errorMessage = 'تعذر تسجيل التقييم، يرجى المحاولة مرة أخرى.';
+            _errorMessage = LocaleController.instance.isArabic 
+                ? 'تعذر تسجيل التقييم، يرجى المحاولة مرة أخرى.'
+                : 'Failed to submit rating, please try again.';
           });
         }
       }
     } catch (e) {
       if (mounted) {
+        final isArabic = LocaleController.instance.isArabic;
         setState(() {
           _isSubmitting = false;
           _errorMessage = e.toString().contains('already')
-              ? 'لقد قمت بتقييم هذه الرحلة مسبقاً.'
-              : 'حدث خطأ أثناء التقييم: $e';
+              ? (isArabic ? 'لقد قمت بتقييم هذه الرحلة مسبقاً.' : 'You have already rated this trip.')
+              : (isArabic ? 'حدث خطأ أثناء التقييم: $e' : 'Rating error: $e');
         });
       }
     }
@@ -138,6 +142,7 @@ class _TripRatingBottomSheetState extends State<TripRatingBottomSheet>
   @override
   Widget build(BuildContext context) {
     final isDriver = widget.role == 'driver';
+    final isArabic = LocaleController.instance.isArabic;
 
     return Container(
       decoration: const BoxDecoration(
@@ -186,7 +191,7 @@ class _TripRatingBottomSheetState extends State<TripRatingBottomSheet>
               ),
               const SizedBox(height: 16),
               Text(
-                'شكراً لك على تقييمك!',
+                isArabic ? 'شكراً لك على تقييمك!' : 'Thank you for your rating!',
                 style: GoogleFonts.cairo(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -195,7 +200,9 @@ class _TripRatingBottomSheetState extends State<TripRatingBottomSheet>
               ),
               const SizedBox(height: 8),
               Text(
-                'ملاحظاتك تساعدنا على تحسين جودة الخدمة باستمرار.',
+                isArabic 
+                    ? 'ملاحظاتك تساعدنا على تحسين جودة الخدمة باستمرار.' 
+                    : 'Your feedback helps us continuously improve our service quality.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.cairo(
                   fontSize: 14,
@@ -206,7 +213,9 @@ class _TripRatingBottomSheetState extends State<TripRatingBottomSheet>
             ] else ...[
               // Rating Input Screen View
               Text(
-                isDriver ? 'تقييم الكابتن' : 'تقييم الراكب',
+                isDriver 
+                    ? (isArabic ? 'تقييم الكابتن' : 'Rate Captain')
+                    : (isArabic ? 'تقييم الراكب' : 'Rate Passenger'),
                 style: GoogleFonts.cairo(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -215,7 +224,9 @@ class _TripRatingBottomSheetState extends State<TripRatingBottomSheet>
               ),
               const SizedBox(height: 4),
               Text(
-                'كيف كانت تجربتك مع ${widget.targetUserName}؟',
+                isArabic
+                    ? 'كيف كانت تجربتك مع ${widget.targetUserName}؟'
+                    : 'How was your experience with ${widget.targetUserName}?',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.cairo(
                   fontSize: 18,
@@ -259,7 +270,7 @@ class _TripRatingBottomSheetState extends State<TripRatingBottomSheet>
 
               // Rating Text Label
               Text(
-                _getRatingTextLabel(_selectedRating),
+                _getRatingTextLabel(_selectedRating, isArabic),
                 style: GoogleFonts.cairo(
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
@@ -276,8 +287,8 @@ class _TripRatingBottomSheetState extends State<TripRatingBottomSheet>
                 style: GoogleFonts.cairo(fontSize: 14),
                 decoration: InputDecoration(
                   hintText: isDriver
-                      ? 'اكتب تعليقك على أداء وتأثير الكابتن (اختياري)...'
-                      : 'اكتب ملاحظاتك عن الراكب (اختياري)...',
+                      ? (isArabic ? 'اكتب تعليقك على أداء وتأثير الكابتن (اختياري)...' : 'Write comments about captain (optional)...')
+                      : (isArabic ? 'اكتب ملاحظاتك عن الراكب (اختياري)...' : 'Write comments about passenger (optional)...'),
                   hintStyle: GoogleFonts.cairo(fontSize: 13, color: Colors.grey.shade400),
                   filled: true,
                   fillColor: const Color(0xFFF8F9FA),
@@ -336,7 +347,7 @@ class _TripRatingBottomSheetState extends State<TripRatingBottomSheet>
                           ),
                         )
                       : Text(
-                          'إرسال التقييم',
+                          isArabic ? 'إرسال التقييم' : 'Submit Rating',
                           style: GoogleFonts.cairo(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -351,18 +362,18 @@ class _TripRatingBottomSheetState extends State<TripRatingBottomSheet>
     );
   }
 
-  String _getRatingTextLabel(int star) {
+  String _getRatingTextLabel(int star, bool isArabic) {
     switch (star) {
       case 5:
-        return 'ممتاز جـداً 🌟🌟🌟🌟🌟';
+        return isArabic ? 'ممتاز جـداً 🌟🌟🌟🌟🌟' : 'Excellent 🌟🌟🌟🌟🌟';
       case 4:
-        return 'جيد جـداً 👍';
+        return isArabic ? 'جيد جـداً 👍' : 'Very Good 👍';
       case 3:
-        return 'مقبول 😐';
+        return isArabic ? 'مقبول 😐' : 'Good 😐';
       case 2:
-        return 'ضعيف 👎';
+        return isArabic ? 'ضعيف 👎' : 'Fair 👎';
       case 1:
-        return 'سيء جداً ⚠️';
+        return isArabic ? 'سيء جداً ⚠️' : 'Poor ⚠️';
       default:
         return '';
     }

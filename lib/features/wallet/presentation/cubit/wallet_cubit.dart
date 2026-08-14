@@ -20,7 +20,8 @@ class WalletCubit extends Cubit<WalletState> {
         .listen((userList) async {
       if (userList.isNotEmpty) {
         final data = Map<String, dynamic>.from(userList.first);
-        final double balance = ((data['wallet_balance'] ?? data['walletBalance']) as num? ?? 0.0).toDouble();
+        final rawBal = data['wallet_balance'] ?? data['walletBalance'];
+        final double balance = (rawBal is num) ? rawBal.toDouble() : (double.tryParse(rawBal?.toString() ?? '0') ?? 0.0);
         final String selectedMethod = data['selected_payment_method'] ?? data['selectedPaymentMethod'] ?? 'كاش';
 
         List<Map<String, dynamic>> txList = [];
@@ -39,9 +40,11 @@ class WalletCubit extends Cubit<WalletState> {
 
           txList = docs.map((tData) {
             final dateObj = DateTime.tryParse(tData['created_at'] ?? '') ?? DateTime.now();
+            final rawAmt = tData['amount'];
+            final double amt = (rawAmt is num) ? rawAmt.toDouble() : (double.tryParse(rawAmt?.toString() ?? '0') ?? 0.0);
             return {
               'id': tData['id'],
-              'amount': (tData['amount'] as num? ?? 0.0).toDouble(),
+              'amount': amt,
               'type': tData['type'] ?? 'payment',
               'description': tData['title'] ?? tData['description'] ?? '',
               'date': '${dateObj.year}-${dateObj.month}-${dateObj.day}',

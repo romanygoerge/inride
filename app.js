@@ -759,6 +759,10 @@ function renderPage(page) {
         initProfileChatSync(activeProfileUid, 'rider');
         loadProfileRatings(activeProfileUid, 'rider');
         break;
+      case 'ratings':
+        container.innerHTML = renderRatingsPage();
+        loadRatingsPageData();
+        break;
       case 'wallet':
         container.innerHTML = renderWallet();
         break;
@@ -8133,14 +8137,14 @@ async function loadProfileRatings(uid, role = 'rider') {
     const { data: ratingsData, error } = await supabaseClient
       .from('ratings')
       .select('*')
-      .or(`receiver_id.eq.${uid},to_user_id.eq.${uid}`)
+      .or(`receiver_id.eq.${uid},sender_id.eq.${uid}`)
       .order('created_at', { ascending: false });
 
     let list = (ratingsData && Array.isArray(ratingsData) && ratingsData.length > 0) ? ratingsData : [];
     
     // If not found in direct query, check allSystemRatings
     if (list.length === 0 && typeof allSystemRatings !== 'undefined' && Array.isArray(allSystemRatings)) {
-      list = allSystemRatings.filter(r => (r.receiver_id === uid || r.to_user_id === uid));
+      list = allSystemRatings.filter(r => (r.receiver_id === uid || r.sender_id === uid));
     }
 
     // Resolve sender names if available
@@ -8349,6 +8353,30 @@ async function loadRatingsPageData() {
       .order('created_at', { ascending: false });
 
     let dbRatings = data || [];
+
+    // Resolve sender & receiver names from globalUsersMap
+    const allUserIds = new Set();
+    dbRatings.forEach(r => { if (r.sender_id) allUserIds.add(r.sender_id); if (r.receiver_id) allUserIds.add(r.receiver_id); });
+    const missingIds = [...allUserIds].filter(id => !globalUsersMap[id]);
+    if (missingIds.length > 0) {
+      try {
+        const { data: usrs } = await supabaseClient.from('users').select('id, name, phone_number, role').in('id', missingIds);
+        if (usrs) usrs.forEach(u => { globalUsersMap[u.id] = u; });
+      } catch(_) {}
+    }
+
+    // Enrich ratings with resolved names
+    dbRatings = dbRatings.map(r => {
+      const senderUser = globalUsersMap[r.sender_id] || {};
+      const receiverUser = globalUsersMap[r.receiver_id] || {};
+      return {
+        ...r,
+        sender_name: senderUser.name || senderUser.phone_number || 'مستخدم',
+        sender_role: senderUser.role || (r.receiver_role === 'driver' ? 'rider' : 'driver'),
+        receiver_name: receiverUser.name || receiverUser.phone_number || 'مستخدم',
+      };
+    });
+
     // Real ratings from Supabase are the sole source of truth (no synthesized records)
     allSystemRatings = dbRatings;
 
@@ -8441,13 +8469,18 @@ function filterRatingsPage() {
     const receiverRoleBadge = (r.receiver_role === 'driver') ? '<span class="status-badge active" style="font-size:10px;">كابتن</span>' : '<span class="status-badge pending" style="font-size:10px;">راكب</span>';
     const isHidden = r.is_hidden === true;
 
-    // Find receiver name if possible
-    let receiverName = 'مستخدم (' + (r.receiver_id ? r.receiver_id.substring(0, 6) : '') + ')';
-    if (typeof mockData !== 'undefined') {
-      const drv = mockData.drivers ? mockData.drivers.find(d => d.uid === r.receiver_id) : null;
-      const psg = mockData.passengers ? mockData.passengers.find(p => p.uid === r.receiver_id) : null;
-      if (drv) receiverName = drv.name;
-      else if (psg) receiverName = psg.name;
+    // Resolve receiver name from enriched data or globalUsersMap
+    let receiverName = r.receiver_name || 'مستخدم';
+    if (receiverName === 'مستخدم') {
+      const recUser = globalUsersMap[r.receiver_id];
+      if (recUser) receiverName = recUser.name || recUser.phone_number || 'مستخدم';
+      else {
+        const drv = (mockData.drivers || []).find(d => d.uid === r.receiver_id);
+        const psg = (mockData.passengers || []).find(p => p.uid === r.receiver_id);
+        if (drv) receiverName = drv.name;
+        else if (psg) receiverName = psg.name;
+        else receiverName = 'مستخدم (' + (r.receiver_id ? r.receiver_id.substring(0, 6) : '') + ')';
+      }
     }
 
     let starsHtml = '';

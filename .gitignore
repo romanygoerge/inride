@@ -47,7 +47,15 @@ node_modules/
 assets/service_account.json
 *.pem
 *.p12
+*.pfx
 *.keystore
+*.jks
+*.jceks
+*.key
+**/key.properties
+android/key.properties
+key.properties
+local.properties
 
 # Android Studio will place build artifacts here
 /android/app/debug

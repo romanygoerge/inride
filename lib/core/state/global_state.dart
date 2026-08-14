@@ -118,10 +118,12 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _syncSessionToNative() async {
     if (defaultTargetPlatform != TargetPlatform.android) return;
     try {
+      final session = _supabase.auth.currentSession;
       await _lifecycleChannel.invokeMethod('updateSessionInfo', {
         'requestId': _currentRequestId,
         'role': _currentRole.name,
         'rideStatus': _rideStatus.name,
+        'accessToken': session?.accessToken,
       });
       debugPrint('[Lifecycle] Synced session to native: $_currentRequestId, $_currentRole');
     } catch (e) {

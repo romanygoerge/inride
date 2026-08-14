@@ -33,12 +33,14 @@ class MainActivity : FlutterActivity() {
                 val requestId = call.argument<String>("requestId")
                 val role = call.argument<String>("role")
                 val rideStatus = call.argument<String>("rideStatus")
+                val accessToken = call.argument<String>("accessToken")
                 
                 val prefs = getSharedPreferences("inride_prefs", Context.MODE_PRIVATE)
                 prefs.edit().apply {
                     putString("current_request_id", requestId)
                     putString("current_role", role)
                     putString("ride_status", rideStatus)
+                    putString("access_token", accessToken)
                     apply()
                 }
                 result.success(true)

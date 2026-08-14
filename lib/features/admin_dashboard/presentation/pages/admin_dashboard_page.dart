@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../admin_auth/presentation/providers/admin_auth_provider.dart';
 
@@ -18,6 +19,43 @@ class AdminDashboardPage extends ConsumerStatefulWidget {
 }
 
 class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
+  Future<Map<String, dynamic>> _fetchLiveStats() async {
+    try {
+      final client = Supabase.instance.client;
+      final usersRes = await client.from('users').select('id');
+      final driversRes = await client.from('drivers').select('id');
+      final tripsRes = await client.from('ride_requests').select('id, offered_fare, status');
+
+      final usersList = (usersRes as List);
+      final driversList = (driversRes as List);
+      final tripsList = (tripsRes as List);
+
+      double revenue = 0;
+      for (final trip in tripsList) {
+        final status = (trip['status'] ?? '').toString().toLowerCase();
+        if (status == 'completed' || status == 'finished') {
+          final fare = trip['offered_fare'];
+          if (fare is num) {
+            revenue += fare.toDouble();
+          }
+        }
+      }
+
+      return {
+        'users': usersList.length,
+        'drivers': driversList.length,
+        'trips': tripsList.length,
+        'revenue': revenue,
+      };
+    } catch (e) {
+      return {
+        'users': 0,
+        'drivers': 0,
+        'trips': 0,
+        'revenue': 0.0,
+      };
+    }
+  }
   void _confirmLogout(BuildContext context) {
     showDialog(
       context: context,
@@ -392,16 +430,27 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
   }
 
   Widget _buildStatsRow() {
-    return Row(
-      children: [
-        _buildStatCard('Active Users', '12,450', '+14% this month', Icons.group_rounded, Colors.blue),
-        const SizedBox(width: 16),
-        _buildStatCard('Verified Captains', '1,890', '98% online rate', Icons.directions_car_rounded, Colors.green),
-        const SizedBox(width: 16),
-        _buildStatCard('Completed Trips', '45,210', '+8% vs last week', Icons.route_rounded, Colors.orange),
-        const SizedBox(width: 16),
-        _buildStatCard('Platform Revenue', '\$128,450', 'Gross volume', Icons.attach_money_rounded, Colors.purple),
-      ],
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _fetchLiveStats(),
+      builder: (context, snapshot) {
+        final data = snapshot.data;
+        final users = data != null ? '${data['users']}' : '...';
+        final drivers = data != null ? '${data['drivers']}' : '...';
+        final trips = data != null ? '${data['trips']}' : '...';
+        final revenue = data != null ? '${data['revenue'].toStringAsFixed(0)} EGP' : '...';
+
+        return Row(
+          children: [
+            _buildStatCard('Active Users', users, 'Live Supabase count', Icons.group_rounded, Colors.blue),
+            const SizedBox(width: 16),
+            _buildStatCard('Verified Captains', drivers, 'Live Supabase count', Icons.directions_car_rounded, Colors.green),
+            const SizedBox(width: 16),
+            _buildStatCard('Completed Trips', trips, 'Live Supabase count', Icons.route_rounded, Colors.orange),
+            const SizedBox(width: 16),
+            _buildStatCard('Platform Revenue', revenue, 'Completed trips volume', Icons.attach_money_rounded, Colors.purple),
+          ],
+        );
+      },
     );
   }
 

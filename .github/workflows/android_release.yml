@@ -1,0 +1,97 @@
+name: Android Production Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build Target (appbundle for Google Play, apk for direct testing)'
+        required: true
+        default: 'appbundle'
+        type: choice
+        options:
+          - appbundle
+          - apk
+          - both
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build Signed Android Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java Development Kit (JDK 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Project Dependencies
+        run: flutter pub get
+
+      - name: Decode Keystore & Configure Signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "❌ Error: ANDROID_KEYSTORE_BASE64 secret is not configured in GitHub repository secrets."
+            exit 1
+          fi
+
+          echo "Decoding release keystore..."
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+
+          echo "Writing dynamic key.properties for build execution..."
+          cat <<EOF > android/key.properties
+          storeFile=app/upload-keystore.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - name: Build Android App Bundle (AAB for Google Play)
+        if: github.event_name == 'push' || inputs.build_type == 'appbundle' || inputs.build_type == 'both'
+        run: flutter build appbundle --release
+
+      - name: Build Android APK
+        if: inputs.build_type == 'apk' || inputs.build_type == 'both'
+        run: flutter build apk --release
+
+      - name: Clean Up Sensitive Signing Files (Always Executes)
+        if: always()
+        run: |
+          echo "Securely shredding local signing credentials..."
+          rm -f android/key.properties
+          rm -f android/app/upload-keystore.jks
+          echo "✓ Ephemeral credentials removed."
+
+      - name: Upload Signed App Bundle Artifact
+        if: github.event_name == 'push' || inputs.build_type == 'appbundle' || inputs.build_type == 'both'
+        uses: actions/upload-artifact@v4
+        with:
+          name: inride-release-appbundle
+          path: build/app/outputs/bundle/release/*.aab
+          retention-days: 14
+
+      - name: Upload Signed APK Artifact
+        if: inputs.build_type == 'apk' || inputs.build_type == 'both'
+        uses: actions/upload-artifact@v4
+        with:
+          name: inride-release-apk
+          path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 14

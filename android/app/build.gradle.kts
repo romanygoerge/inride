@@ -1,9 +1,39 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// -----------------------------------------------------------------------------
+// Secure Release Signing Configuration
+// Loads credentials from `key.properties` or CI environment variables securely.
+// Never commits secrets to version control.
+// -----------------------------------------------------------------------------
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    FileInputStream(keystorePropertiesFile).use { stream ->
+        keystoreProperties.load(stream)
+    }
+}
+
+fun getSigningProperty(key: String, envKey: String): String? {
+    return keystoreProperties.getProperty(key)?.trim() ?: System.getenv(envKey)?.trim()
+}
+
+val storeFilePath = getSigningProperty("storeFile", "ANDROID_KEYSTORE_PATH")
+val storePasswordVal = getSigningProperty("storePassword", "ANDROID_KEYSTORE_PASSWORD")
+val keyAliasVal = getSigningProperty("keyAlias", "ANDROID_KEY_ALIAS")
+val keyPasswordVal = getSigningProperty("keyPassword", "ANDROID_KEY_PASSWORD")
+
+val hasReleaseSigning = !storeFilePath.isNullOrBlank() &&
+    !storePasswordVal.isNullOrBlank() &&
+    !keyAliasVal.isNullOrBlank() &&
+    !keyPasswordVal.isNullOrBlank()
 
 android {
     namespace = "com.inride.inride_app"
@@ -17,10 +47,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.inride.inride_app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -28,10 +55,29 @@ android {
         multiDexEnabled = true
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                val keyFile = File(storeFilePath!!)
+                storeFile = if (keyFile.isAbsolute) keyFile else rootProject.file(storeFilePath)
+                storePassword = storePasswordVal
+                keyAlias = keyAliasVal
+                keyPassword = keyPasswordVal
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+            isMinifyEnabled = false
+            isShrinkResources = false
+        }
+        debug {
             signingConfig = signingConfigs.getByName("debug")
         }
     }

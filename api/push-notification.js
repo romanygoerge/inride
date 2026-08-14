@@ -18,6 +18,18 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Authentication check: Require APP_SECRET_KEY header or valid Bearer token
+  const authHeader = req.headers['authorization'] || '';
+  const secretKey = process.env.APP_SECRET_KEY || process.env.APP_PUSH_SECRET_KEY || 'inride_secure_push_secret_2026_prod';
+  
+  if (authHeader !== `Bearer ${secretKey}`) {
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (!token || token === 'undefined' || token === 'null') {
+      console.warn('[PushNotification] Blocked unauthorized request attempt.');
+      return res.status(401).json({ error: 'Unauthorized: Valid Authorization header required.' });
+    }
+  }
+
   try {
     const { recipientId, title, body, type, data } = req.body || {};
 

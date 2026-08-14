@@ -1,30 +1,19 @@
 /// OneSignal Client Push Notification Configuration
-/// Note: REST API master keys are handled securely by backend server (fcm_backend)
-/// to comply with Security Requirements and prevent exposing private credentials in Flutter client.
+/// All REST API master keys are strictly managed on the backend server (fcm_backend / Vercel API)
+/// to comply with Security Standards and prevent exposing private credentials in Flutter client.
 class OneSignalConfig {
-  /// OneSignal Public App ID
+  /// OneSignal Public App ID (Used exclusively for client SDK initialization)
   static String get appId => _appIdOverride ?? const String.fromEnvironment(
     'ONESIGNAL_APP_ID',
     defaultValue: '388d1944-0b83-4942-8f80-b12584def7d7',
   );
 
   static String? _appIdOverride;
-  static String? _restApiKeyOverride;
 
-  /// OneSignal REST API Key
-  static String get restApiKey => _restApiKeyOverride ?? const String.fromEnvironment(
-    'ONESIGNAL_REST_API_KEY',
-    defaultValue: 'os_v2_app_999999999999999999999999',
-  );
-
-  /// Set App ID & REST API Key dynamically at runtime if needed
-  static void setCredentials({String? appId, String? restApiKey}) {
+  /// Set Public App ID dynamically at runtime if needed
+  static void setAppId(String? appId) {
     if (appId != null && appId.isNotEmpty) _appIdOverride = appId;
-    if (restApiKey != null && restApiKey.isNotEmpty) _restApiKeyOverride = restApiKey;
   }
-
-  /// Direct OneSignal REST API endpoint
-  static const String directOneSignalApiUrl = 'https://api.onesignal.com/notifications';
 
   /// Backend Push Server URL for dispatching push notifications securely
   static String get backendPushUrl => const String.fromEnvironment(
@@ -32,10 +21,16 @@ class OneSignalConfig {
     defaultValue: 'https://inride-push-backend.vercel.app/api',
   );
 
+  /// Secret Header Key used between Flutter client and Backend Push Server
+  static String get backendSecretKey => const String.fromEnvironment(
+    'APP_PUSH_SECRET_KEY',
+    defaultValue: 'inride_secure_push_secret_2026_prod',
+  );
+
   /// Check if client App ID is configured
   static bool get isAppConfigured =>
       appId.isNotEmpty && appId != 'YOUR_ONESIGNAL_APP_ID';
 
-  /// Legacy getter compatibility for debug page
+  /// Legacy getter compatibility
   static bool get isConfigured => isAppConfigured;
 }

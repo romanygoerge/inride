@@ -23,17 +23,21 @@ class TaskRemovalService : Service() {
         val requestId = prefs.getString("current_request_id", null)
         val userRole = prefs.getString("current_role", null)
         val rideStatus = prefs.getString("ride_status", "idle")
-        Log.d("TaskRemovalService", "Saved requestId: $requestId, role: $userRole, status: $rideStatus")
+        val accessToken = prefs.getString("access_token", null)
+        Log.d("TaskRemovalService", "Saved requestId: $requestId, role: $userRole, status: $rideStatus, hasToken: ${accessToken != null}")
 
         if (requestId != null && userRole == "rider" && rideStatus == "searching") {
             Thread {
                 try {
+                    val anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5bHJ1ZXZma3NtcW5reWtxa2luIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NTY3NDYsImV4cCI6MjEwMDMzMjc0Nn0.u5NVng7fsptjQOnNlEYP7MzNDp8_ssN94xSxzg8VYi4"
+                    val authHeader = if (!accessToken.isNullOrEmpty()) accessToken else anonKey
+
                     val url = URL("https://fylruevfksmqnkykqkin.supabase.co/rest/v1/ride_requests?id=eq.$requestId")
                     val conn = url.openConnection() as HttpURLConnection
                     conn.requestMethod = "PATCH"
                     conn.setRequestProperty("Content-Type", "application/json")
-                    conn.setRequestProperty("apikey", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5bHJ1ZXZma3NtcW5reWtxa2luIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NTY3NDYsImV4cCI6MjEwMDMzMjc0Nn0.u5NVng7fsptjQOnNlEYP7MzNDp8_ssN94xSxzg8VYi4")
-                    conn.setRequestProperty("Authorization", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5bHJ1ZXZma3NtcW5reWtxa2luIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NTY3NDYsImV4cCI6MjEwMDMzMjc0Nn0.u5NVng7fsptjQOnNlEYP7MzNDp8_ssN94xSxzg8VYi4")
+                    conn.setRequestProperty("apikey", anonKey)
+                    conn.setRequestProperty("Authorization", "Bearer $authHeader")
                     conn.doOutput = true
 
                     val jsonInputString = "{\"status\": \"Cancelled\", \"cancel_reason\": \"تم إلغاء الرحلة لإغلاق التطبيق\"}"

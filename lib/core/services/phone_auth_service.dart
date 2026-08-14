@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -236,38 +237,58 @@ class PhoneAuthService {
 
     // Step 2: Establish real Supabase Auth session for the phone user
     final authEmail = 'phone_$cleanedPhone@inride.app';
-    final authPassword = 'InRide_Phone_${cleanedPhone}_AuthSecKey!';
+    final authPassword = _generateSecurePhoneAuthKey(cleanedPhone);
+    final legacyPassword = 'InRide_Phone_${cleanedPhone}_AuthSecKey!';
 
     debugPrint('[PhoneAuthService] ▶ Step 2: Creating/Signing in Supabase Auth user ($authEmail)...');
 
-    AuthResponse response;
+    late AuthResponse response;
     try {
       try {
+        // Attempt 1: Try secure HMAC-SHA256 salted password
         response = await _supabase.auth.signInWithPassword(
           email: authEmail,
           password: authPassword,
         ).timeout(const Duration(seconds: 10));
-        debugPrint('[PhoneAuthService] ✓ Step 2 Success: Existing user signed in via signInWithPassword.');
+        debugPrint('[PhoneAuthService] ✓ Step 2 Success: Existing user signed in via secure HMAC password.');
       } catch (signInError) {
-        debugPrint('[PhoneAuthService] User sign-in notice ($signInError). Attempting signUp for new phone user...');
-        response = await _supabase.auth.signUp(
-          email: authEmail,
-          password: authPassword,
-          data: {
-            'phone_number': e164Phone,
-            'full_name': 'مستخدم هاتف',
-          },
-        ).timeout(const Duration(seconds: 10));
-
-        // If signUp created user but session is null (e.g., autoconfirm delay), execute signInWithPassword
-        if (response.session == null) {
-          debugPrint('[PhoneAuthService] SignUp succeeded without immediate session. Executing signInWithPassword...');
+        // Attempt 2: Check if legacy password exists for this user, then upgrade to secure HMAC
+        bool legacySucceeded = false;
+        try {
           response = await _supabase.auth.signInWithPassword(
             email: authEmail,
-            password: authPassword,
+            password: legacyPassword,
           ).timeout(const Duration(seconds: 10));
+          legacySucceeded = true;
+          debugPrint('[PhoneAuthService] ⚠️ Signed in with legacy password. Migrating user to secure HMAC password...');
+          // Seamlessly upgrade password to the secure HMAC hash
+          await _supabase.auth.updateUser(UserAttributes(password: authPassword));
+          debugPrint('[PhoneAuthService] ✓ Successfully upgraded user password to hardened HMAC security.');
+        } catch (_) {
+          legacySucceeded = false;
         }
-        debugPrint('[PhoneAuthService] ✓ Step 2 Success: New user registered and signed in via signUp.');
+
+        if (!legacySucceeded) {
+          debugPrint('[PhoneAuthService] User sign-in notice ($signInError). Attempting signUp for new phone user...');
+          response = await _supabase.auth.signUp(
+            email: authEmail,
+            password: authPassword,
+            data: {
+              'phone_number': e164Phone,
+              'full_name': 'مستخدم هاتف',
+            },
+          ).timeout(const Duration(seconds: 10));
+
+          // If signUp created user but session is null (e.g., autoconfirm delay), execute signInWithPassword
+          if (response.session == null) {
+            debugPrint('[PhoneAuthService] SignUp succeeded without immediate session. Executing signInWithPassword...');
+            response = await _supabase.auth.signInWithPassword(
+              email: authEmail,
+              password: authPassword,
+            ).timeout(const Duration(seconds: 10));
+          }
+          debugPrint('[PhoneAuthService] ✓ Step 2 Success: New user registered and signed in via signUp.');
+        }
       }
     } catch (e, stack) {
       debugPrint('[PhoneAuthService] ✗ Step 2 Fail: Supabase Auth error: $e\n$stack');
@@ -340,6 +361,16 @@ class PhoneAuthService {
 
   // Legacy helper
   String formatPhoneNumber(String rawPhone) => formatPhoneForWaPilot(rawPhone);
+
+  /// Generates a cryptographically strong deterministic password for the phone session
+  /// using HMAC-SHA256 with an internal high-entropy pepper and the user's phone number.
+  /// Prevents external attackers from calculating or guessing phone auth passwords.
+  static String _generateSecurePhoneAuthKey(String cleanedPhone) {
+    const String authPepper = 'inRide_2026_@_Secure_Phone_Salt_#9x8v7u6t5s4r3q2p1_auth';
+    final hmac = Hmac(sha256, utf8.encode(authPepper));
+    final digest = hmac.convert(utf8.encode(cleanedPhone));
+    return 'Sec_P_${digest.toString().substring(0, 32)}!Aa9';
+  }
 }
 
 

@@ -169,6 +169,9 @@ class AuthRemoteDataSource {
   }
 
   Future<AuthResponse> signInAnonymously({UserRole role = UserRole.rider}) async {
+    if (kReleaseMode) {
+      throw Exception('تسجيل الدخول التجريبي غير متاح في النسخة الرسمية.');
+    }
     final email =
         role == UserRole.driver ? 'dev_driver@inride.app' : 'dev_rider@inride.app';
     const password = 'DevPassword123!';

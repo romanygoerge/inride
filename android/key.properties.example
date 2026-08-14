@@ -1,0 +1,12 @@
+# ====================================================================
+# Android Release Signing Configuration (EXAMPLE TEMPLATE)
+# ====================================================================
+# DO NOT COMMIT YOUR REAL `key.properties` FILE TO GIT!
+# This example shows the expected format.
+# Copy this file to `android/key.properties` locally and fill in your values.
+# ====================================================================
+
+storeFile=app/upload-keystore.jks
+storePassword=YOUR_KEYSTORE_PASSWORD_HERE
+keyAlias=upload
+keyPassword=YOUR_KEY_PASSWORD_HERE

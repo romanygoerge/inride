@@ -249,6 +249,7 @@ async function handleLogin(event) {
 
 async function handleLogout() {
   try {
+    cleanupAllRealtimeChannels();
     if (supabaseClient && supabaseClient.auth) {
       await supabaseClient.auth.signOut();
     }
@@ -256,6 +257,20 @@ async function handleLogout() {
   isAuthenticatedAdmin = false;
   currentAdminUser = null;
   currentAdminProfile = null;
+  isSyncStarted = false;
+
+  // Reset store to prevent memory leaks or previous account data exposure
+  mockData.trips = [];
+  mockData.drivers = [];
+  mockData.passengers = [];
+  mockData.transactions = [];
+  mockData.tripsDataMap = {};
+  mockData.stats = { totalTrips: 0, activeDrivers: 0, totalPassengers: 0, totalRevenue: 0 };
+  globalSyncState.status = 'idle';
+  globalSyncState.error = null;
+  sessionStorage.removeItem('admin_activeProfileUid');
+  sessionStorage.removeItem('admin_activeProfileRole');
+
   showToast("تم تسجيل الخروج بنجاح.");
   showLoginView();
 }
@@ -326,171 +341,48 @@ function showToast(message) {
   }, 3000);
 }
 
+// Global synchronization state machine
+let globalSyncState = {
+  status: 'idle', // 'idle' | 'loading' | 'success' | 'error'
+  error: null,
+  lastSyncTime: null,
+  generation: 0,
+};
+
+let activeRealtimeChannels = [];
+
+function cleanupAllRealtimeChannels() {
+  if (activeRealtimeChannels && activeRealtimeChannels.length > 0) {
+    activeRealtimeChannels.forEach(ch => {
+      try {
+        if (ch && typeof ch.unsubscribe === 'function') ch.unsubscribe();
+      } catch (_) {}
+    });
+    activeRealtimeChannels = [];
+  }
+}
+
+// Authoritative Data Store for Dashboard (Strictly populated from Supabase)
 const mockData = {
-  // Real-time statistics populated from Firestore
   stats: {
-    totalTrips: 3,
-    activeDrivers: 2,
-    totalPassengers: 3,
-    totalRevenue: 80,
+    totalTrips: 0,
+    activeDrivers: 0,
+    totalPassengers: 0,
+    totalRevenue: 0,
   },
-
-  // Real-time lists populated from Firestore (with fallbacks)
-  trips: [
-    {
-      id: "TRP01",
-      requestId: "req01",
-      date: "اليوم، 10:15",
-      riderName: "كريم أحمد",
-      riderPhone: "01012345678",
-      riderUid: "PAS01",
-      driverName: "محمد علي",
-      driverUid: "DRV01",
-      from: "شارع الجلاء، السادات",
-      to: "جامعة السادات",
-      price: 45,
-      status: "مكتملة",
-      vehicle: "عربية",
-      rating: 5.0,
-      paymentMethod: "كاش"
-    },
-    {
-      id: "TRP02",
-      requestId: "req02",
-      date: "اليوم، 11:30",
-      riderName: "سارة محمود",
-      riderPhone: "01198765432",
-      riderUid: "PAS02",
-      driverName: "أحمد حسن",
-      driverUid: "DRV02",
-      from: "المنطقة الأولى",
-      to: "المنطقة الرابعة",
-      price: 20,
-      status: "جارية",
-      vehicle: "اسكوتر",
-      rating: 0,
-      paymentMethod: "كاش"
-    }
-  ],
-  drivers: [
-    {
-      id: "DRV01",
-      uid: "drv_uid_01",
-      name: "محمد علي",
-      phone: "01511223344",
-      email: "mohamed.ali@inride.com",
-      address: "المنطقة الخامسة، السادات",
-      rating: 4.9,
-      vehicleType: "car",
-      vehicleName: "هيونداي إلنترا",
-      vehicleColor: "فضي",
-      licensePlate: "أ ب ج 1 2 3",
-      status: "verified",
-      statusAr: "معتمد",
-      totalTrips: 120,
-      earnings: 4500,
-      isOnline: true,
-      joinDate: "2026/01/10",
-      avatar: "م",
-      idCardFrontUrl: "https://images.unsplash.com/photo-1554774853-aae0a22c8aa4?q=80&w=300",
-      idCardBackUrl: "https://images.unsplash.com/photo-1554774853-aae0a22c8aa4?q=80&w=300",
-      driverLicenseFrontUrl: "https://images.unsplash.com/photo-1554774853-aae0a22c8aa4?q=80&w=300",
-      driverLicenseBackUrl: "https://images.unsplash.com/photo-1554774853-aae0a22c8aa4?q=80&w=300",
-      vehicleLicenseFrontUrl: "https://images.unsplash.com/photo-1554774853-aae0a22c8aa4?q=80&w=300",
-      vehicleLicenseBackUrl: "https://images.unsplash.com/photo-1554774853-aae0a22c8aa4?q=80&w=300",
-      vehicleImages: ["https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?q=80&w=300"]
-    },
-    {
-      id: "DRV02",
-      uid: "drv_uid_02",
-      name: "أحمد حسن",
-      phone: "01099887766",
-      email: "ahmed.hassan@inride.com",
-      address: "المنطقة السكنية السابعة، السادات",
-      rating: 4.8,
-      vehicleType: "scooter",
-      vehicleName: "اسكوتر بينيلي",
-      vehicleColor: "أسود",
-      licensePlate: "د هـ و 4 5 6",
-      status: "submitted",
-      statusAr: "قيد المراجعة",
-      totalTrips: 45,
-      earnings: 1200,
-      isOnline: true,
-      joinDate: "2026/02/15",
-      avatar: "أ",
-      idCardFrontUrl: "",
-      idCardBackUrl: "",
-      driverLicenseFrontUrl: "",
-      driverLicenseBackUrl: "",
-      vehicleLicenseFrontUrl: "",
-      vehicleLicenseBackUrl: "",
-      vehicleImages: []
-    }
-  ],
-  passengers: [
-    {
-      id: "PAS01",
-      uid: "pas_uid_01",
-      name: "كريم أحمد",
-      phone: "01012345678",
-      email: "karim.ahmed@gmail.com",
-      address: "المنطقة الثانية، السادات",
-      rating: 5.0,
-      totalTrips: 18,
-      totalSpent: 950,
-      joinDate: "2026/01/01",
-      status: "active",
-      statusAr: "نشط",
-      lastTrip: "TRP01",
-      avatar: "ك"
-    },
-    {
-      id: "PAS02",
-      uid: "pas_uid_02",
-      name: "سارة محمود",
-      phone: "01198765432",
-      email: "sara.mah@gmail.com",
-      address: "المنطقة السادسة، السادات",
-      rating: 4.7,
-      totalTrips: 8,
-      totalSpent: 320,
-      joinDate: "2026/03/12",
-      status: "active",
-      statusAr: "نشط",
-      lastTrip: "TRP02",
-      avatar: "س"
-    },
-    {
-      id: "PAS03",
-      uid: "pas_uid_03",
-      name: "هاني سمير",
-      phone: "01233445566",
-      email: "hani.samir@yahoo.com",
-      address: "المنطقة الأولى، السادات",
-      rating: 4.5,
-      totalTrips: 3,
-      totalSpent: 120,
-      joinDate: "2026/04/05",
-      status: "suspended",
-      statusAr: "معلق",
-      lastTrip: "—",
-      avatar: "ه"
-    }
-  ],
+  trips: [],
+  drivers: [],
+  passengers: [],
   transactions: [],
-  // Weekly activity dynamically calculated from ride dates
   weeklyActivity: [
-    { day: 'السبت', trips: 2 },
-    { day: 'الأحد', trips: 5 },
-    { day: 'الاثنين', trips: 3 },
-    { day: 'الثلاثاء', trips: 7 },
-    { day: 'الأربعاء', trips: 4 },
-    { day: 'الخميس', trips: 8 },
-    { day: 'الجمعة', trips: 2 },
+    { day: 'السبت', trips: 0 },
+    { day: 'الأحد', trips: 0 },
+    { day: 'الاثنين', trips: 0 },
+    { day: 'الثلاثاء', trips: 0 },
+    { day: 'الأربعاء', trips: 0 },
+    { day: 'الخميس', trips: 0 },
+    { day: 'الجمعة', trips: 0 },
   ],
-
-  // Platform default configurations
   settings: {
     defaultFareCar: 45,
     defaultFareScooter: 20,
@@ -499,9 +391,12 @@ const mockData = {
     minFare: 10,
     maxFare: 500,
   },
+  supportChats: {},
+  tripsDataMap: {},
 };
 
 let currentPage = 'dashboard';
+
 let settingsDirty = false;
 let currentFilter = 'all';
 let searchQuery = '';
@@ -3067,38 +2962,17 @@ let commMessagesCache = {};
 async function loadCommUsersFromSupabase() {
   if (!supabaseClient) return;
 
+  // Use authoritative global state if already populated from primary sync
+  if (mockData.drivers && mockData.drivers.length > 0 && mockData.passengers && mockData.passengers.length > 0) {
+    return;
+  }
+
   try {
-    const { data: driversData } = await supabaseClient
-      .from('drivers')
-      .select('*');
-
-    if (driversData && driversData.length > 0) {
-      mockData.drivers = driversData.map(d => ({
-        uid: d.user_id || d.id || d.uid,
-        name: d.name || 'كابتن inRide',
-        phone: d.phone_number || d.phone || '',
-        vehicleType: d.vehicle_type || 'car',
-        rating: d.rating || 5.0,
-        isActive: d.is_active !== false,
-        joinDate: d.created_at ? new Date(d.created_at).toLocaleDateString('ar-EG') : 'جديد'
-      }));
-    }
-
-    const { data: passengersData } = await supabaseClient
-      .from('users')
-      .select('*');
-
-    if (passengersData && passengersData.length > 0) {
-      mockData.passengers = passengersData.filter(u => u.role !== 'driver').map(p => ({
-        uid: p.id || p.uid || p.user_id,
-        name: p.name || 'مستخدم inRide',
-        phone: p.phone_number || p.phone || '',
-        rating: p.rating || 5.0,
-        joinDate: p.created_at ? new Date(p.created_at).toLocaleDateString('ar-EG') : 'جديد'
-      }));
+    if (typeof window.runBulkSync === 'function') {
+      await window.runBulkSync();
     }
   } catch (e) {
-    console.warn('[Comm] Warning fetching users from Supabase:', e);
+    console.warn('[Comm] Warning syncing users from Supabase:', e);
   }
 }
 
@@ -7166,9 +7040,14 @@ function initSupabaseSync() {
     return;
   }
 
-  const runBulkSync = async () => {
+  window.runBulkSync = async () => {
+    const thisGeneration = ++globalSyncState.generation;
+    globalSyncState.status = 'loading';
+    globalSyncState.error = null;
+
     try {
-      console.log('[SupabaseSync] Running ultra-fast parallel data synchronization...');
+      console.log(`[InRide DataStore] Starting sync generation #${thisGeneration} at ${new Date().toISOString()}...`);
+      
       const [usersRes, driversRes, vehiclesRes, ridesRes, ratingsRes, settingsRes, passengersRes] = await Promise.all([
         supabaseClient.from('users').select('*'),
         supabaseClient.from('drivers').select('*'),
@@ -7178,6 +7057,12 @@ function initSupabaseSync() {
         supabaseClient.from('app_settings').select('*').eq('id', 'default').maybeSingle().catch(() => ({ data: null })),
         supabaseClient.from('passengers').select('*').catch(() => ({ data: [] }))
       ]);
+
+      // Check for race conditions before applying state
+      if (thisGeneration !== globalSyncState.generation) {
+        console.warn(`[InRide DataStore] Discarding stale sync response #${thisGeneration} (Current generation: #${globalSyncState.generation})`);
+        return;
+      }
 
       const usersList = usersRes.data || [];
       const driversList = driversRes.data || [];
@@ -7229,7 +7114,7 @@ function initSupabaseSync() {
 
       allSystemRatings = ratingsList;
 
-      // 5. Index completed trips per driver & passenger
+      // 5. Index completed trips and revenues per driver & passenger
       const driverTripsCountMap = {};
       const passengerTripsCountMap = {};
       const passengerSpentMap = {};
@@ -7253,7 +7138,7 @@ function initSupabaseSync() {
         }
       });
 
-      // 6. Build Drivers List
+      // 6. Build Real Drivers List
       const fullDrivers = [];
       const seenDriverIds = new Set();
 
@@ -7333,7 +7218,7 @@ function initSupabaseSync() {
         });
       });
 
-      // Also include users who have role = 'driver' but no row in drivers table yet
+      // Include users with role = 'driver' who do not have a row in drivers table yet
       usersList.forEach(u => {
         if (u.role === 'driver' && !seenDriverIds.has(u.id)) {
           const realTrips = driverTripsCountMap[u.id] || parseInt(u.total_trips || 0);
@@ -7386,7 +7271,7 @@ function initSupabaseSync() {
       mockData.drivers = fullDrivers;
       mockData.stats.activeDrivers = fullDrivers.filter(d => d.isOnline).length;
 
-      // 7. Build Passengers List
+      // 7. Build Real Passengers List
       const fullPassengers = [];
       const seenPassengerIds = new Set();
 
@@ -7438,7 +7323,7 @@ function initSupabaseSync() {
       mockData.passengers = fullPassengers;
       mockData.stats.totalPassengers = fullPassengers.length;
 
-      // 8. Build Trips List
+      // 8. Build Real Trips List
       mockData.tripsDataMap = {};
       const fullTrips = [];
       let totalRevenue = 0;
@@ -7446,8 +7331,8 @@ function initSupabaseSync() {
       ridesList.forEach(data => {
         mockData.tripsDataMap[data.id] = data;
         const tripPrice = parseFloat(data.offered_fare || data.offeredFare || 0);
-        const st = data.status || 'Pending';
-        if (st.toLowerCase() === 'completed') totalRevenue += tripPrice;
+        const st = (data.status || 'Pending').toLowerCase();
+        if (st === 'completed' || st === 'finished') totalRevenue += tripPrice;
 
         const dateObj = new Date(data.created_at || Date.now());
         const dateStr = `${dateObj.getHours()}:${dateObj.getMinutes().toString().padStart(2, '0')}`;
@@ -7472,10 +7357,10 @@ function initSupabaseSync() {
         }
 
         let statusArabic = 'جارية';
-        if (st.toLowerCase() === 'completed') statusArabic = 'مكتملة';
-        else if (st.toLowerCase() === 'cancelled') statusArabic = 'ملغاة';
-        else if (st.toLowerCase() === 'pending') statusArabic = 'بانتظار سائق';
-        else if (st.toLowerCase() === 'accepted') statusArabic = 'تم القبول';
+        if (st === 'completed' || st === 'finished') statusArabic = 'مكتملة';
+        else if (st === 'cancelled') statusArabic = 'ملغاة';
+        else if (st === 'pending') statusArabic = 'بانتظار سائق';
+        else if (st === 'accepted') statusArabic = 'تم القبول';
 
         fullTrips.push({
           id: (data.id || '').substring(0, 8).toUpperCase(),
@@ -7491,7 +7376,7 @@ function initSupabaseSync() {
           to: data.destination_address || data.destinationAddress || '—',
           price: tripPrice,
           status: statusArabic,
-          rawStatus: st,
+          rawStatus: data.status || 'Pending',
           vehicle: data.vehicle_type === 'scooter' ? 'اسكوتر' : (data.vehicle_type === 'motorcycle' ? 'موتوسيكل' : 'عربية'),
           isDeliveryLocationConfirmed: data.is_delivery_location_confirmed || false,
         });
@@ -7501,7 +7386,31 @@ function initSupabaseSync() {
       mockData.stats.totalTrips = fullTrips.length;
       mockData.stats.totalRevenue = totalRevenue;
 
-      // 9. Update Settings if returned
+      // 9. Calculate Dynamic Weekly Activity from Real Ride Dates
+      const weekDaysOrder = [
+        { dayKey: 6, day: 'السبت', trips: 0 },
+        { dayKey: 0, day: 'الأحد', trips: 0 },
+        { dayKey: 1, day: 'الاثنين', trips: 0 },
+        { dayKey: 2, day: 'الثلاثاء', trips: 0 },
+        { dayKey: 3, day: 'الأربعاء', trips: 0 },
+        { dayKey: 4, day: 'الخميس', trips: 0 },
+        { dayKey: 5, day: 'الجمعة', trips: 0 }
+      ];
+      const nowTime = Date.now();
+      const sevenDaysAgo = nowTime - (7 * 24 * 60 * 60 * 1000);
+      ridesList.forEach(r => {
+        if (r.created_at) {
+          const rTime = new Date(r.created_at).getTime();
+          if (rTime >= sevenDaysAgo) {
+            const dayIdx = new Date(r.created_at).getDay();
+            const found = weekDaysOrder.find(w => w.dayKey === dayIdx);
+            if (found) found.trips++;
+          }
+        }
+      });
+      mockData.weeklyActivity = weekDaysOrder.map(w => ({ day: w.day, trips: w.trips }));
+
+      // 10. Update Real Platform Settings
       if (settingsData) {
         mockData.settings = {
           defaultFareCar: parseFloat(settingsData.default_fare_car || 45),
@@ -7517,54 +7426,119 @@ function initSupabaseSync() {
           heat_start_hour: parseInt(settingsData.heat_start_hour || 11),
           heat_end_hour: parseInt(settingsData.heat_end_hour || 15),
           surge_enabled: settingsData.surge_enabled !== false,
-          region_fares: Array.isArray(settingsData.region_fares) ? settingsData.region_fares : [
-            { id: '1', name: 'القاهرة الكبرى', surcharge: 0, is_default: true },
-            { id: '2', name: 'الإسكندرية (الساحل)', surcharge: 5, is_default: false }
-          ]
+          region_fares: Array.isArray(settingsData.region_fares) ? settingsData.region_fares : []
         };
       }
 
+      globalSyncState.status = 'success';
+      globalSyncState.lastSyncTime = new Date();
+
       updatePendingBadge();
 
-      // Render current page safely without disturbing active inputs
+      // Safe re-render avoiding typing inputs
       if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
-        // User is typing, skip intrusive DOM replace
+        // User typing, skip DOM rebuild
       } else {
         renderPage(currentPage);
       }
-      console.log('[SupabaseSync] Parallel sync complete! Drivers:', fullDrivers.length, '| Passengers:', fullPassengers.length, '| Trips:', fullTrips.length);
+
+      console.log(`[InRide DataStore] Sync #${thisGeneration} Complete: ${fullDrivers.length} Drivers, ${fullPassengers.length} Passengers, ${fullTrips.length} Trips, Revenue: ${totalRevenue} EGP, Ratings: ${ratingsList.length}`);
     } catch (err) {
-      console.error('[SupabaseSync] Error during parallel sync:', err);
+      if (thisGeneration === globalSyncState.generation) {
+        globalSyncState.status = 'error';
+        globalSyncState.error = err;
+        console.error('[InRide DataStore] Error during bulk synchronization:', err);
+        showToast('⚠️ تعذر تحديث بعض بيانات الخادم: ' + (err.message || err));
+      }
     }
   };
 
-  // Debounced trigger for realtime updates
   const debouncedSync = () => {
     if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
-    syncDebounceTimer = setTimeout(runBulkSync, 300);
+    syncDebounceTimer = setTimeout(window.runBulkSync, 300);
   };
 
-  // Initial immediate sync
-  runBulkSync();
+  // Initial Sync
+  window.runBulkSync();
 
-  // Single consolidated realtime subscription
+  // Lifecycle Managed Realtime Subscription
   try {
-    supabaseClient.channel('admin_global_sync_channel')
+    const globalChannel = supabaseClient.channel('admin_global_sync_channel')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, debouncedSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, debouncedSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, debouncedSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ride_requests' }, debouncedSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ratings' }, debouncedSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, debouncedSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, debouncedSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wallet_recharge_requests' }, debouncedSync)
       .subscribe();
+
+    activeRealtimeChannels.push(globalChannel);
   } catch (chanErr) {
     console.warn('[SupabaseSync] Realtime channel subscription warning:', chanErr);
   }
 }
 
-// ============================================
-// INITIALIZATION
-// ============================================
+// Background Periodic Revalidation (Every 60s while tab is visible)
+setInterval(() => {
+  if (isAuthenticatedAdmin && document.visibilityState === 'visible' && typeof window.runBulkSync === 'function') {
+    window.runBulkSync();
+  }
+}, 60000);
+
+// Tab Focus Revalidation (Revalidate if last sync was > 30s ago)
+window.addEventListener('focus', () => {
+  if (isAuthenticatedAdmin && typeof window.runBulkSync === 'function') {
+    const elapsed = globalSyncState.lastSyncTime ? (Date.now() - globalSyncState.lastSyncTime.getTime()) : 999999;
+    if (elapsed > 30000) {
+      window.runBulkSync();
+    }
+  }
+});
+
+// Development Data Consistency Checker
+window.runDataConsistencyCheck = async function() {
+  console.log("%c[DATA CONSISTENCY CHECK] Starting live comparison against Supabase...", "color:#2563eb; font-weight:bold; font-size:14px;");
+  if (!supabaseClient) {
+    console.error("Supabase client is not available.");
+    return { success: false, error: "No client" };
+  }
+
+  try {
+    const [dbRides, dbDrivers, dbUsers, dbRatings] = await Promise.all([
+      supabaseClient.from('ride_requests').select('id'),
+      supabaseClient.from('drivers').select('id'),
+      supabaseClient.from('users').select('id, role'),
+      supabaseClient.from('ratings').select('id')
+    ]);
+
+    const dbTripIds = (dbRides.data || []).map(r => r.id);
+    const uiTripIds = (mockData.trips || []).map(t => t.requestId || t.id);
+    const missingTrips = dbTripIds.filter(id => !uiTripIds.includes(id));
+    const unexpectedTrips = uiTripIds.filter(id => !dbTripIds.includes(id));
+
+    const dbDriverIds = (dbDrivers.data || []).map(d => d.id);
+    const uiDriverIds = (mockData.drivers || []).map(d => d.uid);
+    const missingDrivers = dbDriverIds.filter(id => !uiDriverIds.includes(id));
+    const unexpectedDrivers = uiDriverIds.filter(id => !dbDriverIds.includes(id));
+
+    const isMatch = missingTrips.length === 0 && unexpectedTrips.length === 0 && missingDrivers.length === 0 && unexpectedDrivers.length === 0;
+
+    if (isMatch) {
+      console.log(`%c[DATA CONSISTENCY OK] 100% Match! Trips: ${dbTripIds.length}, Drivers: ${dbDriverIds.length}, Ratings: ${(dbRatings.data || []).length}`, "color:#16a34a; font-weight:bold; font-size:13px;");
+      return { success: true, message: "100% Consistent", dbCounts: { trips: dbTripIds.length, drivers: dbDriverIds.length }, uiCounts: { trips: uiTripIds.length, drivers: uiDriverIds.length } };
+    } else {
+      console.warn("%c[DATA CONSISTENCY ERROR] Mismatch detected between DB and Dashboard State!", "color:#dc2626; font-weight:bold; font-size:13px;", {
+        missingTrips, unexpectedTrips, missingDrivers, unexpectedDrivers
+      });
+      return { success: false, missingTrips, unexpectedTrips, missingDrivers, unexpectedDrivers };
+    }
+  } catch (err) {
+    console.error("[DATA CONSISTENCY CHECK] Execution error:", err);
+    return { success: false, error: err.message };
+  }
+};
 
 document.addEventListener('DOMContentLoaded', () => {
   // Mobile overlay close
@@ -7712,34 +7686,7 @@ function renderDriverProfile() {
         vehicleLicenseUrl: '',
       };
     } else {
-      driver = {
-        id: 'DRV_' + activeProfileUid.substring(0, 6).toUpperCase(),
-        uid: activeProfileUid,
-        name: 'كابتن (' + activeProfileUid.substring(0, 8) + ')',
-        phone: '—',
-        email: '—',
-        address: '—',
-        rating: 'جديد (بدون تقييم)',
-        ratingCount: 0,
-        vehicleType: 'car',
-        vehicleName: 'مركبة',
-        vehicleColor: 'فضي',
-        licensePlate: '—',
-        status: 'submitted',
-        statusAr: 'قيد المراجعة',
-        totalTrips: 0,
-        earnings: 0,
-        isOnline: false,
-        joinDate: '2026/01/10',
-        avatar: 'ك',
-        nationalIdUrl: '',
-        nationalIdBackUrl: '',
-        licenseUrl: '',
-        licenseBackUrl: '',
-        vehicleFrontUrl: '',
-        vehicleBackUrl: '',
-        vehicleLicenseUrl: '',
-      };
+      return `<div style="padding:48px;text-align:center;color:var(--text-light);background:var(--bg-card);border-radius:var(--radius-lg);margin:24px 0;"><i class="ri-error-warning-line" style="font-size:40px;display:block;margin-bottom:12px;color:var(--warning);"></i><h3 style="margin-bottom:8px;color:var(--text-primary);">لم يتم العثور على هذا الكابتن</h3><p style="font-size:13px;color:var(--text-secondary);">قد يكون الحساب غير مسجل أو تم حذفه من قاعدة البيانات.</p><button class="btn btn-primary btn-sm" onclick="navigateTo('drivers')" style="margin-top:16px;"><i class="ri-arrow-right-line"></i> العودة لقائمة السائقين</button></div>`;
     }
   }
 
@@ -7792,7 +7739,7 @@ function renderDriverProfile() {
           <!-- Personal Details -->
           <div class="card">
             <div class="card-header">
-              <h3><i class="ri-user-3-fill text-blue" style="margin-left:8px;"></i> بيانات الكابتن الشخصية</h3>
+              <h3><i class="ri-user-star-fill text-blue" style="margin-left:8px;"></i> بيانات الكابتن والحساب</h3>
             </div>
             <div class="card-body">
               <div style="display:flex;gap:20px;align-items:center;margin-bottom:20px;">
@@ -7813,15 +7760,18 @@ function renderDriverProfile() {
                   <span style="font-weight:700;font-size:13px;direction:ltr;display:inline-block;word-break:break-all;">${driver.email || '—'}</span>
                 </div>
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
-                  <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">العنوان المسجل</div>
-                  <span style="font-weight:700;font-size:13px;">${driver.address || '—'}</span>
+                  <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">حالة التوثيق</div>
+                  <span class="status-badge ${getStatusClass(driver.status)}" style="font-size:12px;">
+                    <span class="status-dot"></span> ${driver.statusAr}
+                  </span>
                 </div>
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
-                  <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">نوع وبيانات المركبة</div>
-                  <span class="vehicle-badge" style="font-weight:700;font-size:13px;">
-                    <i class="${getVehicleIcon(driver.vehicleType)}"></i>
-                    ${driver.vehicleName || 'مركبة'} (${driver.licensePlate || '—'})
-                  </span>
+                  <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">نوع المركبة</div>
+                  <span style="font-weight:700;font-size:13px;"><i class="${getVehicleIcon(driver.vehicleType)}"></i> ${driver.vehicleName} (${driver.licensePlate})</span>
+                </div>
+                <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
+                  <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">إجمالي الرحلات المكتملة</div>
+                  <span style="font-weight:900;font-size:14px;color:var(--medium-blue);">${driver.totalTrips} رحلة</span>
                 </div>
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
                   <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">التقييم العام المستلم</div>
@@ -7838,32 +7788,31 @@ function renderDriverProfile() {
                     </div>
                   `}
                 </div>
-                <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
-                  <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">رصيد الأرباح والمحفظة</div>
-                  <span style="font-weight:900;font-size:14px;color:var(--success);">${(driver.earnings || 0).toLocaleString()} ج.م</span>
-                </div>
               </div>
 
-              <!-- Quick Actions -->
+              <!-- Quick Verification Actions -->
               <div style="display:flex;gap:10px;flex-wrap:wrap;border-top:1px solid var(--border-light);padding-top:16px;">
+                <button class="btn btn-success btn-sm" onclick="approveDriverDocs('${driver.uid}'); setTimeout(() => viewUserProfile('${driver.uid}', 'driver'), 500);">
+                  <i class="ri-checkbox-circle-line"></i> اعتماد الكابتن
+                </button>
+                <button class="btn btn-outline btn-sm" style="color:var(--warning);border-color:var(--warning);" onclick="rejectDriverPrompt('${driver.uid}'); setTimeout(() => viewUserProfile('${driver.uid}', 'driver'), 500);">
+                  <i class="ri-close-circle-line"></i> رفض المستندات
+                </button>
                 <button class="btn btn-outline btn-sm" onclick="showEditUserModal('${driver.uid}', 'driver')">
-                  <i class="ri-edit-line"></i> تعديل البيانات الشخصية
+                  <i class="ri-edit-line"></i> تعديل البيانات
                 </button>
                 <button class="btn btn-outline btn-sm" onclick="adjustWalletPrompt('${driver.uid}', 'driver')">
                   <i class="ri-wallet-3-line"></i> شحن المحفظة
                 </button>
-                ${driver.status === 'verified' ? `
+                ${driver.status === 'suspended' ? `
+                  <button class="btn btn-success btn-sm" style="background:var(--success);" onclick="modifyUserStatus('${driver.uid}', 'activate', 'driver'); setTimeout(() => viewUserProfile('${driver.uid}', 'driver'), 500);">
+                    <i class="ri-lock-unlock-line"></i> تفعيل الحساب
+                  </button>
+                ` : `
                   <button class="btn btn-outline btn-sm" style="color:var(--error);border-color:var(--error);" onclick="modifyUserStatus('${driver.uid}', 'suspend', 'driver'); setTimeout(() => viewUserProfile('${driver.uid}', 'driver'), 500);">
                     <i class="ri-lock-line"></i> تعليق الحساب
                   </button>
-                ` : `
-                  <button class="btn btn-success btn-sm" style="background:var(--success);" onclick="modifyUserStatus('${driver.uid}', 'verify', 'driver'); setTimeout(() => viewUserProfile('${driver.uid}', 'driver'), 500);">
-                    <i class="ri-lock-unlock-line"></i> تفعيل واعتماد الحساب
-                  </button>
                 `}
-                <button class="btn btn-outline btn-sm" style="color:var(--error);border-color:var(--error);" onclick="modifyUserStatus('${driver.uid}', 'ban', 'driver'); setTimeout(() => viewUserProfile('${driver.uid}', 'driver'), 500);">
-                  <i class="ri-user-unfollow-line"></i> حظر الكابتن
-                </button>
                 <button class="btn btn-outline btn-sm" style="color:var(--error);border-color:var(--error);" onclick="deleteUserPrompt('${driver.uid}', 'driver')">
                   <i class="ri-delete-bin-line"></i> حذف الحساب نهائياً
                 </button>
@@ -7871,22 +7820,19 @@ function renderDriverProfile() {
             </div>
           </div>
 
-          <!-- Documents -->
-          <div class="card">
-            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-              <h3><i class="ri-file-text-fill text-blue" style="margin-left:8px;"></i> المستندات والأوراق الثبوتية</h3>
-              <span class="status-badge ${driver.status}">
-                <span class="status-dot"></span> ${driver.statusAr}
-              </span>
+          <!-- Documents Card -->
+          <div class="card" style="margin-top:0;">
+            <div class="card-header">
+              <h3><i class="ri-file-shield-2-fill text-blue" style="margin-left:8px;"></i> المستندات المرفوعة للتحقق</h3>
             </div>
             <div class="card-body">
-              <div style="display:flex;flex-direction:column;gap:12px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
-                  <span style="font-size:13px;font-weight:700;">الأوراق الرسمية المرفوعة (البطاقة، الرخص، صور المركبة)</span>
-                  <button class="btn btn-primary btn-sm" onclick="reviewDriverDocs('${driver.uid}')">
-                    <i class="ri-file-search-line"></i> عرض ومراجعة المستندات
-                  </button>
-                </div>
+              <div class="doc-viewer-grid">
+                ${renderDocItem('بطاقة الرقم القومي (الوجه الأمامي)', driver.idCardFrontUrl || driver.nationalIdUrl)}
+                ${renderDocItem('بطاقة الرقم القومي (الوجه الخلفي)', driver.idCardBackUrl || driver.nationalIdBackUrl)}
+                ${renderDocItem('رخصة القيادة (الوجه الأمامي)', driver.driverLicenseFrontUrl || driver.licenseUrl)}
+                ${renderDocItem('رخصة القيادة (الوجه الخلفي)', driver.driverLicenseBackUrl || driver.licenseBackUrl)}
+                ${renderDocItem('رخصة تسيير المركبة (الوجه الأمامي)', driver.vehicleLicenseFrontUrl || driver.vehicleLicenseUrl || driver.vehicleFrontUrl)}
+                ${renderDocItem('رخصة تسيير المركبة (الوجه الخلفي)', driver.vehicleLicenseBackUrl || driver.vehicleBackUrl)}
               </div>
             </div>
           </div>
@@ -7989,23 +7935,7 @@ function renderPassengerProfile() {
         avatar: pName.charAt(0).toUpperCase(),
       };
     } else {
-      passenger = {
-        id: 'PAS_' + activeProfileUid.substring(0, 6).toUpperCase(),
-        uid: activeProfileUid,
-        name: 'راكب (' + activeProfileUid.substring(0, 8) + ')',
-        phone: '—',
-        email: '—',
-        address: '—',
-        rating: 'جديد (بدون تقييم)',
-        ratingCount: 0,
-        totalTrips: 0,
-        totalSpent: 0,
-        joinDate: '2026/01/10',
-        status: 'active',
-        statusAr: 'نشط',
-        lastTrip: '—',
-        avatar: 'ر',
-      };
+      return `<div style="padding:48px;text-align:center;color:var(--text-light);background:var(--bg-card);border-radius:var(--radius-lg);margin:24px 0;"><i class="ri-error-warning-line" style="font-size:40px;display:block;margin-bottom:12px;color:var(--warning);"></i><h3 style="margin-bottom:8px;color:var(--text-primary);">لم يتم العثور على هذا الراكب</h3><p style="font-size:13px;color:var(--text-secondary);">قد يكون الحساب غير مسجل أو تم حذفه من قاعدة البيانات.</p><button class="btn btn-primary btn-sm" onclick="navigateTo('passengers')" style="margin-top:16px;"><i class="ri-arrow-right-line"></i> العودة لقائمة الركاب</button></div>`;
     }
   }
 
@@ -8419,53 +8349,7 @@ async function loadRatingsPageData() {
       .order('created_at', { ascending: false });
 
     let dbRatings = data || [];
-    const existingReceiverIds = new Set(dbRatings.map(r => r.receiver_id));
-
-    // Synthesize entries for all existing drivers & passengers who have account ratings
-    if (typeof mockData !== 'undefined') {
-      if (mockData.drivers && Array.isArray(mockData.drivers)) {
-        mockData.drivers.forEach(drv => {
-          if (!existingReceiverIds.has(drv.uid) && drv.rating) {
-            const numRating = parseFloat(drv.rating) || 5.0;
-            dbRatings.push({
-              id: 'synth_drv_' + drv.uid.substring(0, 6),
-              request_id: '—',
-              sender_id: 'system',
-              sender_name: 'تقييم الحساب الأساسي',
-              sender_role: 'system',
-              receiver_id: drv.uid,
-              receiver_name: drv.name,
-              receiver_role: 'driver',
-              rating: numRating,
-              comment: 'تقييم كابتن معتمد من النظام',
-              created_at: new Date().toISOString(),
-            });
-          }
-        });
-      }
-
-      if (mockData.passengers && Array.isArray(mockData.passengers)) {
-        mockData.passengers.forEach(psg => {
-          if (!existingReceiverIds.has(psg.uid) && psg.rating) {
-            const numRating = parseFloat(psg.rating) || 5.0;
-            dbRatings.push({
-              id: 'synth_psg_' + psg.uid.substring(0, 6),
-              request_id: '—',
-              sender_id: 'system',
-              sender_name: 'تقييم الحساب الأساسي',
-              sender_role: 'system',
-              receiver_id: psg.uid,
-              receiver_name: psg.name,
-              receiver_role: 'rider',
-              rating: numRating,
-              comment: 'تقييم راكب معتمد من النظام',
-              created_at: new Date().toISOString(),
-            });
-          }
-        });
-      }
-    }
-
+    // Real ratings from Supabase are the sole source of truth (no synthesized records)
     allSystemRatings = dbRatings;
 
     // Calculate stats
@@ -8884,26 +8768,16 @@ async function sendProfileChatMessage() {
       renderSupabaseProfileChat(uid);
     } catch (e) {
       console.error("[SupportChat Log] Error sending profile chat message:", e);
-      addLocalProfileChatMessage(uid, text);
+      showToast("❌ تعذر إرسال الرسالة إلى قاعدة البيانات: " + (e.message || e));
     }
   } else {
-    addLocalProfileChatMessage(uid, text);
+    showToast("❌ لا يوجد اتصال متاح بقاعدة البيانات.");
   }
 }
 
 function addLocalProfileChatMessage(uid, text) {
-  if (!mockData.supportChats[uid]) {
-    mockData.supportChats[uid] = [];
-  }
-  
-  mockData.supportChats[uid].push({
-    senderId: 'support',
-    text: text,
-    createdAt: new Date()
-  });
-
-  renderLocalProfileChat(uid);
-  logAction(`إرسال رسالة دعم محلياً للمستخدم: ${uid}`);
+  // Deprecated: No local fake message creation permitted
+  console.warn('[SupportChat] addLocalProfileChatMessage ignored: Mock data generation disabled.');
 }
 
 // ---- REALTIME DASHBOARD SYSTEM NOTIFICATIONS ----
@@ -9012,10 +8886,9 @@ document.addEventListener('click', () => {
 
 // Setup realtime triggers for admin notifications
 function initDashboardRealtimeTriggers() {
-  if (!supabaseClient) return;
+  if (!supabaseClient || !isAuthenticatedAdmin) return;
 
-  // 1. Subscribe to new ride requests
-  supabaseClient.channel('realtime_dashboard_rides')
+  const notifChannel = supabaseClient.channel('realtime_dashboard_notifications_hub')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ride_requests' }, payload => {
       const ride = payload.new;
       if (ride) {
@@ -9025,14 +8898,10 @@ function initDashboardRealtimeTriggers() {
           `رحلة جديدة من ${ride.pickup_address || 'الموقع الحالي'} بقيمة ${fare} ج.م`,
           'ride',
           'ri-car-fill',
-          'rides'
+          'trips'
         );
       }
     })
-    .subscribe();
-
-  // 2. Subscribe to new support chat messages
-  supabaseClient.channel('realtime_dashboard_support')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_messages' }, payload => {
       const msg = payload.new;
       if (msg && !msg.is_admin && msg.sender_type !== 'admin') {
@@ -9055,10 +8924,6 @@ function initDashboardRealtimeTriggers() {
         }
       }
     })
-    .subscribe();
-
-  // 3. Subscribe to new driver registrations (waiting for activation)
-  supabaseClient.channel('realtime_dashboard_drivers')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'drivers' }, payload => {
       const driver = payload.new;
       if (driver) {
@@ -9071,10 +8936,6 @@ function initDashboardRealtimeTriggers() {
         );
       }
     })
-    .subscribe();
-
-  // 4. Subscribe to new wallet charge receipts pending review
-  supabaseClient.channel('realtime_dashboard_transactions')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, payload => {
       const tx = payload.new;
       if (tx && tx.status === 'pending') {
@@ -9083,11 +8944,13 @@ function initDashboardRealtimeTriggers() {
           `طلب شحن محفظة بقيمة ${tx.amount} ج.م بانتظار المراجعة والقبول`,
           'transaction',
           'ri-bank-card-fill',
-          'financial'
+          'wallet'
         );
       }
     })
     .subscribe();
+
+  activeRealtimeChannels.push(notifChannel);
 }
 
 // System communication triggers

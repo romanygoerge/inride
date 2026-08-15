@@ -7038,6 +7038,88 @@ function submitDocApproval(uid, decision) {
 let syncDebounceTimer = null;
 let globalUsersMap = {};
 
+
+// ============================================
+// UNIFIED RATINGS & REVIEWS ENGINE (SINGLE SOURCE OF TRUTH)
+// ============================================
+function getUserUnifiedRating(userId, targetRole = 'all') {
+  if (!userId) {
+    return {
+      average: '5.0',
+      ratingNum: 5.0,
+      count: 0,
+      display: 'جديد (بدون تقييم)',
+      hasRatings: false,
+      starsBreakdown: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+      ratingsList: []
+    };
+  }
+
+  const normalizedUid = String(userId).trim().toLowerCase();
+  const allRatings = (typeof allSystemRatings !== 'undefined' && Array.isArray(allSystemRatings)) 
+    ? allSystemRatings 
+    : [];
+
+  // Filter ratings strictly received by this user
+  const matching = allRatings.filter(r => {
+    const recId = String(r.receiver_id || r.to_user_id || '').trim().toLowerCase();
+    if (recId !== normalizedUid) return false;
+    if (targetRole && targetRole !== 'all') {
+      const recRole = String(r.receiver_role || r.role || '').trim().toLowerCase();
+      if (targetRole === 'driver' || targetRole === 'captain') {
+        return recRole === 'driver' || recRole === 'captain';
+      }
+      if (targetRole === 'rider' || targetRole === 'passenger') {
+        return recRole === 'rider' || recRole === 'passenger';
+      }
+    }
+    return true;
+  });
+
+  const count = matching.length;
+  const starCounts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+  let sum = 0;
+
+  matching.forEach(r => {
+    const s = parseFloat(r.rating) || 5;
+    sum += s;
+    const rounded = Math.min(5, Math.max(1, Math.round(s)));
+    starCounts[rounded] = (starCounts[rounded] || 0) + 1;
+  });
+
+  let avg = '5.0';
+  let avgNum = 5.0;
+  let hasRatings = false;
+
+  if (count > 0) {
+    avgNum = parseFloat((sum / count).toFixed(1));
+    avg = avgNum.toFixed(1);
+    hasRatings = true;
+  } else {
+    // If no explicit rating rows in ratings table, check base user rating in DB
+    let userObj = (typeof globalUsersMap !== 'undefined') ? (globalUsersMap[userId] || Object.values(globalUsersMap).find(u => u.id && u.id.toLowerCase() === normalizedUid)) : null;
+    const baseCount = parseInt(userObj?.rating_count || userObj?.total_ratings || 0);
+    const baseRating = parseFloat(userObj?.rating || 0);
+    if (baseCount > 0 && baseRating > 0) {
+      avgNum = parseFloat(baseRating.toFixed(1));
+      avg = avgNum.toFixed(1);
+      hasRatings = true;
+    }
+  }
+
+  const display = hasRatings ? avg : 'جديد (بدون تقييم)';
+
+  return {
+    average: avg,
+    ratingNum: avgNum,
+    count: count,
+    display: display,
+    hasRatings: hasRatings,
+    starsBreakdown: starCounts,
+    ratingsList: matching
+  };
+}
+
 function initSupabaseSync() {
   if (!supabaseClient) {
     console.warn("Supabase SDK is not loaded. Operating in local mode.");
@@ -7156,19 +7238,10 @@ function initSupabaseSync() {
           parseInt(drv.total_trips || drv.completed_trips || userObj.total_trips || 0)
         );
 
-        let avgRating = 0;
-        let ratingCount = driverRatingsCountMap[drv.id] || 0;
-        if (ratingCount > 0) {
-          avgRating = parseFloat((driverRatingsMap[drv.id] / ratingCount).toFixed(1));
-        } else {
-          const dbRatingCount = parseInt(drv.rating_count || drv.total_ratings || userObj.rating_count || 0);
-          const dbRating = drv.rating || userObj.rating;
-          if (dbRatingCount > 0 && dbRating) {
-            avgRating = parseFloat(parseFloat(dbRating).toFixed(1));
-            ratingCount = dbRatingCount;
-          }
-        }
-        const ratingDisplay = ratingCount > 0 ? avgRating.toFixed(1) : 'جديد (بدون تقييم)';
+        const dRatingObj = getUserUnifiedRating(drv.id, 'driver');
+        const avgRating = dRatingObj.ratingNum;
+        const ratingCount = dRatingObj.count;
+        const ratingDisplay = dRatingObj.display;
 
         let statusAr = 'غير مسجل';
         const stVal = drv.verification_status || 'unregistered';
@@ -7294,12 +7367,10 @@ function initSupabaseSync() {
         if (data.role === 'rider' || data.role === 'passenger' || !data.role) {
           seenPassengerIds.add(data.id);
           const dateObj = new Date(data.created_at || Date.now());
-          const ratingCount = riderRatingsCountMap[data.id] || parseInt(data.rating_count || pRecord.rating_count || 0);
-          const avgRating = ratingCount > 0 
-            ? parseFloat((riderRatingsMap[data.id] / ratingCount).toFixed(1))
-            : (data.rating ? parseFloat(parseFloat(data.rating).toFixed(1)) : 0);
-
-          const ratingDisplay = ratingCount > 0 ? avgRating.toFixed(1) : 'جديد (بدون تقييم)';
+          const pRatingObj = getUserUnifiedRating(data.id, 'rider');
+          const avgRating = pRatingObj.ratingNum;
+          const ratingCount = pRatingObj.count;
+          const ratingDisplay = pRatingObj.display;
           const totalTrips = Math.max(passengerTripsCountMap[data.id] || 0, parseInt(data.total_trips || pRecord.total_trips || 0));
           const totalSpent = passengerSpentMap[data.id] || 0;
 
@@ -7634,15 +7705,219 @@ if (!mockData.supportChats) {
 }
 
 function viewUserProfile(uid, role = 'rider') {
-  if (!uid) return;
+  if (!uid || uid === 'null' || uid === 'undefined') {
+    showToast('⚠️ معرف المستخدم غير متاح');
+    return;
+  }
+
   activeProfileUid = uid;
   activeProfileRole = role;
   sessionStorage.setItem('admin_activeProfileUid', uid);
   sessionStorage.setItem('admin_activeProfileRole', role);
-  navigateTo(role === 'driver' ? 'driver-profile' : 'passenger-profile');
+
+  // Auto-detect best profile page
+  const targetUid = String(uid).trim().toLowerCase();
+  const isDriverInStore = (mockData.drivers || []).some(d => (d.uid && d.uid.toLowerCase() === targetUid) || (d.id && d.id.toLowerCase() === targetUid));
+  const effectivePage = (role === 'driver' || isDriverInStore) ? 'driver-profile' : 'passenger-profile';
+
+  navigateTo(effectivePage);
   setTimeout(() => {
     loadProfileRatings(uid, role);
   }, 100);
+}
+
+// Helper to resolve user entity from memory or trigger async loading
+function resolveUserEntity(uid) {
+  if (!uid) return null;
+  const targetUid = String(uid).trim().toLowerCase();
+
+  // 1. Check in mockData.drivers
+  let driverObj = (mockData.drivers || []).find(d => 
+    (d.uid && d.uid.toLowerCase() === targetUid) ||
+    (d.id && d.id.toLowerCase() === targetUid)
+  );
+  if (driverObj) return { user: driverObj, type: 'driver' };
+
+  // 2. Check in mockData.passengers
+  let passengerObj = (mockData.passengers || []).find(p => 
+    (p.uid && p.uid.toLowerCase() === targetUid) ||
+    (p.id && p.id.toLowerCase() === targetUid)
+  );
+  if (passengerObj) return { user: passengerObj, type: 'passenger' };
+
+  // 3. Check in globalUsersMap
+  if (typeof globalUsersMap !== 'undefined') {
+    for (const [k, u] of Object.entries(globalUsersMap)) {
+      if (k.toLowerCase() === targetUid || (u.id && u.id.toLowerCase() === targetUid)) {
+        const uRole = (u.role || '').toLowerCase();
+        const dName = u.name || u.phone_number || ('مستخدم ' + u.id.substring(0, 6));
+        const dateObj = new Date(u.created_at || Date.now());
+        const uRatingObj = getUserUnifiedRating(u.id, uRole === 'driver' ? 'driver' : 'rider');
+
+        const constructed = {
+          id: (uRole === 'driver' ? 'DRV_' : 'PAS_') + u.id.substring(0, 6).toUpperCase(),
+          uid: u.id,
+          name: dName,
+          phone: u.phone_number || u.phone || '—',
+          email: u.email || '—',
+          address: u.address || '—',
+          rating: uRatingObj.display,
+          ratingNum: uRatingObj.ratingNum,
+          ratingCount: uRatingObj.count,
+          totalTrips: u.total_trips || 0,
+          totalSpent: 0,
+          earnings: parseFloat(u.wallet_balance || 0),
+          status: u.status || (uRole === 'driver' ? 'verified' : 'active'),
+          statusAr: u.status === 'suspended' ? 'معلق' : (u.status === 'banned' ? 'محظور' : (uRole === 'driver' ? 'معتمد' : 'نشط')),
+          joinDate: dateObj.toLocaleDateString('ar-EG'),
+          avatar: dName.charAt(0).toUpperCase(),
+          vehicleType: 'car',
+          vehicleName: 'مركبة',
+          vehicleColor: 'فضي',
+          licensePlate: '—',
+          isOnline: false,
+          nationalIdUrl: '',
+          nationalIdBackUrl: '',
+          licenseUrl: '',
+          licenseBackUrl: '',
+          vehicleFrontUrl: '',
+          vehicleBackUrl: '',
+          vehicleLicenseUrl: '',
+        };
+        return { user: constructed, type: uRole === 'driver' ? 'driver' : 'passenger' };
+      }
+    }
+  }
+
+  // 4. Check in mockData.trips
+  const matchingTrip = (mockData.trips || []).find(t => 
+    (t.riderUid && t.riderUid.toLowerCase() === targetUid) ||
+    (t.driverUid && t.driverUid.toLowerCase() === targetUid)
+  );
+  if (matchingTrip) {
+    const isDriverMatch = matchingTrip.driverUid && matchingTrip.driverUid.toLowerCase() === targetUid;
+    const name = isDriverMatch ? matchingTrip.driverName : matchingTrip.riderName;
+    const phone = isDriverMatch ? '—' : matchingTrip.riderPhone;
+    const uRatingObj = getUserUnifiedRating(targetUid, isDriverMatch ? 'driver' : 'rider');
+
+    const tripConstructed = {
+      id: (isDriverMatch ? 'DRV_' : 'PAS_') + targetUid.substring(0, 6).toUpperCase(),
+      uid: targetUid,
+      name: name || ('مستخدم ' + targetUid.substring(0, 6)),
+      phone: phone || '—',
+      email: '—',
+      address: '—',
+      rating: uRatingObj.display,
+      ratingNum: uRatingObj.ratingNum,
+      ratingCount: uRatingObj.count,
+      totalTrips: 1,
+      totalSpent: 0,
+      earnings: 0,
+      status: 'active',
+      statusAr: isDriverMatch ? 'معتمد' : 'نشط',
+      joinDate: matchingTrip.date || '2026/01/10',
+      avatar: (name || 'م').charAt(0).toUpperCase(),
+      vehicleType: matchingTrip.vehicle || 'car',
+      vehicleName: 'مركبة',
+      vehicleColor: 'فضي',
+      licensePlate: '—',
+      isOnline: false,
+      nationalIdUrl: '',
+      nationalIdBackUrl: '',
+      licenseUrl: '',
+      licenseBackUrl: '',
+      vehicleFrontUrl: '',
+      vehicleBackUrl: '',
+      vehicleLicenseUrl: '',
+    };
+    return { user: tripConstructed, type: isDriverMatch ? 'driver' : 'passenger' };
+  }
+
+  return null;
+}
+
+// Asynchronous on-demand user loader
+let isFetchingAsyncProfile = false;
+async function fetchAndDisplayUserProfile(uid, role) {
+  if (isFetchingAsyncProfile || !uid) return;
+  isFetchingAsyncProfile = true;
+
+  try {
+    const [userRes, driverRes, vehicleRes] = await Promise.all([
+      supabaseClient.from('users').select('*').eq('id', uid).maybeSingle(),
+      supabaseClient.from('drivers').select('*').eq('id', uid).maybeSingle(),
+      supabaseClient.from('vehicles').select('*').or(`driver_id.eq.${uid},id.eq.${uid}`).maybeSingle()
+    ]);
+
+    const u = userRes?.data;
+    const d = driverRes?.data;
+    const v = vehicleRes?.data;
+
+    if (u || d) {
+      const uData = u || {};
+      const dData = d || {};
+      const vData = v || {};
+      const isDriver = !!d || (uData.role === 'driver');
+      const uName = uData.name || dData.name || uData.phone_number || dData.phone || ('مستخدم ' + uid.substring(0, 6));
+      const uRatingObj = getUserUnifiedRating(uid, isDriver ? 'driver' : 'rider');
+
+      const fullObj = {
+        id: (isDriver ? 'DRV_' : 'PAS_') + uid.substring(0, 6).toUpperCase(),
+        uid: uid,
+        name: uName,
+        phone: uData.phone_number || dData.phone || '—',
+        email: uData.email || dData.email || '—',
+        address: dData.address || uData.address || '—',
+        rating: uRatingObj.display,
+        ratingNum: uRatingObj.ratingNum,
+        ratingCount: uRatingObj.count,
+        vehicleType: vData.vehicle_category || vData.type || 'car',
+        vehicleName: vData.model || dData.vehicle_name || 'مركبة',
+        vehicleColor: vData.color || 'فضي',
+        licensePlate: vData.number_plate || '—',
+        status: dData.verification_status || uData.status || (isDriver ? 'verified' : 'active'),
+        statusAr: (dData.verification_status === 'verified' || uData.status === 'active') ? (isDriver ? 'معتمد' : 'نشط') : 'قيد المراجعة',
+        totalTrips: parseInt(dData.total_trips || uData.total_trips || 0),
+        earnings: parseFloat(dData.total_earnings || uData.wallet_balance || 0),
+        isOnline: dData.is_online || false,
+        joinDate: new Date(uData.created_at || dData.created_at || Date.now()).toLocaleDateString('ar-EG'),
+        avatar: uName.charAt(0).toUpperCase(),
+        nationalIdUrl: dData.national_id_url || '',
+        nationalIdBackUrl: dData.national_id_back_url || '',
+        licenseUrl: dData.license_url || '',
+        licenseBackUrl: dData.license_back_url || '',
+        vehicleFrontUrl: dData.vehicle_front_url || '',
+        vehicleBackUrl: dData.vehicle_back_url || '',
+        vehicleLicenseUrl: dData.vehicle_license_url || '',
+        idCardFrontUrl: dData.national_id_url || '',
+        idCardBackUrl: dData.national_id_back_url || '',
+        driverLicenseFrontUrl: dData.license_url || '',
+        driverLicenseBackUrl: dData.license_back_url || '',
+        vehicleLicenseFrontUrl: dData.vehicle_front_url || '',
+        vehicleLicenseBackUrl: dData.vehicle_back_url || '',
+      };
+
+      if (isDriver) {
+        if (!mockData.drivers) mockData.drivers = [];
+        mockData.drivers.push(fullObj);
+      } else {
+        if (!mockData.passengers) mockData.passengers = [];
+        mockData.passengers.push(fullObj);
+      }
+
+      if (typeof globalUsersMap !== 'undefined') {
+        globalUsersMap[uid] = uData;
+      }
+
+      // Re-render current profile page smoothly
+      renderPage(currentPage);
+      loadProfileRatings(uid, isDriver ? 'driver' : 'rider');
+    }
+  } catch (err) {
+    console.error('Error in fetchAndDisplayUserProfile:', err);
+  } finally {
+    isFetchingAsyncProfile = false;
+  }
 }
 
 function renderDriverProfile() {
@@ -7650,49 +7925,23 @@ function renderDriverProfile() {
     return `<div style="padding:40px;text-align:center;color:var(--text-light);"><i class="ri-user-unfollow-line" style="font-size:36px;display:block;margin-bottom:8px;"></i>لم يتم تحديد كابتن لعرضه.</div>`;
   }
 
-  const targetUid = (activeProfileUid || '').toLowerCase();
-  let driver = (mockData.drivers || []).find(d => 
-    (d.uid && d.uid.toLowerCase() === targetUid) ||
-    (d.id && d.id.toLowerCase() === targetUid)
-  );
-
-  if (!driver) {
-    const userObj = (typeof globalUsersMap !== 'undefined' && globalUsersMap[activeProfileUid]) ||
-                    (mockData.passengers || []).find(p => (p.uid && p.uid.toLowerCase() === targetUid));
-    if (userObj) {
-      const dName = userObj.name || userObj.cleanName || ('كابتن ' + activeProfileUid.substring(0, 6));
-      driver = {
-        id: 'DRV_' + activeProfileUid.substring(0, 6).toUpperCase(),
-        uid: activeProfileUid,
-        name: dName,
-        phone: userObj.phone_number || userObj.phone || '—',
-        email: userObj.email || '—',
-        address: userObj.address || '—',
-        rating: userObj.rating ? parseFloat(userObj.rating).toFixed(1) : '5.0',
-        ratingCount: userObj.ratingCount || userObj.rating_count || 0,
-        vehicleType: 'car',
-        vehicleName: 'مركبة',
-        vehicleColor: 'فضي',
-        licensePlate: '—',
-        status: userObj.status || 'verified',
-        statusAr: userObj.status === 'suspended' ? 'معلق' : (userObj.status === 'banned' ? 'محظور' : 'معتمد'),
-        totalTrips: userObj.totalTrips || 0,
-        earnings: parseFloat(userObj.wallet_balance || userObj.walletBalance || 0),
-        isOnline: false,
-        joinDate: userObj.joinDate || '2026/01/10',
-        avatar: dName.charAt(0).toUpperCase(),
-        nationalIdUrl: '',
-        nationalIdBackUrl: '',
-        licenseUrl: '',
-        licenseBackUrl: '',
-        vehicleFrontUrl: '',
-        vehicleBackUrl: '',
-        vehicleLicenseUrl: '',
-      };
-    } else {
-      return `<div style="padding:48px;text-align:center;color:var(--text-light);background:var(--bg-card);border-radius:var(--radius-lg);margin:24px 0;"><i class="ri-error-warning-line" style="font-size:40px;display:block;margin-bottom:12px;color:var(--warning);"></i><h3 style="margin-bottom:8px;color:var(--text-primary);">لم يتم العثور على هذا الكابتن</h3><p style="font-size:13px;color:var(--text-secondary);">قد يكون الحساب غير مسجل أو تم حذفه من قاعدة البيانات.</p><button class="btn btn-primary btn-sm" onclick="navigateTo('drivers')" style="margin-top:16px;"><i class="ri-arrow-right-line"></i> العودة لقائمة السائقين</button></div>`;
-    }
+  const resolved = resolveUserEntity(activeProfileUid);
+  if (!resolved) {
+    fetchAndDisplayUserProfile(activeProfileUid, 'driver');
+    return `
+      <div style="padding:60px;text-align:center;background:var(--bg-card);border-radius:var(--radius-lg);margin:24px 0;border:1px solid var(--border-color);">
+        <div class="stat-card-icon" style="margin:0 auto 16px;width:56px;height:56px;font-size:28px;background:rgba(59,130,246,0.1);color:var(--primary);border-radius:50%;display:flex;align-items:center;justify-content:center;">
+          <i class="ri-loader-4-line ri-spin"></i>
+        </div>
+        <h3 style="font-weight:800;font-size:18px;margin-bottom:8px;color:var(--text-primary);">جاري تحميل بيانات الكابتن من الخادم...</h3>
+        <p style="font-size:13px;color:var(--text-secondary);">يتم الآن جلب السجلات والمستندات الموثقة مباشرة من Supabase</p>
+      </div>
+    `;
   }
+
+  const driver = resolved.user;
+  const targetUid = String(activeProfileUid).trim().toLowerCase();
+  const ratingInfo = getUserUnifiedRating(activeProfileUid, 'driver');
 
   // Find driver's trips
   const driverTrips = (mockData.trips || []).filter(t => 
@@ -7775,15 +8024,15 @@ function renderDriverProfile() {
                 </div>
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
                   <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">إجمالي الرحلات المكتملة</div>
-                  <span style="font-weight:900;font-size:14px;color:var(--medium-blue);">${driver.totalTrips} رحلة</span>
+                  <span style="font-weight:900;font-size:14px;color:var(--medium-blue);">${driver.totalTrips || driverTrips.length} رحلة</span>
                 </div>
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
                   <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">التقييم العام المستلم</div>
-                  ${(driver.ratingCount && driver.ratingCount > 0) ? `
+                  ${ratingInfo.hasRatings ? `
                     <div class="rating" style="font-size:14px;font-weight:800;color:var(--warning);display:flex;align-items:center;gap:4px;">
                       <i class="ri-star-fill"></i>
-                      <span>${driver.rating}</span>
-                      <span style="font-size:11px;color:var(--text-light);font-weight:normal;">(${driver.ratingCount} تقييم)</span>
+                      <span>${ratingInfo.average}</span>
+                      <span style="font-size:11px;color:var(--text-light);font-weight:normal;">(${ratingInfo.count} تقييم)</span>
                     </div>
                   ` : `
                     <div style="font-size:12px;font-weight:700;color:var(--text-light);display:flex;align-items:center;gap:4px;">
@@ -7874,7 +8123,7 @@ function renderDriverProfile() {
               ${driverTrips.length === 0 ? `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-light);">لا توجد رحلات مسجلة لهذا الكابتن</td></tr>` : ''}
               ${driverTrips.map(trip => `
                 <tr>
-                  <td><span class="font-outfit fw-700" style="color:var(--medium-blue);">${trip.id}</span></td>
+                  <td><span class="font-outfit fw-700" style="color:var(--medium-blue);cursor:pointer;" onclick="showTripDetailsModal('${trip.requestId}')">${trip.id}</span></td>
                   <td><span style="font-size:12px;color:var(--text-light);font-weight:600;">${trip.date}</span></td>
                   <td><span class="user-name" style="cursor:pointer;color:var(--medium-blue);font-weight:700;text-decoration:underline;" onclick="${trip.riderUid ? `viewUserProfile('${trip.riderUid}', 'rider')` : ''}" title="عرض ملف الراكب">${trip.riderName}</span></td>
                   <td>
@@ -7910,38 +8159,23 @@ function renderPassengerProfile() {
     return `<div style="padding:40px;text-align:center;color:var(--text-light);"><i class="ri-user-unfollow-line" style="font-size:36px;display:block;margin-bottom:8px;"></i>لم يتم تحديد راكب لعرضه.</div>`;
   }
 
-  const targetUid = (activeProfileUid || '').toLowerCase();
-  let passenger = (mockData.passengers || []).find(p => 
-    (p.uid && p.uid.toLowerCase() === targetUid) ||
-    (p.id && p.id.toLowerCase() === targetUid)
-  );
-
-  if (!passenger) {
-    const userObj = (typeof globalUsersMap !== 'undefined' && globalUsersMap[activeProfileUid]) ||
-                    (mockData.drivers || []).find(d => (d.uid && d.uid.toLowerCase() === targetUid));
-    if (userObj) {
-      const pName = userObj.name || userObj.cleanName || ('راكب ' + activeProfileUid.substring(0, 6));
-      passenger = {
-        id: 'PAS_' + activeProfileUid.substring(0, 6).toUpperCase(),
-        uid: activeProfileUid,
-        name: pName,
-        phone: userObj.phone_number || userObj.phone || '—',
-        email: userObj.email || '—',
-        address: userObj.address || '—',
-        rating: userObj.rating ? parseFloat(userObj.rating).toFixed(1) : '5.0',
-        ratingCount: userObj.ratingCount || userObj.rating_count || 0,
-        totalTrips: userObj.totalTrips || 0,
-        totalSpent: 0,
-        joinDate: userObj.joinDate || '2026/01/10',
-        status: userObj.status || 'active',
-        statusAr: userObj.status === 'suspended' ? 'معلق' : (userObj.status === 'banned' ? 'محظور' : 'نشط'),
-        lastTrip: '—',
-        avatar: pName.charAt(0).toUpperCase(),
-      };
-    } else {
-      return `<div style="padding:48px;text-align:center;color:var(--text-light);background:var(--bg-card);border-radius:var(--radius-lg);margin:24px 0;"><i class="ri-error-warning-line" style="font-size:40px;display:block;margin-bottom:12px;color:var(--warning);"></i><h3 style="margin-bottom:8px;color:var(--text-primary);">لم يتم العثور على هذا الراكب</h3><p style="font-size:13px;color:var(--text-secondary);">قد يكون الحساب غير مسجل أو تم حذفه من قاعدة البيانات.</p><button class="btn btn-primary btn-sm" onclick="navigateTo('passengers')" style="margin-top:16px;"><i class="ri-arrow-right-line"></i> العودة لقائمة الركاب</button></div>`;
-    }
+  const resolved = resolveUserEntity(activeProfileUid);
+  if (!resolved) {
+    fetchAndDisplayUserProfile(activeProfileUid, 'rider');
+    return `
+      <div style="padding:60px;text-align:center;background:var(--bg-card);border-radius:var(--radius-lg);margin:24px 0;border:1px solid var(--border-color);">
+        <div class="stat-card-icon" style="margin:0 auto 16px;width:56px;height:56px;font-size:28px;background:rgba(59,130,246,0.1);color:var(--primary);border-radius:50%;display:flex;align-items:center;justify-content:center;">
+          <i class="ri-loader-4-line ri-spin"></i>
+        </div>
+        <h3 style="font-weight:800;font-size:18px;margin-bottom:8px;color:var(--text-primary);">جاري تحميل بيانات الراكب من الخادم...</h3>
+        <p style="font-size:13px;color:var(--text-secondary);">يتم الآن جلب السجلات والرحلات مباشرة من Supabase</p>
+      </div>
+    `;
   }
+
+  const passenger = resolved.user;
+  const targetUid = String(activeProfileUid).trim().toLowerCase();
+  const ratingInfo = getUserUnifiedRating(activeProfileUid, 'rider');
 
   // Find passenger's trips
   const passengerTrips = (mockData.trips || []).filter(t => 
@@ -8014,15 +8248,15 @@ function renderPassengerProfile() {
                 </div>
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
                   <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">إجمالي الرحلات المكتملة</div>
-                  <span style="font-weight:900;font-size:14px;color:var(--medium-blue);">${passenger.totalTrips} رحلة</span>
+                  <span style="font-weight:900;font-size:14px;color:var(--medium-blue);">${passenger.totalTrips || passengerTrips.length} رحلة</span>
                 </div>
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
                   <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">التقييم العام المستلم</div>
-                  ${(passenger.ratingCount && passenger.ratingCount > 0) ? `
+                  ${ratingInfo.hasRatings ? `
                     <div class="rating" style="font-size:14px;font-weight:800;color:var(--warning);display:flex;align-items:center;gap:4px;">
                       <i class="ri-star-fill"></i>
-                      <span>${passenger.rating}</span>
-                      <span style="font-size:11px;color:var(--text-light);font-weight:normal;">(${passenger.ratingCount} تقييم)</span>
+                      <span>${ratingInfo.average}</span>
+                      <span style="font-size:11px;color:var(--text-light);font-weight:normal;">(${ratingInfo.count} تقييم)</span>
                     </div>
                   ` : `
                     <div style="font-size:12px;font-weight:700;color:var(--text-light);display:flex;align-items:center;gap:4px;">
@@ -8093,7 +8327,7 @@ function renderPassengerProfile() {
               ${passengerTrips.length === 0 ? `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-light);">لا توجد رحلات مسجلة لهذا الراكب</td></tr>` : ''}
               ${passengerTrips.map(trip => `
                 <tr>
-                  <td><span class="font-outfit fw-700" style="color:var(--medium-blue);">${trip.id}</span></td>
+                  <td><span class="font-outfit fw-700" style="color:var(--medium-blue);cursor:pointer;" onclick="showTripDetailsModal('${trip.requestId}')">${trip.id}</span></td>
                   <td><span style="font-size:12px;color:var(--text-light);font-weight:600;">${trip.date}</span></td>
                   <td>
                     ${trip.driverUid ? `
@@ -8132,51 +8366,30 @@ function renderPassengerProfile() {
 async function loadProfileRatings(uid, role = 'rider') {
   const container = document.getElementById('profileRatingsContainer');
   if (!container || !uid) return;
-  
-  try {
-    const { data: ratingsData, error } = await supabaseClient
-      .from('ratings')
-      .select('*')
-      .or(`receiver_id.eq.${uid},sender_id.eq.${uid}`)
-      .order('created_at', { ascending: false });
 
-    let list = (ratingsData && Array.isArray(ratingsData) && ratingsData.length > 0) ? ratingsData : [];
-    
-    // If not found in direct query, check allSystemRatings
-    if (list.length === 0 && typeof allSystemRatings !== 'undefined' && Array.isArray(allSystemRatings)) {
-      list = allSystemRatings.filter(r => (r.receiver_id === uid || r.sender_id === uid));
-    }
+  try {
+    const targetRole = (role === 'driver' || role === 'captain') ? 'driver' : 'rider';
+    const ratingObj = getUserUnifiedRating(uid, targetRole);
+    const list = ratingObj.ratingsList || [];
+    const hasRatings = ratingObj.hasRatings;
+    const avg = ratingObj.average;
+    const starCounts = ratingObj.starsBreakdown;
 
     // Resolve sender names if available
     const senderIds = list.map(r => r.sender_id || r.from_user_id).filter(Boolean);
     let sendersMap = {};
     if (senderIds.length > 0) {
-      try {
-        const { data: senders } = await supabaseClient
-          .from('users')
-          .select('id, name, phone_number')
-          .in('id', senderIds);
-        if (senders) {
-          senders.forEach(s => { sendersMap[s.id] = s.name || s.phone_number; });
+      senderIds.forEach(sId => {
+        if (globalUsersMap && globalUsersMap[sId]) {
+          sendersMap[sId] = globalUsersMap[sId].name || globalUsersMap[sId].phone_number;
         }
-      } catch (_) {}
+      });
     }
-
-    const hasRatings = list.length > 0;
-    const total = list.reduce((acc, r) => acc + (parseFloat(r.rating) || 0), 0);
-    const avg = hasRatings ? (total / list.length).toFixed(1) : 'جديد (بدون تقييم)';
-
-    // Count stars breakdown (5, 4, 3, 2, 1)
-    const starCounts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-    list.forEach(r => {
-      const s = Math.round(parseFloat(r.rating) || 5);
-      if (starCounts[s] !== undefined) starCounts[s]++;
-    });
 
     let html = `
       <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg-primary);padding:16px;border-radius:var(--radius-md);margin-bottom:16px;border:1px solid var(--border-color);">
         <div>
-          <span style="font-size:12px;color:var(--text-secondary);font-weight:700;">متوسط التقييم العام المستلم (${role === 'driver' ? 'كابتن' : 'راكب'})</span>
+          <span style="font-size:12px;color:var(--text-secondary);font-weight:700;">متوسط التقييم العام المستلم (${targetRole === 'driver' ? 'كابتن' : 'راكب'})</span>
           <div style="font-size:24px;font-weight:900;color:var(--warning);display:flex;align-items:center;gap:6px;">
             <i class="${hasRatings ? 'ri-star-fill' : 'ri-star-line'}"></i> ${avg} ${hasRatings ? '<span style="font-size:13px;color:var(--text-light);font-weight:normal;">/ 5.0</span>' : ''}
           </div>
@@ -8215,7 +8428,7 @@ async function loadProfileRatings(uid, role = 'rider') {
       html += `
         <div style="padding:24px;text-align:center;color:var(--text-light);background:var(--bg-primary);border-radius:var(--radius-md);border:1px dashed var(--border-color);">
           <i class="ri-star-line" style="font-size:32px;display:block;margin-bottom:8px;color:var(--text-light);"></i>
-          لا توجد تقييمات أو مراجعات مسجلة لهذا الحساب كـ ${role === 'driver' ? 'كابتن' : 'راكب'} حتى الآن
+          لا توجد تقييمات أو مراجعات مسجلة لهذا الحساب كـ ${targetRole === 'driver' ? 'كابتن' : 'راكب'} حتى الآن
         </div>
       `;
     } else {
@@ -8238,19 +8451,21 @@ async function loadProfileRatings(uid, role = 'rider') {
         }
 
         html += `
-          <div style="padding:14px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-md);">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-              <div style="display:flex;align-items:center;gap:8px;">
-                <span style="font-weight:700;font-size:13px;color:var(--text-primary);">${senderName}</span>
-                <span class="vehicle-badge" style="font-size:10px;padding:2px 8px;font-weight:700;">${senderRole}</span>
+          <div style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-md);padding:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+              <div>
+                <span style="font-weight:700;font-size:13px;">${senderName}</span>
+                <span class="status-badge pending" style="font-size:10px;margin-right:6px;">${senderRole}</span>
               </div>
               <span style="font-size:11px;color:var(--text-light);direction:ltr;">${dateStr}</span>
             </div>
-            <div style="display:flex;align-items:center;gap:4px;margin-bottom:6px;">
+            <div style="display:flex;align-items:center;gap:4px;margin-bottom:6px;font-size:13px;">
               ${starsHtml}
-              <span style="font-weight:700;font-size:12px;margin-right:6px;color:var(--warning);">${starVal.toFixed(1)}</span>
+              <span style="font-weight:800;font-size:12px;margin-right:4px;color:var(--warning);">${starVal.toFixed(1)}</span>
             </div>
-            <p style="font-size:12px;color:var(--text-secondary);margin:0;line-height:1.4;">${commentText}</p>
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;background:var(--bg-card);padding:8px 12px;border-radius:var(--radius-sm);">
+              "${commentText}"
+            </div>
           </div>
         `;
       });
@@ -8259,8 +8474,8 @@ async function loadProfileRatings(uid, role = 'rider') {
     html += `</div>`;
     container.innerHTML = html;
   } catch (err) {
-    console.error('Error loading ratings:', err);
-    container.innerHTML = `<div style="color:var(--error);padding:16px;text-align:center;">حدث خطأ أثناء تحميل التقييمات: ${err.message || err}</div>`;
+    console.error('Error loading profile ratings:', err);
+    container.innerHTML = `<div style="text-align:center;padding:16px;color:var(--error);">حدث خطأ أثناء تحميل التقييمات</div>`;
   }
 }
 

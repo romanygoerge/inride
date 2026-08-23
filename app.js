@@ -753,11 +753,13 @@ function renderPage(page) {
         container.innerHTML = renderDriverProfile();
         initProfileChatSync(activeProfileUid, 'driver');
         loadProfileRatings(activeProfileUid, 'driver');
+        loadProfileWalletTransactions(activeProfileUid, 'driver');
         break;
       case 'passenger-profile':
         container.innerHTML = renderPassengerProfile();
         initProfileChatSync(activeProfileUid, 'rider');
         loadProfileRatings(activeProfileUid, 'rider');
+        loadProfileWalletTransactions(activeProfileUid, 'rider');
         break;
       case 'ratings':
         container.innerHTML = renderRatingsPage();
@@ -1474,6 +1476,7 @@ function renderDrivers() {
                 <th>الهاتف</th>
                 <th>المركبة</th>
                 <th>اللوحة</th>
+                <th>الرصيد الحالي</th>
                 <th>التقييم</th>
                 <th>الرحلات</th>
                 <th>الحالة</th>
@@ -1506,6 +1509,14 @@ function renderDrivers() {
                   </td>
                   <td>
                     ${driver.licensePlate ? `<span class="font-outfit fw-700" style="font-size:12px;">${driver.licensePlate}</span>` : '—'}
+                  </td>
+                  <td>
+                    <div style="cursor:pointer;" onclick="showUserWalletHistoryModal('${driver.uid}', 'driver')" title="عرض سجل الشحن والمعاملات">
+                      <span class="font-outfit fw-700" style="font-size:13px; color:${(driver.walletBalance || 0) < 0 ? '#DC2626' : '#059669'};">
+                        ${(driver.walletBalance || 0).toLocaleString()} ج.م
+                      </span>
+                      <div style="font-size:10px;color:var(--text-light);"><i class="ri-history-line"></i> سجل الشحن</div>
+                    </div>
                   </td>
                   <td>
                     ${(driver.ratingCount && driver.ratingCount > 0) ? `
@@ -1937,6 +1948,7 @@ function renderPassengers() {
                 <th>الكود</th>
                 <th>الراكب</th>
                 <th>الهاتف</th>
+                <th>رصيد المحفظة</th>
                 <th>التقييم</th>
                 <th>الرحلات</th>
                 <th>تاريخ الانضمام</th>
@@ -1959,6 +1971,14 @@ function renderPassengers() {
                     </div>
                   </td>
                   <td><span style="font-size:12px;font-weight:600;direction:ltr;display:inline-block;">${p.phone}</span></td>
+                  <td>
+                    <div style="cursor:pointer;" onclick="showUserWalletHistoryModal('${p.uid}', 'rider')" title="عرض سجل الشحن والمعاملات">
+                      <span class="font-outfit fw-700" style="font-size:13px; color:${(p.walletBalance || 0) < 0 ? '#DC2626' : '#2563EB'};">
+                        ${(p.walletBalance || 0).toLocaleString()} ج.م
+                      </span>
+                      <div style="font-size:10px;color:var(--text-light);"><i class="ri-history-line"></i> سجل الشحن</div>
+                    </div>
+                  </td>
                   <td>
                     ${(p.ratingCount && p.ratingCount > 0) ? `
                       <div class="rating" title="متوسط التقييمات: ${p.rating} من ${p.ratingCount} تقييم" style="white-space:nowrap; display:inline-flex; align-items:center; gap:4px; direction:rtl; cursor:pointer;" onclick="viewUserProfile('${p.uid}', 'rider')">
@@ -7389,6 +7409,8 @@ function initSupabaseSync() {
           rejectionReason: drv.rejection_reason || '',
           totalTrips: realTrips,
           earnings: parseFloat(drv.total_earnings || userObj.wallet_balance || 0),
+          walletBalance: drvWallet,
+          driverWalletBalance: drvWallet,
           isOnline: drv.is_online || false,
           joinDate: dateObj.toLocaleDateString('ar-EG'),
           avatar: driverName.charAt(0).toUpperCase(),
@@ -7487,6 +7509,7 @@ function initSupabaseSync() {
           const ratingDisplay = pRatingObj.display;
           const totalTrips = Math.max(passengerTripsCountMap[data.id] || 0, parseInt(data.total_trips || pRecord.total_trips || 0));
           const totalSpent = passengerSpentMap[data.id] || 0;
+          const pWallet = parseFloat(data.passenger_wallet_balance !== undefined && data.passenger_wallet_balance !== null ? data.passenger_wallet_balance : (data.wallet_balance !== undefined && data.wallet_balance !== null ? data.wallet_balance : (pRecord.wallet_balance || 0)));
 
           fullPassengers.push({
             id: 'PAS_' + data.id.substring(0, 6).toUpperCase(),
@@ -7500,6 +7523,8 @@ function initSupabaseSync() {
             ratingCount: ratingCount,
             totalTrips: totalTrips,
             totalSpent: totalSpent,
+            walletBalance: pWallet,
+            passengerWalletBalance: pWallet,
             joinDate: dateObj.toLocaleDateString('ar-EG'),
             status: data.status || 'active',
             statusAr: data.status === 'suspended' ? 'معلق' : (data.status === 'banned' ? 'محظور' : 'نشط'),
@@ -8136,6 +8161,24 @@ function renderDriverProfile() {
                   <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">نوع المركبة</div>
                   <span style="font-weight:700;font-size:13px;"><i class="${getVehicleIcon(driver.vehicleType)}"></i> ${driver.vehicleName} (${driver.licensePlate})</span>
                 </div>
+                <div style="background:linear-gradient(135deg, rgba(37,99,235,0.06), rgba(5,150,105,0.08));padding:14px;border-radius:var(--radius-md);border:1px solid rgba(5,150,105,0.25);display:flex;justify-content:space-between;align-items:center;grid-column: span 2;">
+                  <div>
+                    <div style="font-size:12px;color:var(--text-secondary);font-weight:700;margin-bottom:4px;">
+                      <i class="ri-wallet-3-fill text-blue"></i> رصيد المحفظة الحالي
+                    </div>
+                    <div style="font-size:22px;font-weight:900;color:${(driver.walletBalance || 0) < 0 ? '#DC2626' : '#059669'};">
+                      ${(driver.walletBalance || 0).toLocaleString()} <span style="font-size:13px;font-weight:normal;color:var(--text-secondary);">ج.م</span>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:8px;">
+                    <button class="btn btn-primary btn-sm" onclick="showUserWalletHistoryModal('${driver.uid}', 'driver')" style="padding:6px 14px;border-radius:8px;">
+                      <i class="ri-history-line"></i> سجل الشحن الكامل
+                    </button>
+                    <button class="btn btn-outline btn-sm" onclick="adjustWalletPrompt('${driver.uid}', 'driver')" style="padding:6px 14px;border-radius:8px;background:white;">
+                      <i class="ri-add-circle-line"></i> شحن / تعديل
+                    </button>
+                  </div>
+                </div>
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
                   <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">إجمالي الرحلات المكتملة</div>
                   <span style="font-weight:900;font-size:14px;color:var(--medium-blue);">${driver.totalTrips || driverTrips.length} رحلة</span>
@@ -8213,6 +8256,32 @@ function renderDriverProfile() {
               <div style="text-align:center;padding:24px;color:var(--text-light);">جاري تحميل التقييمات...</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Wallet & Recharge Transactions Card -->
+      <div class="card" style="margin-top:24px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h3><i class="ri-wallet-3-fill text-blue" style="margin-left:8px;"></i> سجل شحن المحفظة والمعاملات المالية للكابتن</h3>
+          <button class="btn btn-primary btn-sm" onclick="adjustWalletPrompt('${driver.uid}', 'driver')">
+            <i class="ri-add-line"></i> شحن رصيد جديد
+          </button>
+        </div>
+        <div class="card-body" id="profileWalletTransactionsContainer" style="padding:0;">
+          <div style="text-align:center;padding:24px;color:var(--text-light);"><i class="ri-loader-4-line ri-spin"></i> جاري تحميل سجل الشحن والمعاملات...</div>
+        </div>
+      </div>
+
+      <!-- Wallet & Recharge Transactions Card -->
+      <div class="card" style="margin-top:24px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h3><i class="ri-wallet-3-fill text-blue" style="margin-left:8px;"></i> سجل شحن المحفظة والمعاملات المالية للراكب</h3>
+          <button class="btn btn-primary btn-sm" onclick="adjustWalletPrompt('${passenger.uid}', 'rider')">
+            <i class="ri-add-line"></i> شحن رصيد جديد
+          </button>
+        </div>
+        <div class="card-body" id="profileWalletTransactionsContainer" style="padding:0;">
+          <div style="text-align:center;padding:24px;color:var(--text-light);"><i class="ri-loader-4-line ri-spin"></i> جاري تحميل سجل الشحن والمعاملات...</div>
         </div>
       </div>
 
@@ -8359,6 +8428,24 @@ function renderPassengerProfile() {
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
                   <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">البريد الإلكتروني</div>
                   <span style="font-weight:700;font-size:13px;direction:ltr;display:inline-block;word-break:break-all;">${passenger.email || '—'}</span>
+                </div>
+                <div style="background:linear-gradient(135deg, rgba(37,99,235,0.06), rgba(124,58,237,0.08));padding:14px;border-radius:var(--radius-md);border:1px solid rgba(37,99,235,0.25);display:flex;justify-content:space-between;align-items:center;grid-column: span 2;">
+                  <div>
+                    <div style="font-size:12px;color:var(--text-secondary);font-weight:700;margin-bottom:4px;">
+                      <i class="ri-wallet-3-fill text-blue"></i> رصيد المحفظة الحالي
+                    </div>
+                    <div style="font-size:22px;font-weight:900;color:${(passenger.walletBalance || 0) < 0 ? '#DC2626' : '#2563EB'};">
+                      ${(passenger.walletBalance || 0).toLocaleString()} <span style="font-size:13px;font-weight:normal;color:var(--text-secondary);">ج.م</span>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:8px;">
+                    <button class="btn btn-primary btn-sm" onclick="showUserWalletHistoryModal('${passenger.uid}', 'rider')" style="padding:6px 14px;border-radius:8px;">
+                      <i class="ri-history-line"></i> سجل الشحن الكامل
+                    </button>
+                    <button class="btn btn-outline btn-sm" onclick="adjustWalletPrompt('${passenger.uid}', 'rider')" style="padding:6px 14px;border-radius:8px;background:white;">
+                      <i class="ri-add-circle-line"></i> شحن / تعديل
+                    </button>
+                  </div>
                 </div>
                 <div style="background:var(--bg-primary);padding:12px;border-radius:var(--radius-md);">
                   <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">إجمالي الرحلات المكتملة</div>
@@ -9833,3 +9920,310 @@ function updateCommDetailsPanel() {
 
 
 
+
+
+// ============================================
+// USER WALLET BALANCE & RECHARGE HISTORY SYSTEM
+// ============================================
+
+async function loadProfileWalletTransactions(uid, role = 'rider') {
+  const container = document.getElementById('profileWalletTransactionsContainer');
+  if (!container || !uid) return;
+
+  const client = getSupabaseClient() || supabaseClient;
+  if (!client) {
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-light);">لا توجد معاملات مسجلة محلياً</div>';
+    return;
+  }
+
+  try {
+    const [txRes, reqRes] = await Promise.all([
+      client.from('transactions').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
+      client.from('wallet_recharge_requests').select('*').eq('user_id', uid).order('created_at', { ascending: false })
+    ]);
+
+    const txList = txRes.data || [];
+    const reqList = reqRes.data || [];
+    let combined = [];
+
+    txList.forEach(t => {
+      combined.push({
+        id: t.id,
+        title: t.title || (t.type === 'charge' ? 'شحن رصيد' : 'معاملة مالية'),
+        type: t.type || 'charge',
+        amount: parseFloat(t.amount || 0),
+        balance_after: t.balance_after,
+        payment_method: t.payment_method || '—',
+        receipt_url: t.receipt_url,
+        notes: t.notes,
+        created_at: t.created_at
+      });
+    });
+
+    reqList.forEach(r => {
+      const isDuplicate = combined.some(c => c.receipt_url && c.receipt_url === r.receipt_url);
+      if (!isDuplicate) {
+        combined.push({
+          id: r.id,
+          title: r.status === 'approved' ? 'شحن رصيد مقبول' : (r.status === 'rejected' ? 'طلب شحن مرفوض' : 'طلب شحن معلق ⏳'),
+          type: r.status === 'approved' ? 'charge' : (r.status === 'rejected' ? 'charge_rejected' : 'charge_pending'),
+          amount: parseFloat(r.amount || 0),
+          balance_after: null,
+          payment_method: r.payment_method || 'InstaPay',
+          receipt_url: r.receipt_url,
+          notes: r.rejection_reason ? `سبب الرفض: ${r.rejection_reason}` : '',
+          created_at: r.created_at
+        });
+      }
+    });
+
+    combined.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+    if (combined.length === 0) {
+      container.innerHTML = `
+        <div style="padding:32px;text-align:center;color:var(--text-light);">
+          <i class="ri-wallet-3-line" style="font-size:36px;display:block;margin-bottom:8px;"></i>
+          لا توجد عمليات شحن أو معاملات مالية مسجلة لهذا الحساب حتى الآن.
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div style="overflow-x:auto;">
+        <table class="data-table" style="width:100%;font-size:12.5px;">
+          <thead>
+            <tr style="background:var(--bg-primary);">
+              <th>التاريخ والوقت</th>
+              <th>العملية / التفاصيل</th>
+              <th>طريقة الدفع</th>
+              <th>المبلغ</th>
+              <th>الرصيد بعد العملية</th>
+              <th>الإيصال والإثبات</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${combined.map(tx => {
+              const isInc = tx.amount > 0;
+              const dateStr = new Date(tx.created_at || Date.now()).toLocaleString('ar-EG');
+              return `
+                <tr>
+                  <td style="white-space:nowrap;font-weight:600;">${dateStr}</td>
+                  <td>
+                    <div style="font-weight:700;color:var(--text-primary);">${tx.title}</div>
+                    ${tx.notes ? `<div style="font-size:11px;color:var(--text-secondary);">${tx.notes}</div>` : ''}
+                  </td>
+                  <td>
+                    <span class="badge" style="background:#F3E8FF;color:#6B21A8;font-size:10.5px;padding:3px 8px;border-radius:6px;font-weight:700;">
+                      ${tx.payment_method}
+                    </span>
+                  </td>
+                  <td style="font-weight:900;color:${isInc ? '#059669' : '#DC2626'};white-space:nowrap;font-size:13.5px;">
+                    ${isInc ? '+' : ''}${tx.amount.toLocaleString()} ج.م
+                  </td>
+                  <td style="font-weight:700;white-space:nowrap;">
+                    ${tx.balance_after !== null && tx.balance_after !== undefined ? parseFloat(tx.balance_after).toLocaleString() + ' ج.م' : '—'}
+                  </td>
+                  <td>
+                    ${tx.receipt_url ? `
+                      <button class="btn btn-sm btn-outline" style="padding:3px 10px;font-size:11px;font-weight:700;color:#2563EB;border-color:#93C5FD;background:#EFF6FF;" onclick="viewReceiptModal('${tx.receipt_url}', 'إيصال شحن', '', ${tx.amount}, '${dateStr}', '${tx.payment_method}')">
+                        📸 معاينة الإيصال
+                      </button>
+                    ` : '<span style="color:var(--text-light);font-size:11px;">—</span>'}
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    console.error('loadProfileWalletTransactions error:', err);
+    container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--error);">تعذر تحميل المعاملات: ${err.message || err}</div>`;
+  }
+}
+
+async function showUserWalletHistoryModal(userId, role = 'rider') {
+  let userObj = null;
+  if (role === 'driver' && mockData.drivers) userObj = mockData.drivers.find(d => d.uid === userId || d.id === userId);
+  if (!userObj && mockData.passengers) userObj = mockData.passengers.find(p => p.uid === userId || p.id === userId);
+  if (!userObj && mockData.drivers) userObj = mockData.drivers.find(d => d.uid === userId || d.id === userId);
+
+  const userName = userObj ? userObj.name : 'مستخدم inRide';
+  const userPhone = userObj ? userObj.phone : '—';
+  const isDriver = role === 'driver';
+  const currentBal = userObj ? (userObj.walletBalance || 0) : 0;
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.style.cssText = `
+    position: fixed; top:0; left:0; width:100%; height:100%;
+    background: rgba(0,0,0,0.6); z-index:10000;
+    display:flex; align-items:center; justify-content:center;
+    font-family: 'Cairo', sans-serif;
+  `;
+
+  modal.innerHTML = `
+    <div style="background:white; padding:0; border-radius:16px; width:780px; max-width:95%; max-height:90vh; display:flex; flex-direction:column; overflow:hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.25); direction:rtl; text-align:right;">
+      <!-- Modal Header -->
+      <div style="background:linear-gradient(135deg, #1E293B, #0F172A); color:white; padding:20px 24px; display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div style="width:48px; height:48px; border-radius:50%; background:rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; font-size:22px;">
+            <i class="ri-wallet-3-line"></i>
+          </div>
+          <div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <h3 style="margin:0; font-size:17px; font-weight:800;">سجل المحفظة والشحن: ${userName}</h3>
+              <span class="badge" style="background:${isDriver ? '#0284C7' : '#7C3AED'}; color:white; font-size:11px; padding:2px 8px; border-radius:12px;">
+                ${isDriver ? 'كابتن 🚗' : 'راكب 👤'}
+              </span>
+            </div>
+            <div style="font-size:12px; color:#94A3B8; margin-top:2px;">📱 ${userPhone} • ID: ${userId.substring(0, 8).toUpperCase()}</div>
+          </div>
+        </div>
+        <button onclick="this.closest('.modal-backdrop').remove()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
+      </div>
+
+      <!-- Balance Card inside Modal -->
+      <div style="padding:16px 24px; background:#F8FAFC; border-bottom:1px solid #E2E8F0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <span style="font-size:12px; color:#64748B; font-weight:700;">الرصيد الحالي بالمحفظة:</span>
+          <div style="font-size:24px; font-weight:900; color:${currentBal < 0 ? '#DC2626' : '#059669'};">
+            ${currentBal.toLocaleString()} <span style="font-size:14px; font-weight:normal; color:#64748B;">ج.م</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary" onclick="this.closest('.modal-backdrop').remove(); adjustWalletPrompt('${userId}', '${role}');" style="display:flex; align-items:center; gap:6px; font-size:12.5px; padding:8px 16px; border-radius:8px;">
+            <i class="ri-add-circle-line"></i> شحن رصيد فوري
+          </button>
+        </div>
+      </div>
+
+      <!-- Transactions List Container -->
+      <div id="modalWalletHistoryList" style="flex:1; overflow-y:auto; padding:20px 24px;">
+        <div style="text-align:center; padding:40px; color:#94A3B8;">
+          <i class="ri-loader-4-line ri-spin" style="font-size:28px; display:block; margin-bottom:8px; color:var(--medium-blue);"></i>
+          جاري تحميل المعاملات وإيصالات الشحن من السيرفر...
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div style="padding:14px 24px; background:white; border-top:1px solid #E2E8F0; display:flex; justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="this.closest('.modal-backdrop').remove()">إغلاق</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const listEl = document.getElementById('modalWalletHistoryList');
+  const client = getSupabaseClient() || supabaseClient;
+  if (!client) {
+    if (listEl) listEl.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-light);">لا توجد معاملات مسجلة في الوضع المحلي</div>';
+    return;
+  }
+
+  try {
+    const [txRes, reqRes] = await Promise.all([
+      client.from('transactions').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+      client.from('wallet_recharge_requests').select('*').eq('user_id', userId).order('created_at', { ascending: false })
+    ]);
+
+    const txList = txRes.data || [];
+    const reqList = reqRes.data || [];
+    let combined = [];
+
+    txList.forEach(t => {
+      combined.push({
+        id: t.id,
+        title: t.title || (t.type === 'charge' ? 'شحن رصيد' : 'معاملة مالية'),
+        type: t.type || 'charge',
+        amount: parseFloat(t.amount || 0),
+        balance_after: t.balance_after,
+        payment_method: t.payment_method || '—',
+        receipt_url: t.receipt_url,
+        notes: t.notes,
+        created_at: t.created_at
+      });
+    });
+
+    reqList.forEach(r => {
+      const isDuplicate = combined.some(c => c.receipt_url && c.receipt_url === r.receipt_url);
+      if (!isDuplicate) {
+        combined.push({
+          id: r.id,
+          title: r.status === 'approved' ? 'شحن رصيد مقبول' : (r.status === 'rejected' ? 'طلب شحن مرفوض' : 'طلب شحن معلق ⏳'),
+          type: r.status === 'approved' ? 'charge' : (r.status === 'rejected' ? 'charge_rejected' : 'charge_pending'),
+          amount: parseFloat(r.amount || 0),
+          balance_after: null,
+          payment_method: r.payment_method || 'InstaPay',
+          receipt_url: r.receipt_url,
+          notes: r.rejection_reason ? `سبب الرفض: ${r.rejection_reason}` : '',
+          created_at: r.created_at
+        });
+      }
+    });
+
+    combined.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+    if (combined.length === 0) {
+      listEl.innerHTML = `
+        <div style="padding:32px; text-align:center; color:#94A3B8;">
+          <i class="ri-wallet-3-line" style="font-size:36px; display:block; margin-bottom:8px;"></i>
+          لا توجد عمليات شحن أو تحويلات مسجلة لهذا الحساب حتى الآن.
+        </div>
+      `;
+      return;
+    }
+
+    listEl.innerHTML = `
+      <table class="data-table" style="width:100%; font-size:12.5px;">
+        <thead>
+          <tr style="background:var(--bg-primary);">
+            <th>التاريخ والوقت</th>
+            <th>نوع المعاملة</th>
+            <th>طريقة التحويل</th>
+            <th>المبلغ</th>
+            <th>الرصيد بعد</th>
+            <th>الإيصال</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${combined.map(t => {
+            const isInc = t.amount > 0;
+            const dateStr = new Date(t.created_at || Date.now()).toLocaleString('ar-EG');
+            return `
+              <tr style="border-bottom:1px solid #F1F5F9;">
+                <td style="white-space:nowrap; font-weight:600;">${dateStr}</td>
+                <td>
+                  <div style="font-weight:700; color:var(--text-primary);">${t.title}</div>
+                  ${t.notes ? `<div style="font-size:11px; color:#64748B;">${t.notes}</div>` : ''}
+                </td>
+                <td>
+                  <span class="badge" style="background:#F3E8FF; color:#6B21A8; font-size:10.5px; padding:3px 8px; border-radius:6px; font-weight:700;">
+                    ${t.payment_method}
+                  </span>
+                </td>
+                <td style="font-weight:900; color:${isInc ? '#059669' : '#DC2626'}; white-space:nowrap; font-size:13.5px;">
+                  ${isInc ? '+' : ''}${t.amount.toLocaleString()} ج.م
+                </td>
+                <td style="font-weight:700; white-space:nowrap;">
+                  ${t.balance_after !== null && t.balance_after !== undefined ? parseFloat(t.balance_after).toLocaleString() + ' ج.م' : '—'}
+                </td>
+                <td>
+                  ${t.receipt_url ? `
+                    <button class="btn btn-sm btn-outline" style="padding:3px 10px; font-size:11px; font-weight:700; color:#2563EB; border-color:#93C5FD; background:#EFF6FF;" onclick="viewReceiptModal('${t.receipt_url}', 'إيصال شحن', '${userName}', ${t.amount}, '${dateStr}', '${t.payment_method}')">
+                      📸 الإيصال
+                    </button>
+                  ` : '<span style="color:#94A3B8; font-size:11px;">—</span>'}
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+  } catch (e) {
+    if (listEl) listEl.innerHTML = `<div style="color:var(--error); text-align:center; padding:20px;">تعذر تحميل البيانات: ${e.message || e}</div>`;
+  }
+}

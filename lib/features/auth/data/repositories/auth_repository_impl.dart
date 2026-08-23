@@ -71,11 +71,6 @@ class AuthRepositoryImpl implements IAuthRepository {
   }
 
   @override
-  Future<AuthResponse> signInWithGoogle({UserRole role = UserRole.rider}) {
-    return _remoteDataSource.signInWithGoogle(role: role);
-  }
-
-  @override
   Future<AuthResponse> signInAnonymously({UserRole role = UserRole.rider}) {
     return _remoteDataSource.signInAnonymously(role: role);
   }

@@ -159,10 +159,12 @@ class AppDrawer extends StatelessWidget {
                             ),
                             Row(
                               children: [
-                                const Icon(Icons.star, color: Colors.orange, size: 14),
+                                const Icon(Icons.star_rounded, color: Colors.amber, size: 16),
                                 const SizedBox(width: 4),
                                 Text(
-                                  isRider ? '4.8 (${l10n.passengerRole})' : '4.9 (${l10n.driverRole})',
+                                  (state.userTotalRatingsCount == 0 && state.userCompletedTripsCount == 0)
+                                      ? '5.0 (${isRider ? l10n.passengerRole : l10n.driverRole} • ${LocaleController.instance.isArabic ? "جديد ⭐" : "New ⭐"})'
+                                      : '${(state.userRating > 0.0 ? state.userRating : 5.0).toStringAsFixed(1)} (${isRider ? l10n.passengerRole : l10n.driverRole})',
                                   style: GoogleFonts.cairo(
                                     fontSize: 12,
                                     color: AppColors.textSecondary,

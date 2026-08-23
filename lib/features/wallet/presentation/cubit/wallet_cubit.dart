@@ -58,7 +58,7 @@ class WalletCubit extends Cubit<WalletState> {
           transactions: txList,
         ));
       } else {
-        emit(const WalletLoaded(walletBalance: 250.00, selectedPaymentMethod: 'كاش', transactions: []));
+        emit(const WalletLoaded(walletBalance: 0.00, selectedPaymentMethod: 'كاش', transactions: []));
       }
     }, onError: (e) {
       emit(WalletError(e.toString()));

@@ -151,7 +151,10 @@ class _PassengerProfileSetupPageState extends State<PassengerProfileSetupPage> {
 
       try {
         final state = GlobalState.instance;
-        final uid = state.userUid;
+        final uid = state.userUid ?? Supabase.instance.client.auth.currentUser?.id;
+        if (uid != null && state.userUid == null) {
+          state.userUid = uid;
+        }
         final nameText = _nameController.text.trim();
         final addressText = _addressController.text.trim();
 
@@ -182,6 +185,17 @@ class _PassengerProfileSetupPageState extends State<PassengerProfileSetupPage> {
             'created_at': DateTime.now().toIso8601String(),
           });
           debugPrint('[ProfileSetup] ✓ passengers table updated');
+
+          // 3. Sync to profiles table for dashboard compatibility
+          try {
+            await Supabase.instance.client.from('profiles').upsert({
+              'id': uid,
+              'full_name': nameText,
+              'phone': e164Phone,
+              'role': 'user',
+              'updated_at': DateTime.now().toIso8601String(),
+            });
+          } catch (_) {}
 
           // Update GlobalState
           state.passengerName = nameText;
@@ -458,7 +472,9 @@ class _PassengerProfileSetupPageState extends State<PassengerProfileSetupPage> {
                     TextFormField(
                       controller: _addressController,
                       validator: (value) {
-                        // Address is optional — user can auto-detect or enter later
+                        if (value == null || value.trim().isEmpty) {
+                          return 'يرجى إدخال عنوانك أو استخدام زر تحديد الموقع التلقائي';
+                        }
                         return null;
                       },
                       decoration: InputDecoration(

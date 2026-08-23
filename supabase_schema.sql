@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS public.users (
     email TEXT DEFAULT '',
     role TEXT NOT NULL DEFAULT 'rider' CHECK (role IN ('rider', 'driver', 'admin')),
     rating DOUBLE PRECISION DEFAULT 5.0,
-    wallet_balance NUMERIC(10,2) DEFAULT 250.00,
+    wallet_balance NUMERIC(10,2) DEFAULT 0.00,
     avatar_url TEXT DEFAULT '',
     fcm_token TEXT DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -333,11 +333,165 @@ INSERT INTO storage.buckets (id, name, public) VALUES
     ('deliveries', 'deliveries', true),
     ('products', 'products', true),
     ('chat', 'chat', true),
-    ('documents', 'documents', true)
-ON CONFLICT (id) DO NOTHING;
+    ('documents', 'documents', true),
+    ('receipts', 'receipts', true),
+    ('wallet_receipts', 'wallet_receipts', true),
+    ('chat-attachments', 'chat-attachments', true)
+ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
 
 -- STORAGE POLICIES
+DROP POLICY IF EXISTS "Public Read Storage" ON storage.objects;
+DROP POLICY IF EXISTS "Allow Storage Insert" ON storage.objects;
+DROP POLICY IF EXISTS "Allow Storage Update" ON storage.objects;
+DROP POLICY IF EXISTS "Allow Storage Delete" ON storage.objects;
+
 CREATE POLICY "Public Read Storage" ON storage.objects FOR SELECT USING (true);
-CREATE POLICY "Authenticated Insert Storage" ON storage.objects FOR INSERT WITH CHECK (auth.role() = 'authenticated' OR auth.role() = 'anon' OR auth.role() = 'service_role');
-CREATE POLICY "Authenticated Update Storage" ON storage.objects FOR UPDATE USING (auth.role() = 'authenticated' OR auth.role() = 'anon' OR auth.role() = 'service_role');
-CREATE POLICY "Authenticated Delete Storage" ON storage.objects FOR DELETE USING (auth.role() = 'authenticated' OR auth.role() = 'anon' OR auth.role() = 'service_role');
+CREATE POLICY "Allow Storage Insert" ON storage.objects FOR INSERT WITH CHECK (
+    auth.role() = 'authenticated' 
+    OR auth.role() = 'anon' 
+    OR auth.role() = 'service_role'
+    OR bucket_id IN ('licenses', 'avatars', 'deliveries', 'documents', 'national_ids', 'captains', 'orders', 'products', 'chat', 'chat-attachments', 'wallet_receipts', 'receipts')
+);
+CREATE POLICY "Allow Storage Update" ON storage.objects FOR UPDATE USING (
+    auth.role() = 'authenticated' 
+    OR auth.role() = 'anon' 
+    OR auth.role() = 'service_role'
+    OR bucket_id IN ('licenses', 'avatars', 'deliveries', 'documents', 'national_ids', 'captains', 'orders', 'products', 'chat', 'chat-attachments', 'wallet_receipts', 'receipts')
+);
+CREATE POLICY "Allow Storage Delete" ON storage.objects FOR DELETE USING (
+    auth.role() = 'authenticated' 
+    OR auth.role() = 'anon' 
+    OR auth.role() = 'service_role'
+    OR bucket_id IN ('licenses', 'avatars', 'deliveries', 'documents', 'national_ids', 'captains', 'orders', 'products', 'chat', 'chat-attachments', 'wallet_receipts', 'receipts')
+);
+
+-- ==========================================
+-- TRIP COMPLETION FINANCIAL TRIGGER (10% COMMISSION)
+-- ==========================================
+CREATE OR REPLACE FUNCTION public.handle_trip_completion_finances()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_commission_rate NUMERIC(10,2) := 10.00;
+    v_fare NUMERIC(10,2);
+    v_commission NUMERIC(10,2);
+    v_driver_old_bal NUMERIC(10,2);
+    v_driver_new_bal NUMERIC(10,2);
+    v_passenger_old_bal NUMERIC(10,2);
+    v_passenger_new_bal NUMERIC(10,2);
+    v_already_processed BOOLEAN := FALSE;
+    v_payment_method TEXT;
+BEGIN
+    IF (LOWER(NEW.status) = 'completed' AND (OLD.status IS NULL OR LOWER(OLD.status) != 'completed')) THEN
+        SELECT EXISTS (
+            SELECT 1 FROM public.transactions 
+            WHERE reference_code = NEW.id::text 
+            AND type = 'commission'
+        ) INTO v_already_processed;
+
+        IF v_already_processed THEN
+            RETURN NEW;
+        END IF;
+
+        BEGIN
+            SELECT COALESCE(commission_rate, 10.00) INTO v_commission_rate 
+            FROM public.app_settings 
+            WHERE id = 'default' 
+            LIMIT 1;
+        EXCEPTION WHEN OTHERS THEN
+            v_commission_rate := 10.00;
+        END;
+
+        v_fare := COALESCE(NEW.offered_fare, 0.00);
+        v_payment_method := COALESCE(NEW.payment_method, 'كاش');
+        v_commission := ROUND(v_fare * (v_commission_rate / 100.0), 2);
+
+        IF NEW.driver_id IS NOT NULL THEN
+            SELECT COALESCE(wallet_balance, 0.00) INTO v_driver_old_bal 
+            FROM public.users 
+            WHERE id = NEW.driver_id 
+            FOR UPDATE;
+
+            IF v_payment_method = 'المحفظة' THEN
+                v_driver_new_bal := v_driver_old_bal + (v_fare - v_commission);
+                
+                UPDATE public.users 
+                SET wallet_balance = v_driver_new_bal,
+                    updated_at = NOW()
+                WHERE id = NEW.driver_id;
+
+                INSERT INTO public.transactions (
+                    id, user_id, title, amount, type, balance_after, reference_code, payment_method, created_at
+                ) VALUES (
+                    gen_random_uuid(),
+                    NEW.driver_id,
+                    'إيداع قيمة رحلة (بعد خصم العمولة ' || v_commission_rate::text || '%)',
+                    (v_fare - v_commission),
+                    'trip_earning',
+                    v_driver_new_bal,
+                    NEW.id::text,
+                    v_payment_method,
+                    NOW()
+                );
+            ELSE
+                v_driver_new_bal := v_driver_old_bal - v_commission;
+
+                UPDATE public.users 
+                SET wallet_balance = v_driver_new_bal,
+                    updated_at = NOW()
+                WHERE id = NEW.driver_id;
+
+                INSERT INTO public.transactions (
+                    id, user_id, title, amount, type, balance_after, reference_code, payment_method, created_at
+                ) VALUES (
+                    gen_random_uuid(),
+                    NEW.driver_id,
+                    'خصم عمولة رحلة (' || v_commission_rate::text || '%)',
+                    -v_commission,
+                    'commission',
+                    v_driver_new_bal,
+                    NEW.id::text,
+                    v_payment_method,
+                    NOW()
+                );
+            END IF;
+        END IF;
+
+        IF v_payment_method = 'المحفظة' AND NEW.passenger_id IS NOT NULL THEN
+            SELECT COALESCE(wallet_balance, 0.00) INTO v_passenger_old_bal 
+            FROM public.users 
+            WHERE id = NEW.passenger_id 
+            FOR UPDATE;
+
+            v_passenger_new_bal := v_passenger_old_bal - v_fare;
+
+            UPDATE public.users 
+            SET wallet_balance = v_passenger_new_bal,
+                updated_at = NOW()
+            WHERE id = NEW.passenger_id;
+
+            INSERT INTO public.transactions (
+                id, user_id, title, amount, type, balance_after, reference_code, payment_method, created_at
+            ) VALUES (
+                gen_random_uuid(),
+                NEW.passenger_id,
+                'خصم قيمة رحلة',
+                -v_fare,
+                'payment',
+                v_passenger_new_bal,
+                NEW.id::text,
+                v_payment_method,
+                NOW()
+            );
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_handle_trip_completion_finances ON public.ride_requests;
+
+CREATE TRIGGER trg_handle_trip_completion_finances
+AFTER UPDATE OF status ON public.ride_requests
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_trip_completion_finances();

@@ -1,7 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import '../../../../core/repositories/auth_repository.dart';
-import '../../../../core/models/user_model.dart';
 import '../../../../core/state/global_state.dart' show DriverVerificationStatus, UserRole;
 import '../../../../core/utils/auth_error_handler.dart';
 import 'auth_state.dart';
@@ -18,21 +17,6 @@ class AuthCubit extends Cubit<AuthState> {
       final currentUser = _authRepository.currentUser;
       if (currentUser != null) {
         await _loadUserProfile(currentUser.id, currentUser.phone ?? '', null);
-      } else {
-        emit(Unauthenticated());
-      }
-    } catch (e) {
-      emit(AuthError(AuthErrorHandler.getErrorMessage(e)));
-    }
-  }
-
-  Future<void> signInWithGoogle(UserRole role) async {
-    emit(AuthLoading());
-    try {
-      final authRes = await _authRepository.signInWithGoogle();
-      final user = authRes.user ?? _authRepository.currentUser;
-      if (user != null) {
-        await _loadUserProfile(user.id, user.phone ?? '', role);
       } else {
         emit(Unauthenticated());
       }
@@ -134,41 +118,6 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
-  Future<void> bypassLogin(String phone, UserRole role) async {
-    emit(AuthLoading());
-    try {
-      final authRes = await _authRepository.signInAnonymously(role: role);
-      final user = authRes.user;
-      if (user != null) {
-        await _loadUserProfile(user.id, phone, role);
-      } else {
-        final mockUser = UserModel(
-          uid: '00000000-0000-4000-a000-000000000000',
-          name: 'مستخدم تجريبي',
-          phoneNumber: phone,
-          email: '',
-          role: role.name,
-          rating: 5.0,
-          walletBalance: 250.00,
-          createdAt: DateTime.now(),
-        );
-        emit(Authenticated(user: mockUser, role: role, driverStatus: DriverVerificationStatus.unregistered));
-      }
-    } catch (e) {
-      final mockUser = UserModel(
-        uid: '00000000-0000-4000-a000-000000000000',
-        name: 'مستخدم تجريبي (أوفلاين)',
-        phoneNumber: phone,
-        email: '',
-        role: role.name,
-        rating: 5.0,
-        walletBalance: 250.00,
-        createdAt: DateTime.now(),
-      );
-      emit(Authenticated(user: mockUser, role: role, driverStatus: DriverVerificationStatus.verified));
-    }
-  }
-
   Future<void> setupPassengerProfile(String uid, String name, String gender, String phoneNumber) async {
     emit(AuthLoading());
     try {
@@ -253,6 +202,7 @@ class AuthCubit extends Cubit<AuthState> {
     required String driverName,
     required int driverAge,
     required String driverGender,
+    String vehicleColor = 'أبيض',
   }) async {
     final state = this.state;
     if (state is DriverDocUploadRequired || state is Authenticated) {
@@ -265,7 +215,7 @@ class AuthCubit extends Cubit<AuthState> {
           'driver_id': uid,
           'model': vehicleModel,
           'number_plate': licensePlate,
-          'color': 'فضي',
+          'color': vehicleColor,
           'type': 'motorcycle',
         }).select('id').single();
 

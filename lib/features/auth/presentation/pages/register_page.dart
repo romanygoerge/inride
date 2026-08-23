@@ -82,40 +82,11 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
-  void _onGoogleSignUpPressed() async {
-    if (_isLoading) return;
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final state = GlobalState.instance;
-      await state.loginWithGoogle(role: _selectedRole);
-      
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
-      _navigateToNextScreen();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
-      if (e.toString().contains('ERROR_ABORTED_BY_USER') || e.toString().contains('canceled')) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AuthErrorHandler.getErrorMessage(e), style: GoogleFonts.cairo()),
-          backgroundColor: AppColors.error,
-        ),
-      );
-    }
-  }
-
   void _navigateToNextScreen() {
     final state = GlobalState.instance;
+    if (!state.isLoggedIn || state.userUid == null) {
+      return;
+    }
     if (state.currentRole == UserRole.rider) {
       Widget targetPage;
       if (!state.hasPassengerProfile) {
@@ -386,40 +357,6 @@ class _RegisterPageState extends State<RegisterPage> {
                 child: _isLoading
                     ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
                     : Text('إنشاء الحساب', style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-              ),
-              const SizedBox(height: 16),
-
-              Row(
-                children: [
-                  const Expanded(child: Divider()),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('أو التسجيل بواسطة', style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary)),
-                  ),
-                  const Expanded(child: Divider()),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              OutlinedButton(
-                onPressed: _isLoading ? null : _onGoogleSignUpPressed,
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.border),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  backgroundColor: Colors.white,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.g_mobiledata_outlined, color: Colors.redAccent, size: 28),
-                    const SizedBox(width: 8),
-                    Text(
-                      'التسجيل باستخدام Google',
-                      style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                    ),
-                  ],
-                ),
               ),
 
               const SizedBox(height: 24),

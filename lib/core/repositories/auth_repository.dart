@@ -65,10 +65,6 @@ class AuthRepository implements IAuthRepository {
       _impl.verifyOTP(verificationId: verificationId, smsCode: smsCode);
 
   @override
-  Future<AuthResponse> signInWithGoogle({UserRole role = UserRole.rider}) =>
-      _impl.signInWithGoogle(role: role);
-
-  @override
   Future<AuthResponse> signInAnonymously({UserRole role = UserRole.rider}) =>
       _impl.signInAnonymously(role: role);
 

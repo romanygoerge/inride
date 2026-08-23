@@ -32,8 +32,6 @@ abstract class IAuthRepository {
     required String smsCode,
   });
 
-  Future<AuthResponse> signInWithGoogle({UserRole role = UserRole.rider});
-
   Future<AuthResponse> signInAnonymously({UserRole role = UserRole.rider});
 
   Future<UserModel> fetchOrCreateUserProfile(

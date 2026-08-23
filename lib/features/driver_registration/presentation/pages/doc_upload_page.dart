@@ -18,6 +18,7 @@ class _DocUploadPageState extends State<DocUploadPage> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _vehicleNameController = TextEditingController();
   final TextEditingController _vehicleNumberController = TextEditingController();
+  final TextEditingController _vehicleColorController = TextEditingController(text: 'أبيض');
   final TextEditingController _driverNameController = TextEditingController();
   final TextEditingController _driverAgeController = TextEditingController();
   final TextEditingController _driverPhoneController = TextEditingController();
@@ -71,12 +72,16 @@ class _DocUploadPageState extends State<DocUploadPage> {
     } else if (state.passengerAddress != null && state.passengerAddress!.isNotEmpty) {
       _driverAddressController.text = state.passengerAddress!;
     }
+    if (state.driverVehicleColor != null && state.driverVehicleColor!.isNotEmpty) {
+      _vehicleColorController.text = state.driverVehicleColor!;
+    }
   }
 
   @override
   void dispose() {
     _vehicleNameController.dispose();
     _vehicleNumberController.dispose();
+    _vehicleColorController.dispose();
     _driverNameController.dispose();
     _driverAgeController.dispose();
     _driverPhoneController.dispose();
@@ -307,6 +312,7 @@ class _DocUploadPageState extends State<DocUploadPage> {
           address: _driverAddressController.text.trim(),
           phone: _driverPhoneController.text.trim(),
           vehicleCategory: _vehicleCategory,
+          vehicleColor: _vehicleColorController.text.trim(),
           hasAC: _hasAC,
           maxPassengers: _maxPassengers,
         );
@@ -530,6 +536,64 @@ class _DocUploadPageState extends State<DocUploadPage> {
                     fillColor: AppColors.background,
                   ),
                   style: GoogleFonts.cairo(fontSize: 14, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _vehicleColorController,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'يرجى إدخال أو اختيار لون المركبة';
+                    }
+                    return null;
+                  },
+                  decoration: const InputDecoration(
+                    hintText: 'لون المركبة (مثال: أبيض، أسود، فضي، أحمر)',
+                    prefixIcon: Icon(Icons.palette_outlined, color: AppColors.textLight),
+                    fillColor: AppColors.background,
+                  ),
+                  style: GoogleFonts.cairo(fontSize: 14, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      'أبيض', 'أسود', 'فضي', 'رمادي', 'أحمر', 'أزرق', 'كحلي', 'بني', 'ذهبي', 'أصفر', 'أخضر', 'برتقالي'
+                    ].map((colorOption) {
+                      final isSelected = _vehicleColorController.text.trim() == colorOption;
+                      return Padding(
+                        padding: const EdgeInsets.only(left: 6.0),
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _vehicleColorController.text = colorOption;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(20),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isSelected ? AppColors.mediumBlue.withValues(alpha: 0.12) : AppColors.background,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: isSelected ? AppColors.mediumBlue : AppColors.border,
+                                width: isSelected ? 1.5 : 1,
+                              ),
+                            ),
+                            child: Text(
+                              colorOption,
+                              style: GoogleFonts.cairo(
+                                fontSize: 12,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                color: isSelected ? AppColors.mediumBlue : AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
                 ),
                 const SizedBox(height: 16),
 

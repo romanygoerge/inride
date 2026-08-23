@@ -6,16 +6,10 @@ import '../../../../core/state/global_state.dart';
 import '../../../../core/utils/auth_error_handler.dart';
 import '../../../../core/services/phone_auth_service.dart';
 import 'otp_page.dart';
-import 'passenger_profile_setup_page.dart';
-import '../../../../features/passenger/presentation/pages/passenger_home_page.dart';
-import '../../../../features/driver_registration/presentation/pages/doc_upload_page.dart';
-import '../../../../features/driver_registration/presentation/pages/review_pending_page.dart';
-import '../../../../features/driver/presentation/pages/driver_home_page.dart';
 import '../../../../shared/widgets/app_logo.dart';
 import '../../../../features/common/legal_pages.dart';
 import '../../../../core/utils/snappy_page_route.dart';
 import '../../../../generated/app_localizations.dart';
-import '../../../../core/localization/locale_controller.dart';
 
 
 class LoginPage extends StatefulWidget {
@@ -28,7 +22,6 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final TextEditingController _phoneController = TextEditingController();
   UserRole _selectedRole = UserRole.rider;
-  bool _isLoading = false;
   bool _isPhoneLoading = false;
 
   @override
@@ -44,7 +37,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _onSendWhatsAppOtpPressed() async {
-    if (_isPhoneLoading || _isLoading) return;
+    if (_isPhoneLoading) return;
 
     final rawInput = _phoneController.text.trim();
     final l10n = AppLocalizations.of(context)!;
@@ -132,70 +125,6 @@ class _LoginPageState extends State<LoginPage> {
           content: Text(AuthErrorHandler.getErrorMessage(e), style: GoogleFonts.cairo()),
           backgroundColor: AppColors.error,
         ),
-      );
-    }
-  }
-
-  void _onGoogleSignInPressed() async {
-    if (_isLoading || _isPhoneLoading) return;
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final state = GlobalState.instance;
-      await state.loginWithGoogle(role: _selectedRole);
-      
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
-      _navigateToNextScreen();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
-      if (e.toString().contains('ERROR_ABORTED_BY_USER') || e.toString().contains('canceled')) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AuthErrorHandler.getErrorMessage(e), style: GoogleFonts.cairo()),
-          backgroundColor: AppColors.error,
-        ),
-      );
-    }
-  }
-
-  void _navigateToNextScreen() {
-    final state = GlobalState.instance;
-    if (state.currentRole == UserRole.rider) {
-      Widget targetPage;
-      if (!state.hasPassengerProfile) {
-        targetPage = const PassengerProfileSetupPage();
-      } else {
-        targetPage = const PassengerHomePage();
-      }
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => targetPage),
-        (route) => false,
-      );
-    } else {
-      Widget targetPage;
-      if (state.verificationStatus == DriverVerificationStatus.unregistered) {
-        targetPage = const DocUploadPage();
-      } else if (state.verificationStatus == DriverVerificationStatus.submitted) {
-        targetPage = const ReviewPendingPage();
-      } else {
-        targetPage = const DriverHomePage();
-      }
-
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => targetPage),
-        (route) => false,
       );
     }
   }
@@ -465,7 +394,7 @@ class _LoginPageState extends State<LoginPage> {
                           ],
                         ),
                         child: ElevatedButton(
-                          onPressed: (_isPhoneLoading || _isLoading) ? null : _onSendWhatsAppOtpPressed,
+                          onPressed: _isPhoneLoading ? null : _onSendWhatsAppOtpPressed,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.transparent,
                             shadowColor: Colors.transparent,
@@ -502,108 +431,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
 
-                const SizedBox(height: 24),
-
-                // Separator (OR)
-                Row(
-                  children: [
-                    const Expanded(child: Divider(color: AppColors.border, thickness: 1)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14.0),
-                      child: Text(
-                        l10n.orSeparator,
-                        style: GoogleFonts.cairo(
-                          fontSize: 13,
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const Expanded(child: Divider(color: AppColors.border, thickness: 1)),
-                  ],
-                ),
-
-                const SizedBox(height: 24),
-
-                // Google Sign-In Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: OutlinedButton(
-                    onPressed: _isLoading ? null : _onGoogleSignInPressed,
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppColors.border, width: 1.5),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      backgroundColor: Colors.white,
-                      elevation: 0,
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              color: AppColors.mediumBlue,
-                              strokeWidth: 2.5,
-                            ),
-                          )
-                        : Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Image.network(
-                                'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/1200px-Google_%22G%22_logo.svg.png',
-                                height: 22,
-                                width: 22,
-                                errorBuilder: (context, error, stackTrace) => const Icon(
-                                  Icons.g_mobiledata_outlined,
-                                  color: Colors.redAccent,
-                                  size: 28,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                l10n.loginWithGoogle,
-                                style: GoogleFonts.cairo(
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                            ],
-                          ),
-                  ),
-                ),
-
-                const SizedBox(height: 14),
-
-                // Instant Demo Passenger Mode Entry Button
-                OutlinedButton.icon(
-                  onPressed: () {
-                    final state = GlobalState.instance;
-                    state.currentRole = UserRole.rider;
-                    state.passengerName = 'راكب تجريبي';
-                    state.userName = 'راكب تجريبي';
-                    state.update();
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(builder: (context) => const PassengerHomePage()),
-                      (route) => false,
-                    );
-                  },
-                  icon: const Icon(Icons.flash_on_rounded, color: AppColors.mediumBlue, size: 20),
-                  label: Text(
-                    LocaleController.instance.isArabic ? 'تصفح وضع الراكب / المحفظة والشحن 💳' : 'Explore Passenger Mode & Wallet 💳',
-                    style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.mediumBlue),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    side: const BorderSide(color: AppColors.mediumBlue, width: 1.5),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                const SizedBox(height: 24),
+                const SizedBox(height: 32),
                 // Footer with interactive legal links
                 Wrap(
                   alignment: WrapAlignment.center,

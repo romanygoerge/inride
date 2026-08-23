@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/models/user_model.dart';
 import '../../../../core/services/phone_auth_service.dart';
@@ -83,89 +82,6 @@ class AuthRemoteDataSource {
       phoneNumber: verificationId,
       token: smsCode,
     );
-  }
-
-  Future<AuthResponse> signInWithGoogle({UserRole role = UserRole.rider}) async {
-    try {
-      const googleWebClientId =
-          '562418460475-ha1n442q4d21h1mdhrega86gkja89h1b.apps.googleusercontent.com';
-
-      if (kIsWeb) {
-        final bool redirected = await _supabase.auth.signInWithOAuth(
-          OAuthProvider.google,
-          redirectTo: Uri.base.origin,
-        );
-        if (!redirected) {
-          throw const AuthException(
-              'لم يتم استكمال عملية تسجيل الدخول عبر متصفح الويب');
-        }
-        return AuthResponse(
-          session: _supabase.auth.currentSession,
-          user: _supabase.auth.currentUser,
-        );
-      }
-
-      final GoogleSignIn googleSignIn = GoogleSignIn(
-        serverClientId: googleWebClientId,
-        clientId: kIsWeb ? googleWebClientId : null,
-        scopes: ['email', 'profile'],
-      );
-
-      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-
-      if (googleUser == null) {
-        throw const AuthException(
-            'تم إلغاء عملية تسجيل الدخول بواسطة المستخدم');
-      }
-
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-      final accessToken = googleAuth.accessToken;
-      final idToken = googleAuth.idToken;
-
-      if (idToken == null) {
-        const String redirectUrl = 'com.inride.inride_app://login-callback';
-        final bool redirected = await _supabase.auth.signInWithOAuth(
-          OAuthProvider.google,
-          redirectTo: redirectUrl,
-        );
-        if (!redirected) {
-          throw const AuthException('لم يتم الحصول على معرف Google ID Token');
-        }
-        return AuthResponse(
-          session: _supabase.auth.currentSession,
-          user: _supabase.auth.currentUser,
-        );
-      }
-
-      final authResponse = await _supabase.auth.signInWithIdToken(
-        provider: OAuthProvider.google,
-        idToken: idToken,
-        accessToken: accessToken,
-      );
-
-      final user = authResponse.user ?? _supabase.auth.currentUser;
-      if (user != null) {
-        final fullName = googleUser.displayName ??
-            user.userMetadata?['full_name'] ??
-            'مستخدم جوجل';
-        final avatarUrl =
-            googleUser.photoUrl ?? user.userMetadata?['avatar_url'];
-        await fetchOrCreateUserProfile(
-          user.id,
-          user.phone ?? '',
-          role,
-          fullNameOverride: fullName,
-          emailOverride: googleUser.email,
-          avatarUrlOverride: avatarUrl,
-        );
-      }
-
-      return authResponse;
-    } catch (e) {
-      debugPrint('[AuthRemoteDataSource] signInWithGoogle failed: $e');
-      rethrow;
-    }
   }
 
   Future<AuthResponse> signInAnonymously({UserRole role = UserRole.rider}) async {
@@ -286,7 +202,7 @@ class AuthRemoteDataSource {
         email: email,
         role: activeRole.name,
         rating: 5.0,
-        walletBalance: 250.00,
+        walletBalance: 0.00,
         createdAt: DateTime.now(),
       );
 

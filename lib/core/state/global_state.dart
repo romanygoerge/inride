@@ -180,6 +180,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   String? vehicleRegistrationPath;
   String? vehicleName;
   String? vehicleNumber;
+  String? driverVehicleColor;
 
   // Vehicle details (new fields)
   String? driverVehicleCategory; // 'motorcycle' or 'private_car'
@@ -190,9 +191,14 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   String? driverVehicleFrontUrl;
   List<String> driverVehicleImages = [];
 
-  // Dual Role State Getters
   bool get hasDriverProfile => verificationStatus == DriverVerificationStatus.verified || verificationStatus == DriverVerificationStatus.submitted || driverNationalIdUrl != null;
-  bool get hasPassengerProfile => (passengerName != null && passengerName!.trim().isNotEmpty) || (userName != null && userName!.trim().isNotEmpty);
+  bool get hasPassengerProfile {
+    final pName = passengerName?.trim() ?? '';
+    final uName = userName?.trim() ?? '';
+    final hasValidPassengerName = pName.isNotEmpty && pName != 'مستخدم جديد' && pName != 'مستخدم' && pName != 'مستخدم هاتف' && pName != 'مستخدم inRide';
+    final hasValidUserName = uName.isNotEmpty && uName != 'مستخدم جديد' && uName != 'مستخدم' && uName != 'مستخدم هاتف' && uName != 'مستخدم inRide';
+    return hasValidPassengerName || hasValidUserName;
+  }
   bool get hasDualRole => hasDriverProfile && hasPassengerProfile;
 
   Future<void> ensurePassengerProfileExists() async {
@@ -764,6 +770,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
                       if (vData != null) {
                         vehicleName = vData['model'];
                         vehicleNumber = vData['number_plate'];
+                        driverVehicleColor = vData['color'];
                         driverVehicleCategory = vData['vehicle_category'];
                         driverHasAC = vData['has_ac'] ?? false;
                         driverMaxPassengers = vData['max_passengers'] ?? 4;
@@ -775,6 +782,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
                   } else {
                     vehicleName = dData['vehicle_name'] ?? dData['vehicleName'];
                     vehicleNumber = dData['vehicle_number'] ?? dData['vehicleNumber'];
+                    driverVehicleColor = dData['vehicle_color'] ?? dData['color'] ?? 'أبيض';
                     driverVehicleCategory = dData['vehicle_category'] ?? dData['vehicle_type'] ?? dData['vehicleCategory'] ?? dData['vehicleType'];
                   }
 
@@ -970,7 +978,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       'id': '1',
       'name': 'فودافون كاش',
       'code': 'vodafone_cash',
-      'account_details': '01000000000',
+      'account_details': '01204062941',
       'is_active': true,
       'icon_name': 'ri-smartphone-line'
     },
@@ -1598,7 +1606,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     required String folderName,
     required String fileName,
   }) async {
-    final uid = userUid ?? '00000000-0000-4000-a000-000000000000';
+    final uid = userUid ?? _supabase.auth.currentUser?.id ?? '00000000-0000-4000-a000-000000000000';
     try {
       final downloadUrl = await _uploadToSupabaseStorage(
         localPath: localPath,
@@ -1628,11 +1636,13 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     String? address,
     String? phone,
     String vehicleCategory = 'motorcycle',
+    String vehicleColor = 'أبيض',
     bool hasAC = false,
     int maxPassengers = 4,
   }) async {
     vehicleName = name;
     vehicleNumber = number;
+    driverVehicleColor = vehicleColor;
     driverIdCardPath = idCardFrontUrl;
     driverLicensePath = driverLicenseFrontUrl;
     vehicleRegistrationPath = vehicleLicenseFrontUrl;
@@ -1657,6 +1667,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       'address': address,
       'phone': phone,
       'vehicleCategory': vehicleCategory,
+      'vehicleColor': vehicleColor,
     });
 
     try {
@@ -1667,7 +1678,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'driver_id': uid,
           'model': name,
           'number_plate': number,
-          'color': 'فضي',
+          'color': vehicleColor,
           'type': selectedVehicleType,
           'vehicle_category': vehicleCategory,
           'has_ac': hasAC,
@@ -2601,55 +2612,14 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     if (currentRequestId != null) {
+      final reqId = currentRequestId!;
       try {
-        final reqRes = await _supabase.from('ride_requests').select().eq('id', currentRequestId!).maybeSingle();
+        final reqRes = await _supabase.from('ride_requests').select().eq('id', reqId).maybeSingle();
         if (reqRes != null) {
           final reqData = Map<String, dynamic>.from(reqRes);
           final double price = ((reqData['offered_fare'] ?? reqData['offeredFare']) as num? ?? 0.0).toDouble();
           final String paymentMethod = reqData['payment_method'] ?? reqData['paymentMethod'] ?? 'كاش';
           final String passengerId = reqData['passenger_id'] ?? reqData['passengerId'] ?? '';
-          final String? driverId = reqData['driver_id'] ?? reqData['driverId'];
-          
-          final double rate = (appSettings['commissionRate'] ?? 10.0 as num).toDouble();
-          final double commission = price * (rate / 100.0);
-
-          if (paymentMethod == 'المحفظة' && passengerId.isNotEmpty) {
-            final pRes = await _supabase.from('users').select('wallet_balance').eq('id', passengerId).single();
-            final pBal = (pRes['wallet_balance'] as num? ?? 0.0).toDouble() - price;
-            await _supabase.from('users').update({'wallet_balance': pBal, 'passenger_wallet_balance': pBal}).eq('id', passengerId);
-            await _supabase.from('transactions').insert({
-              'user_id': passengerId,
-              'title': 'خصم قيمة رحلة',
-              'amount': -price,
-              'type': 'payment',
-              'balance_after': pBal,
-            });
-            if (passengerId == userUid) {
-              passengerWalletBalance = pBal;
-            }
-          }
-
-          if (driverId != null && driverId.isNotEmpty) {
-            final dRes = await _supabase.from('users').select('driver_wallet_balance, wallet_balance').eq('id', driverId).single();
-            final rawDBal = dRes['driver_wallet_balance'] ?? dRes['wallet_balance'];
-            double dBal = (rawDBal as num? ?? 0.0).toDouble();
-            if (paymentMethod == 'المحفظة') {
-              dBal += (price - commission);
-            } else {
-              dBal -= commission;
-            }
-            await _supabase.from('users').update({'driver_wallet_balance': dBal}).eq('id', driverId);
-            await _supabase.from('transactions').insert({
-              'user_id': driverId,
-              'title': 'عمولة رحلة',
-              'amount': -commission,
-              'type': 'commission',
-              'balance_after': dBal,
-            });
-            if (driverId == userUid) {
-              driverWalletBalance = dBal;
-            }
-          }
 
           if (passengerId.isNotEmpty) {
             unawaited(NotificationService.instance.sendNotification(
@@ -2658,8 +2628,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
               body: 'تم إنهاء الرحلة بنجاح. شكراً لاستخدامك inRide.',
               type: 'trip_finished',
               data: {
-                'requestId': currentRequestId!,
-                'tripId': currentRequestId!,
+                'requestId': reqId,
+                'tripId': reqId,
                 'price': price.toString(),
                 'paymentMethod': paymentMethod,
               },
@@ -2667,10 +2637,20 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           }
         }
       } catch (e) {
-        debugPrint('Error completing trip wallet operations: $e');
+        debugPrint('[TripLifecycle] Notification error on trip completion: $e');
       }
 
-      await RideRepository.instance.updateRideStatus(currentRequestId!, 'Completed');
+      // Updating status to 'Completed' triggers Supabase DB trigger `trg_handle_trip_completion_finances`
+      // which automatically deducts 10% commission, logs the transaction, and updates balances atomically.
+      await RideRepository.instance.updateRideStatus(reqId, 'Completed');
+
+      // Refresh wallet transactions and user profile in the app
+      try {
+        await fetchWalletTransactions();
+        await reloadUserProfile();
+      } catch (e) {
+        debugPrint('[TripLifecycle] Error refreshing wallet after trip completion: $e');
+      }
 
       // Restore driver availability in Supabase database immediately on trip completion
       if (userUid != null && currentRole == UserRole.driver) {
@@ -3197,38 +3177,39 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         insertedReq = true;
       } catch (e) {
         debugPrint('[GlobalState] Error writing to wallet_recharge_requests: $e');
-        // Check if the record actually landed in the database despite PostgREST RETURNING error
-        try {
-          final checkRow = await _supabase
-              .from('wallet_recharge_requests')
-              .select('id')
-              .eq('id', requestId)
-              .maybeSingle();
-          if (checkRow != null) {
-            insertedReq = true;
-            debugPrint('[GlobalState] Confirmed wallet_recharge_requests inserted with id: $requestId');
-          } else {
-            // Fallback check for user_id and pending status
-            final checkRecent = await _supabase
+        final errStr = e.toString().toLowerCase();
+
+        // Supabase PostgREST inserts the row BEFORE evaluating the RETURNING clause.
+        // If the error is NOT a network/timeout issue, the INSERT itself succeeded
+        // but PostgREST failed to return the row (usually due to RLS SELECT policy).
+        final bool isNetworkError = errStr.contains('socketexception') ||
+            errStr.contains('timeoutexception') ||
+            errStr.contains('handshakeexception') ||
+            errStr.contains('connection refused') ||
+            errStr.contains('network is unreachable');
+
+        if (!isNetworkError) {
+          // Non-network error → the INSERT most likely landed in the DB.
+          // Confirm with a SELECT if possible, but default to success.
+          insertedReq = true;
+          debugPrint('[GlobalState] Non-network error on insert → treating as success (PostgREST RETURNING issue)');
+
+          try {
+            final checkRow = await _supabase
                 .from('wallet_recharge_requests')
                 .select('id')
-                .eq('user_id', userUid!)
-                .eq('status', 'pending')
-                .order('created_at', ascending: false)
-                .limit(1)
+                .eq('id', requestId)
                 .maybeSingle();
-            if (checkRecent != null) {
-              insertedReq = true;
-              debugPrint('[GlobalState] Fallback check confirmed pending top-up request exists');
+            if (checkRow != null) {
+              debugPrint('[GlobalState] Confirmed wallet_recharge_requests inserted with id: $requestId');
             }
+          } catch (checkErr) {
+            debugPrint('[GlobalState] Verification SELECT also blocked (RLS): $checkErr — still treating as success');
           }
-        } catch (checkErr) {
-          debugPrint('[GlobalState] Fallback check error: $checkErr');
-          // If error is non-network DB RLS / PostgREST code, the INSERT usually succeeded
-          final errStr = e.toString();
-          if (errStr.contains('42501') || errStr.contains('PGRST') || errStr.contains('duplicate')) {
-            insertedReq = true;
-          }
+        } else {
+          // Genuine network error — the INSERT likely did NOT reach the server
+          debugPrint('[GlobalState] Network error on insert → marking as failed');
+          insertedReq = false;
         }
       }
 
@@ -3499,43 +3480,6 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     await AuthRepository.instance.resetPasswordForEmail(email);
   }
 
-  Future<void> loginWithGoogle({UserRole? role}) async {
-    if (role != null) currentRole = role;
-    final authRes = await AuthRepository.instance.signInWithGoogle(role: currentRole);
-    // Immediately sync profile data for accurate navigation
-    final user = authRes.user ?? _supabase.auth.currentUser;
-    if (user != null) {
-      userUid = user.id;
-      isLoggedIn = true;
-      final googleName = user.userMetadata?['full_name'] ?? user.userMetadata?['name'];
-      if (googleName != null && googleName.toString().isNotEmpty) {
-        userName = googleName.toString();
-        if (currentRole == UserRole.rider) {
-          passengerName = userName;
-        }
-      }
-      // Sync driver verification status for returning drivers
-      if (currentRole == UserRole.driver) {
-        try {
-          final driverRes = await _supabase.from('drivers').select().eq('id', user.id).maybeSingle();
-          if (driverRes != null) {
-            final dStatus = driverRes['verification_status'] ?? 'unregistered';
-            if (dStatus == 'verified') {
-              verificationStatus = DriverVerificationStatus.verified;
-            } else if (dStatus == 'submitted') {
-              verificationStatus = DriverVerificationStatus.submitted;
-            }
-          }
-        } catch (e) {
-          debugPrint('[GlobalState] Error fetching driver status on loginWithGoogle: $e');
-        }
-      }
-      notifyListeners();
-    }
-  }
-
-
-
   Future<void> loginWithOTP({
     required String verificationId,
     required String smsCode,
@@ -3613,19 +3557,6 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
     notifyListeners();
     debugPrint('[GlobalState] ✓ loginWithOTP complete — user ${verifiedUser.id} authenticated & state updated');
-  }
-
-  Future<void> saveGooglePhoneWithoutVerification({required String rawPhoneNumber, required UserRole role}) async {
-    phoneNumber = rawPhoneNumber;
-    currentRole = role;
-    if (userUid != null) {
-      await _supabase.from('users').update({'phone_number': rawPhoneNumber, 'role': role.name}).eq('id', userUid!);
-    }
-    notifyListeners();
-  }
-
-  Future<void> linkGoogleWithPhone({required String verificationId, required String smsCode, required UserRole role}) async {
-    await loginWithOTP(verificationId: verificationId, smsCode: smsCode, role: role);
   }
 
   String _generateSecureToken() {

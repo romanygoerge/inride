@@ -277,141 +277,199 @@ class PrivacyPolicyPage extends StatelessWidget {
     return _LegalPageLayout(
       title: isAr ? 'سياسة الخصوصية' : 'Privacy Policy',
       subtitle: isAr
-          ? 'كيف نجمع بياناتك الشخصية والمكانية ونحميها ونشاركها وفق أحدث معايير الأمان (GDPR)'
-          : 'How we collect, protect, and share your personal and location data according to security standards (GDPR)',
+          ? 'سياساتنا وإجراءاتنا بشأن جمع معلوماتك واستخدامها وحمايتها والإفصاح عنها عند استخدام التطبيق'
+          : 'Our policies and procedures on the collection, use, protection, and disclosure of your information',
       icon: Icons.shield_rounded,
-      lastUpdated: isAr ? 'تاريخ آخر تحديث: 29 يوليو 2026' : 'Last Updated: July 29, 2026',
+      lastUpdated: isAr ? 'تاريخ آخر تحديث: 18 أغسطس 2026' : 'Last Updated: August 18, 2026',
       sections: isAr
           ? const [
               _LegalSection(
-                title: '1. مقدمة والتزام الخصوصية',
+                title: '1. مقدمة والأساس القانوني',
                 content:
-                    'تلتزم منصة inRide بحماية خصوصية مستخدميها وأمان بياناتهم الشخصية. توضح هذه السياسة ماهية البيانات التي نجمعها، وكيفية استخدامها، وحقوقك في التحكم بها وفقاً لمعايير Google Play وApple App Store واللائحة العامة لحماية البيانات (GDPR).',
+                    'تصف سياسة الخصوصية هذه سياساتنا وإجراءاتنا المتعلقة بجمع معلوماتك واستخدامها والإفصاح عنها عند استخدامك للخدمة، وتوضح لك حقوق الخصوصية الخاصة بك وكيفية حماية القانون لك.\n\nنستخدم بياناتك الشخصية لتقديم الخدمة وتحسينها. نقوم بجمع معلوماتك واستخدامها والإفصاح عنها وفقاً لما هو موضح في هذه السياسة وفقط عند وجود أساس قانوني صحيح يشمل موافقتك الصريحة حيثما يلزم.',
               ),
               _LegalSection(
-                title: '2. البيانات التي نجمعها',
+                title: '2. التعريفات والتفسير',
                 content:
-                    'نجمع البيانات التالية لتقديم خدماتنا وتحسينها:\n'
-                    '• **بيانات التعريف**: الاسم، رقم الهاتف، البريد الإلكتروني، والصورة الشخصية.\n'
-                    '• **الموقع الجغرافي (GPS)**: نجمع موقعك دقيق التحديد أثناء استخدام التطبيق، وفي الخلفية (Background Location) للكباتن وأثناء تتبع الرحلة النشطة لضمان سلامة الوصول والدقة.\n'
-                    '• **بيانات الجهاز والاتصال**: نوع الجهاز، نظام التشغيل، المعرفات الفريدة، ومعرف الإشعارات (Push Notification Token).\n'
-                    '• **سجلات استخدام وسلوك التطبيق**: سجل الرحلات، التقييمات، وسجلات الأخطاء والانهيار (Crash Logs) لتحسين كفاءة النظام.',
+                    'لأغراض سياسة الخصوصية هذه:\n'
+                    '• **التطبيق (Application)**: يشير إلى برنامج inRide المقدم من قِبل الشركة.\n'
+                    '• **الشركة (Company)**: يُشار إليها بـ ("نحن" أو "لنا" أو "الشركة") وتشير إلى منصة inRide بجمهورية مصر العربية.\n'
+                    '• **الحساب (Account)**: حساب فريد يتم إنشاؤه لك للوصول إلى خدمتنا أو أجزاء منها.\n'
+                    '• **الجهاز (Device)**: أي جهاز يمكنه الوصول إلى الخدمة مثل الهاتف المحمول أو الحاسوب اللوحي.\n'
+                    '• **البيانات الشخصية (Personal Data)**: أي معلومات تتعلق بفرد محدد الهوية أو يمكن تحديد هويته.\n'
+                    '• **مزوّد الخدمة (Service Provider)**: أي شخص طبيعي أو اعتباري يعالج البيانات نيابة عن الشركة.\n'
+                    '• **بيانات الاستخدام (Usage Data)**: البيانات التي يتم جمعها تلقائياً، والناتجة عن استخدام الخدمة أو بنيتها التحتية.\n'
+                    '• **أنت (You)**: الفرد الذي يصل إلى الخدمة أو يستخدمها.',
               ),
               _LegalSection(
-                title: '3. الأذونات المطلوبة (Permissions)',
+                title: '3. أنواع البيانات التي نجمعها',
                 content:
-                    'يحتاج التطبيق للأذونات التالية:\n'
-                    '• **الموقع (Location)**: في الأمامية والخلفية لتحديد نقاط الانطلاق والوصول وتتبع المسار.\n'
-                    '• **الإشعارات (Notifications)**: لإرسال تحديثات حالة الرحلة والتنبيهات المباشرة.\n'
-                    '• **الكاميرا والمعرض (Camera & Gallery)**: لرفع وثائق الكابتن وصورة الملف الشخصي.\n'
-                    '• **الهاتف (Phone)**: لتسهيل الاتصال المباشر بين الكابتن والراكب عند الحاجة.',
+                    '• **البيانات الشخصية**: أثناء استخدام خدمتنا، نطلب منك تزويدنا بمعلومات تعريفية قابلة للتواصل وتحديد الهوية، بما في ذلك رقم الهاتف والاسم ومعلومات الحساب.\n'
+                    '• **بيانات الاستخدام**: تُجمع تلقائياً وتشمل عنوان بروتوكول الإنترنت (IP)، المعرفات الفريدة للجهاز، نظام التشغيل، نوع المتصفح، وسجلات الأخطاء والتشخيص الفنية.\n'
+                    '• **بيانات الموقع الجغرافي (GPS)**: بإذن مسبق منك، نجمع معلومات موقعك الجغرافي الدقيق (في الواجهة الأمامية والخلفية أثناء الرحلات النشطة) لتقديم ميزات الخدمة، وتسهيل نقاط الانطلاق والوصول، وتخصيص الخدمة وتحسينها. يمكنك تفعيل أو تعطيل إذن الوصول للموقع في أي وقت عبر إعدادات جهازك.',
               ),
               _LegalSection(
-                title: '4. كيفية استخدام وتخزين البيانات',
+                title: '4. استخدام بياناتك الشخصية',
                 content:
-                    'تُستخدم البيانات لأغراض تشغيلية وحصرية تشمل:\n'
-                    '• ربط الركاب بالكباتن القريبين وتسهيل الملاحة والوصول.\n'
-                    '• احتساب المسافات والأسعار التقديرية بدقة.\n'
-                    '• توفير لوحة تحكم للإدارة لمتابعة الأمان وجودة الخدمة.\n'
-                    '• يتم تخزين البيانات على خوادم سحابية آمنة ومشفّرة باستخدام تقنيات SSL/TLS مع تطبيق أحدث معايير التشفير الأمني.',
+                    'قد تستخدم الشركة البيانات الشخصية للأغراض التالية:\n'
+                    '• تقديم الخدمة وصيانتها ومراقبة كفاءة استخدامها.\n'
+                    '• إدارة حسابك وتسجيلك كمستخدم للخدمة وإتاحة ميزاتها المخصصة.\n'
+                    '• تنفيذ العقود والالتزامات (خدمات النقل والرحلات المتعاقد عليها).\n'
+                    '• التواصل معك: عبر المكالمات الهاتفية، الرسائل النصية القصيرة (SMS)، الواتساب، أو الإشعارات اللحظية (Push Notifications) بشأن التحديثات أو التنبيهات الأمنية والخدمية.\n'
+                    '• تزويدك بالعروض الخاصة والمعلومات العامة عن الخدمات والفعاليات المماثلة.\n'
+                    '• إدارة طلباتك ومتابعة استفسارات الدعم الفني.\n'
+                    '• تقييم الأعمال، تحليل البيانات، دراسة اتجاهات الاستخدام، وتطوير تجربة المستخدم.',
               ),
               _LegalSection(
-                title: '5. مدة الاحتفاظ بالبيانات (Data Retention)',
+                title: '5. مشاركة البيانات والإفصاح عنها',
                 content:
-                    'نحتفظ ببياناتك طوال فترة تفعيل حسابك على المنصة.\n'
-                    'في حال طلب حذف الحساب، نلتزم بمحوها نهائياً في غضون 30 يوماً، باستثناء السجلات المالية والمعاملات التي نلزم قانوناً بحفظها لفترة محددة وفقاً للتشريعات المالية والضريبية.',
+                    'قد نشارك بياناتك الشخصية في الحالات التالية:\n'
+                    '• **مع مزوّدي الخدمات**: لمراقبة وتحليل استخدام الخدمة وتسهيل عمليات التشغيل والدعم.\n'
+                    '• **مع المستخدمين الآخرين**: مشاركة اسم وصورة وموقع الكابتن أو الراكب حصرياً أثناء تنفيذ وتتبع الرحلة النشطة.\n'
+                    '• **في معاملات نقل الملكية والأعمال**: في حال الاندماج أو بيع أصول الشركة أو تمويلها.\n'
+                    '• **الامتثال للجهات القانونية**: الإفصاح عن البيانات عند وجود التزام قانوني ملزم أو أمر قضائي صادر من السلطات الرسمية بجمهورية مصر العربية.\n'
+                    '• **بموافقتك الصريحة**: لأي غرض آخر بعد الحصول على موافقتك.',
               ),
               _LegalSection(
-                title: '6. مشاركة البيانات والإفصاح القانوني',
+                title: '6. مدة الاحتفاظ بالبيانات وحذفها',
                 content:
-                    '• **لا نبيع أو نؤجر بياناتك الشخصية لأي أطراف ثالثة لأغراض تسويقية نهائياً.**\n'
-                    '• نكشف فقط عن الاسم والصورة والموقع الجغرافي للكابتن أو الراكب المُرتبط بالرحلة أثناء تنفيذ الرحلة النشطة.\n'
-                    '• قد نفصح عن البيانات للسلطات القضائية أو الجهات الحكومية المختصة عند وجود أمر قضائي رسمي أو التزام قانوني ملزم بجمهورية مصر العربية.',
+                    '• **معلومات الحساب**: نحتفظ بها طوال فترة علاقة حسابك بالإضافة إلى فترة تصل إلى 24 شهراً بعد إغلاق الحساب للتعامل مع أي نزاعات أو متطلبات قانونية.\n'
+                    '• **بيانات الاستخدام والسجلات**: تُحفظ لمدة تصل إلى 24 شهراً لأغراض المراقبة الأمنية والتحسينات التشخيصية.\n'
+                    '• **الإتلاف والتجهيل الآمن**: عند انتهاء فترات الاحتفاظ، نقوم بحذف البيانات نهائياً أو إزالتها من النسخ الاحتياطية أو تجهيلها إحصائياً بشكل لا يمكن ربطه بك.',
               ),
               _LegalSection(
-                title: '7. حماية الأطفال (Children Privacy)',
+                title: '7. نقل البيانات دولياً',
                 content:
-                    'تطبيق inRide مخصص حصراً للأفراد بعمر 18 عاماً أو أكثر. نحن لا نجمع عن قصد أي بيانات شخصية من الأطفال أو القصر دون السن القانوني. وفي حال اكتشاف أي حساب لمن هم دون 18 عاماً، سيتم حذفه فوراً.',
+                    'تتم معالجة معلوماتك وحفظها على خوادم سحابية آمنة. نتخذ جميع الخطوات المعقولة لضمان التعامل مع بياناتك بأمان ووفقاً لمعايير التشفير والحماية الصارمة لسياسة الخصوصية هذه ولا يتم نقلها دون وجود ضوابط أمنية كافية.',
               ),
               _LegalSection(
-                title: '8. حقوقك في التحكم بالبيانات وتحديث السياسة',
+                title: '8. حقوقك في التحكم ببياناتك وحذف الحساب',
                 content:
-                    'تتمتع بالحقوق التالية:\n'
-                    '• الحق في الوصول إلى بياناتك الشخصية وتعديلها.\n'
-                    '• الحق في طلب مسح بياناتك وحذف الحساب نهائياً.\n'
-                    '• الحق في سحب الأذونات (مثل أذونات الموقع أو الكاميرا) من إعدادات جهازك.\n'
-                    '• قد نقوم بتحديث سياسة الخصوصية من وقت لآخر، وسيتم إخطارك بأي تغيير جوهري عبر إشعار داخل التطبيق.',
+                    '• يحق لك الوصول إلى بياناتك الشخصية وتعديلها أو تصحيحها أو حذفها في أي وقت من خلال إعدادات الحساب بالتطبيق.\n'
+                    '• يمكنك طلب حذف حسابك وبياناتك نهائياً بالتواصل مع فريق الدعم الفني.\n'
+                    '• نلتزم بمعالجة طلبات الحذف على الفور مع استثناء السجلات التي يلزمنا القانون بالاحتفاظ بها.',
               ),
               _LegalSection(
-                title: '9. التواصل معنا',
+                title: '9. أمان بياناتك الشخصية',
                 content:
-                    'إذا كان لديك أي استفسارات أو طلبات تتعلق بخصوصية بياناتك أو ممارسة حقوقك، يمكنك التواصل مع مسؤول حماية البيانات عبر البريد الإلكتروني: support@inrideapp.com أو من خلال مركز المساعدة بالتطبيق.',
+                    'يُعد أمان بياناتك أولويتنا القصوى. نحن نطبق أحدث معايير التشفير (SSL/TLS) وبروتوكولات الحماية التقنية لحماية بياناتك، مع العلم بأنه لا توجد وسيلة نقل عبر الإنترنت أو تخزين إلكتروني آمنة بنسبة 100%.',
+              ),
+              _LegalSection(
+                title: '10. حماية الأطفال والقُصّر',
+                content:
+                    'الخدمة غير موجهة لأي شخص يقل عمره عن 16 عاماً (و18 عاماً لخدمات نقل الركاب والقيادة). نحن لا نجمع عن علم أي معلومات شخصية من القُصّر، وسيتم حذف أي بيانات تخص القُصّر فور علمنا بها.',
+              ),
+              _LegalSection(
+                title: '11. الروابط الخارجية للمواقع الأخرى',
+                content:
+                    'قد تحتوي خدمتنا على روابط لمواقع خارجية لا نقوم بتشغيلها. ننصحك بشدة بمراجعة سياسة الخصوصية لكل موقع تزوره حيث لا نتحمل أي مسؤولية عن محتوى أو ممارسات أي أطراف ثالثة.',
+              ),
+              _LegalSection(
+                title: '12. التعديلات على سياسة الخصوصية',
+                content:
+                    'قد نقوم بتحديث سياسة الخصوصية من وقت لآخر. سنقوم بإخطارك بأي تغييرات عبر نشر السياسة الجديدة على هذه الصفحة وتحديث تاريخ "آخر تحديث" أعلى السياسة.',
+              ),
+              _LegalSection(
+                title: '13. اتصل بنا وتواصل الدعم',
+                content:
+                    'إذا كان لديك أي أسئلة أو استفسارات حول سياسة الخصوصية، يمكنك التواصل معنا عبر:\n'
+                    '• **الهاتف / الواتساب**: 89379958 12 20+\n'
+                    '• **البريد الإلكتروني**: support@inrideapp.com',
               ),
             ]
           : const [
               _LegalSection(
-                title: '1. Introduction & Privacy Commitment',
+                title: '1. Introduction & Legal Basis',
                 content:
-                    'inRide platform is committed to protecting user privacy and securing personal data. This policy outlines what data we collect, how it is used, and your rights under Google Play, Apple App Store, and GDPR standards.',
+                    'This Privacy Policy describes Our policies and procedures on the collection, use and disclosure of Your information when You use the Service and tells You about Your privacy rights and how the law protects You.\n\nWe use Your Personal Data to provide and improve the Service. We collect, use, and disclose Your information as described in this Privacy Policy only where We have a valid legal basis to do so, including Your consent where required.',
               ),
               _LegalSection(
-                title: '2. Data We Collect',
+                title: '2. Interpretation & Definitions',
                 content:
-                    'We collect the following data to provide and improve services:\n'
-                    '• **Identity Data**: Name, phone number, email address, and profile photo.\n'
-                    '• **Geographic Location (GPS)**: Precise location while using the app, and background location for captains during active trips to ensure safety and accuracy.\n'
-                    '• **Device & Connection Data**: Device model, OS version, unique identifiers, and Push Notification Token.\n'
-                    '• **Usage & Log Data**: Trip history, ratings, error & crash logs to enhance system performance.',
+                    'For the purposes of this Privacy Policy:\n'
+                    '• **Application**: refers to inRide, the software program provided by the Company.\n'
+                    '• **Company** ("We", "Us", or "Our"): refers to inRide (Egypt).\n'
+                    '• **Account**: means a unique account created for You to access Our Service or parts of Our Service.\n'
+                    '• **Device**: means any device that can access the Service (e.g. smartphone, tablet, computer).\n'
+                    '• **Personal Data**: any information that relates to an identified or identifiable individual.\n'
+                    '• **Service Provider**: any natural or legal person who processes data on behalf of the Company.\n'
+                    '• **Usage Data**: data collected automatically, generated by the use of the Service or its infrastructure.\n'
+                    '• **You**: the individual accessing or using the Service.',
               ),
               _LegalSection(
-                title: '3. Required Permissions',
+                title: '3. Types of Data Collected',
                 content:
-                    'The app requests the following permissions:\n'
-                    '• **Location**: Foreground and background for pickup/drop-off points and route tracking.\n'
-                    '• **Notifications**: For trip status updates and live alerts.\n'
-                    '• **Camera & Gallery**: For uploading captain documentation and profile photo.\n'
-                    '• **Phone**: To facilitate direct calls between captain and passenger when needed.',
+                    '• **Personal Data**: While using Our Service, We may ask You to provide Us with certain personally identifiable information, including your Phone number, Name, and Profile Details.\n'
+                    '• **Usage Data**: Collected automatically and includes device IP address, unique device identifiers, operating system, mobile browser type, and diagnostic data.\n'
+                    '• **Location Data**: With Your prior permission, We collect information regarding Your location (precise GPS coordinates in foreground and background during active trips) to provide features, facilitate pickups and drop-offs, and improve/customize Our Service. You can enable or disable location access at any time via Your Device settings.',
               ),
               _LegalSection(
-                title: '4. Data Usage & Storage',
+                title: '4. Use of Your Personal Data',
                 content:
-                    'Data is used strictly for operational purposes including:\n'
-                    '• Connecting passengers with nearby captains and facilitating navigation.\n'
-                    '• Calculating distances and estimated fares accurately.\n'
-                    '• Providing administrative management dashboard for safety and service quality.\n'
-                    '• Data is stored on secure cloud servers encrypted using SSL/TLS protocols.',
+                    'The Company may use Personal Data for the following purposes:\n'
+                    '• To provide, maintain, and monitor the usage of Our Service.\n'
+                    '• To manage Your Account and registration as a user.\n'
+                    '• For the performance of a contract (ride services and fulfillment).\n'
+                    '• To contact You: by telephone calls, SMS, WhatsApp, or Push Notifications regarding updates, security alerts, and service information.\n'
+                    '• To provide news, special offers, and general information about services similar to those you have used.\n'
+                    '• To attend to and manage your support requests.\n'
+                    '• For business evaluation, analytics, identifying usage trends, and system enhancements.',
               ),
               _LegalSection(
-                title: '5. Data Retention',
+                title: '5. Sharing & Disclosure of Personal Data',
                 content:
-                    'We retain your data for as long as your account is active.\n'
-                    'Upon account deletion requests, data is permanently purged within 30 days, except financial records required by tax and financial laws.',
+                    'We may share Your Personal Data in the following situations:\n'
+                    '• **With Service Providers**: to monitor and analyze service usage and facilitate operations.\n'
+                    '• **With Other Users**: sharing captain and passenger details (name, photo, location) strictly to complete active rides.\n'
+                    '• **For Business Transfers**: in connection with any merger, sale of company assets, or financing.\n'
+                    '• **Law Enforcement & Legal Obligations**: under statutory requirements, valid court orders, or governmental requests in the Arab Republic of Egypt.\n'
+                    '• **With Your Consent**: for any other specific purpose with your explicit permission.',
               ),
               _LegalSection(
-                title: '6. Data Sharing & Legal Disclosure',
+                title: '6. Retention & Deletion of Personal Data',
                 content:
-                    '• **We never sell or rent your personal data to third parties for marketing purposes.**\n'
-                    '• We disclose captain/passenger name, photo, and live location only to parties connected to an active trip.\n'
-                    '• Data may be disclosed to judicial or government authorities upon official legal order in Egypt.',
+                    '• **User Accounts**: Retained for the duration of Your Account relationship plus up to 24 months after account closure to resolve post-termination issues or disputes.\n'
+                    '• **Usage Data & Logs**: Retained for up to 24 months for analytics, security monitoring, and troubleshooting.\n'
+                    '• **Secure Disposal**: When retention periods expire, data is securely deleted, purged from backups, or irreversibly anonymized for analytical use.',
               ),
               _LegalSection(
-                title: '7. Children Privacy',
+                title: '7. International Data Transfer',
                 content:
-                    'inRide app is intended strictly for individuals aged 18 or older. We do not knowingly collect personal data from minors. Any account identified as belonging to an under-18 user will be deleted immediately.',
+                    'Your information may be processed and stored on cloud servers outside your state or country. We take all necessary steps to ensure that your data is treated securely with adequate security controls in accordance with this Privacy Policy.',
               ),
               _LegalSection(
-                title: '8. Data Control Rights & Policy Updates',
+                title: '8. User Rights & Deleting Your Data',
                 content:
-                    'You have the right to:\n'
-                    '• Access and update your personal data.\n'
-                    '• Request data erasure and permanent account deletion.\n'
-                    '• Revoke permissions (location, camera) from device settings.\n'
-                    '• We may update this policy periodically and will notify you of material changes via in-app notification.',
+                    '• You have the right to access, correct, or delete Your Personal Data at any time through the in-app account settings.\n'
+                    '• You can request permanent account and data deletion by contacting our support team.\n'
+                    '• We fulfill deletion requests promptly, retaining only records required by legal or financial obligations.',
               ),
               _LegalSection(
-                title: '9. Contact Us',
+                title: '9. Security of Your Personal Data',
                 content:
-                    'For inquiries or privacy requests, contact our Data Protection Officer at: support@inrideapp.com or via in-app help center.',
+                    'The security of Your Personal Data is paramount. We employ modern cryptographic standards (SSL/TLS encryption) and robust technical safeguards to protect your information, though no internet transmission is 100% immune.',
+              ),
+              _LegalSection(
+                title: '10. Children\'s and Minors\' Privacy',
+                content:
+                    'The Service is not directed to anyone under the age of 16 (and 18 for ride transport services). We do not knowingly collect personal information from minors. Any discovered minor data is deleted promptly.',
+              ),
+              _LegalSection(
+                title: '11. Links to Other Websites',
+                content:
+                    'Our Service may contain links to third-party websites. We have no control over and assume no responsibility for the content, privacy policies, or practices of any third-party sites.',
+              ),
+              _LegalSection(
+                title: '12. Changes to this Privacy Policy',
+                content:
+                    'We may update Our Privacy Policy from time to time. We will notify You of changes by posting the revised policy on this page and updating the "Last updated" date.',
+              ),
+              _LegalSection(
+                title: '13. Contact Us',
+                content:
+                    'If You have any questions about this Privacy Policy, You can contact Us:\n'
+                    '• **Phone / WhatsApp**: +20 12 89379958\n'
+                    '• **Email**: support@inrideapp.com',
               ),
             ],
     );

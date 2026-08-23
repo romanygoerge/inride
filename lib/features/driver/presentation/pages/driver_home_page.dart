@@ -1004,13 +1004,32 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                               width: 1,
                             ),
                           ),
-                          child: Text(
-                            req.paymentMethod == 'المحفظة' ? l10n.walletPaymentShort : l10n.cashPaymentShort,
-                            style: GoogleFonts.cairo(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                (req.paymentMethod.toLowerCase().contains('انستا') || req.paymentMethod.toLowerCase().contains('insta'))
+                                    ? Icons.bolt_rounded
+                                    : (req.paymentMethod == 'المحفظة' ? Icons.account_balance_wallet_outlined : Icons.payments_outlined),
+                                size: 13,
+                                color: (req.paymentMethod.toLowerCase().contains('انستا') || req.paymentMethod.toLowerCase().contains('insta'))
+                                    ? Colors.deepPurple
+                                    : (req.paymentMethod == 'المحفظة' ? AppColors.mediumBlue : AppColors.success),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                (req.paymentMethod.toLowerCase().contains('انستا') || req.paymentMethod.toLowerCase().contains('insta'))
+                                    ? (LocaleController.instance.isArabic ? 'إنستا باي' : 'InstaPay')
+                                    : (req.paymentMethod == 'المحفظة' ? l10n.walletPaymentShort : l10n.cashPaymentShort),
+                                style: GoogleFonts.cairo(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: (req.paymentMethod.toLowerCase().contains('انستا') || req.paymentMethod.toLowerCase().contains('insta'))
+                                      ? Colors.deepPurple
+                                      : AppColors.textPrimary,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],

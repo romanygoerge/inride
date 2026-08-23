@@ -95,7 +95,7 @@ class _WalletPageState extends State<WalletPage> {
                   'id': '2',
                   'name': 'فودافون كاش',
                   'code': 'vodafone_cash',
-                  'account_details': '01000000000',
+                  'account_details': '01204062941',
                   'is_active': true,
                 },
               ]);

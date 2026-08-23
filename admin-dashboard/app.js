@@ -3204,6 +3204,7 @@ function onCommSearchInput(query) {
 }
 
 function selectCommConversation(userId, role) {
+  if (commActiveUserId === userId) return;
   commActiveUserId = userId;
   commActiveUserRole = role || 'rider';
   
@@ -3216,7 +3217,7 @@ function selectCommConversation(userId, role) {
     }
   });
 
-  loadCommMessagesThread(userId);
+  loadCommMessagesThread(userId, true);
 }
 
 function openDirectUserChat(userId, userName, role) {
@@ -3230,13 +3231,338 @@ function openDirectUserChat(userId, userName, role) {
     } else {
       container.innerHTML = renderCommunication();
       initCommChatSync();
-      loadCommMessagesThread(userId);
+      loadCommMessagesThread(userId, true);
     }
   }
 }
 
+function getCommContactsList() {
+  let contactsMap = {};
+  
+  if (mockData.drivers) {
+    mockData.drivers.forEach(d => {
+      contactsMap[d.uid] = {
+        id: d.uid,
+        name: d.name || 'كابتن',
+        phone: d.phone || '',
+        role: 'driver',
+        roleAr: 'كابتن 🚗',
+        rating: (parseFloat(d.rating) || 5.0).toFixed(1),
+        avatar: (d.name || 'ك').charAt(0),
+        lastMessage: 'بدء محادثة مباشرة مع الكابتن',
+        lastTime: d.joinDate || 'الآن',
+        lastTimestamp: 0,
+        unread: 0
+      };
+    });
+  }
+
+  if (mockData.passengers) {
+    mockData.passengers.forEach(p => {
+      contactsMap[p.uid] = {
+        id: p.uid,
+        name: p.name || 'راكب',
+        phone: p.phone || '',
+        role: 'rider',
+        roleAr: 'راكب 👤',
+        rating: (parseFloat(p.rating) || 5.0).toFixed(1),
+        avatar: (p.name || 'ر').charAt(0),
+        lastMessage: 'بدء محادثة مباشرة مع الراكب',
+        lastTime: p.joinDate || 'الآن',
+        lastTimestamp: 0,
+        unread: 0
+      };
+    });
+  }
+
+  // Merge live support chats from Supabase
+  if (liveSupportChats && liveSupportChats.length > 0) {
+    liveSupportChats.forEach(chat => {
+      const uId = chat.id || chat.user_id;
+      if (!uId) return;
+
+      const timeStr = chat.last_message_at ? new Date(chat.last_message_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : 'الآن';
+      const ts = chat.last_message_at ? new Date(chat.last_message_at).getTime() : Date.now();
+      const isDriver = chat.user_type === 'driver';
+
+      if (contactsMap[uId]) {
+        contactsMap[uId].lastMessage = chat.last_message || contactsMap[uId].lastMessage;
+        contactsMap[uId].lastTime = timeStr;
+        contactsMap[uId].lastTimestamp = ts;
+        if (chat.user_name) contactsMap[uId].name = chat.user_name;
+        if (chat.unread_admin_count) contactsMap[uId].unread = chat.unread_admin_count;
+      } else {
+        contactsMap[uId] = {
+          id: uId,
+          name: chat.user_name || (isDriver ? 'كابتن inRide' : 'مستخدم inRide'),
+          phone: chat.phone || '',
+          role: isDriver ? 'driver' : 'rider',
+          roleAr: isDriver ? 'كابتن 🚗' : 'راكب 👤',
+          rating: '5.0',
+          avatar: (chat.user_name || 'م').charAt(0),
+          lastMessage: chat.last_message || 'رسالة جديدة من التطبيق',
+          lastTime: timeStr,
+          lastTimestamp: ts,
+          unread: chat.unread_admin_count || 0
+        };
+      }
+    });
+  }
+
+  let contacts = Object.values(contactsMap);
+  contacts.sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
+  return contacts;
+}
+
+async function loadCommMessagesThread(userId, forceUpdate = false) {
+  if (!userId) return;
+
+  // Simulate fetching from Supabase/API
+  let messagesList = [];
+  if (supabaseClient) {
+    const { data } = await supabaseClient
+      .from('support_messages')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true });
+    
+    if (data) {
+      messagesList = data.map(m => ({
+        sender: m.sender_type === 'admin' ? 'admin' : 'user',
+        text: m.message,
+        time: new Date(m.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+      }));
+    }
+  }
+
+  // Save to cache
+  commMessagesCache[userId] = messagesList;
+
+  // If still on the same active user, smoothly update the messages box ONLY
+  if (commActiveUserId === userId) {
+    const container = document.getElementById('commChatMessagesContainer');
+    if (container) {
+      const messagesHtml = messagesList.map(m => {
+        const isAdmin = m.sender === 'admin';
+        const bg = isAdmin ? '#E0F2FE' : '#FFFFFF';
+        const color = '#000000';
+        const border = isAdmin ? '1px solid #BAE6FD' : '1px solid #CBD5E1';
+        const radius = isAdmin ? '16px 16px 4px 16px' : '16px 16px 16px 4px';
+        return `
+          <div class="comm-bubble-wrapper ${m.sender}" style="display:flex; flex-direction:column; max-width:70%; align-self:${isAdmin ? 'flex-end' : 'flex-start'}; align-items:${isAdmin ? 'flex-end' : 'flex-start'}; margin-bottom:10px;">
+            <div class="comm-bubble" style="background:${bg} !important; color:${color} !important; border:${border} !important; border-radius:${radius}; padding:12px 16px; font-size:13.5px; font-weight:700; line-height:1.5; box-shadow:0 2px 5px rgba(0,0,0,0.08);">
+              ${m.text}
+            </div>
+            <div class="comm-bubble-meta" style="font-size:11px; font-weight:600; color:#475569 !important; margin-top:4px; display:flex; align-items:center; gap:4px;">
+              ${isAdmin ? '<i class="ri-check-double-line" style="color:#2563EB;"></i> الدعم الفني • ' : userName + ' • '}
+              ${m.time}
+            </div>
+          </div>
+        `;
+      }).join('');
+      container.innerHTML = messagesHtml;
+      container.scrollTop = container.scrollHeight;
+    }
+  }
+}
+
+function renderCommConversationsListHtml() {
+  const contacts = getCommContactsList();
+
+  // Filter contacts
+  const filtered = contacts.filter(c => {
+    if (commRoleFilter === 'driver' && c.role !== 'driver') return false;
+    if (commRoleFilter === 'rider' && c.role !== 'rider') return false;
+
+    if (commSearchQuery) {
+      const q = commSearchQuery.toLowerCase();
+      const n = (c.name || '').toString().toLowerCase();
+      const p = (c.phone || '').toString().toLowerCase();
+      if (!n.includes(q) && !p.includes(q)) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    return `
+      <div style="text-align:center;padding:30px;color:var(--text-light);font-size:12px;">
+        <i class="ri-search-line" style="font-size:24px;display:block;margin-bottom:6px;"></i>
+        لا يوجد مستخدمون يطابقون خيارات البحث
+      </div>`;
+  }
+
+  return filtered.map(c => {
+    const isActive = commActiveUserId === c.id;
+    const cacheMsgs = commMessagesCache[c.id];
+    let previewText = c.lastMessage;
+    if (cacheMsgs && cacheMsgs.length > 0) {
+      previewText = cacheMsgs[cacheMsgs.length - 1].text || previewText;
+    }
+
+    return `
+      <div class="comm-conv-item ${isActive ? 'active' : ''}" data-userid="${c.id}" onclick="selectCommConversation('${c.id}', '${c.role}')">
+        <div class="comm-avatar ${c.role === 'driver' ? 'driver' : ''}">
+          ${c.avatar}
+          <div class="comm-avatar-badge"></div>
+        </div>
+        <div class="comm-conv-info">
+          <div class="comm-conv-top">
+            <span class="comm-conv-name">${c.name}</span>
+            <span class="comm-conv-time">${c.lastTime}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span class="comm-conv-preview" style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${previewText}</span>
+            <div style="display:flex;align-items:center;gap:4px;">
+              ${c.unread > 0 ? `<span class="badge" style="background:#EF4444;color:white;font-size:10px;">${c.unread}</span>` : ''}
+              <span class="badge" style="font-size:10px;padding:2px 6px;background:${c.role === 'driver' ? '#E0F2FE' : '#F3E8FF'};color:${c.role === 'driver' ? '#0369A1' : '#7E22CE'}; font-weight:700;">
+                ${c.roleAr}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderCommChatPanelHtml(userId) {
+  if (!userId) {
+    return `
+      <div style="text-align:center;padding:60px 20px;color:var(--text-light);">
+        <i class="ri-chat-smile-2-line" style="font-size:48px;display:block;margin-bottom:12px;"></i>
+        <h4 style="margin:0 0 6px 0;">اختر محادثة لبدء التواصل</h4>
+        <p style="font-size:12px;margin:0;">يمكنك إرسال رسائل مباشرة لأي كابتن أو راكب مسجل بالنظام</p>
+      </div>
+    `;
+  }
+
+  let userObj = null;
+  if (mockData.drivers) userObj = mockData.drivers.find(d => d.uid === userId);
+  if (!userObj && mockData.passengers) userObj = mockData.passengers.find(p => p.uid === userId);
+  if (!userObj && liveSupportChats) {
+    const sChat = liveSupportChats.find(c => (c.id || c.user_id) === userId);
+    if (sChat) {
+      userObj = {
+        name: sChat.user_name,
+        phone: sChat.phone,
+        vehicleType: sChat.user_type === 'driver' ? 'car' : null,
+        rating: '5.0'
+      };
+    }
+  }
+
+  const userName = userObj ? userObj.name : 'مستخدم';
+  const userPhone = userObj ? (userObj.phone || '—') : '—';
+  const isDriver = commActiveUserRole === 'driver' || (userObj && userObj.vehicleType);
+  const ratingVal = userObj ? (parseFloat(userObj.rating) || 5.0).toFixed(1) : '5.0';
+  const roleText = isDriver ? 'كابتن 🚗' : 'راكب 👤';
+
+  const cachedList = commMessagesCache[userId];
+  let messagesHtml = '';
+
+  if (cachedList && cachedList.length > 0) {
+    messagesHtml = cachedList.map(m => {
+      const isAdmin = m.sender === 'admin';
+      const bg = isAdmin ? '#E0F2FE' : '#FFFFFF';
+      const color = '#000000';
+      const border = isAdmin ? '1px solid #BAE6FD' : '1px solid #CBD5E1';
+      const radius = isAdmin ? '16px 16px 4px 16px' : '16px 16px 16px 4px';
+      return `
+        <div class="comm-bubble-wrapper ${m.sender}" style="display:flex; flex-direction:column; max-width:70%; align-self:${isAdmin ? 'flex-end' : 'flex-start'}; align-items:${isAdmin ? 'flex-end' : 'flex-start'}; margin-bottom:10px;">
+          <div class="comm-bubble" style="background:${bg} !important; color:${color} !important; border:${border} !important; border-radius:${radius}; padding:12px 16px; font-size:13.5px; font-weight:700; line-height:1.5; box-shadow:0 2px 5px rgba(0,0,0,0.08);">
+            ${m.text}
+          </div>
+          <div class="comm-bubble-meta" style="font-size:11px; font-weight:600; color:#475569 !important; margin-top:4px; display:flex; align-items:center; gap:4px;">
+            ${isAdmin ? '<i class="ri-check-double-line" style="color:#2563EB;"></i> الدعم الفني • ' : userName + ' • '}
+            ${m.time}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } else {
+    messagesHtml = `
+      <div class="comm-bubble-wrapper admin" style="display:flex; flex-direction:column; max-width:70%; align-self:flex-end; align-items:flex-end; margin-bottom:10px;">
+        <div class="comm-bubble" style="background:#E0F2FE !important; color:#000000 !important; border:1px solid #BAE6FD !important; border-radius:16px 16px 4px 16px; padding:12px 16px; font-size:13.5px; font-weight:700; line-height:1.5; box-shadow:0 2px 5px rgba(0,0,0,0.08);">
+          أهلاً بك يا ${userName}! يسعدنا تواصلك معنا، كيف يمكننا مساعدتك اليوم؟
+        </div>
+        <div class="comm-bubble-meta" style="font-size:11px; font-weight:600; color:#475569 !important; margin-top:4px; display:flex; align-items:center; gap:4px;">
+          <i class="ri-check-double-line" style="color:#2563EB;"></i> الدعم الفني • الآن
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <!-- Header -->
+    <div class="comm-chat-header" data-active-chat-user="${userId}">
+      <div class="comm-chat-user-details">
+        <div class="comm-avatar ${isDriver ? 'driver' : ''}">
+          ${userName.charAt(0)}
+          <div class="comm-avatar-badge"></div>
+        </div>
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <h4 style="margin:0;font-size:15px;font-weight:700;color:var(--text-primary);">${userName}</h4>
+            <span class="badge" style="font-size:11px;background:${isDriver ? '#E0F2FE' : '#F3E8FF'};color:${isDriver ? '#0369A1' : '#7E22CE'};font-weight:700;">
+              ${roleText}
+            </span>
+            ${(userObj?.ratingCount && userObj.ratingCount > 0) ? `
+              <span style="font-size:12px;font-weight:800;color:var(--warning);display:flex;align-items:center;gap:3px;" title="التقييمات والرحلات">
+                <i class="ri-star-fill"></i> ${ratingVal} (${userObj.ratingCount} تقييم • ${userObj.totalTrips || 0} رحلة)
+              </span>
+            ` : `
+              <span style="font-size:11px;font-weight:600;color:var(--text-light);display:flex;align-items:center;gap:3px;" title="التقييمات والرحلات">
+                <i class="ri-star-line"></i> جديد (بدون تقييم • ${userObj?.totalTrips || 0} رحلة)
+              </span>
+            `}
+          </div>
+          <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">
+            📱 ${userPhone} • ID: ${userId.substring(0, 8).toUpperCase()}
+          </div>
+        </div>
+      </div>
+      <div>
+        <button class="btn btn-outline btn-sm" onclick="viewUserProfile('${userId}', '${isDriver ? 'driver' : 'rider'}')">
+          <i class="ri-user-line"></i> عرض الملف كامل
+        </button>
+      </div>
+    </div>
+
+    <!-- Messages Container -->
+    <div class="comm-chat-messages" id="commChatMessagesContainer">
+      ${messagesHtml}
+    </div>
+
+    <!-- Input Zone -->
+    <div class="comm-chat-input-zone">
+      <div class="comm-quick-replies">
+        <button class="comm-quick-pill" onclick="sendCommQuickReply('أهلاً بك 🖐️ يسعدنا خدمتك في inRide')">أهلاً بك 🖐️</button>
+        <button class="comm-quick-pill" onclick="sendCommQuickReply('تم شحن المحفظة بنجاح ✅ يرجى التحديث')">تم الشحن ✅</button>
+        <button class="comm-quick-pill" onclick="sendCommQuickReply('تم استقبال الطلب وجاري المتابعة معك 📋')">جاري المتابعة 📋</button>
+        <button class="comm-quick-pill" onclick="sendCommQuickReply('شكراً لتواصلك معنا مع تحيات فريق inRide 🚗')">شكراً لك 🚗</button>
+      </div>
+      <div class="comm-input-bar">
+        <input type="text" id="commChatInput" class="comm-text-input" placeholder="اكتب رسالتك المباشرة هنا..." onkeypress="if(event.key === 'Enter') sendCommChatMessage()">
+        <button class="btn btn-primary" onclick="sendCommChatMessage()" style="padding:10px 20px;border-radius:var(--radius-md);display:flex;align-items:center;gap:6px;">
+          <span>إرسال</span>
+          <i class="ri-send-plane-fill"></i>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
 function renderCommunication() {
   try {
+    // Ensure an active user is pre-selected if available
+    if (!commActiveUserId) {
+      const contacts = getCommContactsList();
+      if (contacts.length > 0) {
+        commActiveUserId = contacts[0].id;
+        commActiveUserRole = contacts[0].role || 'rider';
+      }
+    }
+
     return `
       <div class="page-section">
         <!-- Communication Header -->
@@ -3251,7 +3577,7 @@ function renderCommunication() {
               </p>
             </div>
             <div style="display:flex;gap:8px;">
-              <button class="btn btn-outline btn-sm" onclick="initCommChatSync()">
+              <button class="btn btn-outline btn-sm" onclick="initCommChatSync(true)">
                 <i class="ri-refresh-line"></i> تحديث البيانات
               </button>
             </div>
@@ -3278,7 +3604,7 @@ function renderCommunication() {
               <div class="comm-sidebar-header" style="padding:16px;border-bottom:1px solid var(--border-light);">
                 <div class="comm-search-box" style="margin-bottom:10px;">
                   <i class="ri-search-line"></i>
-                  <input type="text" placeholder="البحث باسم الكابتن أو الراكب..." oninput="onCommSearchInput(this.value)">
+                  <input type="text" placeholder="البحث باسم الكابتن أو الراكب..." value="${commSearchQuery || ''}" oninput="onCommSearchInput(this.value)">
                 </div>
                 <div class="comm-filter-pills" style="display:flex;gap:4px;">
                   <button class="comm-pill ${commRoleFilter === 'all' ? 'active' : ''}" onclick="setCommRoleFilter('all')">الكل</button>
@@ -3288,17 +3614,13 @@ function renderCommunication() {
               </div>
 
               <div class="comm-conv-list" id="commConvListContainer" style="flex:1;overflow-y:auto;">
-                <!-- Dynamically populated by renderCommConversationsList -->
+                ${renderCommConversationsListHtml()}
               </div>
             </div>
 
             <!-- Right Main Chat Box -->
             <div class="comm-chat-main" id="commMainChatPanel" style="background:white;display:flex;flex-direction:column;height:100%;min-height:600px;">
-              <div style="text-align:center;padding:60px 20px;color:var(--text-light);">
-                <i class="ri-chat-smile-2-line" style="font-size:48px;display:block;margin-bottom:12px;"></i>
-                <h4 style="margin:0 0 6px 0;">اختر محادثة لبدء التواصل</h4>
-                <p style="font-size:12px;margin:0;">يمكنك إرسال رسائل مباشرة لأي كابتن أو راكب مسجل بالنظام</p>
-              </div>
+              ${renderCommChatPanelHtml(commActiveUserId)}
             </div>
           </div>
         ` : currentCommunicationTab === 'tickets' ? `
@@ -3412,239 +3734,83 @@ function renderCommunication() {
 function renderCommConversationsList() {
   const container = document.getElementById('commConvListContainer');
   if (!container) return;
-
-  let contactsMap = {};
-  
-  if (mockData.drivers) {
-    mockData.drivers.forEach(d => {
-      contactsMap[d.uid] = {
-        id: d.uid,
-        name: d.name || 'كابتن',
-        phone: d.phone || '',
-        role: 'driver',
-        roleAr: 'كابتن 🚗',
-        rating: (parseFloat(d.rating) || 5.0).toFixed(1),
-        avatar: (d.name || 'ك').charAt(0),
-        lastMessage: 'بدء محادثة مباشرة مع الكابتن',
-        lastTime: d.joinDate || 'الآن',
-        lastTimestamp: 0,
-        unread: 0
-      };
-    });
-  }
-
-  if (mockData.passengers) {
-    mockData.passengers.forEach(p => {
-      contactsMap[p.uid] = {
-        id: p.uid,
-        name: p.name || 'راكب',
-        phone: p.phone || '',
-        role: 'rider',
-        roleAr: 'راكب 👤',
-        rating: (parseFloat(p.rating) || 5.0).toFixed(1),
-        avatar: (p.name || 'ر').charAt(0),
-        lastMessage: 'بدء محادثة مباشرة مع الراكب',
-        lastTime: p.joinDate || 'الآن',
-        lastTimestamp: 0,
-        unread: 0
-      };
-    });
-  }
-
-  // Merge live support chats from Supabase
-  if (liveSupportChats && liveSupportChats.length > 0) {
-    liveSupportChats.forEach(chat => {
-      const uId = chat.id || chat.user_id;
-      if (!uId) return;
-
-      const timeStr = chat.last_message_at ? new Date(chat.last_message_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : 'الآن';
-      const ts = chat.last_message_at ? new Date(chat.last_message_at).getTime() : Date.now();
-      const isDriver = chat.user_type === 'driver';
-
-      if (contactsMap[uId]) {
-        contactsMap[uId].lastMessage = chat.last_message || contactsMap[uId].lastMessage;
-        contactsMap[uId].lastTime = timeStr;
-        contactsMap[uId].lastTimestamp = ts;
-        if (chat.user_name) contactsMap[uId].name = chat.user_name;
-      } else {
-        contactsMap[uId] = {
-          id: uId,
-          name: chat.user_name || (isDriver ? 'كابتن inRide' : 'مستخدم inRide'),
-          phone: chat.phone || '',
-          role: isDriver ? 'driver' : 'rider',
-          roleAr: isDriver ? 'كابتن 🚗' : 'راكب 👤',
-          rating: '5.0',
-          avatar: (chat.user_name || 'م').charAt(0),
-          lastMessage: chat.last_message || 'رسالة جديدة من التطبيق',
-          lastTime: timeStr,
-          lastTimestamp: ts,
-          unread: 0
-        };
-      }
-    });
-  }
-
-  let contacts = Object.values(contactsMap);
-  contacts.sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
-
-  // Filter contacts
-  const filtered = contacts.filter(c => {
-    if (commRoleFilter === 'driver' && c.role !== 'driver') return false;
-    if (commRoleFilter === 'rider' && c.role !== 'rider') return false;
-
-    if (commSearchQuery) {
-      const q = commSearchQuery.toLowerCase();
-      const n = (c.name || '').toString().toLowerCase();
-      const p = (c.phone || '').toString().toLowerCase();
-      if (!n.includes(q) && !p.includes(q)) return false;
-    }
-    return true;
-  });
-
-  if (filtered.length === 0) {
-    container.innerHTML = `
-      <div style="text-align:center;padding:30px;color:var(--text-light);font-size:12px;">
-        <i class="ri-search-line" style="font-size:24px;display:block;margin-bottom:6px;"></i>
-        لا يوجد مستخدمون يطابقون خيارات البحث
-      </div>`;
-    return;
-  }
-
-  let html = filtered.map(c => {
-    const isActive = commActiveUserId === c.id;
-    const cacheMsgs = commMessagesCache[c.id];
-    let previewText = c.lastMessage;
-    if (cacheMsgs && cacheMsgs.length > 0) {
-      previewText = cacheMsgs[cacheMsgs.length - 1].text || previewText;
-    }
-
-    return `
-      <div class="comm-conv-item ${isActive ? 'active' : ''}" data-userid="${c.id}" onclick="selectCommConversation('${c.id}', '${c.role}')">
-        <div class="comm-avatar ${c.role === 'driver' ? 'driver' : ''}">
-          ${c.avatar}
-          <div class="comm-avatar-badge"></div>
-        </div>
-        <div class="comm-conv-info">
-          <div class="comm-conv-top">
-            <span class="comm-conv-name">${c.name}</span>
-            <span class="comm-conv-time">${c.lastTime}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <span class="comm-conv-preview" style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${previewText}</span>
-            <div style="display:flex;align-items:center;gap:4px;">
-              ${c.unread > 0 ? `<span class="badge" style="background:#EF4444;color:white;font-size:10px;">${c.unread}</span>` : ''}
-              <span class="badge" style="font-size:10px;padding:2px 6px;background:${c.role === 'driver' ? '#E0F2FE' : '#F3E8FF'};color:${c.role === 'driver' ? '#0369A1' : '#7E22CE'}; font-weight:700;">
-                ${c.roleAr}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  container.innerHTML = html;
+  container.innerHTML = renderCommConversationsListHtml();
 }
 
-async function initCommChatSync() {
-  await loadCommUsersFromSupabase();
-  await loadSupportChatsFromSupabase();
-  renderCommConversationsList();
+async function initCommChatSync(force = false) {
+  try {
+    await loadCommUsersFromSupabase();
+    await loadSupportChatsFromSupabase();
+    renderCommConversationsList();
 
-  if (!commActiveUserId) {
-    if (liveSupportChats && liveSupportChats.length > 0) {
-      commActiveUserId = liveSupportChats[0].id || liveSupportChats[0].user_id;
-      commActiveUserRole = liveSupportChats[0].user_type === 'driver' ? 'driver' : 'rider';
-    } else if (mockData.drivers && mockData.drivers.length > 0) {
-      commActiveUserId = mockData.drivers[0].uid;
-      commActiveUserRole = 'driver';
-    } else if (mockData.passengers && mockData.passengers.length > 0) {
-      commActiveUserId = mockData.passengers[0].uid;
-      commActiveUserRole = 'rider';
+    if (!commActiveUserId) {
+      const contacts = getCommContactsList();
+      if (contacts.length > 0) {
+        commActiveUserId = contacts[0].id;
+        commActiveUserRole = contacts[0].role || 'rider';
+      }
     }
-  }
 
-  if (commActiveUserId) {
-    loadCommMessagesThread(commActiveUserId);
-  }
-  updateCommunicationBadge();
+    if (commActiveUserId) {
+      loadCommMessagesThread(commActiveUserId, force);
+    }
+    updateCommunicationBadge();
 
-  if (supabaseClient && !window._commRealtimeSubscribed) {
-    window._commRealtimeSubscribed = true;
-    try {
-      supabaseClient
-        .channel('admin_comm_realtime_channel')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, payload => {
-          const newMsg = payload.new;
-          if (newMsg) {
-            const targetId = newMsg.user_id || newMsg.sender_id || newMsg.conversation_id;
-            if (targetId && currentPage === 'communication' && commActiveUserId === targetId) {
-              loadCommMessagesThread(targetId);
+    if (supabaseClient && !window._commRealtimeSubscribed) {
+      window._commRealtimeSubscribed = true;
+      try {
+        supabaseClient
+          .channel('admin_comm_realtime_channel')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, payload => {
+            const newMsg = payload.new;
+            if (newMsg) {
+              const targetId = newMsg.user_id || newMsg.sender_id || newMsg.conversation_id;
+              if (targetId && currentPage === 'communication' && commActiveUserId === targetId) {
+                loadCommMessagesThread(targetId, false);
+              }
+              loadSupportChatsFromSupabase().then(() => {
+                if (currentPage === 'communication') renderCommConversationsList();
+              });
             }
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'support_chats' }, () => {
             loadSupportChatsFromSupabase().then(() => {
               if (currentPage === 'communication') renderCommConversationsList();
             });
-          }
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'support_chats' }, () => {
-          loadSupportChatsFromSupabase().then(() => {
-            if (currentPage === 'communication') renderCommConversationsList();
-          });
-        })
-        .subscribe();
-    } catch (_) {}
+          })
+          .subscribe();
+      } catch (_) {}
+    }
+  } catch (e) {
+    console.warn('[Comm] initCommChatSync warning:', e);
   }
 }
 
-async function loadCommMessagesThread(userId) {
+async function loadCommMessagesThread(userId, isSwitching = false) {
+  if (!userId) return;
   const mainPanel = document.getElementById('commMainChatPanel');
-  if (!mainPanel || !userId) return;
+  if (!mainPanel) return;
 
-  // Find user details
+  const currentHeaderEl = mainPanel.querySelector('.comm-chat-header');
+  const renderedUserId = currentHeaderEl ? currentHeaderEl.getAttribute('data-active-chat-user') : null;
+
+  // If we are switching users or header is not for this user, render the shell
+  if (isSwitching || renderedUserId !== userId) {
+    mainPanel.innerHTML = renderCommChatPanelHtml(userId);
+    const container = document.getElementById('commChatMessagesContainer');
+    if (container) container.scrollTop = container.scrollHeight;
+  }
+
+  // Load real messages in background from Supabase
   let userObj = null;
   if (mockData.drivers) userObj = mockData.drivers.find(d => d.uid === userId);
   if (!userObj && mockData.passengers) userObj = mockData.passengers.find(p => p.uid === userId);
-
   const userName = userObj ? userObj.name : 'مستخدم';
-  const userPhone = userObj ? (userObj.phone || '—') : '—';
-  const isDriver = commActiveUserRole === 'driver' || (userObj && userObj.vehicleType);
-  const ratingVal = userObj ? (parseFloat(userObj.rating) || 5.0).toFixed(1) : '5.0';
-  const roleText = isDriver ? 'كابتن 🚗' : 'راكب 👤';
-
-  // Fast optimistic / cached render if available
-  if (!commMessagesCache[userId]) {
-    mainPanel.innerHTML = `
-      <div class="comm-chat-header">
-        <div class="comm-chat-user-details">
-          <div class="comm-avatar ${isDriver ? 'driver' : ''}">
-            ${userName.charAt(0)}
-            <div class="comm-avatar-badge"></div>
-          </div>
-          <div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <h4 style="margin:0;font-size:15px;font-weight:700;color:var(--text-primary);">${userName}</h4>
-              <span class="badge" style="font-size:11px;background:${isDriver ? '#E0F2FE' : '#F3E8FF'};color:${isDriver ? '#0369A1' : '#7E22CE'};font-weight:700;">
-                ${roleText}
-              </span>
-            </div>
-            <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">📱 ${userPhone} • ID: ${userId.substring(0, 8).toUpperCase()}</div>
-          </div>
-        </div>
-      </div>
-      <div class="comm-chat-messages" style="display:flex;align-items:center;justify-content:center;min-height:300px;">
-        <div style="text-align:center;color:var(--text-light);">
-          <i class="ri-loader-4-line ri-spin" style="font-size:28px;display:block;margin-bottom:8px;color:var(--medium-blue);"></i>
-          <span>جاري فتح المحادثة...</span>
-        </div>
-      </div>
-    `;
-  }
 
   let messagesList = [
     { sender: 'admin', text: `أهلاً بك يا ${userName}! يسعدنا تواصلك معنا، كيف يمكننا مساعدتك اليوم؟`, time: 'الآن' }
   ];
 
-  // Try loading real messages from Supabase support_messages table if connected
   if (supabaseClient) {
     try {
       const { data: realMsgs } = await supabaseClient
@@ -3667,87 +3833,35 @@ async function loadCommMessagesThread(userId) {
     } catch (_) {}
   }
 
-  let messagesHtml = messagesList.map(m => {
-    const isAdmin = m.sender === 'admin';
-    const bg = isAdmin ? '#E0F2FE' : '#FFFFFF';
-    const color = '#000000';
-    const border = isAdmin ? '1px solid #BAE6FD' : '1px solid #CBD5E1';
-    const radius = isAdmin ? '16px 16px 4px 16px' : '16px 16px 16px 4px';
-    return `
-      <div class="comm-bubble-wrapper ${m.sender}" style="display:flex; flex-direction:column; max-width:70%; align-self:${isAdmin ? 'flex-end' : 'flex-start'}; align-items:${isAdmin ? 'flex-end' : 'flex-start'}; margin-bottom:10px;">
-        <div class="comm-bubble" style="background:${bg} !important; color:${color} !important; border:${border} !important; border-radius:${radius}; padding:12px 16px; font-size:13.5px; font-weight:700; line-height:1.5; box-shadow:0 2px 5px rgba(0,0,0,0.08);">
-          ${m.text}
-        </div>
-        <div class="comm-bubble-meta" style="font-size:11px; font-weight:600; color:#475569 !important; margin-top:4px; display:flex; align-items:center; gap:4px;">
-          ${isAdmin ? '<i class="ri-check-double-line" style="color:#2563EB;"></i> الدعم الفني • ' : userName + ' • '}
-          ${m.time}
-        </div>
-      </div>
-    `;
-  }).join('');
+  // Save to cache
+  commMessagesCache[userId] = messagesList;
 
-  mainPanel.innerHTML = `
-    <!-- Header -->
-    <div class="comm-chat-header">
-      <div class="comm-chat-user-details">
-        <div class="comm-avatar ${isDriver ? 'driver' : ''}">
-          ${userName.charAt(0)}
-          <div class="comm-avatar-badge"></div>
-        </div>
-        <div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <h4 style="margin:0;font-size:15px;font-weight:700;color:var(--text-primary);">${userName}</h4>
-            <span class="badge" style="font-size:11px;background:${isDriver ? '#E0F2FE' : '#F3E8FF'};color:${isDriver ? '#0369A1' : '#7E22CE'};font-weight:700;">
-              ${roleText}
-            </span>
-            ${(userObj?.ratingCount && userObj.ratingCount > 0) ? `
-              <span style="font-size:12px;font-weight:800;color:var(--warning);display:flex;align-items:center;gap:3px;" title="التقييمات والرحلات">
-                <i class="ri-star-fill"></i> ${ratingVal} (${userObj.ratingCount} تقييم • ${userObj.totalTrips || 0} رحلة)
-              </span>
-            ` : `
-              <span style="font-size:11px;font-weight:600;color:var(--text-light);display:flex;align-items:center;gap:3px;" title="التقييمات والرحلات">
-                <i class="ri-star-line"></i> جديد (بدون تقييم • ${userObj?.totalTrips || 0} رحلة)
-              </span>
-            `}
+  // If still on the same active user, smoothly update the messages box ONLY
+  if (commActiveUserId === userId) {
+    const container = document.getElementById('commChatMessagesContainer');
+    if (container) {
+      const messagesHtml = messagesList.map(m => {
+        const isAdmin = m.sender === 'admin';
+        const bg = isAdmin ? '#E0F2FE' : '#FFFFFF';
+        const color = '#000000';
+        const border = isAdmin ? '1px solid #BAE6FD' : '1px solid #CBD5E1';
+        const radius = isAdmin ? '16px 16px 4px 16px' : '16px 16px 16px 4px';
+        return `
+          <div class="comm-bubble-wrapper ${m.sender}" style="display:flex; flex-direction:column; max-width:70%; align-self:${isAdmin ? 'flex-end' : 'flex-start'}; align-items:${isAdmin ? 'flex-end' : 'flex-start'}; margin-bottom:10px;">
+            <div class="comm-bubble" style="background:${bg} !important; color:${color} !important; border:${border} !important; border-radius:${radius}; padding:12px 16px; font-size:13.5px; font-weight:700; line-height:1.5; box-shadow:0 2px 5px rgba(0,0,0,0.08);">
+              ${m.text}
+            </div>
+            <div class="comm-bubble-meta" style="font-size:11px; font-weight:600; color:#475569 !important; margin-top:4px; display:flex; align-items:center; gap:4px;">
+              ${isAdmin ? '<i class="ri-check-double-line" style="color:#2563EB;"></i> الدعم الفني • ' : userName + ' • '}
+              ${m.time}
+            </div>
           </div>
-          <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">
-            📱 ${userPhone} • ID: ${userId.substring(0, 8).toUpperCase()}
-          </div>
-        </div>
-      </div>
-      <div>
-        <button class="btn btn-outline btn-sm" onclick="viewUserProfile('${userId}', '${isDriver ? 'driver' : 'rider'}')">
-          <i class="ri-user-line"></i> عرض الملف كامل
-        </button>
-      </div>
-    </div>
-
-    <!-- Messages Container -->
-    <div class="comm-chat-messages" id="commChatMessagesContainer">
-      ${messagesHtml}
-    </div>
-
-    <!-- Input Zone -->
-    <div class="comm-chat-input-zone">
-      <div class="comm-quick-replies">
-        <button class="comm-quick-pill" onclick="sendCommQuickReply('أهلاً بك 🖐️ يسعدنا خدمتك في inRide')">أهلاً بك 🖐️</button>
-        <button class="comm-quick-pill" onclick="sendCommQuickReply('تم شحن المحفظة بنجاح ✅ يرجى التحديث')">تم الشحن ✅</button>
-        <button class="comm-quick-pill" onclick="sendCommQuickReply('تم استقبال الطلب وجاري المتابعة معك 📋')">جاري المتابعة 📋</button>
-        <button class="comm-quick-pill" onclick="sendCommQuickReply('شكراً لتواصلك معنا مع تحيات فريق inRide 🚗')">شكراً لك 🚗</button>
-      </div>
-      <div class="comm-input-bar">
-        <input type="text" id="commChatInput" class="comm-text-input" placeholder="اكتب رسالتك المباشرة هنا..." onkeypress="if(event.key === 'Enter') sendCommChatMessage()">
-        <button class="btn btn-primary" onclick="sendCommChatMessage()" style="padding:10px 20px;border-radius:var(--radius-md);display:flex;align-items:center;gap:6px;">
-          <span>إرسال</span>
-          <i class="ri-send-plane-fill"></i>
-        </button>
-      </div>
-    </div>
-  `;
-
-  // Scroll to bottom of message thread
-  const container = document.getElementById('commChatMessagesContainer');
-  if (container) container.scrollTop = container.scrollHeight;
+        `;
+      }).join('');
+      container.innerHTML = messagesHtml;
+      container.scrollTop = container.scrollHeight;
+    }
+  }
 }
 
 function generateUUID() {

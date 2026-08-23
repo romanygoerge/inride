@@ -54,7 +54,10 @@ class AuthErrorHandler {
       return error.message;
     }
 
-    if (errorStr.contains('canceled') || errorStr.contains('aborted')) {
+    if (errorStr.contains('canceled') ||
+        errorStr.contains('aborted') ||
+        errorStr.contains('sign_in_canceled') ||
+        errorStr.contains('error_aborted_by_user')) {
       return isAr ? 'تم إلغاء العملية بواسطة المستخدم.' : 'Operation canceled by user.';
     }
 

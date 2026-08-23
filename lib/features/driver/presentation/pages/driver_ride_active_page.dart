@@ -1167,7 +1167,10 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                     Builder(
                       builder: (context) {
                         final double price = state.offeredFare;
-                        final double commission = price * ((state.appSettings['commissionRate'] ?? 20.0) / 100.0);
+                        final double rate = (state.appSettings['commission_rate'] != null
+                            ? (double.tryParse(state.appSettings['commission_rate'].toString()) ?? 10.0)
+                            : ((state.appSettings['commissionRate'] as num?)?.toDouble() ?? 10.0));
+                        final double commission = price * (rate / 100.0);
                         if (state.activeRidePaymentMethod == 'المحفظة') {
                           return Text(
                             state.currentServiceType == 'delivery'

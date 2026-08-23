@@ -218,7 +218,7 @@ class _AuthGateState extends State<AuthGate> {
         }
 
         if (state.isLoggedIn && state.userUid != null) {
-          // Phone number linking bypassed as per user requirement (Gmail/Google auth only)
+          // User authenticated via Phone Number (WhatsApp OTP)
           if (state.currentRole == UserRole.rider) {
             if (!state.hasPassengerProfile) {
               if (state.isOffline) {

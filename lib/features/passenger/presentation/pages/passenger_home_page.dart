@@ -811,55 +811,130 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Payment Method & Top Up Wallet Row
+                      // Payment Method Selector (Cash & InstaPay Only)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
                           color: AppColors.background,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(color: AppColors.border),
                         ),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.account_balance_wallet_outlined, color: AppColors.mediumBlue, size: 20),
-                                const SizedBox(width: 8),
-                                Text(
-                                  '${LocaleController.instance.isArabic ? "طريقة الدفع" : "Payment"}: ${GlobalState.instance.selectedPaymentMethod}',
-                                  style: GoogleFonts.cairo(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textPrimary,
+                            // 1. Cash Option
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    GlobalState.instance.selectedPaymentMethod = 'كاش';
+                                  });
+                                },
+                                borderRadius: BorderRadius.circular(10),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: GlobalState.instance.selectedPaymentMethod == 'كاش'
+                                        ? Colors.white
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(10),
+                                    boxShadow: GlobalState.instance.selectedPaymentMethod == 'كاش'
+                                        ? [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(alpha: 0.06),
+                                              blurRadius: 6,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ]
+                                        : null,
+                                    border: GlobalState.instance.selectedPaymentMethod == 'كاش'
+                                        ? Border.all(color: AppColors.mediumBlue.withValues(alpha: 0.3), width: 1.5)
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.payments_rounded,
+                                        size: 18,
+                                        color: GlobalState.instance.selectedPaymentMethod == 'كاش'
+                                            ? AppColors.mediumBlue
+                                            : AppColors.textSecondary,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        LocaleController.instance.isArabic ? 'نقداً (كاش)' : 'Cash',
+                                        style: GoogleFonts.cairo(
+                                          fontSize: 13,
+                                          fontWeight: GlobalState.instance.selectedPaymentMethod == 'كاش'
+                                              ? FontWeight.bold
+                                              : FontWeight.w600,
+                                          color: GlobalState.instance.selectedPaymentMethod == 'كاش'
+                                              ? AppColors.mediumBlue
+                                              : AppColors.textSecondary,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
-                            InkWell(
-                              onTap: () {
-                                Navigator.push(context, SnappyPageRoute(page: const WalletPage()));
-                              },
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: AppColors.mediumBlue.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.add_card_rounded, color: AppColors.mediumBlue, size: 14),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      LocaleController.instance.isArabic ? 'شحن المحفظة' : 'Top Up Wallet',
-                                      style: GoogleFonts.cairo(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.mediumBlue,
+                            const SizedBox(width: 6),
+                            // 2. InstaPay Option
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    GlobalState.instance.selectedPaymentMethod = 'انستا باي';
+                                  });
+                                },
+                                borderRadius: BorderRadius.circular(10),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: (GlobalState.instance.selectedPaymentMethod == 'انستا باي' || GlobalState.instance.selectedPaymentMethod == 'انستاباي')
+                                        ? Colors.white
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(10),
+                                    boxShadow: (GlobalState.instance.selectedPaymentMethod == 'انستا باي' || GlobalState.instance.selectedPaymentMethod == 'انستاباي')
+                                        ? [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(alpha: 0.06),
+                                              blurRadius: 6,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ]
+                                        : null,
+                                    border: (GlobalState.instance.selectedPaymentMethod == 'انستا باي' || GlobalState.instance.selectedPaymentMethod == 'انستاباي')
+                                        ? Border.all(color: Colors.deepPurple.withValues(alpha: 0.3), width: 1.5)
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.bolt_rounded,
+                                        size: 18,
+                                        color: (GlobalState.instance.selectedPaymentMethod == 'انستا باي' || GlobalState.instance.selectedPaymentMethod == 'انستاباي')
+                                            ? Colors.deepPurple
+                                            : AppColors.textSecondary,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        LocaleController.instance.isArabic ? 'إنستا باي' : 'InstaPay',
+                                        style: GoogleFonts.cairo(
+                                          fontSize: 13,
+                                          fontWeight: (GlobalState.instance.selectedPaymentMethod == 'انستا باي' || GlobalState.instance.selectedPaymentMethod == 'انستاباي')
+                                              ? FontWeight.bold
+                                              : FontWeight.w600,
+                                          color: (GlobalState.instance.selectedPaymentMethod == 'انستا باي' || GlobalState.instance.selectedPaymentMethod == 'انستاباي')
+                                              ? Colors.deepPurple
+                                              : AppColors.textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),

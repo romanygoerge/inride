@@ -95,12 +95,10 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
       // 2. Load saved places
       _savedPlaces = await PlacesSearchService.instance.getSavedPlaces();
 
-      // 3. Load nearby places from Supabase PostGIS
-      _nearbyPlaces = await PlacesSearchService.instance.searchPlaces(
-        query: '',
+      // 3. Load nearby reference places
+      _nearbyPlaces = await PlacesSearchService.instance.getNearbyAndPopularPlaces(
         latitude: _referenceCoordinates.latitude,
         longitude: _referenceCoordinates.longitude,
-        radiusKm: 100.0,
         limit: 15,
       );
     } catch (e) {
@@ -138,14 +136,14 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
       _isLoading = true;
     });
 
-    // 350ms debounce for optimal responsiveness and minimal Supabase queries
-    _debounceTimer = Timer(const Duration(milliseconds: 350), () async {
+    // 250ms debounce for rapid, snappy results
+    _debounceTimer = Timer(const Duration(milliseconds: 250), () async {
       try {
         final results = await PlacesSearchService.instance.searchPlaces(
           query: query,
           latitude: _referenceCoordinates.latitude,
           longitude: _referenceCoordinates.longitude,
-          radiusKm: 150.0,
+          radiusKm: 300.0,
           limit: 20,
         );
 
@@ -215,7 +213,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
 
         final addressString = geocodedName.isNotEmpty
             ? geocodedName
-            : '${l10n?.myCurrentLocation ?? "موقعي الحالي"} (${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)})';
+            : '${l10n?.myCurrentLocation ?? "موقعي الحالي"} (${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)})';
 
         final loc = PlaceLocation(
           latitude: pos.latitude,
@@ -228,30 +226,79 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
 
         _selectPlace(loc, isHistory: false);
       } else {
-        final fallback = MapCoordinatesHelper.deviceLocation ?? const LatLng(30.0130, 31.2080);
+        final fallback = MapCoordinatesHelper.deviceLocation ?? _referenceCoordinates;
         final loc = PlaceLocation(
           latitude: fallback.latitude,
           longitude: fallback.longitude,
           placeName: 'موقعي الحالي',
           formattedAddress: 'الموقع الحالي',
           timestamp: DateTime.now(),
+          category: 'gps',
         );
         _selectPlace(loc, isHistory: false);
       }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        final fallback = MapCoordinatesHelper.deviceLocation ?? const LatLng(30.0130, 31.2080);
+        final fallback = MapCoordinatesHelper.deviceLocation ?? _referenceCoordinates;
         final loc = PlaceLocation(
           latitude: fallback.latitude,
           longitude: fallback.longitude,
           placeName: 'موقعي الحالي',
           formattedAddress: 'الموقع الحالي',
           timestamp: DateTime.now(),
+          category: 'gps',
         );
         _selectPlace(loc, isHistory: false);
       }
     }
+  }
+
+  Future<void> _useMapCenterLocation() async {
+    final geocoded = await MapCoordinatesHelper.reverseGeocode(
+      _referenceCoordinates.latitude,
+      _referenceCoordinates.longitude,
+    );
+
+    final loc = PlaceLocation(
+      latitude: _referenceCoordinates.latitude,
+      longitude: _referenceCoordinates.longitude,
+      placeName: geocoded.isNotEmpty ? geocoded.split('،').first.trim() : 'الموقع المحدد على الخريطة',
+      formattedAddress: geocoded.isNotEmpty ? geocoded : 'الموقع المحدد على الخريطة',
+      timestamp: DateTime.now(),
+      category: 'map_pin',
+    );
+
+    _selectPlace(loc, isHistory: false);
+  }
+
+  Future<void> _useCustomQueryAsPlace(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return;
+
+    // Try high-speed geocoding first
+    final geocoded = await MapCoordinatesHelper.geocodeAddress(
+      trimmed,
+      biasLat: _referenceCoordinates.latitude,
+      biasLng: _referenceCoordinates.longitude,
+    );
+
+    final lat = geocoded?.latitude ?? _referenceCoordinates.latitude;
+    final lon = geocoded?.longitude ?? _referenceCoordinates.longitude;
+    final dist = LocationService.instance.calculateDistance(_referenceCoordinates.latitude, _referenceCoordinates.longitude, lat, lon);
+
+    final loc = PlaceLocation(
+      latitude: lat,
+      longitude: lon,
+      placeName: trimmed,
+      formattedAddress: trimmed,
+      timestamp: DateTime.now(),
+      category: 'landmark',
+      distanceKm: dist,
+      distanceMeters: dist * 1000,
+    );
+
+    _selectPlace(loc, isHistory: false);
   }
 
   @override
@@ -299,24 +346,11 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                   autofocus: true,
                   onChanged: _onSearchChanged,
                   onSubmitted: (value) async {
-                    final query = value.trim();
-                    if (query.isNotEmpty) {
+                    if (value.trim().isNotEmpty) {
                       if (_searchResults.isNotEmpty) {
                         _selectPlace(_searchResults.first);
                       } else {
-                        final geocoded = await MapCoordinatesHelper.geocodeAddress(query);
-                        final lat = geocoded?.latitude ?? _referenceCoordinates.latitude;
-                        final lon = geocoded?.longitude ?? _referenceCoordinates.longitude;
-                        final loc = PlaceLocation(
-                          latitude: lat,
-                          longitude: lon,
-                          placeName: query,
-                          formattedAddress: query,
-                          timestamp: DateTime.now(),
-                        );
-                        if (mounted) {
-                          _selectPlace(loc, isHistory: false);
-                        }
+                        _useCustomQueryAsPlace(value);
                       }
                     }
                   },
@@ -353,58 +387,100 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
               ),
             ),
 
-            // Current Location Action Tile
+            // Top Fast Action Buttons (My GPS Location & Pick On Map)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: _useCurrentGpsLocation,
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.mediumBlue.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.mediumBlue.withValues(alpha: 0.15)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
+              child: Row(
+                children: [
+                  // GPS Location Button
+                  Expanded(
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _useCurrentGpsLocation,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.mediumBlue.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.mediumBlue.withValues(alpha: 0.15)),
                           ),
-                          child: const Icon(Icons.my_location_rounded, color: AppColors.mediumBlue, size: 18),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
                             children: [
-                              Text(
-                                l10n?.myCurrentLocation ?? 'موقعي الحالي',
-                                style: GoogleFonts.cairo(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.mediumBlue,
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
                                 ),
+                                child: const Icon(Icons.my_location_rounded, color: AppColors.mediumBlue, size: 16),
                               ),
-                              Text(
-                                l10n?.setPickupAuto ?? 'تحديد الموقع تلقائياً بواسطة GPS',
-                                style: GoogleFonts.cairo(
-                                  fontSize: 11,
-                                  color: AppColors.textSecondary,
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  l10n?.myCurrentLocation ?? 'موقعي الحالي',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.cairo(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.mediumBlue,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+
+                  // Pick On Map Button
+                  Expanded(
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _useMapCenterLocation,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF16A34A).withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFF16A34A).withValues(alpha: 0.2)),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.map_outlined, color: Color(0xFF16A34A), size: 16),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'تحديد على الخريطة',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.cairo(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFF16A34A),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
 
@@ -414,11 +490,11 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                 child: Row(
                   children: [
-                    const Icon(Icons.center_focus_strong_rounded, size: 14, color: AppColors.textSecondary),
+                    const Icon(Icons.center_focus_strong_rounded, size: 13, color: AppColors.textSecondary),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        'يتم عرض الأماكن القريبة من مركز الخريطة المحدد',
+                        'عرض الأماكن القريبة من المركز المحدد على الخريطة',
                         style: GoogleFonts.cairo(
                           fontSize: 11,
                           color: AppColors.textSecondary,
@@ -443,43 +519,89 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
 
   Widget _buildSearchResultsContent() {
     if (_searchResults.isEmpty && !_isLoading) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.location_off_outlined, size: 48, color: AppColors.textSecondary.withValues(alpha: 0.5)),
-              const SizedBox(height: 12),
-              Text(
-                'لا توجد نتائج لـ "$_searchQuery"',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.cairo(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'تأكد من كتابة الاسم بشكل صحيح أو جرب البحث باسم الشارع أو المعلم القريب',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.cairo(
-                  fontSize: 12,
-                  color: AppColors.textSecondary.withValues(alpha: 0.8),
-                ),
-              ),
-            ],
+      return ListView(
+        padding: const EdgeInsets.all(24.0),
+        children: [
+          const SizedBox(height: 20),
+          Icon(Icons.search_off_rounded, size: 54, color: AppColors.textSecondary.withValues(alpha: 0.4)),
+          const SizedBox(height: 14),
+          Text(
+            'لم نجد نتائج مطابقة تماماً لـ "$_searchQuery"',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.cairo(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
           ),
-        ),
+          const SizedBox(height: 6),
+          Text(
+            'يمكنك تعيين هذا الاسم مباشرة كوجهة مخصصة أو تحديده على الخريطة',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.cairo(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () => _useCustomQueryAsPlace(_searchQuery),
+            icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+            label: Text(
+              'استخدام "$_searchQuery" كوجهة مباشرة',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.mediumBlue,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
       );
     }
 
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: _searchResults.length,
+      itemCount: _searchResults.length + (_searchQuery.trim().isNotEmpty ? 1 : 0),
       separatorBuilder: (_, __) => const Divider(height: 1, indent: 56, color: Color(0xFFF0F0F0)),
       itemBuilder: (context, index) {
+        if (index == _searchResults.length) {
+          // Bottom action to use exact query
+          return Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 16),
+            child: InkWell(
+              onTap: () => _useCustomQueryAsPlace(_searchQuery),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.add_location_alt_outlined, color: AppColors.mediumBlue, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'استخدام "$_searchQuery" كعنوان مخصص',
+                        style: GoogleFonts.cairo(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.mediumBlue,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
         final place = _searchResults[index];
         return _buildPlaceListTile(place);
       },
@@ -500,14 +622,14 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
         // 2. Recent Search History
         if (_recentHistory.isNotEmpty) ...[
           _buildSectionHeader('عمليات البحث الأخيرة', Icons.history_rounded),
-          ..._recentHistory.take(4).map((p) => _buildPlaceListTile(p, isHistory: true)),
+          ..._recentHistory.take(5).map((p) => _buildPlaceListTile(p, isHistory: true)),
           const SizedBox(height: 12),
         ],
 
-        // 3. Nearby Places (PostGIS ranked)
+        // 3. Nearby Reference Places
         if (_nearbyPlaces.isNotEmpty) ...[
           _buildSectionHeader(
-            _isUsingMapCenter ? 'أماكن قريبة من مركز الخريطة' : 'أماكن قريبة منك',
+            _isUsingMapCenter ? 'أماكن قريبة من مركز الخريطة' : 'أماكن مقترحة قريبة منك',
             Icons.near_me_outlined,
           ),
           ..._nearbyPlaces.map((p) => _buildPlaceListTile(p)),

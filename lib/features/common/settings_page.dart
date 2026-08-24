@@ -348,8 +348,7 @@ class _SettingsPageState extends State<SettingsPage> {
               // 4. Danger Zone / Logout & Account Deletion Actions
               ElevatedButton(
                 onPressed: () {
-                  GlobalState.instance.reset();
-                  Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                  GlobalState.instance.performSafeLogout(context);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.error.withValues(alpha: 0.05),

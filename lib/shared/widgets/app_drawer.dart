@@ -489,9 +489,7 @@ class AppDrawer extends StatelessWidget {
               } else if (state.currentRole == UserRole.driver) {
                 await state.stopDriverLocationTracking();
               }
-              if (context.mounted) {
-                await state.performSafeLogout(context);
-              }
+              await state.performSafeLogout();
             },
           ),
           const SizedBox(height: 12),

@@ -1257,10 +1257,18 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> performSafeLogout(BuildContext context) async {
+  Future<void> performSafeLogout([BuildContext? context]) async {
     final currentUid = userUid ?? 'unknown';
     AppLogger.logoutLog(currentUid, 'Initiating clean logout procedure');
 
+    // 1. Immediately pop dialogs/drawers and reset navigation stack to root (AuthGate)
+    try {
+      navigatorKey.currentState?.pushNamedAndRemoveUntil('/', (route) => false);
+    } catch (navErr) {
+      debugPrint('[Logout] Navigator root reset error: $navErr');
+    }
+
+    // 2. Stop tracking, timers, and sounds
     try {
       stopDriverLocationTracking();
       _stopAllLocationAndTimers();
@@ -1268,6 +1276,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       AppLogger.error('Logout', 'Error stopping tracking/timers', e);
     }
 
+    try {
+      sl<RideSoundService>().stopIncomingRide();
+    } catch (_) {}
+
+    // 3. Clear FCM Token
     if (userUid != null && userUid!.isNotEmpty) {
       try {
         sl<AppNotificationService>().clearTokenFromDatabase(userUid!);
@@ -1276,6 +1289,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
+    // 4. Cancel active doc subscriptions and stream listeners
     try {
       await _userDocSubscription?.cancel();
       _userDocSubscription = null;
@@ -1283,17 +1297,23 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       _driverDocSubscription = null;
       await _passengerDocSubscription?.cancel();
       _passengerDocSubscription = null;
+      await _rechargeStreamSubscription?.cancel();
+      _rechargeStreamSubscription = null;
+      await _activeRideMessagesSub?.cancel();
+      _activeRideMessagesSub = null;
       await _supabase.removeAllChannels();
     } catch (e) {
       debugPrint('[Logout] Cancel channels error: $e');
     }
 
+    // 5. Trigger backend sign out
     try {
       await AuthRepository.instance.signOut();
     } catch (e) {
       AppLogger.error('Logout', 'Supabase signOut error', e);
     }
 
+    // 6. Reset all user identity, vehicle, and ride state
     userUid = null;
     phoneNumber = null;
     isLoggedIn = false;
@@ -1306,7 +1326,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     driverRejectionReason = null;
     userName = null;
     userAvatarUrl = null;
-    userRating = 0.0;
+    userRating = 5.0;
     verificationStatus = DriverVerificationStatus.unregistered;
     driverIdCardPath = null;
     driverLicensePath = null;
@@ -1320,93 +1340,22 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     driverLicenseUrl = null;
     driverVehicleFrontUrl = null;
     driverVehicleImages = [];
-
-    try {
-      sl<RideSoundService>().stopIncomingRide();
-    } catch (_) {}
     resetRide();
+    _clearProfileCache();
 
+    // 7. Notify listeners so AuthGate smoothly renders LoginPage
     notifyListeners();
 
-    if (context.mounted) {
-      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
-    }
+    // 8. Re-assert root navigation
+    try {
+      navigatorKey.currentState?.pushNamedAndRemoveUntil('/', (route) => false);
+    } catch (_) {}
+
     AppLogger.logoutLog(currentUid, 'Completed safe logout');
   }
 
   void reset() {
-    debugPrint('[GlobalState] Initiating complete reset on signout...');
-    final currentUid = userUid;
-
-    // 1. Stop all location tracking and active timers
-    try {
-      stopDriverLocationTracking();
-      _stopAllLocationAndTimers();
-    } catch (e) {
-      debugPrint('[GlobalState] Error stopping location tracking/timers on reset: $e');
-    }
-
-    // 2. Clear FCM token safely if present
-    if (currentUid != null && currentUid.isNotEmpty) {
-      try {
-        sl<AppNotificationService>().clearTokenFromDatabase(currentUid);
-      } catch (e) {
-        debugPrint("Error clearing FCM token on signout: $e");
-      }
-    }
-
-    // 3. Clear user authentication & identity state
-    userUid = null;
-    phoneNumber = null;
-    isLoggedIn = false;
-    isAuthResolved = true;
-    _currentRole = UserRole.rider;
-    passengerName = null;
-    passengerGender = null;
-    passengerAddress = null;
-    driverAddress = null;
-    driverRejectionReason = null;
-    userName = null;
-    userAvatarUrl = null;
-    userRating = 0.0;
-
-    // 4. Clear driver document & vehicle state
-    verificationStatus = DriverVerificationStatus.unregistered;
-    driverIdCardPath = null;
-    driverLicensePath = null;
-    vehicleRegistrationPath = null;
-    vehicleName = null;
-    vehicleNumber = null;
-    driverVehicleCategory = null;
-    driverHasAC = false;
-    driverMaxPassengers = 4;
-    driverNationalIdUrl = null;
-    driverLicenseUrl = null;
-    driverVehicleFrontUrl = null;
-    driverVehicleImages = [];
-
-    // 5. Cancel database document subscriptions
-    try {
-      _userDocSubscription?.cancel();
-      _userDocSubscription = null;
-      _driverDocSubscription?.cancel();
-      _driverDocSubscription = null;
-      _passengerDocSubscription?.cancel();
-      _passengerDocSubscription = null;
-    } catch (e) {
-      debugPrint('[GlobalState] Error cancelling doc subscriptions: $e');
-    }
-
-    // 6. Stop audio effects and reset trip state
-    try {
-      sl<RideSoundService>().stopIncomingRide();
-    } catch (_) {}
-    resetRide();
-
-    // 7. Trigger backend sign out
-    AuthRepository.instance.signOut();
-
-    notifyListeners();
+    performSafeLogout();
   }
 
   void _stopAllLocationAndTimers() {

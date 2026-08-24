@@ -1642,45 +1642,41 @@ function approveDriver(driverUidOrId) {
   const approveTitle = "Your driver account has been approved.";
   const approveBody = "Congratulations! Your driver account has been approved. You can now start accepting trips.";
 
+  // 1. Optimistic immediate update
+  if (driver) {
+    driver.status = 'verified';
+    driver.statusAr = 'معتمد';
+    driver.rejectionReason = '';
+  }
+  updatePendingBadge();
+  renderPage(currentPage);
+  showToast(`✅ تم اعتماد السائق ${driverName} بنجاح`);
+
+  const modal = document.querySelector('.modal-backdrop');
+  if (modal) modal.remove();
+
   if (supabaseClient) {
     supabaseClient.from('drivers')
       .update({ verification_status: 'verified', rejection_reason: null, updated_at: new Date().toISOString() })
       .eq('id', targetUid)
       .then(async ({ error }) => {
         if (!error) {
-          if (driver) {
-            driver.status = 'verified';
-            driver.statusAr = 'معتمد';
-            driver.rejectionReason = '';
-          }
-          updatePendingBadge();
-          renderPage(currentPage);
-          showToast(`✅ تم اعتماد السائق ${driverName} بنجاح`);
           await sendPushNotificationBackend({
             recipientId: targetUid,
             title: approveTitle,
             body: approveBody,
             type: 'driver_approved'
           });
+          if (typeof window.runBulkSync === 'function') {
+            window.runBulkSync();
+          }
         } else {
           showToast(`❌ فشل الاعتماد: ${error.message}`);
         }
       }).catch(err => {
         showToast(`❌ فشل الاعتماد: ${err.message}`);
       });
-  } else {
-    if (driver) {
-      driver.status = 'verified';
-      driver.statusAr = 'معتمد';
-      driver.rejectionReason = '';
-      updatePendingBadge();
-      renderPage(currentPage);
-      showToast(`✅ تم اعتماد السائق ${driverName} بنجاح`);
-    }
   }
-
-  const modal = document.querySelector('.modal-backdrop');
-  if (modal) modal.remove();
 }
 
 function rejectDriverPrompt(driverUidOrId) {
@@ -1722,45 +1718,41 @@ function confirmRejectDriver(driverUid) {
   const rejectTitle = "Driver application rejected.";
   const rejectBody = rejectionReason ? `Driver application rejected: ${rejectionReason}` : "Driver application rejected.";
 
+  // 1. Optimistic immediate update
+  if (driver) {
+    driver.status = 'rejected';
+    driver.statusAr = 'مرفوض';
+    driver.rejectionReason = rejectionReason;
+  }
+  updatePendingBadge();
+  renderPage(currentPage);
+  showToast(`❌ تم رفض طلب السائق ${driverName}`);
+
+  const modal = document.querySelector('.modal-backdrop');
+  if (modal) modal.remove();
+
   if (supabaseClient) {
     supabaseClient.from('drivers')
       .update({ verification_status: 'rejected', rejection_reason: rejectionReason, updated_at: new Date().toISOString() })
       .eq('id', driverUid)
       .then(async ({ error }) => {
         if (!error) {
-          if (driver) {
-            driver.status = 'rejected';
-            driver.statusAr = 'مرفوض';
-            driver.rejectionReason = rejectionReason;
-          }
-          updatePendingBadge();
-          renderPage(currentPage);
-          showToast(`❌ تم رفض طلب السائق ${driverName}`);
           await sendPushNotificationBackend({
             recipientId: driverUid,
             title: rejectTitle,
             body: rejectBody,
             type: 'driver_rejected'
           });
+          if (typeof window.runBulkSync === 'function') {
+            window.runBulkSync();
+          }
         } else {
           showToast(`❌ فشل عملية الرفض: ${error.message}`);
         }
       }).catch(err => {
         showToast(`❌ فشل عملية الرفض: ${err.message}`);
       });
-  } else {
-    if (driver) {
-      driver.status = 'rejected';
-      driver.statusAr = 'مرفوض';
-      driver.rejectionReason = rejectionReason;
-      updatePendingBadge();
-      renderPage(currentPage);
-      showToast(`❌ تم رفض طلب السائق ${driverName}`);
-    }
   }
-
-  const modal = document.querySelector('.modal-backdrop');
-  if (modal) modal.remove();
 }
 
 function reviewDriverDocs(driverUidOrId) {
@@ -2370,13 +2362,43 @@ function submitEditUser(uid, role) {
   let licensePlate = '';
   
   if (isDriver) {
-    vehicleType = document.getElementById('editVehicleType').value;
-    vehicleName = document.getElementById('editVehicleName').value.trim();
-    licensePlate = document.getElementById('editLicensePlate').value.trim();
+    vehicleType = document.getElementById('editVehicleType')?.value || 'car';
+    vehicleName = document.getElementById('editVehicleName')?.value.trim() || 'مركبة';
+    licensePlate = document.getElementById('editLicensePlate')?.value.trim() || '—';
   }
 
   const modal = document.querySelector('.modal-backdrop');
   if (modal) modal.remove();
+
+  // Optimistic local update
+  if (isDriver) {
+    const d = mockData.drivers.find(dr => dr.uid === uid || dr.id === uid);
+    if (d) {
+      d.name = name || d.name;
+      d.phone = phone || d.phone;
+      d.email = email || d.email;
+      d.address = address || d.address;
+      d.vehicleType = vehicleType || d.vehicleType;
+      d.vehicleName = vehicleName || d.vehicleName;
+      d.licensePlate = licensePlate || d.licensePlate;
+      d.avatar = (name || d.name).charAt(0);
+    }
+  } else {
+    const p = mockData.passengers.find(pass => pass.uid === uid || pass.id === uid);
+    if (p) {
+      p.name = name || p.name;
+      p.phone = phone || p.phone;
+      p.email = email || p.email;
+      p.address = address || p.address;
+      p.avatar = (name || p.name).charAt(0);
+    }
+  }
+
+  if (currentPage === 'driver-profile' || currentPage === 'passenger-profile') {
+    viewUserProfile(uid, role);
+  } else {
+    renderPage(currentPage);
+  }
 
   if (supabaseClient) {
     (async () => {
@@ -2384,7 +2406,8 @@ function submitEditUser(uid, role) {
         const { error: userError } = await supabaseClient.from('users').update({
           name: name,
           phone_number: phone,
-          email: email
+          email: email,
+          updated_at: new Date().toISOString()
         }).eq('id', uid);
         if (userError) throw userError;
 
@@ -2394,7 +2417,8 @@ function submitEditUser(uid, role) {
             const { error: vehicleError } = await supabaseClient.from('vehicles').update({
               type: vehicleType,
               model: vehicleName,
-              number_plate: licensePlate
+              number_plate: licensePlate,
+              updated_at: new Date().toISOString()
             }).eq('id', driverData.vehicle_id);
             if (vehicleError) throw vehicleError;
           }
@@ -2402,58 +2426,16 @@ function submitEditUser(uid, role) {
 
         logAction(`تعديل بيانات المستخدم ${uid} (الاسم: ${name})`);
         showToast('✅ تم تحديث البيانات بنجاح');
-        
-        // If we are currently viewing this profile, refresh the profile page
-        if (currentPage === 'driver-profile' || currentPage === 'passenger-profile') {
-          viewUserProfile(uid, role);
+        if (typeof window.runBulkSync === 'function') {
+          window.runBulkSync();
         }
       } catch (err) {
         showToast(`❌ فشل التعديل: ${err.message}`);
       }
     })();
   } else {
-    // Local fallback
-    if (isDriver) {
-      const d = mockData.drivers.find(dr => dr.uid === uid);
-      if (d) {
-        d.name = name;
-        d.phone = phone;
-        d.email = email;
-        d.address = address;
-        d.rating = rating;
-        d.vehicleType = vehicleType;
-        d.vehicleName = vehicleName;
-        d.licensePlate = licensePlate;
-        d.avatar = name.charAt(0);
-        logAction(`تعديل بيانات السائق محلياً: ${uid}`);
-        
-        if (currentPage === 'driver-profile') {
-          renderDriverProfile();
-          renderPage('driver-profile');
-        } else {
-          renderPage('drivers');
-        }
-      }
-    } else {
-      const p = mockData.passengers.find(pass => pass.uid === uid);
-      if (p) {
-        p.name = name;
-        p.phone = phone;
-        p.email = email;
-        p.address = address;
-        p.rating = rating;
-        p.avatar = name.charAt(0);
-        logAction(`تعديل بيانات الراكب محلياً: ${uid}`);
-        
-        if (currentPage === 'passenger-profile') {
-          renderPassengerProfile();
-          renderPage('passenger-profile');
-        } else {
-          renderPage('passengers');
-        }
-      }
-    }
-    showToast('✅ تم التعديل محلياً (وضع التجربة)');
+    logAction(`تعديل بيانات المستخدم محلياً: ${uid}`);
+    showToast('✅ تم التعديل محلياً');
   }
 }
 
@@ -2497,14 +2479,25 @@ function submitDeleteUser(uid, role) {
   const modal = document.querySelector('.modal-backdrop');
   if (modal) modal.remove();
 
+  // Optimistic local removal
+  mockData.drivers = mockData.drivers.filter(d => d.uid !== uid && d.id !== uid);
+  mockData.passengers = mockData.passengers.filter(p => p.uid !== uid && p.id !== uid);
+  mockData.stats.activeDrivers = mockData.drivers.filter(d => d.isOnline).length;
+  mockData.stats.totalPassengers = mockData.passengers.length;
+  updatePendingBadge();
+
+  if (currentPage === 'driver-profile' || currentPage === 'passenger-profile') {
+    navigateTo(isDriver ? 'drivers' : 'passengers');
+  } else {
+    renderPage(currentPage);
+  }
+
   if (supabaseClient) {
     (async () => {
       try {
         if (isDriver) {
           const { data: driverData } = await supabaseClient.from('drivers').select('vehicle_id').eq('id', uid).maybeSingle();
-          
           await supabaseClient.from('drivers').delete().eq('id', uid);
-
           if (driverData && driverData.vehicle_id) {
             await supabaseClient.from('vehicles').delete().eq('id', driverData.vehicle_id);
           }
@@ -2515,40 +2508,16 @@ function submitDeleteUser(uid, role) {
 
         logAction(`حذف حساب مستخدم نهائياً: ${uid} (دور: ${role})`);
         showToast('❌ تم حذف حساب المستخدم بنجاح');
-        
-        if (currentPage === 'driver-profile' || currentPage === 'passenger-profile') {
-          navigateTo(isDriver ? 'drivers' : 'passengers');
-        } else {
-          renderPage(currentPage);
+        if (typeof window.runBulkSync === 'function') {
+          window.runBulkSync();
         }
       } catch (err) {
         showToast(`❌ فشل الحذف: ${err.message}`);
       }
     })();
   } else {
-    // Local fallback
-    if (isDriver) {
-      mockData.drivers = mockData.drivers.filter(d => d.uid !== uid);
-      mockData.stats.activeDrivers = mockData.drivers.filter(d => d.isOnline).length;
-      logAction(`حذف كابتن محلياً: ${uid}`);
-      
-      if (currentPage === 'driver-profile') {
-        navigateTo('drivers');
-      } else {
-        renderPage('drivers');
-      }
-    } else {
-      mockData.passengers = mockData.passengers.filter(p => p.uid !== uid);
-      mockData.stats.totalPassengers = mockData.passengers.length;
-      logAction(`حذف راكب محلياً: ${uid}`);
-      
-      if (currentPage === 'passenger-profile') {
-        navigateTo('passengers');
-      } else {
-        renderPage('passengers');
-      }
-    }
-    showToast('❌ تم الحذف محلياً (وضع التجربة)');
+    logAction(`حذف محلياً: ${uid}`);
+    showToast('❌ تم الحذف محلياً');
   }
 }
 
@@ -2822,6 +2791,7 @@ async function approvePendingRecharge(id, userId, amount, requestIdFallback = nu
 
     showToast(`✅ تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م وإضافته للمحفظة بنجاح!`);
     await loadFinancialDataFromSupabase();
+    if (typeof window.runBulkSync === 'function') window.runBulkSync();
     renderPage('wallet');
   } catch (e) {
     console.error('approvePendingRecharge error:', e);
@@ -2928,6 +2898,7 @@ async function rejectPendingRecharge(id, userId, requestIdFallback = null) {
 
     showToast('❌ تم رفض طلب الشحن وإبلاغ المستخدم بنجاح.');
     await loadFinancialDataFromSupabase();
+    if (typeof window.runBulkSync === 'function') window.runBulkSync();
     renderPage('wallet');
   } catch (e) {
     console.error('rejectPendingRecharge error:', e);
@@ -4658,6 +4629,7 @@ async function processTopupWithReceipt(userId, amount, methodCode, refCode, rece
     showToast('✅ تم شحن الرصيد وتوثيق الريسيت بنجاح');
     closeFinancialModal('rechargeModal');
     await loadFinancialDataFromSupabase();
+    if (typeof window.runBulkSync === 'function') window.runBulkSync();
     renderPage('wallet');
   } catch (err) {
     showToast(`❌ خطأ في عملية الشحن: ${err.message}`);
@@ -4714,6 +4686,7 @@ async function processDriverPayout(userId, amount, methodCode, refCode, receiptB
     showToast('✅ تم سحب المبلغ وتسوية المستحقات بنجاح');
     closeFinancialModal('payoutModal');
     await loadFinancialDataFromSupabase();
+    if (typeof window.runBulkSync === 'function') window.runBulkSync();
     renderPage('wallet');
   } catch (err) {
     showToast(`❌ خطأ في عملية السحب والتسوية: ${err.message}`);
@@ -4745,6 +4718,7 @@ async function addOrUpdatePaymentMethod(id, name, code, accountDetails, iconName
     showToast('✅ تم تحديث طريقة الدفع بنجاح');
     closeFinancialModal('paymentMethodsModal');
     await loadFinancialDataFromSupabase();
+    if (typeof window.runBulkSync === 'function') window.runBulkSync();
     renderPage('wallet');
   } catch (err) {
     showToast(`❌ خطأ في حفظ طريقة الدفع: ${err.message}`);
@@ -4758,6 +4732,7 @@ async function togglePaymentMethodActive(id, currentStatus) {
     await client.from('payment_methods').update({ is_active: !currentStatus }).eq('id', id);
     showToast('✅ تم تغيير حالة طريقة الدفع بالتطبيق');
     await loadFinancialDataFromSupabase();
+    if (typeof window.runBulkSync === 'function') window.runBulkSync();
     renderPage('wallet');
   } catch (err) {}
 }
@@ -4770,6 +4745,7 @@ async function deletePaymentMethod(id) {
     await client.from('payment_methods').delete().eq('id', id);
     showToast('✅ تم حذف طريقة الدفع');
     await loadFinancialDataFromSupabase();
+    if (typeof window.runBulkSync === 'function') window.runBulkSync();
     renderPage('wallet');
   } catch (err) {}
 }
@@ -6814,12 +6790,22 @@ function renderLogs() {
 
 // In-line actions for trips manually (Trip cancel/complete)
 function modifyTripStatus(requestId, newStatus) {
+  const trip = mockData.trips.find(t => t.requestId === requestId || t.id === requestId);
+  if (trip) {
+    trip.status = newStatus === 'Completed' ? 'مكتملة' : (newStatus === 'Cancelled' ? 'ملغاة' : 'جارية');
+    trip.rawStatus = newStatus;
+  }
+  renderPage(currentPage);
+
   if (supabaseClient) {
-    supabaseClient.from('ride_requests').update({ status: newStatus }).eq('id', requestId)
+    supabaseClient.from('ride_requests').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', requestId)
       .then(async ({ error }) => {
         if (!error) {
           logAction(`تغيير حالة الرحلة ${requestId} إلى ${newStatus} يدوياً من الإدارة`);
           showToast(`✅ تم تحديث حالة الرحلة بنجاح إلى ${newStatus}`);
+          if (typeof window.runBulkSync === 'function') {
+            window.runBulkSync();
+          }
 
           // Push Notification: إبلاغ الراكب والكابتن بتغيير حالة الرحلة من الإدارة
           try {
@@ -6875,39 +6861,66 @@ function modifyTripStatus(requestId, newStatus) {
         showToast(`❌ فشل التحديث: ${err.message}`);
       });
   } else {
-    // Local update
-    const trip = mockData.trips.find(t => t.requestId === requestId);
-    if (trip) {
-      trip.status = newStatus === 'Completed' ? 'مكتملة' : (newStatus === 'Cancelled' ? 'ملغاة' : 'جارية');
-      logAction(`تحديث حالة الرحلة ${requestId} محلياً إلى ${newStatus}`);
-      renderPage('trips');
-      showToast(`✅ تم التحديث محلياً`);
-    }
+    logAction(`تحديث حالة الرحلة ${requestId} محلياً إلى ${newStatus}`);
+    showToast(`✅ تم التحديث محلياً`);
   }
 }
 
 // User action handler (Verify, Suspend, Ban, Reset Pass)
 function modifyUserStatus(uid, action, userRole) {
+  // Optimistic immediate update
+  if (userRole === 'driver' || action === 'verify') {
+    const driver = mockData.drivers.find(d => d.uid === uid || d.id === uid);
+    if (driver) {
+      if (action === 'verify' || action === 'activate') {
+        driver.status = 'verified';
+        driver.statusAr = 'معتمد';
+      } else if (action === 'suspend') {
+        driver.status = 'unregistered';
+        driver.statusAr = 'غير نشط';
+      } else if (action === 'ban') {
+        driver.status = 'rejected';
+        driver.statusAr = 'محظور';
+      }
+    }
+  } else {
+    const passenger = mockData.passengers.find(p => p.uid === uid || p.id === uid);
+    if (passenger) {
+      if (action === 'suspend') {
+        passenger.status = 'suspended';
+        passenger.statusAr = 'معلق';
+      } else if (action === 'ban') {
+        passenger.status = 'banned';
+        passenger.statusAr = 'محظور';
+      } else if (action === 'activate') {
+        passenger.status = 'active';
+        passenger.statusAr = 'نشط';
+      }
+    }
+  }
+  updatePendingBadge();
+  renderPage(currentPage);
+
   if (supabaseClient) {
     (async () => {
       try {
         if (userRole === 'driver' || action === 'verify') {
-          let vStatus = 'pending';
+          let vStatus = 'submitted';
           if (action === 'verify' || action === 'activate') {
             vStatus = 'verified';
           } else if (action === 'suspend' || action === 'ban') {
             vStatus = 'rejected';
           }
-          const { error: driverError } = await supabaseClient.from('drivers').update({ verification_status: vStatus }).eq('id', uid);
+          const { error: driverError } = await supabaseClient.from('drivers').update({ verification_status: vStatus, updated_at: new Date().toISOString() }).eq('id', uid);
           if (driverError && userRole === 'driver') throw driverError;
         }
 
         if (action === 'ban') {
           const farFuture = new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000).toISOString();
-          const { error: banErr } = await supabaseClient.from('users').update({ banned_until: farFuture }).eq('id', uid);
+          const { error: banErr } = await supabaseClient.from('users').update({ banned_until: farFuture, updated_at: new Date().toISOString() }).eq('id', uid);
           if (banErr) throw banErr;
         } else if (action === 'activate') {
-          const { error: actErr } = await supabaseClient.from('users').update({ banned_until: null }).eq('id', uid);
+          const { error: actErr } = await supabaseClient.from('users').update({ banned_until: null, updated_at: new Date().toISOString() }).eq('id', uid);
           if (actErr) throw actErr;
         }
 
@@ -6953,41 +6966,16 @@ function modifyUserStatus(uid, action, userRole) {
 
         logAction(`إجراء (${action}) على حساب المستخدم/السائق: ${uid}`);
         showToast(`✅ تم تنفيذ الإجراء بنجاح`);
+        if (typeof window.runBulkSync === 'function') {
+          window.runBulkSync();
+        }
       } catch (err) {
         showToast(`❌ فشل الإجراء: ${err.message}`);
       }
     })();
   } else {
-    // Local mock action
-    if (userRole === 'driver') {
-      const driver = mockData.drivers.find(d => d.uid === uid);
-      if (driver) {
-        if (action === 'verify') {
-          driver.status = 'verified';
-          driver.statusAr = 'معتمد';
-        } else if (action === 'suspend') {
-          driver.status = 'unregistered';
-          driver.statusAr = 'غير نشط';
-        }
-        logAction(`إجراء (${action}) محلياً على السائق: ${uid}`);
-        renderPage('drivers');
-        showToast('✅ تم التحديث محلياً');
-      }
-    } else {
-      const passenger = mockData.passengers.find(p => p.uid === uid);
-      if (passenger) {
-        if (action === 'suspend') {
-          passenger.status = 'inactive';
-          passenger.statusAr = 'غير نشط';
-        } else if (action === 'activate') {
-          passenger.status = 'active';
-          passenger.statusAr = 'نشط';
-        }
-        logAction(`إجراء (${action}) محلياً على الراكب: ${uid}`);
-        renderPage('passengers');
-        showToast('✅ تم التحديث محلياً');
-      }
-    }
+    logAction(`إجراء (${action}) محلياً: ${uid}`);
+    showToast('✅ تم التحديث محلياً');
   }
 }
 
@@ -6998,6 +6986,20 @@ function adjustUserWallet(uid, amountStr, role) {
     showToast('⚠️ يرجى إدخال مبلغ صحيح');
     return;
   }
+
+  // Optimistic update
+  const d = mockData.drivers.find(dr => dr.uid === uid || dr.id === uid);
+  if (d) {
+    d.walletBalance = (parseFloat(d.walletBalance || 0) + amount);
+    d.driverWalletBalance = d.walletBalance;
+    d.earnings = (parseFloat(d.earnings || 0) + amount);
+  }
+  const p = mockData.passengers.find(pass => pass.uid === uid || pass.id === uid);
+  if (p) {
+    p.walletBalance = (parseFloat(p.walletBalance || 0) + amount);
+    p.passengerWalletBalance = p.walletBalance;
+  }
+  renderPage(currentPage);
   
   if (supabaseClient) {
     (async () => {
@@ -7014,12 +7016,13 @@ function adjustUserWallet(uid, amountStr, role) {
         
         const { error: updateError } = await supabaseClient
           .from('users')
-          .update({ wallet_balance: newBal })
+          .update({ wallet_balance: newBal, updated_at: new Date().toISOString() })
           .eq('id', uid);
         if (updateError) throw updateError;
         
         // Add to transactions
         await supabaseClient.from('transactions').insert({
+          id: generateUUID(),
           user_id: uid,
           title: 'تعديل الرصيد من الإدارة',
           amount: amount,
@@ -7049,34 +7052,22 @@ function adjustUserWallet(uid, amountStr, role) {
         } catch (_) {}
 
         logAction(`تعديل رصيد محفظة ${uid} بقيمة ${amount} ج.م`);
-        showToast('✅ تم تحديث الرصيد بنجاح في Supabase');
+        showToast('✅ تم تحديث الرصيد بنجاح');
+        if (typeof loadFinancialDataFromSupabase === 'function') {
+          loadFinancialDataFromSupabase();
+        }
+        if (typeof window.runBulkSync === 'function') {
+          window.runBulkSync();
+        }
       } catch (err) {
         showToast(`❌ فشل التحديث: ${err.message}`);
       }
     })();
   } else {
-    // Local mock
-    if (role === 'rider') {
-      const p = mockData.passengers.find(pass => pass.uid === uid);
-      if (p) {
-        p.totalSpent += amount;
-        logAction(`تعديل رصيد محفظة الراكب ${uid} محلياً بقيمة ${amount} ج.م`);
-        renderPage('passengers');
-        showToast('✅ تم تعديل الرصيد محلياً');
-      }
-    } else {
-      const d = mockData.drivers.find(dr => dr.uid === uid);
-      if (d) {
-        d.earnings += amount;
-        logAction(`تعديل رصيد محفظة السائق ${uid} محلياً بقيمة ${amount} ج.م`);
-        renderPage('drivers');
-        showToast('✅ تم تعديل الرصيد محلياً');
-      }
-    }
+    logAction(`تعديل رصيد محفظة ${uid} محلياً بقيمة ${amount} ج.م`);
+    showToast('✅ تم تعديل الرصيد محلياً');
   }
 }
-
-
 
 function submitDocApproval(uid, decision) {
   const modal = document.querySelector('.modal-backdrop');
@@ -7085,30 +7076,44 @@ function submitDocApproval(uid, decision) {
   if (modal) modal.remove();
   
   if (decision === 'approve') {
-    modifyUserStatus(uid, 'verify', 'driver');
+    approveDriver(uid);
   } else {
     // Rejected
+    const driver = mockData.drivers.find(dr => dr.uid === uid || dr.id === uid);
+    if (driver) {
+      driver.status = 'rejected';
+      driver.statusAr = 'مرفوض';
+      driver.rejectionReason = reason;
+    }
+    updatePendingBadge();
+    renderPage(currentPage);
+
     if (supabaseClient) {
       supabaseClient.from('drivers').update({
-        verification_status: 'rejected'
+        verification_status: 'rejected',
+        rejection_reason: reason,
+        updated_at: new Date().toISOString()
       }).eq('id', uid)
-        .then(({ error }) => {
+        .then(async ({ error }) => {
           if (!error) {
             logAction(`رفض مستندات الكابتن ${uid} بسبب: ${reason}`);
             showToast('❌ تم رفض السائق وإرسال الإشعار بنجاح');
+            await sendPushNotificationBackend({
+              recipientId: uid,
+              title: "Driver application rejected.",
+              body: reason ? `Driver application rejected: ${reason}` : "Driver application rejected.",
+              type: 'driver_rejected'
+            });
+            if (typeof window.runBulkSync === 'function') {
+              window.runBulkSync();
+            }
           } else {
             showToast(`❌ فشل: ${error.message}`);
           }
         }).catch(err => showToast(`❌ فشل: ${err.message}`));
     } else {
-      const d = mockData.drivers.find(dr => dr.uid === uid);
-      if (d) {
-        d.status = 'rejected';
-        d.statusAr = 'مرفوض';
-        logAction(`رفض مستندات الكابتن ${uid} محلياً بسبب: ${reason}`);
-        renderPage('drivers');
-        showToast('❌ تم الرفض محلياً');
-      }
+      logAction(`رفض مستندات الكابتن ${uid} محلياً بسبب: ${reason}`);
+      showToast('❌ تم الرفض محلياً');
     }
   }
 }
@@ -7638,7 +7643,7 @@ function initSupabaseSync() {
 
   const debouncedSync = () => {
     if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
-    syncDebounceTimer = setTimeout(window.runBulkSync, 300);
+    syncDebounceTimer = setTimeout(window.runBulkSync, 200);
   };
 
   // Initial Sync
@@ -7655,6 +7660,8 @@ function initSupabaseSync() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, debouncedSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, debouncedSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'wallet_recharge_requests' }, debouncedSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_methods' }, debouncedSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, debouncedSync)
       .subscribe();
 
     activeRealtimeChannels.push(globalChannel);
@@ -7663,20 +7670,17 @@ function initSupabaseSync() {
   }
 }
 
-// Background Periodic Revalidation (Every 60s while tab is visible)
+// Background Periodic Revalidation (Every 10s while tab is visible)
 setInterval(() => {
   if (isAuthenticatedAdmin && document.visibilityState === 'visible' && typeof window.runBulkSync === 'function') {
     window.runBulkSync();
   }
-}, 60000);
+}, 10000);
 
-// Tab Focus Revalidation (Revalidate if last sync was > 30s ago)
+// Tab Focus Revalidation (Immediate sync on tab focus)
 window.addEventListener('focus', () => {
   if (isAuthenticatedAdmin && typeof window.runBulkSync === 'function') {
-    const elapsed = globalSyncState.lastSyncTime ? (Date.now() - globalSyncState.lastSyncTime.getTime()) : 999999;
-    if (elapsed > 30000) {
-      window.runBulkSync();
-    }
+    window.runBulkSync();
   }
 });
 
@@ -8171,7 +8175,7 @@ function renderDriverProfile() {
 
               <!-- Quick Verification Actions -->
               <div style="display:flex;gap:10px;flex-wrap:wrap;border-top:1px solid var(--border-light);padding-top:16px;">
-                <button class="btn btn-success btn-sm" onclick="approveDriverDocs('${driver.uid}'); setTimeout(() => viewUserProfile('${driver.uid}', 'driver'), 500);">
+                <button class="btn btn-success btn-sm" onclick="approveDriver('${driver.uid}'); setTimeout(() => viewUserProfile('${driver.uid}', 'driver'), 500);">
                   <i class="ri-checkbox-circle-line"></i> اعتماد الكابتن
                 </button>
                 <button class="btn btn-outline btn-sm" style="color:var(--warning);border-color:var(--warning);" onclick="rejectDriverPrompt('${driver.uid}'); setTimeout(() => viewUserProfile('${driver.uid}', 'driver'), 500);">

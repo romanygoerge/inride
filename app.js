@@ -390,6 +390,11 @@ const mockData = {
     commissionRate: 10,
     minFare: 10,
     maxFare: 500,
+    demo_mode_enabled: true,
+    demo_phone: '01000000000',
+    demo_otp: '123456',
+    demo_driver_name: 'كابتن تجريبي (Demo)',
+    demo_passenger_name: 'راكب تجريبي (Demo)',
   },
   supportChats: {},
   tripsDataMap: {},
@@ -5116,6 +5121,60 @@ function renderSettings() {
         </div>
       </div>
 
+      <!-- Demo Account & Quick Testing Section -->
+      <div class="card mt-20" style="border: 1.5px solid #22c55e; background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <h3><i class="ri-rocket-2-fill text-success" style="margin-left:8px;"></i> وضع الحساب التجريبي والدخول السريع (Demo Mode)</h3>
+            <span class="badge ${mockData.settings.demo_mode_enabled !== false ? 'badge-success' : 'badge-secondary'}">
+              ${mockData.settings.demo_mode_enabled !== false ? 'مفعل بالتطبيق' : 'معطل'}
+            </span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="demoModeToggle" ${mockData.settings.demo_mode_enabled !== false ? 'checked' : ''} onchange="toggleDemoMode(this.checked)">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="card-body">
+          <p style="font-size:12.5px; color:var(--text-secondary); margin-bottom:18px; line-height:1.6;">
+            يسمح هذا الوضع بتسجيل الدخول الفوري بالتطبيق ككابتن معتمد مباشرة (بدون مراجعة أو فحص مستندات) أو كراكب جاهز لطلب الرحلات، لاختبار دورة عمل التطبيق بالكامل وبدون الحاجة لانتظار كود الواتساب.
+          </p>
+          <div class="grid-2" style="gap:16px;">
+            <div class="form-group">
+              <label style="font-size:12.5px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:block;">رقم هاتف حساب الديمو:</label>
+              <input type="text" class="form-control" style="direction:ltr; text-align:left; font-weight:700; font-family:monospace; font-size:14px;" value="${mockData.settings.demo_phone || '01000000000'}" id="demoPhoneInput" onchange="updateDemoSetting('demo_phone', this.value)">
+              <small style="color:var(--text-light); font-size:11px;">الرقم التجريبي المرتبط بحسابات الديمو.</small>
+            </div>
+            <div class="form-group">
+              <label style="font-size:12.5px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:block;">كود التحقق الافتراضي للديمو (OTP):</label>
+              <input type="text" class="form-control" style="direction:ltr; text-align:left; font-weight:700; font-family:monospace; font-size:14px;" value="${mockData.settings.demo_otp || '123456'}" id="demoOtpInput" onchange="updateDemoSetting('demo_otp', this.value)">
+              <small style="color:var(--text-light); font-size:11px;">كود التحقق المقبول تلقائياً للرقم التجريبي.</small>
+            </div>
+            <div class="form-group">
+              <label style="font-size:12.5px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:block;">اسم الكابتن التجريبي:</label>
+              <input type="text" class="form-control" value="${mockData.settings.demo_driver_name || 'كابتن تجريبي (Demo)'}" id="demoDriverNameInput" onchange="updateDemoSetting('demo_driver_name', this.value)">
+            </div>
+            <div class="form-group">
+              <label style="font-size:12.5px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:block;">اسم الراكب التجريبي:</label>
+              <input type="text" class="form-control" value="${mockData.settings.demo_passenger_name || 'راكب تجريبي (Demo)'}" id="demoPassengerNameInput" onchange="updateDemoSetting('demo_passenger_name', this.value)">
+            </div>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:20px; padding-top:16px; border-top:1px solid rgba(34, 197, 94, 0.2);">
+            <button class="btn btn-sm btn-primary" onclick="initializeDemoAccountFromDashboard('driver')" style="background:#16a34a; border-color:#16a34a;">
+              <i class="ri-car-fill"></i> تهيئة وتفعيل حساب كابتن ديمو الآن
+            </button>
+            <button class="btn btn-sm btn-primary" onclick="initializeDemoAccountFromDashboard('rider')" style="background:#0284c7; border-color:#0284c7;">
+              <i class="ri-user-location-fill"></i> تهيئة وتفعيل حساب راكب ديمو الآن
+            </button>
+            <button class="btn btn-sm btn-outline" onclick="purgeDemoAccountFromDashboard()" style="color:#ef4444; border-color:#ef4444;">
+              <i class="ri-delete-bin-line"></i> مسح بيانات حساب الديمو من النظام
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Save Button -->
       <div id="settings-save-container" style="display:${settingsDirty ? 'flex' : 'none'};justify-content:flex-end;margin-top:24px;">
         <button class="btn btn-primary" onclick="saveSettings()">
@@ -5131,8 +5190,74 @@ function updateSetting(key, value) {
   if (mockData.settings[key] !== parsedVal) {
     mockData.settings[key] = parsedVal;
     settingsDirty = true;
-    const btnContainer = document.getElementById('pricing-save-container');
+    const btnContainer = document.getElementById('settings-save-container');
     if (btnContainer) btnContainer.style.display = 'flex';
+  }
+}
+
+async function toggleDemoMode(enabled) {
+  mockData.settings.demo_mode_enabled = enabled;
+  settingsDirty = true;
+  const saveBtn = document.getElementById('settings-save-container');
+  if (saveBtn) saveBtn.style.display = 'flex';
+  await saveSettings();
+  showToast(enabled ? '🚀 تم تفعيل وضع الحساب التجريبي بالتطبيق' : '⚠️ تم تعطيل وضع الحساب التجريبي بالتطبيق');
+}
+
+function updateDemoSetting(key, val) {
+  mockData.settings[key] = val;
+  settingsDirty = true;
+  const saveBtn = document.getElementById('settings-save-container');
+  if (saveBtn) saveBtn.style.display = 'flex';
+}
+
+async function initializeDemoAccountFromDashboard(role = 'driver') {
+  const phone = mockData.settings.demo_phone || '01000000000';
+  const name = role === 'driver' 
+    ? (mockData.settings.demo_driver_name || 'كابتن تجريبي (Demo)')
+    : (mockData.settings.demo_passenger_name || 'راكب تجريبي (Demo)');
+  
+  showToast(`⏳ جاري تجهيز واعتماد حساب الـ ${role === 'driver' ? 'كابتن' : 'راكب'} التجريبي...`);
+  
+  if (supabaseClient) {
+    try {
+      const { data, error } = await supabaseClient.rpc('setup_or_reset_demo_account', {
+        p_role: role,
+        p_phone: phone,
+        p_name: name
+      });
+      if (error) {
+        showToast(`❌ خطأ في تجهيز الحساب: ${error.message}`);
+      } else {
+        showToast(`✅ تم اعتماد وتجهيز حساب ${role === 'driver' ? 'الكابتن' : 'الراكب'} التجريبي بنجاح! جاهز للدخول فوراً.`);
+        if (typeof debouncedSync === 'function') debouncedSync();
+      }
+    } catch(e) {
+      showToast(`❌ خطأ: ${e.message}`);
+    }
+  }
+}
+
+async function purgeDemoAccountFromDashboard() {
+  const phone = mockData.settings.demo_phone || '01000000000';
+  if (!confirm(`هل أنت متأكد من رغبتك في حذف بيانات حساب الديمو (${phone}) بالكامل من النظام؟`)) {
+    return;
+  }
+  showToast(`⏳ جاري حذف بيانات حساب الديمو...`);
+  if (supabaseClient) {
+    try {
+      const { error } = await supabaseClient.rpc('purge_demo_account', {
+        p_phone: phone
+      });
+      if (error) {
+        showToast(`❌ خطأ في حذف الحساب: ${error.message}`);
+      } else {
+        showToast(`🗑️ تم مسح بيانات حساب الديمو بنجاح من قاعدة البيانات.`);
+        if (typeof debouncedSync === 'function') debouncedSync();
+      }
+    } catch(e) {
+      showToast(`❌ خطأ: ${e.message}`);
+    }
   }
 }
 
@@ -5277,7 +5402,12 @@ async function saveSettings() {
         heat_start_hour: mockData.settings.heat_start_hour || 11,
         heat_end_hour: mockData.settings.heat_end_hour || 15,
         surge_enabled: mockData.settings.surge_enabled !== false,
-        region_fares: mockData.settings.region_fares || []
+        region_fares: mockData.settings.region_fares || [],
+        demo_mode_enabled: mockData.settings.demo_mode_enabled !== false,
+        demo_phone: mockData.settings.demo_phone || '01000000000',
+        demo_otp: mockData.settings.demo_otp || '123456',
+        demo_driver_name: mockData.settings.demo_driver_name || 'كابتن تجريبي (Demo)',
+        demo_passenger_name: mockData.settings.demo_passenger_name || 'راكب تجريبي (Demo)'
       };
 
       const { error } = await supabaseClient
@@ -7607,7 +7737,12 @@ function initSupabaseSync() {
           heat_start_hour: parseInt(settingsData.heat_start_hour || 11),
           heat_end_hour: parseInt(settingsData.heat_end_hour || 15),
           surge_enabled: settingsData.surge_enabled !== false,
-          region_fares: Array.isArray(settingsData.region_fares) ? settingsData.region_fares : []
+          region_fares: Array.isArray(settingsData.region_fares) ? settingsData.region_fares : [],
+          demo_mode_enabled: settingsData.demo_mode_enabled !== false,
+          demo_phone: settingsData.demo_phone || '01000000000',
+          demo_otp: settingsData.demo_otp || '123456',
+          demo_driver_name: settingsData.demo_driver_name || 'كابتن تجريبي (Demo)',
+          demo_passenger_name: settingsData.demo_passenger_name || 'راكب تجريبي (Demo)'
         };
       }
 

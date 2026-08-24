@@ -55,10 +55,11 @@ class _OtpPageState extends State<OtpPage> {
 
   void _navigateToNextScreen() {
     final state = GlobalState.instance;
+    final isDemo = widget.phoneNumber.replaceAll(RegExp(r'[^\d]'), '').endsWith('000000000');
 
     if (state.currentRole == UserRole.rider) {
       Widget targetPage;
-      if (!state.hasPassengerProfile) {
+      if (!state.hasPassengerProfile && !isDemo) {
         targetPage = const PassengerProfileSetupPage();
       } else {
         targetPage = const PassengerHomePage();
@@ -70,12 +71,12 @@ class _OtpPageState extends State<OtpPage> {
       );
     } else {
       Widget targetPage;
-      if (state.verificationStatus == DriverVerificationStatus.unregistered) {
-        targetPage = const DocUploadPage();
+      if (isDemo || state.verificationStatus == DriverVerificationStatus.verified) {
+        targetPage = const DriverHomePage();
       } else if (state.verificationStatus == DriverVerificationStatus.submitted) {
         targetPage = const ReviewPendingPage();
       } else {
-        targetPage = const DriverHomePage();
+        targetPage = const DocUploadPage();
       }
 
       Navigator.pushAndRemoveUntil(

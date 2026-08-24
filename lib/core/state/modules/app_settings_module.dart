@@ -18,6 +18,11 @@ class AppSettingsModule {
     'commissionRate': 10.0,
     'minFare': 10.0,
     'maxFare': 500.0,
+    'demo_mode_enabled': true,
+    'demo_phone': '01000000000',
+    'demo_otp': '123456',
+    'demo_driver_name': 'كابتن تجريبي (Demo)',
+    'demo_passenger_name': 'راكب تجريبي (Demo)',
   };
 
   void initSettingsListener(VoidCallback onUpdate) {

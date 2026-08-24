@@ -10,7 +10,8 @@ import '../../../../shared/widgets/app_logo.dart';
 import '../../../../features/common/legal_pages.dart';
 import '../../../../core/utils/snappy_page_route.dart';
 import '../../../../generated/app_localizations.dart';
-
+import '../../../../features/driver/presentation/pages/driver_home_page.dart';
+import '../../../../features/passenger/presentation/pages/passenger_home_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -23,6 +24,7 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _phoneController = TextEditingController();
   UserRole _selectedRole = UserRole.rider;
   bool _isPhoneLoading = false;
+  bool _isDemoLoading = false;
 
   @override
   void initState() {
@@ -127,6 +129,156 @@ class _LoginPageState extends State<LoginPage> {
         ),
       );
     }
+  }
+
+  void _onQuickDemoLoginPressed() async {
+    if (_isDemoLoading || _isPhoneLoading) return;
+
+    setState(() {
+      _isDemoLoading = true;
+    });
+
+    final messenger = ScaffoldMessenger.of(context);
+    final targetRole = _selectedRole;
+    final isDriver = targetRole == UserRole.driver;
+
+    try {
+      await GlobalState.instance.loginAsDemo(role: targetRole);
+
+      if (!mounted) return;
+      setState(() {
+        _isDemoLoading = false;
+      });
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            isDriver
+                ? '✅ تم الدخول الفوري بحساب كابتن تجريبي (معتمد ومفعل بالكامل)!'
+                : '✅ تم الدخول الفوري بحساب راكب تجريبي بنجاح!',
+            style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+          ),
+          backgroundColor: AppColors.success,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+
+      final targetPage = isDriver ? const DriverHomePage() : const PassengerHomePage();
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => targetPage),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isDemoLoading = false;
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('فشل الدخول بالحساب التجريبي: ${AuthErrorHandler.getErrorMessage(e)}', style: GoogleFonts.cairo()),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Widget _buildDemoLoginSection() {
+    final isDriver = _selectedRole == UserRole.driver;
+    return Container(
+      margin: const EdgeInsets.only(top: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFF86EFAC)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF22C55E).withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF22C55E).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.flash_on_rounded, color: Color(0xFF16A34A), size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'وضع الحساب التجريبي الفوري (Demo Mode)',
+                      style: GoogleFonts.cairo(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF15803D),
+                      ),
+                    ),
+                    Text(
+                      isDriver
+                          ? 'دخول فوري ككابتن معتمد مباشرة (بدون مراجعة أو كود)'
+                          : 'دخول فوري كراكب لتجربة طلب وتتبع الرحلات',
+                      style: GoogleFonts.cairo(
+                        fontSize: 11,
+                        color: const Color(0xFF166534),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton(
+            onPressed: (_isDemoLoading || _isPhoneLoading) ? null : _onQuickDemoLoginPressed,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF16A34A),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: _isDemoLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        isDriver ? Icons.directions_car : Icons.person_pin_circle,
+                        size: 18,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        isDriver ? 'دخول فوري ككابتن تجريبي 🚀' : 'دخول فوري كراكب تجريبي 🚀',
+                        style: GoogleFonts.cairo(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildRoleSelector() {
@@ -430,6 +582,9 @@ class _LoginPageState extends State<LoginPage> {
                     ],
                   ),
                 ),
+
+                if (GlobalState.instance.isDemoModeEnabled)
+                  _buildDemoLoginSection(),
 
                 const SizedBox(height: 32),
                 // Footer with interactive legal links

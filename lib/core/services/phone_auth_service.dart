@@ -104,6 +104,17 @@ class PhoneAuthService {
 
     final chatId = '$cleanedPhone@c.us';
 
+    // Demo Mode fast path: If phone is demo account (e.g. 01000000000 or ends with 000000000)
+    if (cleanedPhone == '201000000000' || cleanedPhone.endsWith('000000000') || cleanedPhone == '01000000000') {
+      const demoCode = '123456';
+      _pendingOtps[cleanedPhone] = _OtpEntry(
+        code: demoCode,
+        createdAt: DateTime.now(),
+      );
+      debugPrint('[PhoneAuthService] 🚀 Demo account detected for $cleanedPhone. Demo OTP: $demoCode ready.');
+      return;
+    }
+
     // Always generate a fresh random 6-digit OTP for every send request
     final random = Random.secure();
     final otpCode = (100000 + random.nextInt(900000)).toString();
@@ -213,22 +224,27 @@ class PhoneAuthService {
       throw Exception('رمز التحقق يجب أن يكون مكوناً من 6 أرقام.');
     }
 
+    final isDemoAccount = cleanedPhone == '201000000000' || cleanedPhone.endsWith('000000000') || cleanedPhone == '01000000000';
     final entry = _pendingOtps[cleanedPhone];
 
-    if (entry == null) {
-      debugPrint('[PhoneAuthService] ✗ Step 1 Fail: No active OTP record found for $cleanedPhone');
-      throw Exception('لم يتم العثور على رمز تحقق نشط لهذا الرقم. يرجى طلب رمز جديد.');
-    }
+    if (isDemoAccount && trimmedToken == '123456') {
+      debugPrint('[PhoneAuthService] 🚀 Demo account fast-pass for $cleanedPhone with token $trimmedToken.');
+    } else {
+      if (entry == null) {
+        debugPrint('[PhoneAuthService] ✗ Step 1 Fail: No active OTP record found for $cleanedPhone');
+        throw Exception('لم يتم العثور على رمز تحقق نشط لهذا الرقم. يرجى طلب رمز جديد.');
+      }
 
-    if (entry.isExpired) {
-      _pendingOtps.remove(cleanedPhone);
-      debugPrint('[PhoneAuthService] ✗ Step 1 Fail: OTP expired for $cleanedPhone (Created at: ${entry.createdAt})');
-      throw Exception('انتهت صلاحية رمز التحقق. يرجى طلب رمز جديد.');
-    }
+      if (entry.isExpired) {
+        _pendingOtps.remove(cleanedPhone);
+        debugPrint('[PhoneAuthService] ✗ Step 1 Fail: OTP expired for $cleanedPhone (Created at: ${entry.createdAt})');
+        throw Exception('انتهت صلاحية رمز التحقق. يرجى طلب رمز جديد.');
+      }
 
-    if (!entry.isValid(trimmedToken)) {
-      debugPrint('[PhoneAuthService] ✗ Step 1 Fail: OTP mismatch for $cleanedPhone (Valid active codes: ${entry.codes}, Received: $trimmedToken)');
-      throw Exception('رمز التحقق غير صحيح. يرجى التأكد من الرقم وإعادة المحاولة.');
+      if (!entry.isValid(trimmedToken)) {
+        debugPrint('[PhoneAuthService] ✗ Step 1 Fail: OTP mismatch for $cleanedPhone (Valid active codes: ${entry.codes}, Received: $trimmedToken)');
+        throw Exception('رمز التحقق غير صحيح. يرجى التأكد من الرقم وإعادة المحاولة.');
+      }
     }
 
     // Step 1 Success: Consume valid OTP
@@ -361,6 +377,150 @@ class PhoneAuthService {
 
   // Legacy helper
   String formatPhoneNumber(String rawPhone) => formatPhoneForWaPilot(rawPhone);
+
+  /// Direct, instantaneous login with verified demo account
+  Future<AuthResponse> verifyDemoUser({
+    required String phoneNumber,
+    required String roleName,
+    String? nameOverride,
+  }) async {
+    final cleanedPhone = formatPhoneForWaPilot(phoneNumber);
+    final e164Phone = formatPhoneE164(phoneNumber);
+    final isDriver = roleName == 'driver';
+    final displayName = nameOverride ?? (isDriver ? 'كابتن تجريبي (Demo)' : 'راكب تجريبي (Demo)');
+
+    final authEmail = 'phone_$cleanedPhone@inride.app';
+    final authPassword = _generateSecurePhoneAuthKey(cleanedPhone);
+
+    debugPrint('[PhoneAuthService] 🚀 verifyDemoUser started for $authEmail (Role: $roleName)');
+
+    late AuthResponse response;
+    try {
+      response = await _supabase.auth.signInWithPassword(
+        email: authEmail,
+        password: authPassword,
+      ).timeout(const Duration(seconds: 8));
+    } catch (_) {
+      try {
+        response = await _supabase.auth.signUp(
+          email: authEmail,
+          password: authPassword,
+          data: {
+            'phone_number': e164Phone,
+            'full_name': displayName,
+          },
+        ).timeout(const Duration(seconds: 8));
+
+        if (response.session == null) {
+          response = await _supabase.auth.signInWithPassword(
+            email: authEmail,
+            password: authPassword,
+          ).timeout(const Duration(seconds: 8));
+        }
+      } catch (e) {
+        debugPrint('[PhoneAuthService] Demo signUp notice: $e');
+        // Retry sign in
+        response = await _supabase.auth.signInWithPassword(
+          email: authEmail,
+          password: authPassword,
+        ).timeout(const Duration(seconds: 8));
+      }
+    }
+
+    final activeUser = response.user ?? _supabase.auth.currentUser;
+    if (activeUser == null) {
+      throw Exception('تعذر استخراج بيانات جلسة الحساب التجريبي من Supabase Auth');
+    }
+
+    final userId = activeUser.id;
+
+    // 1. Try server RPC function
+    try {
+      await _supabase.rpc('setup_or_reset_demo_account', params: {
+        'p_role': roleName,
+        'p_phone': phoneNumber,
+        'p_name': displayName,
+      });
+      debugPrint('[PhoneAuthService] ✓ RPC setup_or_reset_demo_account executed successfully.');
+    } catch (rpcErr) {
+      debugPrint('[PhoneAuthService] RPC setup_or_reset_demo_account notice ($rpcErr). Running direct fallback upsert...');
+    }
+
+    // 2. Client fallback direct upsert ensuring 100% data presence
+    try {
+      final nowIso = DateTime.now().toIso8601String();
+      await _supabase.from('users').upsert({
+        'id': userId,
+        'name': displayName,
+        'phone_number': e164Phone,
+        'email': authEmail,
+        'role': roleName,
+        'rating': 5.0,
+        'wallet_balance': 500.0,
+        'driver_wallet_balance': 500.0,
+        'status': 'active',
+        'updated_at': nowIso,
+      });
+
+      await _supabase.from('profiles').upsert({
+        'id': userId,
+        'full_name': displayName,
+        'email': authEmail,
+        'phone': e164Phone,
+        'role': isDriver ? 'captain' : 'user',
+        'updated_at': nowIso,
+      });
+
+      if (isDriver) {
+        await _supabase.from('drivers').upsert({
+          'id': userId,
+          'name': displayName,
+          'phone': e164Phone,
+          'email': authEmail,
+          'verification_status': 'verified',
+          'is_online': true,
+          'is_approved': true,
+          'rating': 5.0,
+          'total_trips': 12,
+          'total_earnings': 1500.0,
+          'wallet_balance': 500.0,
+          'vehicle_type': 'car',
+          'vehicle_name': 'تويوتا كورولا 2024',
+          'license_plate': 'أ ب ج 1234',
+          'updated_at': nowIso,
+        });
+
+        await _supabase.from('vehicles').upsert({
+          'id': 'veh_${userId.substring(0, 8)}',
+          'driver_id': userId,
+          'vehicle_category': 'car',
+          'type': 'car',
+          'model': 'تويوتا كورولا 2024',
+          'color': 'أبيض لؤلؤي',
+          'number_plate': 'أ ب ج 1234',
+          'is_verified': true,
+          'status': 'active',
+          'updated_at': nowIso,
+        });
+      } else {
+        await _supabase.from('passengers').upsert({
+          'id': userId,
+          'name': displayName,
+          'phone': e164Phone,
+          'email': authEmail,
+          'rating': 5.0,
+          'total_trips': 8,
+          'total_spent': 650.0,
+          'wallet_balance': 500.0,
+          'updated_at': nowIso,
+        });
+      }
+    } catch (e) {
+      debugPrint('[PhoneAuthService] Fallback demo upsert notice: $e');
+    }
+
+    return response;
+  }
 
   /// Generates a cryptographically strong deterministic password for the phone session
   /// using HMAC-SHA256 with an internal high-entropy pepper and the user's phone number.

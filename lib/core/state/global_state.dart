@@ -36,6 +36,7 @@ import '../services/notification_service.dart';
 import '../services/ride_sound_service.dart';
 import '../services/driver_location_service.dart';
 import '../controllers/notification_controller.dart';
+import '../services/phone_auth_service.dart';
 
 enum UserRole { rider, driver }
 
@@ -1060,6 +1061,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       'minFare': 20.0,
       'maxFare': 10000.0,
       'surge_enabled': true,
+      'demo_mode_enabled': true,
+      'demo_phone': '01000000000',
+      'demo_otp': '123456',
+      'demo_driver_name': 'كابتن تجريبي (Demo)',
+      'demo_passenger_name': 'راكب تجريبي (Demo)',
       'region_fares': [
         {'id': '1', 'name': 'القاهرة الكبرى', 'surcharge': 0, 'is_default': true},
         {'id': '2', 'name': 'الإسكندرية (الساحل)', 'surcharge': 5, 'is_default': false}
@@ -3463,6 +3469,54 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
     notifyListeners();
     debugPrint('[GlobalState] ✓ loginWithOTP complete — user ${verifiedUser.id} authenticated & state updated');
+  }
+
+  /// Demo Account Properties
+  bool get isDemoModeEnabled => (appSettings['demo_mode_enabled'] as bool?) ?? true;
+  String get demoPhone => (appSettings['demo_phone'] as String?) ?? '01000000000';
+  String get demoOtp => (appSettings['demo_otp'] as String?) ?? '123456';
+  String get demoDriverName => (appSettings['demo_driver_name'] as String?) ?? 'كابتن تجريبي (Demo)';
+  String get demoPassengerName => (appSettings['demo_passenger_name'] as String?) ?? 'راكب تجريبي (Demo)';
+
+  /// Direct Instant Demo Login Method (bypasses OTP & admin approvals)
+  Future<void> loginAsDemo({required UserRole role}) async {
+    debugPrint('[GlobalState] 🚀 loginAsDemo called for role: ${role.name}');
+    currentRole = role;
+    final targetPhone = demoPhone;
+    final isDriver = role == UserRole.driver;
+    final displayName = isDriver ? demoDriverName : demoPassengerName;
+
+    final authRes = await PhoneAuthService.instance.verifyDemoUser(
+      phoneNumber: targetPhone,
+      roleName: role.name,
+      nameOverride: displayName,
+    );
+
+    final activeSession = authRes.session ?? _supabase.auth.currentSession;
+    final activeUser = authRes.user ?? _supabase.auth.currentUser;
+
+    if (activeUser == null || activeSession == null) {
+      throw Exception('فشل إنشاء جلسة الحساب التجريبي');
+    }
+
+    userUid = activeUser.id;
+    isLoggedIn = true;
+    phoneNumber = activeUser.phone ?? targetPhone;
+    userName = displayName;
+
+    if (isDriver) {
+      verificationStatus = DriverVerificationStatus.verified;
+      vehicleName = 'تويوتا كورولا 2024';
+      vehicleNumber = 'أ ب ج 1234';
+      driverVehicleColor = 'أبيض لؤلؤي';
+      driverVehicleCategory = 'private_car';
+    } else {
+      passengerName = displayName;
+      passengerGender = 'ذكر';
+    }
+
+    notifyListeners();
+    debugPrint('[GlobalState] ✓ loginAsDemo complete — Demo user ${activeUser.id} signed in successfully as ${role.name}');
   }
 
   String _generateSecureToken() {

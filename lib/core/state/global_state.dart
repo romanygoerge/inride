@@ -30,6 +30,7 @@ import '../utils/app_logger.dart';
 import '../../main.dart' show navigatorKey;
 import '../../shared/widgets/in_app_notification.dart';
 import '../../features/chat/presentation/pages/chat_page.dart';
+import '../../features/auth/presentation/pages/login_page.dart';
 import '../DI/injection_container.dart' show sl;
 import '../services/app_notification_service.dart';
 import '../services/notification_service.dart';
@@ -1267,14 +1268,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     final currentUid = userUid ?? 'unknown';
     AppLogger.logoutLog(currentUid, 'Initiating clean logout procedure');
 
-    // 1. Immediately pop dialogs/drawers and reset navigation stack to root (AuthGate)
-    try {
-      navigatorKey.currentState?.pushNamedAndRemoveUntil('/', (route) => false);
-    } catch (navErr) {
-      debugPrint('[Logout] Navigator root reset error: $navErr');
-    }
-
-    // 2. Stop tracking, timers, and sounds
+    // 1. Stop tracking, timers, and sounds
     try {
       stopDriverLocationTracking();
       _stopAllLocationAndTimers();
@@ -1286,7 +1280,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       sl<RideSoundService>().stopIncomingRide();
     } catch (_) {}
 
-    // 3. Clear FCM Token
+    // 2. Clear FCM Token
     if (userUid != null && userUid!.isNotEmpty) {
       try {
         sl<AppNotificationService>().clearTokenFromDatabase(userUid!);
@@ -1295,7 +1289,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
-    // 4. Cancel active doc subscriptions and stream listeners
+    // 3. Cancel active doc subscriptions and stream listeners
     try {
       await _userDocSubscription?.cancel();
       _userDocSubscription = null;
@@ -1312,14 +1306,14 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('[Logout] Cancel channels error: $e');
     }
 
-    // 5. Trigger backend sign out
+    // 4. Trigger backend sign out
     try {
       await AuthRepository.instance.signOut();
     } catch (e) {
       AppLogger.error('Logout', 'Supabase signOut error', e);
     }
 
-    // 6. Reset all user identity, vehicle, and ride state
+    // 5. Reset all user identity, vehicle, and ride state
     userUid = null;
     phoneNumber = null;
     isLoggedIn = false;
@@ -1349,13 +1343,21 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     resetRide();
     _clearProfileCache();
 
-    // 7. Notify listeners so AuthGate smoothly renders LoginPage
+    // 6. Notify listeners
     notifyListeners();
 
-    // 8. Re-assert root navigation
+    // 7. Smoothly and directly redirect navigation stack to LoginPage
     try {
-      navigatorKey.currentState?.pushNamedAndRemoveUntil('/', (route) => false);
-    } catch (_) {}
+      final nav = navigatorKey.currentState;
+      if (nav != null) {
+        nav.pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LoginPage()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      debugPrint('[Logout] Navigation reset error: $e');
+    }
 
     AppLogger.logoutLog(currentUid, 'Completed safe logout');
   }
@@ -3501,20 +3503,30 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
     userUid = activeUser.id;
     isLoggedIn = true;
+    isAuthResolved = true;
     phoneNumber = activeUser.phone ?? targetPhone;
     userName = displayName;
 
     if (isDriver) {
+      _currentRole = UserRole.driver;
       verificationStatus = DriverVerificationStatus.verified;
       vehicleName = 'تويوتا كورولا 2024';
       vehicleNumber = 'أ ب ج 1234';
       driverVehicleColor = 'أبيض لؤلؤي';
-      driverVehicleCategory = 'private_car';
+      driverVehicleCategory = 'car';
+      driverAddress = 'مدينة السادات، المنوفية';
+      driverWalletBalance = 500.0;
+      driverHasAC = true;
+      driverMaxPassengers = 4;
     } else {
+      _currentRole = UserRole.rider;
       passengerName = displayName;
       passengerGender = 'ذكر';
+      passengerAddress = 'مدينة السادات، المنوفية';
+      passengerWalletBalance = 500.0;
     }
 
+    await _saveProfileToCache();
     notifyListeners();
     debugPrint('[GlobalState] ✓ loginAsDemo complete — Demo user ${activeUser.id} signed in successfully as ${role.name}');
   }

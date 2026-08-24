@@ -464,52 +464,45 @@ class PhoneAuthService {
         'name': displayName,
         'phone_number': e164Phone,
         'email': authEmail,
-        'role': roleName,
+        'role': isDriver ? 'driver' : 'rider',
         'rating': 5.0,
         'wallet_balance': 500.0,
-        'driver_wallet_balance': 500.0,
-        'status': 'active',
-        'updated_at': nowIso,
-      });
-
-      await _supabase.from('profiles').upsert({
-        'id': userId,
-        'full_name': displayName,
-        'email': authEmail,
-        'phone': e164Phone,
-        'role': isDriver ? 'captain' : 'user',
+        'credit_limit': -100.0,
         'updated_at': nowIso,
       });
 
       if (isDriver) {
+        final vehicleRes = await _supabase.from('vehicles').select('id').eq('driver_id', userId).maybeSingle();
+        String? vehicleId = vehicleRes?['id'] as String?;
+        if (vehicleId == null) {
+          final newVeh = await _supabase.from('vehicles').insert({
+            'driver_id': userId,
+            'vehicle_category': 'car',
+            'type': 'car',
+            'model': 'تويوتا كورولا 2024',
+            'color': 'أبيض لؤلؤي',
+            'number_plate': 'أ ب ج 1234',
+            'status': 'active',
+            'has_ac': true,
+            'max_passengers': 4,
+            'year': 2024,
+          }).select('id').single();
+          vehicleId = newVeh['id'] as String;
+        }
+
         await _supabase.from('drivers').upsert({
           'id': userId,
-          'name': displayName,
-          'phone': e164Phone,
-          'email': authEmail,
           'verification_status': 'verified',
           'is_online': true,
-          'is_approved': true,
+          'is_available': true,
           'rating': 5.0,
           'total_trips': 12,
           'total_earnings': 1500.0,
-          'wallet_balance': 500.0,
-          'vehicle_type': 'car',
-          'vehicle_name': 'تويوتا كورولا 2024',
-          'license_plate': 'أ ب ج 1234',
-          'updated_at': nowIso,
-        });
-
-        await _supabase.from('vehicles').upsert({
-          'id': 'veh_${userId.substring(0, 8)}',
-          'driver_id': userId,
-          'vehicle_category': 'car',
-          'type': 'car',
-          'model': 'تويوتا كورولا 2024',
-          'color': 'أبيض لؤلؤي',
-          'number_plate': 'أ ب ج 1234',
-          'is_verified': true,
-          'status': 'active',
+          'vehicle_id': vehicleId,
+          'national_id_url': 'https://placehold.co/600x400.png?text=National+ID',
+          'license_url': 'https://placehold.co/600x400.png?text=Driver+License',
+          'vehicle_front_url': 'https://placehold.co/600x400.png?text=Vehicle+Front',
+          'address': 'مدينة السادات، المنوفية',
           'updated_at': nowIso,
         });
       } else {
@@ -520,9 +513,8 @@ class PhoneAuthService {
           'email': authEmail,
           'rating': 5.0,
           'total_trips': 8,
-          'total_spent': 650.0,
-          'wallet_balance': 500.0,
-          'updated_at': nowIso,
+          'address': 'مدينة السادات، المنوفية',
+          'gender': 'ذكر',
         });
       }
     } catch (e) {

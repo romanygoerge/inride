@@ -7,6 +7,15 @@ class PlaceLocation {
   final String placeName;
   final String formattedAddress;
   final DateTime timestamp;
+  final String? category;
+  final String? nameAr;
+  final String? nameEn;
+  final double? distanceKm;
+  final double? distanceMeters;
+  final bool isSaved;
+  final bool isHistory;
+  final int popularity;
+  final double? finalScore;
 
   const PlaceLocation({
     this.placeId,
@@ -15,6 +24,15 @@ class PlaceLocation {
     required this.placeName,
     required this.formattedAddress,
     required this.timestamp,
+    this.category,
+    this.nameAr,
+    this.nameEn,
+    this.distanceKm,
+    this.distanceMeters,
+    this.isSaved = false,
+    this.isHistory = false,
+    this.popularity = 0,
+    this.finalScore,
   });
 
   bool get isValid =>
@@ -27,6 +45,17 @@ class PlaceLocation {
       longitude >= -180.0 &&
       longitude <= 180.0;
 
+  String get localizedDistance {
+    if (distanceKm == null && distanceMeters == null) return '';
+    final km = distanceKm ?? ((distanceMeters ?? 0) / 1000.0);
+    if (km < 1.0) {
+      final meters = (km * 1000).round();
+      return '$meters م';
+    } else {
+      return '${km.toStringAsFixed(1)} كم';
+    }
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'placeId': placeId,
@@ -35,19 +64,45 @@ class PlaceLocation {
       'placeName': placeName,
       'formattedAddress': formattedAddress,
       'timestamp': timestamp.toIso8601String(),
+      'category': category,
+      'nameAr': nameAr,
+      'nameEn': nameEn,
+      'distanceKm': distanceKm,
+      'distanceMeters': distanceMeters,
+      'isSaved': isSaved,
+      'isHistory': isHistory,
+      'popularity': popularity,
+      'finalScore': finalScore,
     };
   }
 
   factory PlaceLocation.fromJson(Map<String, dynamic> json) {
     return PlaceLocation(
-      placeId: json['placeId'] as String?,
-      latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
-      longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
-      placeName: (json['placeName'] as String?) ?? (json['title'] as String?) ?? '',
-      formattedAddress: (json['formattedAddress'] as String?) ?? (json['address'] as String?) ?? '',
+      placeId: json['placeId'] as String? ?? json['id'] as String?,
+      latitude: (json['latitude'] as num?)?.toDouble() ?? (json['lat'] as num?)?.toDouble() ?? 0.0,
+      longitude: (json['longitude'] as num?)?.toDouble() ?? (json['lng'] as num?)?.toDouble() ?? (json['lon'] as num?)?.toDouble() ?? 0.0,
+      placeName: (json['placeName'] as String?) ??
+          (json['title'] as String?) ??
+          (json['name_ar'] as String?) ??
+          (json['name_en'] as String?) ??
+          '',
+      formattedAddress: (json['formattedAddress'] as String?) ??
+          (json['address'] as String?) ??
+          (json['address_ar'] as String?) ??
+          (json['address_en'] as String?) ??
+          '',
       timestamp: json['timestamp'] != null
           ? DateTime.tryParse(json['timestamp'] as String) ?? DateTime.now()
           : DateTime.now(),
+      category: json['category'] as String?,
+      nameAr: json['name_ar'] as String? ?? json['nameAr'] as String?,
+      nameEn: json['name_en'] as String? ?? json['nameEn'] as String?,
+      distanceKm: (json['distance_km'] as num?)?.toDouble() ?? (json['distanceKm'] as num?)?.toDouble(),
+      distanceMeters: (json['distance_meters'] as num?)?.toDouble() ?? (json['distanceMeters'] as num?)?.toDouble(),
+      isSaved: json['is_saved'] == true || json['isSaved'] == true,
+      isHistory: json['is_history'] == true || json['isHistory'] == true,
+      popularity: (json['popularity'] as num?)?.toInt() ?? 0,
+      finalScore: (json['final_score'] as num?)?.toDouble() ?? (json['finalScore'] as num?)?.toDouble(),
     );
   }
 
@@ -66,8 +121,8 @@ class PlaceLocation {
 
     // Geographic distance check within 100 meters (~0.1 km)
     if (isValid && other.isValid) {
-      final distanceKm = _haversineDistance(latitude, longitude, other.latitude, other.longitude);
-      if (distanceKm < 0.1) {
+      final distKm = _haversineDistance(latitude, longitude, other.latitude, other.longitude);
+      if (distKm < 0.1) {
         return true;
       }
     }
@@ -94,6 +149,15 @@ class PlaceLocation {
     String? placeName,
     String? formattedAddress,
     DateTime? timestamp,
+    String? category,
+    String? nameAr,
+    String? nameEn,
+    double? distanceKm,
+    double? distanceMeters,
+    bool? isSaved,
+    bool? isHistory,
+    int? popularity,
+    double? finalScore,
   }) {
     return PlaceLocation(
       placeId: placeId ?? this.placeId,
@@ -102,11 +166,20 @@ class PlaceLocation {
       placeName: placeName ?? this.placeName,
       formattedAddress: formattedAddress ?? this.formattedAddress,
       timestamp: timestamp ?? this.timestamp,
+      category: category ?? this.category,
+      nameAr: nameAr ?? this.nameAr,
+      nameEn: nameEn ?? this.nameEn,
+      distanceKm: distanceKm ?? this.distanceKm,
+      distanceMeters: distanceMeters ?? this.distanceMeters,
+      isSaved: isSaved ?? this.isSaved,
+      isHistory: isHistory ?? this.isHistory,
+      popularity: popularity ?? this.popularity,
+      finalScore: finalScore ?? this.finalScore,
     );
   }
 
   @override
   String toString() {
-    return 'PlaceLocation(name: $placeName, address: $formattedAddress, lat: $latitude, lng: $longitude, id: $placeId)';
+    return 'PlaceLocation(name: $placeName, address: $formattedAddress, lat: $latitude, lng: $longitude, id: $placeId, distKm: $distanceKm)';
   }
 }

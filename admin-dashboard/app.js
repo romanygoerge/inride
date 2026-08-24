@@ -8312,19 +8312,6 @@ function renderDriverProfile() {
         </div>
       </div>
 
-      <!-- Wallet & Recharge Transactions Card -->
-      <div class="card" style="margin-top:24px;">
-        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-          <h3><i class="ri-wallet-3-fill text-blue" style="margin-left:8px;"></i> سجل شحن المحفظة والمعاملات المالية للراكب</h3>
-          <button class="btn btn-primary btn-sm" onclick="adjustWalletPrompt('${passenger.uid}', 'rider')">
-            <i class="ri-add-line"></i> شحن رصيد جديد
-          </button>
-        </div>
-        <div class="card-body" id="profileWalletTransactionsContainer" style="padding:0;">
-          <div style="text-align:center;padding:24px;color:var(--text-light);"><i class="ri-loader-4-line ri-spin"></i> جاري تحميل سجل الشحن والمعاملات...</div>
-        </div>
-      </div>
-
       <!-- Bottom: Trip History -->
       <div class="card" style="margin-top:24px;">
         <div class="card-header">
@@ -8544,6 +8531,19 @@ function renderPassengerProfile() {
               <div style="text-align:center;padding:24px;color:var(--text-light);">جاري تحميل التقييمات...</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Wallet & Recharge Transactions Card -->
+      <div class="card" style="margin-top:24px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h3><i class="ri-wallet-3-fill text-blue" style="margin-left:8px;"></i> سجل شحن المحفظة والمعاملات المالية للراكب</h3>
+          <button class="btn btn-primary btn-sm" onclick="adjustWalletPrompt('${passenger.uid}', 'rider')">
+            <i class="ri-add-line"></i> شحن رصيد جديد
+          </button>
+        </div>
+        <div class="card-body" id="profileWalletTransactionsContainer" style="padding:0;">
+          <div style="text-align:center;padding:24px;color:var(--text-light);"><i class="ri-loader-4-line ri-spin"></i> جاري تحميل سجل الشحن والمعاملات...</div>
         </div>
       </div>
 

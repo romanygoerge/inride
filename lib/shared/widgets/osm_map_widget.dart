@@ -54,6 +54,8 @@ class _OsmMapWidgetState extends State<OsmMapWidget> with TickerProviderStateMix
   double _currentMarkerBearing = 0.0;
   geo.Position? _lastFilteredPosition;
 
+  Timer? _mapMoveDebounceTimer;
+
   // Animation controller for smooth transition of the user marker
   AnimationController? _markerAnimController;
   ll.LatLng? _animStartLatLng;
@@ -385,6 +387,7 @@ class _OsmMapWidgetState extends State<OsmMapWidget> with TickerProviderStateMix
   @override
   void dispose() {
     _isDisposed = true;
+    _mapMoveDebounceTimer?.cancel();
     _markerAnimController?.dispose();
     _userLocationSubscription?.cancel();
     _compassSubscription?.cancel();
@@ -421,6 +424,14 @@ class _OsmMapWidgetState extends State<OsmMapWidget> with TickerProviderStateMix
             options: fm.MapOptions(
               initialCenter: defaultLoc,
               initialZoom: 13.5,
+              onPositionChanged: (camera, hasGesture) {
+                if (hasGesture) {
+                  if (_mapMoveDebounceTimer?.isActive ?? false) _mapMoveDebounceTimer!.cancel();
+                  _mapMoveDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+                    sl<MapController>().updateMapCenter(camera.center);
+                  });
+                }
+              },
               onMapReady: () {
                 navManager.initialize(sl<MapController>(), this);
                 if (isNavigating) {

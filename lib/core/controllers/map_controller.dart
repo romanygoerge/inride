@@ -55,10 +55,17 @@ class MapController extends ChangeNotifier {
 
   // Active camera animation controller
   AnimationController? _cameraAnimationController;
+  LatLng? _lastMapCenter;
 
   void bind(fm.MapController controller) {
     _flutterMapController = controller;
   }
+
+  void updateMapCenter(LatLng center) {
+    _lastMapCenter = center;
+  }
+
+  LatLng? get currentMapCenter => _lastMapCenter ?? _flutterMapController?.camera.center;
 
   void unbind() {
     _flutterMapController = null;

@@ -11,7 +11,9 @@ import '../../../../core/utils/map_coordinates_helper.dart';
 import '../../../../core/models/place_location.dart';
 import 'package:latlong2/latlong.dart';
 import 'passenger_ride_matching_page.dart';
-import 'passenger_home_page.dart';
+import 'location_search_page.dart';
+import '../../../../core/controllers/map_controller.dart';
+import '../../../../core/DI/injection_container.dart' show sl;
 
 
 class PassengerDeliveryBookingPage extends StatefulWidget {
@@ -116,12 +118,14 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
   }
 
   void _openSearchPickup() async {
+    final mapCenter = sl<MapController>().currentMapCenter ?? MapCoordinatesHelper.deviceLocation;
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const LocationSearchPage(
+        builder: (context) => LocationSearchPage(
           title: 'مكان الاستلام',
           hintText: 'حدد موقع استلام الطرد...',
+          initialCoordinates: mapCenter,
         ),
       ),
     );
@@ -161,12 +165,14 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
   }
 
   void _openSearchDestination() async {
+    final mapCenter = sl<MapController>().currentMapCenter ?? MapCoordinatesHelper.deviceLocation;
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const LocationSearchPage(
+        builder: (context) => LocationSearchPage(
           title: 'مكان التسليم',
           hintText: 'حدد موقع تسليم الطرد...',
+          initialCoordinates: mapCenter,
         ),
       ),
     );

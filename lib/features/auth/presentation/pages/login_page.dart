@@ -583,8 +583,15 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
 
-                if (GlobalState.instance.isDemoModeEnabled)
-                  _buildDemoLoginSection(),
+                ListenableBuilder(
+                  listenable: GlobalState.instance,
+                  builder: (context, _) {
+                    if (!GlobalState.instance.isDemoModeEnabled) {
+                      return const SizedBox.shrink();
+                    }
+                    return _buildDemoLoginSection();
+                  },
+                ),
 
                 const SizedBox(height: 32),
                 // Footer with interactive legal links

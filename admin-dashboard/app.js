@@ -5122,22 +5122,27 @@ function renderSettings() {
       </div>
 
       <!-- Demo Account & Quick Testing Section -->
-      <div class="card mt-20" style="border: 1.5px solid #22c55e; background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);">
+      <div class="card mt-20" style="border: 1.5px solid ${mockData.settings.demo_mode_enabled !== false ? '#22c55e' : '#ef4444'}; background: ${mockData.settings.demo_mode_enabled !== false ? 'linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%)' : 'linear-gradient(180deg, #fef2f2 0%, #ffffff 100%)'};">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
           <div style="display:flex; align-items:center; gap:8px;">
-            <h3><i class="ri-rocket-2-fill text-success" style="margin-left:8px;"></i> وضع الحساب التجريبي والدخول السريع (Demo Mode)</h3>
-            <span class="badge ${mockData.settings.demo_mode_enabled !== false ? 'badge-success' : 'badge-secondary'}">
-              ${mockData.settings.demo_mode_enabled !== false ? 'مفعل بالتطبيق' : 'معطل'}
+            <h3><i class="ri-rocket-2-fill ${mockData.settings.demo_mode_enabled !== false ? 'text-success' : 'text-danger'}" style="margin-left:8px;"></i> التحكم في ميزة الحساب التجريبي للتطبيق (Demo Mode Control)</h3>
+            <span class="badge ${mockData.settings.demo_mode_enabled !== false ? 'badge-success' : 'badge-danger'}" style="${mockData.settings.demo_mode_enabled === false ? 'background:#ef4444;color:#fff;' : ''}">
+              ${mockData.settings.demo_mode_enabled !== false ? '🟢 الميزة مفعلة وتظهر في تطبيق الهاتف' : '🔴 الميزة ملغية ومحذوفة من التطبيق'}
             </span>
           </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="demoModeToggle" ${mockData.settings.demo_mode_enabled !== false ? 'checked' : ''} onchange="toggleDemoMode(this.checked)">
-            <span class="toggle-slider"></span>
-          </label>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">حالة الميزة:</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="demoModeToggle" ${mockData.settings.demo_mode_enabled !== false ? 'checked' : ''} onchange="toggleDemoMode(this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
         </div>
         <div class="card-body">
           <p style="font-size:12.5px; color:var(--text-secondary); margin-bottom:18px; line-height:1.6;">
-            يسمح هذا الوضع بتسجيل الدخول الفوري بالتطبيق ككابتن معتمد مباشرة (بدون مراجعة أو فحص مستندات) أو كراكب جاهز لطلب الرحلات، لاختبار دورة عمل التطبيق بالكامل وبدون الحاجة لانتظار كود الواتساب.
+            ${mockData.settings.demo_mode_enabled !== false 
+              ? '✅ <strong>الميزة تعمل الآن:</strong> يظهر زر الدخول التجريبي في صفحة تسجيل الدخول بتطبيق الهاتف، مما يتيح الدخول الفوري ككابتن معتمد أو راكب بدون انتظار كود الواتساب أو مراجعة المستندات.'
+              : '⚠️ <strong>الميزة محذوفة ومعطلة حالياً:</strong> زر الدخول التجريبي مخفي تماماً من تطبيق الهاتف، ولا يمكن لأي شخص استخدام الحسابات التجريبية أو تخطي كود التحقق.'}
           </p>
           <div class="grid-2" style="gap:16px;">
             <div class="form-group">
@@ -5161,16 +5166,22 @@ function renderSettings() {
           </div>
 
           <!-- Quick Action Buttons -->
-          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:20px; padding-top:16px; border-top:1px solid rgba(34, 197, 94, 0.2);">
-            <button class="btn btn-sm btn-primary" onclick="initializeDemoAccountFromDashboard('driver')" style="background:#16a34a; border-color:#16a34a;">
-              <i class="ri-car-fill"></i> تهيئة وتفعيل حساب كابتن ديمو الآن
-            </button>
-            <button class="btn btn-sm btn-primary" onclick="initializeDemoAccountFromDashboard('rider')" style="background:#0284c7; border-color:#0284c7;">
-              <i class="ri-user-location-fill"></i> تهيئة وتفعيل حساب راكب ديمو الآن
-            </button>
-            <button class="btn btn-sm btn-outline" onclick="purgeDemoAccountFromDashboard()" style="color:#ef4444; border-color:#ef4444;">
-              <i class="ri-delete-bin-line"></i> مسح بيانات حساب الديمو من النظام
-            </button>
+          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:20px; padding-top:16px; border-top:1px solid ${mockData.settings.demo_mode_enabled !== false ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'};">
+            ${mockData.settings.demo_mode_enabled !== false ? `
+              <button class="btn btn-sm btn-primary" onclick="initializeDemoAccountFromDashboard('driver')" style="background:#16a34a; border-color:#16a34a;">
+                <i class="ri-car-fill"></i> تهيئة وتفعيل حساب كابتن ديمو الآن
+              </button>
+              <button class="btn btn-sm btn-primary" onclick="initializeDemoAccountFromDashboard('rider')" style="background:#0284c7; border-color:#0284c7;">
+                <i class="ri-user-location-fill"></i> تهيئة وتفعيل حساب راكب ديمو الآن
+              </button>
+              <button class="btn btn-sm btn-outline" onclick="purgeDemoAccountFromDashboard(false)" style="color:#ef4444; border-color:#ef4444; font-weight:bold;">
+                <i class="ri-delete-bin-line"></i> 🗑️ حذف وإلغاء ميزة الديمو بالكامل من التطبيق والداتا بيس
+              </button>
+            ` : `
+              <button class="btn btn-sm btn-primary" onclick="enableAndCreateDemoFeature()" style="background:#16a34a; border-color:#16a34a; font-weight:bold; font-size:13.5px; padding:10px 18px;">
+                <i class="ri-flashlight-fill"></i> ⚡ تفعيل ميزة الديمو وإعادة إنشائها في التطبيق الآن
+              </button>
+            `}
           </div>
         </div>
       </div>
@@ -5198,10 +5209,11 @@ function updateSetting(key, value) {
 async function toggleDemoMode(enabled) {
   mockData.settings.demo_mode_enabled = enabled;
   settingsDirty = true;
-  const saveBtn = document.getElementById('settings-save-container');
-  if (saveBtn) saveBtn.style.display = 'flex';
-  await saveSettings();
-  showToast(enabled ? '🚀 تم تفعيل وضع الحساب التجريبي بالتطبيق' : '⚠️ تم تعطيل وضع الحساب التجريبي بالتطبيق');
+  if (enabled) {
+    await enableAndCreateDemoFeature();
+  } else {
+    await purgeDemoAccountFromDashboard(true);
+  }
 }
 
 function updateDemoSetting(key, val) {
@@ -5209,6 +5221,28 @@ function updateDemoSetting(key, val) {
   settingsDirty = true;
   const saveBtn = document.getElementById('settings-save-container');
   if (saveBtn) saveBtn.style.display = 'flex';
+}
+
+async function enableAndCreateDemoFeature() {
+  const phone = mockData.settings.demo_phone || '01000000000';
+  const name = mockData.settings.demo_driver_name || 'كابتن تجريبي (Demo)';
+  showToast(`⏳ جاري تفعيل ميزة الديمو وإنشاء الحسابات التجريبية...`);
+  mockData.settings.demo_mode_enabled = true;
+  
+  if (supabaseClient) {
+    try {
+      await supabaseClient.rpc('setup_or_reset_demo_account', {
+        p_role: 'driver',
+        p_phone: phone,
+        p_name: name
+      });
+      await saveSettings();
+      showToast(`🚀 تم تفعيل ميزة الديمو بنجاح وإظهارها فوراً في تطبيق الهاتف!`);
+      if (typeof debouncedSync === 'function') debouncedSync();
+    } catch(e) {
+      showToast(`❌ خطأ أثناء التفعيل: ${e.message}`);
+    }
+  }
 }
 
 async function initializeDemoAccountFromDashboard(role = 'driver') {
@@ -5238,21 +5272,24 @@ async function initializeDemoAccountFromDashboard(role = 'driver') {
   }
 }
 
-async function purgeDemoAccountFromDashboard() {
+async function purgeDemoAccountFromDashboard(isSilent = false) {
   const phone = mockData.settings.demo_phone || '01000000000';
-  if (!confirm(`هل أنت متأكد من رغبتك في حذف بيانات حساب الديمو (${phone}) بالكامل من النظام؟`)) {
+  if (!isSilent && !confirm(`هل أنت متأكد من رغبتك في حذف وإلغاء ميزة الديمو بالكامل من التطبيق وحذف كافة حساباتها وبياناتها (${phone}) من الداتا بيس؟`)) {
     return;
   }
-  showToast(`⏳ جاري حذف بيانات حساب الديمو...`);
+  showToast(`⏳ جاري تعطيل الميزة وحذف بيانات الديمو من النظام...`);
+  mockData.settings.demo_mode_enabled = false;
   if (supabaseClient) {
     try {
       const { error } = await supabaseClient.rpc('purge_demo_account', {
-        p_phone: phone
+        p_phone: phone,
+        p_disable_feature: true
       });
+      await saveSettings();
       if (error) {
         showToast(`❌ خطأ في حذف الحساب: ${error.message}`);
       } else {
-        showToast(`🗑️ تم مسح بيانات حساب الديمو بنجاح من قاعدة البيانات.`);
+        showToast(`🗑️ تم إخفاء ميزة الديمو من تطبيق الهاتف وحذف بياناتها بنجاح.`);
         if (typeof debouncedSync === 'function') debouncedSync();
       }
     } catch(e) {

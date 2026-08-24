@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/auth_error_handler.dart';
+import '../state/global_state.dart';
 
 class _OtpEntry {
   final Set<String> codes;
@@ -104,14 +105,17 @@ class PhoneAuthService {
 
     final chatId = '$cleanedPhone@c.us';
 
-    // Demo Mode fast path: If phone is demo account (e.g. 01000000000 or ends with 000000000)
-    if (cleanedPhone == '201000000000' || cleanedPhone.endsWith('000000000') || cleanedPhone == '01000000000') {
+    // Demo Mode fast path: Only if Demo Mode is enabled by Admin in Dashboard
+    final isDemoModeActive = GlobalState.instance.isDemoModeEnabled;
+    final isDemoNumber = (cleanedPhone == '201000000000' || cleanedPhone.endsWith('000000000') || cleanedPhone == '01000000000');
+
+    if (isDemoModeActive && isDemoNumber) {
       const demoCode = '123456';
       _pendingOtps[cleanedPhone] = _OtpEntry(
         code: demoCode,
         createdAt: DateTime.now(),
       );
-      debugPrint('[PhoneAuthService] 🚀 Demo account detected for $cleanedPhone. Demo OTP: $demoCode ready.');
+      debugPrint('[PhoneAuthService] 🚀 Demo mode active. Fast-pass enabled for $cleanedPhone.');
       return;
     }
 
@@ -224,7 +228,9 @@ class PhoneAuthService {
       throw Exception('رمز التحقق يجب أن يكون مكوناً من 6 أرقام.');
     }
 
-    final isDemoAccount = cleanedPhone == '201000000000' || cleanedPhone.endsWith('000000000') || cleanedPhone == '01000000000';
+    final isDemoModeActive = GlobalState.instance.isDemoModeEnabled;
+    final isDemoNumber = cleanedPhone == '201000000000' || cleanedPhone.endsWith('000000000') || cleanedPhone == '01000000000';
+    final isDemoAccount = isDemoModeActive && isDemoNumber;
     final entry = _pendingOtps[cleanedPhone];
 
     if (isDemoAccount && trimmedToken == '123456') {
@@ -384,6 +390,10 @@ class PhoneAuthService {
     required String roleName,
     String? nameOverride,
   }) async {
+    if (!GlobalState.instance.isDemoModeEnabled) {
+      throw Exception('ميزة الحساب التجريبي معطلة حالياً من قبل إدارة التطبيق.');
+    }
+
     final cleanedPhone = formatPhoneForWaPilot(phoneNumber);
     final e164Phone = formatPhoneE164(phoneNumber);
     final isDriver = roleName == 'driver';

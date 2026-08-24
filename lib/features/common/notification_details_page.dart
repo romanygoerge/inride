@@ -157,7 +157,12 @@ class NotificationDetailsPage extends StatelessWidget {
                     style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
                   onPressed: () {
-                    NotificationService.instance.handleNotificationClick(notification.data);
+                    final clickData = Map<String, dynamic>.from(notification.data);
+                    clickData['type'] = notification.type;
+                    clickData['title'] = notification.title;
+                    clickData['body'] = notification.body;
+                    clickData['notification_id'] = notification.id;
+                    NotificationService.instance.handleNotificationClick(clickData);
                   },
                 ),
               ),

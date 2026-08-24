@@ -79,26 +79,17 @@ class _WalletPageState extends State<WalletPage> {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) {
             final List<Map<String, dynamic>> activeMethods = state.activePaymentMethods
-                .where((pm) => pm['code'] != 'cash')
+                .where((pm) => (pm['code'] as String? ?? '').toLowerCase() == 'instapay')
                 .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
                 .toList();
             if (activeMethods.isEmpty) {
-              activeMethods.addAll(<Map<String, dynamic>>[
-                <String, dynamic>{
-                  'id': '1',
-                  'name': 'إنستا باي (InstaPay)',
-                  'code': 'instapay',
-                  'account_details': '01204062941',
-                  'is_active': true,
-                },
-                <String, dynamic>{
-                  'id': '2',
-                  'name': 'فودافون كاش',
-                  'code': 'vodafone_cash',
-                  'account_details': '01204062941',
-                  'is_active': true,
-                },
-              ]);
+              activeMethods.add(<String, dynamic>{
+                'id': '1',
+                'name': 'إنستا باي (InstaPay)',
+                'code': 'instapay',
+                'account_details': '01204062941',
+                'is_active': true,
+              });
             }
 
             final selectedMethodData = activeMethods.firstWhere(
@@ -690,26 +681,30 @@ class _WalletPageState extends State<WalletPage> {
     final addFundsText = l10n?.addFunds ?? (isArabic ? 'شحن المحفظة' : 'Top Up Wallet');
     final paymentMethodsTitleText = l10n?.paymentMethods ?? (isArabic ? 'طرق الدفع' : 'Payment Methods');
 
-    final List<Map<String, dynamic>> dynamicMethods = state.activePaymentMethods.map<Map<String, dynamic>>((pm) {
-      final code = (pm['code'] ?? 'cash').toString();
-      final name = (pm['name'] ?? (isArabic ? 'كاش' : 'Cash')).toString();
-      final details = (pm['account_details'] ?? '').toString();
-      IconData icon = Icons.payments_outlined;
-      if (code == 'instapay') {
-        icon = Icons.account_balance_outlined;
-      } else if (code == 'vodafone_cash') {
-        icon = Icons.phone_android_outlined;
-      } else if (code == 'bank_transfer') {
-        icon = Icons.account_balance_rounded;
-      }
+    final List<Map<String, dynamic>> dynamicMethods = state.activePaymentMethods
+        .where((pm) => (pm['code'] as String? ?? '').toLowerCase() == 'instapay')
+        .map<Map<String, dynamic>>((pm) {
+      final code = (pm['code'] ?? 'instapay').toString();
+      final name = (pm['name'] ?? (isArabic ? 'إنستا باي (InstaPay)' : 'InstaPay')).toString();
+      final details = (pm['account_details'] ?? '01204062941').toString();
+      const IconData icon = Icons.account_balance_outlined;
 
       return <String, dynamic>{
         'id': code,
         'title': name,
-        'subtitle': details.isNotEmpty ? details : (isArabic ? 'وسيلة دفع مقبولة' : 'Accepted payment method'),
+        'subtitle': details.isNotEmpty ? details : (isArabic ? 'وسيلة شحن ودفع معتمدة' : 'Official payment method'),
         'icon': icon,
       };
     }).toList();
+
+    if (dynamicMethods.isEmpty) {
+      dynamicMethods.add(<String, dynamic>{
+        'id': 'instapay',
+        'title': isArabic ? 'إنستا باي (InstaPay)' : 'InstaPay',
+        'subtitle': '01204062941',
+        'icon': Icons.account_balance_outlined,
+      });
+    }
 
     if (!isDriver && !dynamicMethods.any((m) => m['id'] == 'wallet')) {
       dynamicMethods.add(<String, dynamic>{

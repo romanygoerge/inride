@@ -976,40 +976,18 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   List<Map<String, dynamic>> paymentMethods = [
     {
       'id': '1',
-      'name': 'فودافون كاش',
-      'code': 'vodafone_cash',
-      'account_details': '01204062941',
-      'is_active': true,
-      'icon_name': 'ri-smartphone-line'
-    },
-    {
-      'id': '2',
       'name': 'إنستا باي (InstaPay)',
       'code': 'instapay',
-      'account_details': '01204062941',
+      'account_details': officialInstaPayNumber,
       'is_active': true,
       'icon_name': 'ri-flashlight-line'
-    },
-    {
-      'id': '3',
-      'name': 'تحويل بنكي',
-      'code': 'bank_transfer',
-      'account_details': 'EG00000000000000000000',
-      'is_active': true,
-      'icon_name': 'ri-bank-line'
-    },
-    {
-      'id': '4',
-      'name': 'نقداً (كاش)',
-      'code': 'cash',
-      'account_details': 'الدفع نقداً في المقر أو مع السائق',
-      'is_active': true,
-      'icon_name': 'ri-money-dollar-circle-line'
     }
   ];
 
   List<Map<String, dynamic>> get activePaymentMethods {
     final list = paymentMethods.where((pm) {
+      final code = (pm['code'] as String? ?? '').toLowerCase();
+      if (code != 'instapay') return false;
       final active = pm['is_active'];
       if (active == null) return true;
       if (active is bool) return active;
@@ -1024,27 +1002,6 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'name': 'إنستا باي (InstaPay)',
           'code': 'instapay',
           'account_details': officialInstaPayNumber,
-          'is_active': true,
-        },
-        {
-          'id': '2',
-          'name': 'فودافون كاش',
-          'code': 'vodafone_cash',
-          'account_details': officialInstaPayNumber,
-          'is_active': true,
-        },
-        {
-          'id': '3',
-          'name': 'تحويل بنكي',
-          'code': 'bank_transfer',
-          'account_details': 'EG00000000000000000000',
-          'is_active': true,
-        },
-        {
-          'id': '4',
-          'name': 'نقداً (كاش)',
-          'code': 'cash',
-          'account_details': 'الدفع نقداً في المقر أو مع السائق',
           'is_active': true,
         }
       ];

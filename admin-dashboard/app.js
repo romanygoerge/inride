@@ -2595,10 +2595,7 @@ async function loadFinancialDataFromSupabase() {
       financialState.paymentMethods = pmData;
     } else {
       financialState.paymentMethods = [
-        { id: '1', name: 'فودافون كاش', code: 'vodafone_cash', account_details: '01000000000', is_active: true, icon_name: 'ri-smartphone-line' },
-        { id: '2', name: 'إنستا باي (InstaPay)', code: 'instapay', account_details: '01204062941', is_active: true, icon_name: 'ri-flashlight-line' },
-        { id: '3', name: 'تحويل بنكي', code: 'bank_transfer', account_details: 'EG00000000000000000000', is_active: true, icon_name: 'ri-bank-line' },
-        { id: '4', name: 'نقداً (كاش)', code: 'cash', account_details: 'الدفع نقداً في المقر أو مع السائق', is_active: true, icon_name: 'ri-money-dollar-circle-line' }
+        { id: '1', name: 'إنستا باي (InstaPay)', code: 'instapay', account_details: '01204062941', is_active: true, icon_name: 'ri-flashlight-line' }
       ];
     }
 
@@ -3334,58 +3331,6 @@ function getCommContactsList() {
   return contacts;
 }
 
-async function loadCommMessagesThread(userId, forceUpdate = false) {
-  if (!userId) return;
-
-  // Simulate fetching from Supabase/API
-  let messagesList = [];
-  if (supabaseClient) {
-    const { data } = await supabaseClient
-      .from('support_messages')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: true });
-    
-    if (data) {
-      messagesList = data.map(m => ({
-        sender: m.sender_type === 'admin' ? 'admin' : 'user',
-        text: m.message,
-        time: new Date(m.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
-      }));
-    }
-  }
-
-  // Save to cache
-  commMessagesCache[userId] = messagesList;
-
-  // If still on the same active user, smoothly update the messages box ONLY
-  if (commActiveUserId === userId) {
-    const container = document.getElementById('commChatMessagesContainer');
-    if (container) {
-      const messagesHtml = messagesList.map(m => {
-        const isAdmin = m.sender === 'admin';
-        const bg = isAdmin ? '#E0F2FE' : '#FFFFFF';
-        const color = '#000000';
-        const border = isAdmin ? '1px solid #BAE6FD' : '1px solid #CBD5E1';
-        const radius = isAdmin ? '16px 16px 4px 16px' : '16px 16px 16px 4px';
-        return `
-          <div class="comm-bubble-wrapper ${m.sender}" style="display:flex; flex-direction:column; max-width:70%; align-self:${isAdmin ? 'flex-end' : 'flex-start'}; align-items:${isAdmin ? 'flex-end' : 'flex-start'}; margin-bottom:10px;">
-            <div class="comm-bubble" style="background:${bg} !important; color:${color} !important; border:${border} !important; border-radius:${radius}; padding:12px 16px; font-size:13.5px; font-weight:700; line-height:1.5; box-shadow:0 2px 5px rgba(0,0,0,0.08);">
-              ${m.text}
-            </div>
-            <div class="comm-bubble-meta" style="font-size:11px; font-weight:600; color:#475569 !important; margin-top:4px; display:flex; align-items:center; gap:4px;">
-              ${isAdmin ? '<i class="ri-check-double-line" style="color:#2563EB;"></i> الدعم الفني • ' : userName + ' • '}
-              ${m.time}
-            </div>
-          </div>
-        `;
-      }).join('');
-      container.innerHTML = messagesHtml;
-      container.scrollTop = container.scrollHeight;
-    }
-  }
-}
-
 function renderCommConversationsListHtml() {
   const contacts = getCommContactsList();
 
@@ -3754,7 +3699,10 @@ function renderCommunication() {
 function renderCommConversationsList() {
   const container = document.getElementById('commConvListContainer');
   if (!container) return;
-  container.innerHTML = renderCommConversationsListHtml();
+  const newHtml = renderCommConversationsListHtml();
+  if (container.innerHTML !== newHtml) {
+    container.innerHTML = newHtml;
+  }
 }
 
 async function initCommChatSync(force = false) {
@@ -3856,7 +3804,7 @@ async function loadCommMessagesThread(userId, isSwitching = false) {
   // Save to cache
   commMessagesCache[userId] = messagesList;
 
-  // If still on the same active user, smoothly update the messages box ONLY
+  // If still on the same active user, smoothly update the messages box ONLY if changed
   if (commActiveUserId === userId) {
     const container = document.getElementById('commChatMessagesContainer');
     if (container) {
@@ -3878,8 +3826,11 @@ async function loadCommMessagesThread(userId, isSwitching = false) {
           </div>
         `;
       }).join('');
-      container.innerHTML = messagesHtml;
-      container.scrollTop = container.scrollHeight;
+
+      if (container.innerHTML !== messagesHtml) {
+        container.innerHTML = messagesHtml;
+        container.scrollTop = container.scrollHeight;
+      }
     }
   }
 }
@@ -7390,6 +7341,8 @@ function initSupabaseSync() {
 
         const dateObj = new Date(drv.created_at || drv.updated_at || userObj.created_at || Date.now());
 
+        const drvWallet = parseFloat(userObj.driver_wallet_balance !== undefined && userObj.driver_wallet_balance !== null ? userObj.driver_wallet_balance : (userObj.wallet_balance !== undefined && userObj.wallet_balance !== null ? userObj.wallet_balance : (drv.wallet_balance || 0)));
+
         fullDrivers.push({
           id: 'DRV_' + drv.id.substring(0, 6).toUpperCase(),
           uid: drv.id,
@@ -7403,7 +7356,7 @@ function initSupabaseSync() {
           vehicleType: vehicleObj.vehicle_category || vehicleObj.type || drv.vehicle_type || 'car',
           vehicleName: vehicleObj.model || drv.vehicle_name || 'مركبة',
           vehicleColor: vehicleObj.color || 'فضي',
-          licensePlate: vehicleObj.number_plate || '—',
+          licensePlate: vehicleObj.number_plate || vehicleObj.license_plate || drv.license_plate || '—',
           status: stVal,
           statusAr: statusAr,
           rejectionReason: drv.rejection_reason || '',
@@ -7414,20 +7367,20 @@ function initSupabaseSync() {
           isOnline: drv.is_online || false,
           joinDate: dateObj.toLocaleDateString('ar-EG'),
           avatar: driverName.charAt(0).toUpperCase(),
-          nationalIdUrl: drv.national_id_url || '',
-          nationalIdBackUrl: drv.national_id_back_url || '',
-          licenseUrl: drv.license_url || '',
-          licenseBackUrl: drv.license_back_url || '',
-          vehicleFrontUrl: drv.vehicle_front_url || '',
-          vehicleBackUrl: drv.vehicle_back_url || '',
-          vehicleLicenseUrl: drv.vehicle_license_url || '',
-          idCardFrontUrl: drv.national_id_url || '',
-          idCardBackUrl: drv.national_id_back_url || '',
-          driverLicenseFrontUrl: drv.license_url || '',
-          driverLicenseBackUrl: drv.license_back_url || '',
-          vehicleLicenseFrontUrl: drv.vehicle_front_url || '',
-          vehicleLicenseBackUrl: drv.vehicle_back_url || '',
-          vehicleImages: vehicleObj.images || []
+          nationalIdUrl: drv.national_id_url || drv.id_card_front_url || userObj.national_id_url || drv.nationalIdUrl || '',
+          nationalIdBackUrl: drv.national_id_back_url || drv.id_card_back_url || userObj.national_id_back_url || drv.nationalIdBackUrl || '',
+          licenseUrl: drv.license_url || drv.driver_license_front_url || userObj.license_url || drv.licenseUrl || '',
+          licenseBackUrl: drv.license_back_url || drv.driver_license_back_url || userObj.license_back_url || drv.licenseBackUrl || '',
+          vehicleFrontUrl: drv.vehicle_front_url || drv.vehicle_license_front_url || drv.vehicle_license_url || vehicleObj.license_front_url || drv.vehicleFrontUrl || '',
+          vehicleBackUrl: drv.vehicle_back_url || drv.vehicle_license_back_url || vehicleObj.license_back_url || drv.vehicleBackUrl || '',
+          vehicleLicenseUrl: drv.vehicle_license_url || drv.vehicle_front_url || '',
+          idCardFrontUrl: drv.national_id_url || drv.id_card_front_url || userObj.national_id_url || '',
+          idCardBackUrl: drv.national_id_back_url || drv.id_card_back_url || userObj.national_id_back_url || '',
+          driverLicenseFrontUrl: drv.license_url || drv.driver_license_front_url || userObj.license_url || '',
+          driverLicenseBackUrl: drv.license_back_url || drv.driver_license_back_url || userObj.license_back_url || '',
+          vehicleLicenseFrontUrl: drv.vehicle_front_url || drv.vehicle_license_front_url || drv.vehicle_license_url || vehicleObj.license_front_url || '',
+          vehicleLicenseBackUrl: drv.vehicle_back_url || drv.vehicle_license_back_url || vehicleObj.license_back_url || '',
+          vehicleImages: vehicleObj.images || drv.vehicle_images || []
         });
       });
 
@@ -7440,6 +7393,13 @@ function initSupabaseSync() {
           const ratingDisplay = ratingCount > 0 ? avgRating.toFixed(1) : 'جديد (بدون تقييم)';
           const vObj = vehiclesByDriver[u.id] || {};
           const dName = u.name || u.phone_number || ('كابتن ' + u.id.substring(0, 6));
+
+          const uDrvWallet = parseFloat(u.driver_wallet_balance !== undefined && u.driver_wallet_balance !== null ? u.driver_wallet_balance : (u.wallet_balance !== undefined && u.wallet_balance !== null ? u.wallet_balance : 0));
+          const uStatus = u.verification_status || (u.national_id_url || u.license_url ? 'submitted' : 'unregistered');
+          let uStatusAr = 'غير مسجل';
+          if (uStatus === 'verified') uStatusAr = 'معتمد';
+          else if (uStatus === 'submitted') uStatusAr = 'قيد المراجعة';
+          else if (uStatus === 'rejected') uStatusAr = 'مرفوض';
 
           fullDrivers.push({
             id: 'DRV_' + u.id.substring(0, 6).toUpperCase(),
@@ -7454,28 +7414,30 @@ function initSupabaseSync() {
             vehicleType: vObj.vehicle_category || vObj.type || 'car',
             vehicleName: vObj.model || 'مركبة',
             vehicleColor: vObj.color || 'فضي',
-            licensePlate: vObj.number_plate || '—',
-            status: 'unregistered',
-            statusAr: 'غير مسجل',
-            rejectionReason: '',
+            licensePlate: vObj.number_plate || vObj.license_plate || '—',
+            status: uStatus,
+            statusAr: uStatusAr,
+            rejectionReason: u.rejection_reason || '',
             totalTrips: realTrips,
             earnings: parseFloat(u.wallet_balance || 0),
+            walletBalance: uDrvWallet,
+            driverWalletBalance: uDrvWallet,
             isOnline: false,
             joinDate: new Date(u.created_at || Date.now()).toLocaleDateString('ar-EG'),
             avatar: dName.charAt(0).toUpperCase(),
-            nationalIdUrl: '',
-            nationalIdBackUrl: '',
-            licenseUrl: '',
-            licenseBackUrl: '',
-            vehicleFrontUrl: '',
-            vehicleBackUrl: '',
-            vehicleLicenseUrl: '',
-            idCardFrontUrl: '',
-            idCardBackUrl: '',
-            driverLicenseFrontUrl: '',
-            driverLicenseBackUrl: '',
-            vehicleLicenseFrontUrl: '',
-            vehicleLicenseBackUrl: '',
+            nationalIdUrl: u.national_id_url || u.id_card_front_url || '',
+            nationalIdBackUrl: u.national_id_back_url || u.id_card_back_url || '',
+            licenseUrl: u.license_url || u.driver_license_front_url || '',
+            licenseBackUrl: u.license_back_url || u.driver_license_back_url || '',
+            vehicleFrontUrl: u.vehicle_front_url || u.vehicle_license_front_url || vObj.license_front_url || '',
+            vehicleBackUrl: u.vehicle_back_url || u.vehicle_license_back_url || vObj.license_back_url || '',
+            vehicleLicenseUrl: u.vehicle_license_url || u.vehicle_front_url || '',
+            idCardFrontUrl: u.national_id_url || u.id_card_front_url || '',
+            idCardBackUrl: u.national_id_back_url || u.id_card_back_url || '',
+            driverLicenseFrontUrl: u.license_url || u.driver_license_front_url || '',
+            driverLicenseBackUrl: u.license_back_url || u.driver_license_back_url || '',
+            vehicleLicenseFrontUrl: u.vehicle_front_url || u.vehicle_license_front_url || vObj.license_front_url || '',
+            vehicleLicenseBackUrl: u.vehicle_back_url || u.vehicle_license_back_url || vObj.license_back_url || '',
             vehicleImages: vObj.images || []
           });
         }
@@ -7649,9 +7611,16 @@ function initSupabaseSync() {
 
       updatePendingBadge();
 
-      // Safe re-render avoiding typing inputs
+      // Safe re-render avoiding typing inputs or destroying interactive active views
       if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
         // User typing, skip DOM rebuild
+      } else if (currentPage === 'communication' || currentPage === 'support') {
+        // Smoothly update the conversation list in the sidebar if available without wiping chat DOM
+        if (typeof renderCommConversationsList === 'function' && document.getElementById('commConvListContainer')) {
+          renderCommConversationsList();
+        }
+      } else if (currentPage === 'driver-profile' || currentPage === 'passenger-profile') {
+        // Keep active profile view open without full DOM destructive rebuild
       } else {
         renderPage(currentPage);
       }

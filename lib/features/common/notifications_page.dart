@@ -270,19 +270,52 @@ class _NotificationsPageState extends State<NotificationsPage> {
             if (!notif.isRead) {
               _controller.markAsRead(notif.id);
             }
-            // 2. Route redirection or details page
-            final routingTypes = [
-              'new_trip', 'new_ride', 'delivery_request', 'new_offer', 'driver_offer', 'counter_offer',
-              'accept_trip', 'ride_accepted', 'delivery_accepted', 'driver_arrived', 'captain_arrived', 'trip_started',
-              'cancel_trip', 'trip_finished', 'trip_completed', 'payment',
-              'new_message', 'chat_message', 'support_chat', 'support',
-              'offers', 'wallet', 'charge', 'charge_pending', 'payout', 'deposit'
-            ];
-            final hasUrl = notif.data['url'] != null || notif.data['link'] != null;
-            final hasTrip = notif.data['tripId'] != null || notif.data['trip_id'] != null || notif.data['requestId'] != null;
+            // 2. Prepare complete data map
+            final clickData = Map<String, dynamic>.from(notif.data);
+            clickData['type'] = notif.type;
+            clickData['title'] = notif.title;
+            clickData['body'] = notif.body;
+            clickData['notification_id'] = notif.id;
 
-            if (routingTypes.contains(notif.type) || hasUrl || hasTrip) {
-              NotificationService.instance.handleNotificationClick(notif.data);
+            final type = notif.type.toLowerCase();
+            final title = notif.title.toLowerCase();
+            final body = notif.body.toLowerCase();
+
+            final bool isChatOrSupport = type.contains('message') ||
+                type.contains('chat') ||
+                type.contains('support') ||
+                type.contains('communication') ||
+                title.contains('رسالة') ||
+                title.contains('دعم') ||
+                title.contains('محادثة') ||
+                body.contains('رسالة') ||
+                body.contains('الدعم');
+
+            final bool isWallet = type.contains('wallet') ||
+                type.contains('charge') ||
+                type.contains('payout') ||
+                type.contains('deposit') ||
+                type.contains('payment') ||
+                title.contains('محفظ') ||
+                title.contains('شحن') ||
+                title.contains('رصيد');
+
+            final bool isRideOrTrip = type.contains('trip') ||
+                type.contains('ride') ||
+                type.contains('offer') ||
+                type.contains('driver') ||
+                clickData['tripId'] != null ||
+                clickData['trip_id'] != null ||
+                clickData['requestId'] != null ||
+                clickData['request_id'] != null ||
+                title.contains('رحلة') ||
+                title.contains('مشوار') ||
+                title.contains('طلب');
+
+            final bool hasUrl = clickData['url'] != null || clickData['link'] != null;
+
+            if (isChatOrSupport || isWallet || isRideOrTrip || hasUrl) {
+              NotificationService.instance.handleNotificationClick(clickData);
             } else {
               Navigator.push(
                 context,

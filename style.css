@@ -1441,7 +1441,7 @@ button:active,
 
 /* ---- Page transition ---- */
 .page-section {
-  animation: fadeIn 0.3s ease;
+  opacity: 1;
 }
 
 /* ============================================

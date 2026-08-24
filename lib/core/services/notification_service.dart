@@ -34,10 +34,12 @@ class NotificationService {
   // Notification Click Handler — يوجّه المستخدم للشاشة المناسبة
   // ────────────────────────────────────────────────────────────────────
   Future<void> handleNotificationClick(Map<String, dynamic> data) async {
-    final String type = (data['type'] ?? 'admin_notifications').toString();
+    final String type = (data['type'] ?? data['notification_type'] ?? '').toString().trim().toLowerCase();
+    final String title = (data['title'] ?? '').toString().toLowerCase();
+    final String body = (data['body'] ?? '').toString().toLowerCase();
     final String targetRoleStr = (data['target_role'] ?? data['role'] ?? data['user_type'] ?? '').toString().toLowerCase();
 
-    debugPrint('[NotificationService] Handling tap type: $type, targetRole: $targetRoleStr, data: $data');
+    debugPrint('[NotificationService] Handling tap type: $type, targetRole: $targetRoleStr, title: $title, body: $body, data: $data');
 
     final context = navigatorKey.currentContext;
     if (context == null || !context.mounted) {
@@ -58,10 +60,38 @@ class NotificationService {
 
     if (!context.mounted) return;
 
-    // 1. رسالة دردشة بين الركاب والسائقين
-    if (type == 'new_message' || type == 'chat_message') {
-      final tripId = data['tripId'] ?? data['trip_id'] ?? data['requestId'] ?? GlobalState.instance.currentRequestId;
-      String partnerId = (data['partnerId'] ?? data['partner_id'] ?? data['senderId'] ?? '').toString();
+    // 1. الدعم الفني ومحادثات الإدارة (Support Chat / Admin Messages)
+    final bool isSupportOrAdminChat = type == 'support_chat' ||
+        type == 'support' ||
+        type == 'admin_chat' ||
+        type == 'communication' ||
+        type == 'support_message' ||
+        type == 'ticket' ||
+        data['sender_id'] == 'admin' ||
+        data['senderId'] == 'admin' ||
+        title.contains('الدعم') ||
+        title.contains('support') ||
+        title.contains('خدمة العملاء');
+
+    if (isSupportOrAdminChat) {
+      Navigator.push(
+        context,
+        SnappyPageRoute(page: const SupportChatPage()),
+      );
+      return;
+    }
+
+    // 2. رسالة دردشة بين الركاب والسائقين (Direct Passenger/Driver Chat)
+    final bool isDirectUserChat = type == 'new_message' ||
+        type == 'chat_message' ||
+        type == 'chat' ||
+        title.contains('رسالة جديدة') ||
+        title.contains('new message') ||
+        title.contains('محادثة');
+
+    if (isDirectUserChat) {
+      final tripId = data['tripId'] ?? data['trip_id'] ?? data['requestId'] ?? data['request_id'] ?? GlobalState.instance.currentRequestId;
+      String partnerId = (data['partnerId'] ?? data['partner_id'] ?? data['senderId'] ?? data['sender_id'] ?? '').toString();
       String partnerName = (data['partnerName'] ?? data['partner_name'] ?? 'مستخدم inRide').toString();
       final myId = GlobalState.instance.userUid;
 
@@ -86,32 +116,65 @@ class NotificationService {
           ),
         );
         return;
+      } else {
+        // Fallback: If it's a message without active trip context, open support chat
+        Navigator.push(
+          context,
+          SnappyPageRoute(page: const SupportChatPage()),
+        );
+        return;
       }
     }
 
-    // 2. محادثة الدعم الفني
-    if (type == 'support_chat' || type == 'support') {
+    // 3. المحفظة والعمليات المالية والشحن (Wallet & Top-up)
+    final bool isWalletOrPayment = type == 'wallet' ||
+        type == 'charge' ||
+        type == 'charge_pending' ||
+        type == 'charge_approved' ||
+        type == 'charge_rejected' ||
+        type == 'payout' ||
+        type == 'payment' ||
+        type == 'deposit' ||
+        type == 'wallet_recharge' ||
+        type == 'wallet_receipt' ||
+        type == 'wallet_approved' ||
+        type == 'wallet_rejected' ||
+        type == 'refund' ||
+        title.contains('محفظ') ||
+        title.contains('شحن') ||
+        title.contains('رصيد') ||
+        title.contains('wallet') ||
+        title.contains('payment') ||
+        title.contains('instapay');
+
+    if (isWalletOrPayment) {
       Navigator.push(
         context,
-        SnappyPageRoute(page: const SupportChatPage()),
+        SnappyPageRoute(page: const WalletPage()),
       );
       return;
     }
 
-    // 3. رحلة حالية للراكب أو الكابتن
-    if (type == 'accept_trip' ||
+    // 4. رحلة حالية قيد التنفيذ (Active Ride)
+    final bool isRideActive = type == 'accept_trip' ||
         type == 'ride_accepted' ||
         type == 'delivery_accepted' ||
         type == 'driver_arrived' ||
         type == 'captain_arrived' ||
-        type == 'trip_started') {
+        type == 'trip_started' ||
+        title.contains('وصل الكابتن') ||
+        title.contains('بدأت الرحلة') ||
+        title.contains('تم قبول طلبك') ||
+        title.contains('قبول الرحلة');
+
+    if (isRideActive) {
       if (GlobalState.instance.currentRole == UserRole.rider) {
         Navigator.push(
           context,
           SnappyPageRoute(page: const PassengerRideActivePage()),
         );
       } else {
-        final reqId = data['requestId']?.toString() ?? data['tripId']?.toString();
+        final reqId = data['requestId']?.toString() ?? data['request_id']?.toString() ?? data['tripId']?.toString() ?? data['trip_id']?.toString();
         if (reqId != null && reqId.isNotEmpty) {
           GlobalState.instance.currentRequestId = reqId;
         }
@@ -123,13 +186,18 @@ class NotificationService {
       return;
     }
 
-    // 4. طلب رحلة / عرض جديد للكابتن
-    if (type == 'new_trip' ||
+    // 5. طلب رحلة / عرض جديد (New Trip / Request / Offer)
+    final bool isNewTripOrOffer = type == 'new_trip' ||
         type == 'new_ride' ||
         type == 'delivery_request' ||
         type == 'new_offer' ||
         type == 'driver_offer' ||
-        type == 'counter_offer') {
+        type == 'counter_offer' ||
+        title.contains('طلب رحلة') ||
+        title.contains('عرض جديد') ||
+        title.contains('مشوار جديد');
+
+    if (isNewTripOrOffer) {
       if (GlobalState.instance.currentRole == UserRole.driver) {
         Navigator.pushAndRemoveUntil(
           context,
@@ -137,28 +205,20 @@ class NotificationService {
           (route) => false,
         );
       } else {
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        if (GlobalState.instance.currentRequestId != null) {
+          Navigator.push(
+            context,
+            SnappyPageRoute(page: const PassengerRideActivePage()),
+          );
+        } else {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
       }
       return;
     }
 
-    // 5. المحفظة والعمليات المالية
-    if (type == 'wallet' ||
-        type == 'charge' ||
-        type == 'charge_pending' ||
-        type == 'charge_rejected' ||
-        type == 'payout' ||
-        type == 'payment' ||
-        type == 'deposit') {
-      Navigator.push(
-        context,
-        SnappyPageRoute(page: const WalletPage()),
-      );
-      return;
-    }
-
-    // 6. توثيق وقبول / رفض الكابتن
-    if (type == 'driver_approved' || type == 'driver_verified') {
+    // 6. توثيق واعتماد الكابتن (Driver Approved / Verified)
+    if (type == 'driver_approved' || type == 'driver_verified' || title.contains('تم اعتماد') || title.contains('قبول حساب الكابتن')) {
       await GlobalState.instance.selectRole(UserRole.driver);
       if (!context.mounted) return;
       Navigator.pushAndRemoveUntil(
@@ -169,19 +229,13 @@ class NotificationService {
       return;
     }
 
-    // 7. رفض طلب الكابتن — يفتح الصفحة الرئيسية
-    if (type == 'driver_rejected') {
+    // 7. رفض طلب الكابتن أو تغيير حالة الحساب (Rejected / Status Update)
+    if (type == 'driver_rejected' || type == 'account_status' || title.contains('رفض') || title.contains('حسابك')) {
       Navigator.of(context).popUntil((route) => route.isFirst);
       return;
     }
 
-    // 8. تغيير حالة الحساب (تعليق/حظر/تفعيل)
-    if (type == 'account_status') {
-      Navigator.of(context).popUntil((route) => route.isFirst);
-      return;
-    }
-
-    // 7. روابط خارجية أو عروض
+    // 8. روابط خارجية أو عروض (External Links / URL)
     final urlStr = data['url'] ?? data['link'];
     if (urlStr != null && urlStr.toString().isNotEmpty) {
       final url = Uri.parse(urlStr.toString());
@@ -193,8 +247,8 @@ class NotificationService {
 
     if (!context.mounted) return;
 
-    // 8. إذا كان فيه tripId بالبيانات المرفقة -> افتح الرحلة
-    if (data['tripId'] != null || data['requestId'] != null) {
+    // 9. إذا وجد معرف رحلة في البيانات -> فتح شاشة الرحلة
+    if (data['tripId'] != null || data['trip_id'] != null || data['requestId'] != null || data['request_id'] != null) {
       if (GlobalState.instance.currentRole == UserRole.rider) {
         Navigator.push(
           context,

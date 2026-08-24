@@ -1,3 +1,4 @@
+import 'dart:convert';
 import '../state/global_state.dart' show UserRole;
 
 class NotificationModel {
@@ -100,14 +101,42 @@ class NotificationModel {
       dateObj = DateTime.now();
     }
 
+    Map<String, dynamic> payloadData = {};
+    if (map['data'] is Map) {
+      payloadData = Map<String, dynamic>.from(map['data'] as Map);
+    } else if (map['data'] is String && (map['data'] as String).trim().startsWith('{')) {
+      try {
+        payloadData = Map<String, dynamic>.from(jsonDecode(map['data'] as String) as Map);
+      } catch (_) {}
+    }
+
+    final String type = (map['type'] ?? payloadData['type'] ?? 'admin_notifications').toString();
+    payloadData['type'] ??= type;
+    if (map['title'] != null) payloadData['title'] ??= map['title'];
+    if (map['body'] != null) payloadData['body'] ??= map['body'];
+    if (map['trip_id'] != null) payloadData['trip_id'] ??= map['trip_id'];
+    if (map['tripId'] != null) payloadData['tripId'] ??= map['tripId'];
+    if (map['request_id'] != null) payloadData['request_id'] ??= map['request_id'];
+    if (map['requestId'] != null) payloadData['requestId'] ??= map['requestId'];
+    if (map['partner_id'] != null) payloadData['partner_id'] ??= map['partner_id'];
+    if (map['partnerId'] != null) payloadData['partnerId'] ??= map['partnerId'];
+    if (map['partner_name'] != null) payloadData['partner_name'] ??= map['partner_name'];
+    if (map['partnerName'] != null) payloadData['partnerName'] ??= map['partnerName'];
+    if (map['sender_id'] != null) payloadData['sender_id'] ??= map['sender_id'];
+    if (map['senderId'] != null) payloadData['senderId'] ??= map['senderId'];
+    if (map['url'] != null) payloadData['url'] ??= map['url'];
+    if (map['link'] != null) payloadData['link'] ??= map['link'];
+    if (map['target_role'] != null) payloadData['target_role'] ??= map['target_role'];
+    if (map['role'] != null) payloadData['role'] ??= map['role'];
+
     return NotificationModel(
-      id: docId ?? map['id'] ?? '',
-      title: map['title'] ?? '',
-      body: map['body'] ?? '',
-      type: map['type'] ?? 'admin_notifications',
+      id: docId ?? map['id']?.toString() ?? '',
+      title: (map['title'] ?? '').toString(),
+      body: (map['body'] ?? '').toString(),
+      type: type,
       createdAt: dateObj,
-      isRead: map['is_read'] ?? map['isRead'] ?? false,
-      data: map['data'] as Map<String, dynamic>? ?? {},
+      isRead: map['is_read'] == true || map['isRead'] == true,
+      data: payloadData,
     );
   }
 

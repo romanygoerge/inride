@@ -8032,6 +8032,73 @@ async function fetchAndDisplayUserProfile(uid, role) {
   }
 }
 
+function renderDocItem(title, url) {
+  const hasUrl = url && typeof url === 'string' && url.trim().length > 5;
+  const safeUrl = hasUrl ? url.trim() : '';
+
+  if (hasUrl) {
+    return `
+      <div style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-md);overflow:hidden;transition:transform 0.2s,box-shadow 0.2s;">
+        <div style="padding:10px 12px;background:rgba(37,99,235,0.05);border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:12px;font-weight:700;color:var(--text-primary);"><i class="ri-file-text-line text-blue" style="margin-left:4px;"></i> ${title}</span>
+          <span class="status-badge completed" style="font-size:10px;padding:2px 8px;"><i class="ri-check-line"></i> متوفر</span>
+        </div>
+        <div style="position:relative;height:140px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;" onclick="viewDocumentModal('${title.replace(/'/g, "\\'")}', '${safeUrl.replace(/'/g, "\\'")}')">
+          <img src="${safeUrl}" alt="${title}" style="width:100%;height:100%;object-fit:cover;" onError="this.onerror=null;this.src='https://placehold.co/400x250?text=تعذر+تحميل+المستند';">
+          <div style="position:absolute;inset:0;background:rgba(0,0,0,0.35);opacity:0;transition:opacity 0.2s;display:flex;align-items:center;justify-content:center;gap:6px;color:white;font-weight:700;font-size:13px;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0'">
+            <i class="ri-zoom-in-line" style="font-size:18px;"></i> تكبير المستند
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div style="background:var(--bg-primary);border:1px dashed var(--border-color);border-radius:var(--radius-md);overflow:hidden;opacity:0.75;">
+      <div style="padding:10px 12px;background:var(--bg-card);border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:12px;font-weight:700;color:var(--text-secondary);"><i class="ri-file-warning-line text-warning" style="margin-left:4px;"></i> ${title}</span>
+        <span class="status-badge pending" style="font-size:10px;padding:2px 8px;">غير مرفوع</span>
+      </div>
+      <div style="height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-light);font-size:12px;gap:6px;background:var(--bg-primary);">
+        <i class="ri-image-line" style="font-size:28px;opacity:0.4;"></i>
+        <span>لم يتم إرفاق هذا المستند</span>
+      </div>
+    </div>
+  `;
+}
+
+function viewDocumentModal(title, url) {
+  let modal = document.getElementById('docPreviewModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'docPreviewModal';
+    modal.className = 'modal-overlay';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px;';
+    document.body.appendChild(modal);
+  }
+
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;max-width:700px;width:100%;overflow:hidden;box-shadow:0 25px 50px rgba(0,0,0,0.4);direction:rtl;">
+      <div style="padding:16px 20px;background:#1E293B;color:white;display:flex;justify-content:space-between;align-items:center;">
+        <h3 style="margin:0;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;">
+          <i class="ri-file-shield-2-fill text-blue"></i> ${title || 'معاينة المستند'}
+        </h3>
+        <button onclick="document.getElementById('docPreviewModal').style.display='none'" style="background:none;border:none;color:white;font-size:24px;cursor:pointer;">&times;</button>
+      </div>
+      <div style="padding:20px;text-align:center;background:#0f172a;display:flex;align-items:center;justify-content:center;min-height:350px;">
+        <img src="${url}" alt="${title}" style="max-width:100%;max-height:75vh;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);object-fit:contain;" onError="this.onerror=null;this.src='https://placehold.co/600x400?text=تعذر+تحميل+المستند';">
+      </div>
+      <div style="padding:14px 20px;background:white;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;">
+        <a href="${url}" target="_blank" class="btn btn-outline btn-sm" style="display:flex;align-items:center;gap:6px;">
+          <i class="ri-external-link-line"></i> فتح الرابط الأصلي
+        </a>
+        <button onclick="document.getElementById('docPreviewModal').style.display='none'" class="btn btn-primary" style="padding:6px 20px;border-radius:8px;">إغلاق</button>
+      </div>
+    </div>
+  `;
+  modal.style.display = 'flex';
+}
+
 function renderDriverProfile() {
   if (!activeProfileUid) {
     return `<div style="padding:40px;text-align:center;color:var(--text-light);"><i class="ri-user-unfollow-line" style="font-size:36px;display:block;margin-bottom:8px;"></i>لم يتم تحديد كابتن لعرضه.</div>`;

@@ -16,6 +16,7 @@ class AppSettingsModule {
     'defaultFareScooter': 20.0,
     'defaultFareMotorcycle': 15.0,
     'commissionRate': 10.0,
+    'commission_rate': 10.0,
     'minFare': 10.0,
     'maxFare': 500.0,
     'demo_mode_enabled': true,
@@ -30,6 +31,9 @@ class AppSettingsModule {
       _supabase.from('app_settings').select().maybeSingle().then((data) {
         if (data != null) {
           appSettings.addAll(Map<String, dynamic>.from(data));
+          if (data['commission_rate'] != null) {
+            appSettings['commissionRate'] = (data['commission_rate'] as num).toDouble();
+          }
           onUpdate();
         }
       }).catchError((e) {
@@ -42,6 +46,9 @@ class AppSettingsModule {
           .listen((dataList) {
         if (dataList.isNotEmpty) {
           appSettings.addAll(Map<String, dynamic>.from(dataList.first));
+          if (dataList.first['commission_rate'] != null) {
+            appSettings['commissionRate'] = (dataList.first['commission_rate'] as num).toDouble();
+          }
           onUpdate();
         }
       });

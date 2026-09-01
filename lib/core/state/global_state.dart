@@ -1059,6 +1059,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       'defaultFareScooter': 19.0,
       'defaultFareMotorcycle': 20.0,
       'commissionRate': 10.0,
+      'commission_rate': 10.0,
       'minFare': 20.0,
       'maxFare': 10000.0,
       'surge_enabled': true,
@@ -1077,6 +1078,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       final res = await _supabase.from('app_settings').select().eq('id', 'default').maybeSingle();
       if (res != null) {
         appSettings.addAll(res);
+        if (res['commission_rate'] != null) {
+          appSettings['commissionRate'] = (res['commission_rate'] as num).toDouble();
+        }
         notifyListeners();
         debugPrint('[GlobalState] Initial settings fetched: $appSettings');
       }
@@ -1093,6 +1097,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           .listen((data) {
             if (data.isNotEmpty) {
               appSettings.addAll(data.first);
+              if (data.first['commission_rate'] != null) {
+                appSettings['commissionRate'] = (data.first['commission_rate'] as num).toDouble();
+              }
               notifyListeners();
               debugPrint('[GlobalState] Realtime settings updated: $appSettings');
             }

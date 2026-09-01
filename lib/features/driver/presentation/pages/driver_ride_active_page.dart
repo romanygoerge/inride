@@ -1166,24 +1166,38 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                     const SizedBox(height: 6),
                     Builder(
                       builder: (context) {
-                        final double price = state.offeredFare;
+                        final double price = state.offeredFare > 0
+                            ? state.offeredFare
+                            : (state.currentRideRequest?.offeredFare ?? 0.0);
                         final double rate = (state.appSettings['commission_rate'] != null
                             ? (double.tryParse(state.appSettings['commission_rate'].toString()) ?? 10.0)
                             : ((state.appSettings['commissionRate'] as num?)?.toDouble() ?? 10.0));
                         final double commission = price * (rate / 100.0);
+                        final bool isFreeCommission = rate <= 0.0 || commission <= 0.0;
+                        final String rateStr = rate.toStringAsFixed(rate.truncateToDouble() == rate ? 0 : 1);
+                        final String commissionStr = commission.toStringAsFixed(commission.truncateToDouble() == commission ? 0 : 1);
+
                         if (state.activeRidePaymentMethod == 'المحفظة') {
                           return Text(
                             state.currentServiceType == 'delivery'
-                                ? 'تم إضافة ${(price - commission).round()} ج.م إلى محفظتك بنجاح قيمة التوصيل.'
-                                : 'تم إضافة ${(price - commission).round()} ج.م إلى محفظتك بنجاح (بعد خصم العمولة).',
+                                ? (isFreeCommission
+                                    ? 'تم إضافة ${price.round()} ج.م إلى محفظتك بنجاح قيمة التوصيل.'
+                                    : 'تم إضافة ${(price - commission).round()} ج.م إلى محفظتك بنجاح (بعد خصم عمولة $rateStr%).')
+                                : (isFreeCommission
+                                    ? 'تم إضافة ${price.round()} ج.م إلى محفظتك بنجاح قيمة المشوار.'
+                                    : 'تم إضافة ${(price - commission).round()} ج.م إلى محفظتك بنجاح (بعد خصم عمولة $rateStr%).'),
                             style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
                             textAlign: TextAlign.center,
                           );
                         } else {
                           return Text(
                             state.currentServiceType == 'delivery'
-                                ? 'يرجى تحصيل ${price.round()} ج.م نقداً من العميل قيمة التوصيل.\n(تم خصم عمولة قدرها ${commission.round()} ج.م من محفظتك)'
-                                : 'يرجى تحصيل ${price.round()} ج.م نقداً من الراكب.\n(تم خصم عمولة قدرها ${commission.round()} ج.م من محفظتك)',
+                                ? (isFreeCommission
+                                    ? 'يرجى تحصيل ${price.round()} ج.م نقداً من العميل قيمة التوصيل.'
+                                    : 'يرجى تحصيل ${price.round()} ج.م نقداً من العميل قيمة التوصيل.\n(تم خصم عمولة قدرها $commissionStr ج.م [$rateStr%] من محفظتك)')
+                                : (isFreeCommission
+                                    ? 'يرجى تحصيل ${price.round()} ج.م نقداً من الراكب.'
+                                    : 'يرجى تحصيل ${price.round()} ج.م نقداً من الراكب.\n(تم خصم عمولة قدرها $commissionStr ج.م [$rateStr%] من محفظتك)'),
                             style: GoogleFonts.cairo(fontSize: 12, color: AppColors.textSecondary),
                             textAlign: TextAlign.center,
                           );

@@ -5014,7 +5014,7 @@ function renderSettings() {
                   </div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;">
-                  <input type="number" class="settings-input" value="${mockData.settings.commissionRate}" id="commissionRate" onchange="updateSetting('commissionRate', this.value)">
+                  <input type="number" class="settings-input" value="${mockData.settings.commissionRate ?? 10}" id="commissionRate" oninput="updateSetting('commissionRate', this.value)" onchange="updateSetting('commissionRate', this.value)">
                   <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">%</span>
                 </div>
               </div>
@@ -5029,7 +5029,7 @@ function renderSettings() {
                   </div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;">
-                  <input type="number" class="settings-input" value="${mockData.settings.minFare}" id="minFare" onchange="updateSetting('minFare', this.value)">
+                  <input type="number" class="settings-input" value="${mockData.settings.minFare ?? 10}" id="minFare" oninput="updateSetting('minFare', this.value)" onchange="updateSetting('minFare', this.value)">
                   <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">ج.م</span>
                 </div>
               </div>
@@ -5044,7 +5044,7 @@ function renderSettings() {
                   </div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;">
-                  <input type="number" class="settings-input" value="${mockData.settings.maxFare}" id="maxFare" onchange="updateSetting('maxFare', this.value)">
+                  <input type="number" class="settings-input" value="${mockData.settings.maxFare ?? 500}" id="maxFare" oninput="updateSetting('maxFare', this.value)" onchange="updateSetting('maxFare', this.value)">
                   <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">ج.م</span>
                 </div>
               </div>
@@ -5197,12 +5197,14 @@ function renderSettings() {
 }
 
 function updateSetting(key, value) {
-  const parsedVal = parseFloat(value);
-  if (mockData.settings[key] !== parsedVal) {
+  const parsedVal = value === '' ? 0 : parseFloat(value);
+  if (!isNaN(parsedVal)) {
     mockData.settings[key] = parsedVal;
     settingsDirty = true;
     const btnContainer = document.getElementById('settings-save-container');
     if (btnContainer) btnContainer.style.display = 'flex';
+    const pricingBtnContainer = document.getElementById('pricing-save-container');
+    if (pricingBtnContainer) pricingBtnContainer.style.display = 'flex';
   }
 }
 
@@ -5426,25 +5428,26 @@ async function saveSettings() {
   if (supabaseClient) {
     try {
       const updateObj = {
-        default_fare_car: mockData.settings.defaultFareCar,
-        default_fare_scooter: mockData.settings.defaultFareScooter,
-        default_fare_motorcycle: mockData.settings.defaultFareMotorcycle,
-        commission_rate: mockData.settings.commissionRate,
-        min_fare: mockData.settings.minFare,
-        max_fare: mockData.settings.maxFare,
-        first_km_fare: mockData.settings.first_km_fare || 20,
-        extra_km_fare: mockData.settings.extra_km_fare || 5,
-        ac_km_fare: mockData.settings.ac_km_fare || 1,
-        heat_hour_km_fare: mockData.settings.heat_hour_km_fare || 1,
-        heat_start_hour: mockData.settings.heat_start_hour || 11,
-        heat_end_hour: mockData.settings.heat_end_hour || 15,
+        default_fare_car: Number(mockData.settings.defaultFareCar ?? 45),
+        default_fare_scooter: Number(mockData.settings.defaultFareScooter ?? 20),
+        default_fare_motorcycle: Number(mockData.settings.defaultFareMotorcycle ?? 15),
+        commission_rate: Number(mockData.settings.commissionRate ?? 10),
+        min_fare: Number(mockData.settings.minFare ?? 10),
+        max_fare: Number(mockData.settings.maxFare ?? 500),
+        first_km_fare: Number(mockData.settings.first_km_fare ?? 20),
+        extra_km_fare: Number(mockData.settings.extra_km_fare ?? 5),
+        ac_km_fare: Number(mockData.settings.ac_km_fare ?? 1),
+        heat_hour_km_fare: Number(mockData.settings.heat_hour_km_fare ?? 1),
+        heat_start_hour: parseInt(mockData.settings.heat_start_hour ?? 11),
+        heat_end_hour: parseInt(mockData.settings.heat_end_hour ?? 15),
         surge_enabled: mockData.settings.surge_enabled !== false,
         region_fares: mockData.settings.region_fares || [],
         demo_mode_enabled: mockData.settings.demo_mode_enabled !== false,
         demo_phone: mockData.settings.demo_phone || '01000000000',
         demo_otp: mockData.settings.demo_otp || '123456',
         demo_driver_name: mockData.settings.demo_driver_name || 'كابتن تجريبي (Demo)',
-        demo_passenger_name: mockData.settings.demo_passenger_name || 'راكب تجريبي (Demo)'
+        demo_passenger_name: mockData.settings.demo_passenger_name || 'راكب تجريبي (Demo)',
+        updated_at: new Date().toISOString()
       };
 
       const { error } = await supabaseClient
@@ -5454,7 +5457,7 @@ async function saveSettings() {
       if (!error) {
         settingsDirty = false;
         renderPage(currentPage);
-        showToast('✅ تم حفظ كافة إعدادات الأسعار والمناطق في Supabase بنجاح');
+        showToast('✅ تم حفظ كافة إعدادات الأسعار والعمولة في Supabase بنجاح');
       } else {
         showToast(`❌ فشل حفظ الإعدادات في Supabase: ${error.message}`);
       }
@@ -5569,52 +5572,52 @@ function renderPricing() {
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px;">
               <div>
                 <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">تسعيرة الكيلومتر الأول شامل الأول (First 1 Km)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.first_km_fare || 20}" onchange="updateSetting('first_km_fare', this.value)">
+                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.first_km_fare ?? 20}" oninput="updateSetting('first_km_fare', this.value)" onchange="updateSetting('first_km_fare', this.value)">
               </div>
               <div>
                 <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">سعر الكيلومتر الإضافي (Extra Km Fare)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.extra_km_fare || 5}" onchange="updateSetting('extra_km_fare', this.value)">
+                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.extra_km_fare ?? 5}" oninput="updateSetting('extra_km_fare', this.value)" onchange="updateSetting('extra_km_fare', this.value)">
               </div>
               <div>
                 <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">إضافة تكييف السيارة لكل كم (Car AC Surcharge)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.ac_km_fare || 1}" onchange="updateSetting('ac_km_fare', this.value)">
+                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.ac_km_fare ?? 1}" oninput="updateSetting('ac_km_fare', this.value)" onchange="updateSetting('ac_km_fare', this.value)">
               </div>
               <div>
                 <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">إضافة ساعة الحر لكل كم (Heat Surge Surcharge)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.heat_hour_km_fare || 1}" onchange="updateSetting('heat_hour_km_fare', this.value)">
+                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.heat_hour_km_fare ?? 1}" oninput="updateSetting('heat_hour_km_fare', this.value)" onchange="updateSetting('heat_hour_km_fare', this.value)">
               </div>
               <div>
                 <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">ساعة بدء الحر (تبدأ من: 11 مثلاً)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.heat_start_hour || 11}" onchange="updateSetting('heat_start_hour', this.value)">
+                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.heat_start_hour ?? 11}" oninput="updateSetting('heat_start_hour', this.value)" onchange="updateSetting('heat_start_hour', this.value)">
               </div>
               <div>
                 <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">ساعة انتهاء الحر (تنتهي في: 15 مثلاً)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.heat_end_hour || 15}" onchange="updateSetting('heat_end_hour', this.value)">
+                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.heat_end_hour ?? 15}" oninput="updateSetting('heat_end_hour', this.value)" onchange="updateSetting('heat_end_hour', this.value)">
               </div>
               
               <div>
                 <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">تسعيرة السيارة الافتراضية (Car Base)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.defaultFareCar}" onchange="updateSetting('defaultFareCar', this.value)">
+                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.defaultFareCar ?? 45}" oninput="updateSetting('defaultFareCar', this.value)" onchange="updateSetting('defaultFareCar', this.value)">
               </div>
               <div>
                 <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">تسعيرة الاسكوتر الافتراضية (Scooter Base)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.defaultFareScooter}" onchange="updateSetting('defaultFareScooter', this.value)">
+                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.defaultFareScooter ?? 20}" oninput="updateSetting('defaultFareScooter', this.value)" onchange="updateSetting('defaultFareScooter', this.value)">
               </div>
               <div>
                 <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">تسعيرة الموتوسيكل الافتراضية (Motorcycle Base)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.defaultFareMotorcycle}" onchange="updateSetting('defaultFareMotorcycle', this.value)">
+                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.defaultFareMotorcycle ?? 15}" oninput="updateSetting('defaultFareMotorcycle', this.value)" onchange="updateSetting('defaultFareMotorcycle', this.value)">
               </div>
               <div>
                 <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">عمولة التطبيق (Platform Commission %)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.commissionRate}" onchange="updateSetting('commissionRate', this.value)">
+                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.commissionRate ?? 10}" oninput="updateSetting('commissionRate', this.value)" onchange="updateSetting('commissionRate', this.value)">
               </div>
               <div>
                 <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">الحد الأدنى للأجرة (Min Fare)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.minFare}" onchange="updateSetting('minFare', this.value)">
+                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.minFare ?? 10}" oninput="updateSetting('minFare', this.value)" onchange="updateSetting('minFare', this.value)">
               </div>
               <div>
                 <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">الحد الأقصى للأجرة (Max Fare)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.maxFare}" onchange="updateSetting('maxFare', this.value)">
+                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.maxFare ?? 500}" oninput="updateSetting('maxFare', this.value)" onchange="updateSetting('maxFare', this.value)">
               </div>
             </div>
             
@@ -7759,20 +7762,20 @@ function initSupabaseSync() {
       mockData.weeklyActivity = weekDaysOrder.map(w => ({ day: w.day, trips: w.trips }));
 
       // 10. Update Real Platform Settings
-      if (settingsData) {
+      if (settingsData && !settingsDirty) {
         mockData.settings = {
-          defaultFareCar: parseFloat(settingsData.default_fare_car || 45),
-          defaultFareScooter: parseFloat(settingsData.default_fare_scooter || 20),
-          defaultFareMotorcycle: parseFloat(settingsData.default_fare_motorcycle || 15),
-          commissionRate: parseFloat(settingsData.commission_rate || 10),
-          minFare: parseFloat(settingsData.min_fare || 10),
-          maxFare: parseFloat(settingsData.max_fare || 500),
-          first_km_fare: parseFloat(settingsData.first_km_fare || 20),
-          extra_km_fare: parseFloat(settingsData.extra_km_fare || 5),
-          ac_km_fare: parseFloat(settingsData.ac_km_fare || 1),
-          heat_hour_km_fare: parseFloat(settingsData.heat_hour_km_fare || 1),
-          heat_start_hour: parseInt(settingsData.heat_start_hour || 11),
-          heat_end_hour: parseInt(settingsData.heat_end_hour || 15),
+          defaultFareCar: settingsData.default_fare_car !== undefined && settingsData.default_fare_car !== null ? parseFloat(settingsData.default_fare_car) : 45,
+          defaultFareScooter: settingsData.default_fare_scooter !== undefined && settingsData.default_fare_scooter !== null ? parseFloat(settingsData.default_fare_scooter) : 20,
+          defaultFareMotorcycle: settingsData.default_fare_motorcycle !== undefined && settingsData.default_fare_motorcycle !== null ? parseFloat(settingsData.default_fare_motorcycle) : 15,
+          commissionRate: settingsData.commission_rate !== undefined && settingsData.commission_rate !== null ? parseFloat(settingsData.commission_rate) : 10,
+          minFare: settingsData.min_fare !== undefined && settingsData.min_fare !== null ? parseFloat(settingsData.min_fare) : 10,
+          maxFare: settingsData.max_fare !== undefined && settingsData.max_fare !== null ? parseFloat(settingsData.max_fare) : 500,
+          first_km_fare: settingsData.first_km_fare !== undefined && settingsData.first_km_fare !== null ? parseFloat(settingsData.first_km_fare) : 20,
+          extra_km_fare: settingsData.extra_km_fare !== undefined && settingsData.extra_km_fare !== null ? parseFloat(settingsData.extra_km_fare) : 5,
+          ac_km_fare: settingsData.ac_km_fare !== undefined && settingsData.ac_km_fare !== null ? parseFloat(settingsData.ac_km_fare) : 1,
+          heat_hour_km_fare: settingsData.heat_hour_km_fare !== undefined && settingsData.heat_hour_km_fare !== null ? parseFloat(settingsData.heat_hour_km_fare) : 1,
+          heat_start_hour: settingsData.heat_start_hour !== undefined && settingsData.heat_start_hour !== null ? parseInt(settingsData.heat_start_hour) : 11,
+          heat_end_hour: settingsData.heat_end_hour !== undefined && settingsData.heat_end_hour !== null ? parseInt(settingsData.heat_end_hour) : 15,
           surge_enabled: settingsData.surge_enabled !== false,
           region_fares: Array.isArray(settingsData.region_fares) ? settingsData.region_fares : [],
           demo_mode_enabled: settingsData.demo_mode_enabled !== false,

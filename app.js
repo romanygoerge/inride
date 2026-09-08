@@ -390,7 +390,9 @@ const mockData = {
     commissionRate: 10,
     minFare: 10,
     maxFare: 500,
-    demo_mode_enabled: true,
+    demo_mode_enabled: false,
+    demo_passenger_enabled: false,
+    demo_driver_enabled: false,
     demo_phone: '01000000000',
     demo_otp: '123456',
     demo_driver_name: 'كابتن تجريبي (Demo)',
@@ -399,6 +401,22 @@ const mockData = {
   supportChats: {},
   tripsDataMap: {},
 };
+
+// Immediately restore cached demo mode preferences to prevent any UI flashing or auto-reopening
+try {
+  const cachedDemoMode = localStorage.getItem('inride_demo_mode_enabled');
+  if (cachedDemoMode !== null) {
+    mockData.settings.demo_mode_enabled = cachedDemoMode === 'true';
+  }
+  const cachedDemoPassenger = localStorage.getItem('inride_demo_passenger_enabled');
+  if (cachedDemoPassenger !== null) {
+    mockData.settings.demo_passenger_enabled = cachedDemoPassenger === 'true';
+  }
+  const cachedDemoDriver = localStorage.getItem('inride_demo_driver_enabled');
+  if (cachedDemoDriver !== null) {
+    mockData.settings.demo_driver_enabled = cachedDemoDriver === 'true';
+  }
+} catch (_) {}
 
 let currentPage = 'dashboard';
 
@@ -5122,28 +5140,70 @@ function renderSettings() {
       </div>
 
       <!-- Demo Account & Quick Testing Section -->
-      <div class="card mt-20" style="border: 1.5px solid ${mockData.settings.demo_mode_enabled !== false ? '#22c55e' : '#ef4444'}; background: ${mockData.settings.demo_mode_enabled !== false ? 'linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%)' : 'linear-gradient(180deg, #fef2f2 0%, #ffffff 100%)'};">
+      <div class="card mt-20" style="border: 1.5px solid ${mockData.settings.demo_mode_enabled === true ? '#22c55e' : '#ef4444'}; background: ${mockData.settings.demo_mode_enabled === true ? 'linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%)' : 'linear-gradient(180deg, #fef2f2 0%, #ffffff 100%)'};">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
           <div style="display:flex; align-items:center; gap:8px;">
-            <h3><i class="ri-rocket-2-fill ${mockData.settings.demo_mode_enabled !== false ? 'text-success' : 'text-danger'}" style="margin-left:8px;"></i> التحكم في ميزة الحساب التجريبي للتطبيق (Demo Mode Control)</h3>
-            <span class="badge ${mockData.settings.demo_mode_enabled !== false ? 'badge-success' : 'badge-danger'}" style="${mockData.settings.demo_mode_enabled === false ? 'background:#ef4444;color:#fff;' : ''}">
-              ${mockData.settings.demo_mode_enabled !== false ? '🟢 الميزة مفعلة وتظهر في تطبيق الهاتف' : '🔴 الميزة ملغية ومحذوفة من التطبيق'}
+            <h3><i class="ri-rocket-2-fill ${mockData.settings.demo_mode_enabled === true ? 'text-success' : 'text-danger'}" style="margin-left:8px;"></i> التحكم في ميزة الحساب التجريبي للتطبيق (Demo Mode Control)</h3>
+            <span class="badge ${mockData.settings.demo_mode_enabled === true ? 'badge-success' : 'badge-danger'}" style="${mockData.settings.demo_mode_enabled !== true ? 'background:#ef4444;color:#fff;' : ''}">
+              ${mockData.settings.demo_mode_enabled === true ? '🟢 الميزة مفعلة وتظهر في تطبيق الهاتف' : '🔴 الميزة ملغية ومحذوفة من التطبيق'}
             </span>
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">حالة الميزة:</span>
+            <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">المفتاح الرئيسي:</span>
             <label class="toggle-switch">
-              <input type="checkbox" id="demoModeToggle" ${mockData.settings.demo_mode_enabled !== false ? 'checked' : ''} onchange="toggleDemoMode(this.checked)">
+              <input type="checkbox" id="demoModeToggle" ${mockData.settings.demo_mode_enabled === true ? 'checked' : ''} onchange="toggleDemoMode(this.checked)">
               <span class="toggle-slider"></span>
             </label>
           </div>
         </div>
         <div class="card-body">
           <p style="font-size:12.5px; color:var(--text-secondary); margin-bottom:18px; line-height:1.6;">
-            ${mockData.settings.demo_mode_enabled !== false 
-              ? '✅ <strong>الميزة تعمل الآن:</strong> يظهر زر الدخول التجريبي في صفحة تسجيل الدخول بتطبيق الهاتف، مما يتيح الدخول الفوري ككابتن معتمد أو راكب بدون انتظار كود الواتساب أو مراجعة المستندات.'
+            ${mockData.settings.demo_mode_enabled === true 
+              ? '✅ <strong>الميزة تعمل الآن:</strong> يمكنك تفعيل أو إغلاق الراكب التجريبي أو الكابتن التجريبي بشكل مستقل أدناه، للتحكم الدقيق فيما يظهر في صفحة تسجيل الدخول بتطبيق الهاتف.'
               : '⚠️ <strong>الميزة محذوفة ومعطلة حالياً:</strong> زر الدخول التجريبي مخفي تماماً من تطبيق الهاتف، ولا يمكن لأي شخص استخدام الحسابات التجريبية أو تخطي كود التحقق.'}
           </p>
+
+          <!-- Granular Independent Controls for Passenger and Driver -->
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-bottom:20px;">
+            <!-- Demo Passenger Box -->
+            <div style="border: 1.5px solid ${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_passenger_enabled === true ? '#22c55e' : '#cbd5e1'}; background:${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_passenger_enabled === true ? '#f0fdf4' : '#f8fafc'}; padding:14px 16px; border-radius:12px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+              <div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <i class="ri-user-location-fill ${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_passenger_enabled === true ? 'text-success' : 'text-danger'}" style="font-size:20px;"></i>
+                  <h5 style="margin:0; font-size:13.5px; font-weight:700;">ميزة الراكب التجريبي (Demo Rider)</h5>
+                </div>
+                <p style="margin:4px 0 0 0; font-size:11.5px; font-weight:600; color:${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_passenger_enabled === true ? '#15803d' : '#991b1b'};">
+                  ${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_passenger_enabled === true 
+                    ? '🟢 مفعل: يظهر زر دخول الراكب التجريبي بالتطبيق' 
+                    : '🔴 مغلق: زر الراكب التجريبي مخفي وممنوع نهائياً'}
+                </p>
+              </div>
+              <label class="toggle-switch" style="${mockData.settings.demo_mode_enabled !== true ? 'opacity:0.4; pointer-events:none;' : ''}">
+                <input type="checkbox" id="demoPassengerToggle" ${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_passenger_enabled === true ? 'checked' : ''} onchange="toggleDemoPassenger(this.checked)" ${mockData.settings.demo_mode_enabled !== true ? 'disabled' : ''}>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <!-- Demo Captain Box -->
+            <div style="border: 1.5px solid ${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_driver_enabled === true ? '#22c55e' : '#cbd5e1'}; background:${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_driver_enabled === true ? '#f0fdf4' : '#f8fafc'}; padding:14px 16px; border-radius:12px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+              <div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <i class="ri-car-fill ${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_driver_enabled === true ? 'text-success' : 'text-danger'}" style="font-size:20px;"></i>
+                  <h5 style="margin:0; font-size:13.5px; font-weight:700;">ميزة الكابتن التجريبي (Demo Driver)</h5>
+                </div>
+                <p style="margin:4px 0 0 0; font-size:11.5px; font-weight:600; color:${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_driver_enabled === true ? '#15803d' : '#991b1b'};">
+                  ${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_driver_enabled === true 
+                    ? '🟢 مفعل: يظهر زر دخول الكابتن التجريبي بالتطبيق' 
+                    : '🔴 مغلق: زر الكابتن التجريبي مخفي وممنوع نهائياً'}
+                </p>
+              </div>
+              <label class="toggle-switch" style="${mockData.settings.demo_mode_enabled !== true ? 'opacity:0.4; pointer-events:none;' : ''}">
+                <input type="checkbox" id="demoDriverToggle" ${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_driver_enabled === true ? 'checked' : ''} onchange="toggleDemoDriver(this.checked)" ${mockData.settings.demo_mode_enabled !== true ? 'disabled' : ''}>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
           <div class="grid-2" style="gap:16px;">
             <div class="form-group">
               <label style="font-size:12.5px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:block;">رقم هاتف حساب الديمو:</label>
@@ -5166,8 +5226,8 @@ function renderSettings() {
           </div>
 
           <!-- Quick Action Buttons -->
-          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:20px; padding-top:16px; border-top:1px solid ${mockData.settings.demo_mode_enabled !== false ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'};">
-            ${mockData.settings.demo_mode_enabled !== false ? `
+          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:20px; padding-top:16px; border-top:1px solid ${mockData.settings.demo_mode_enabled === true ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'};">
+            ${mockData.settings.demo_mode_enabled === true ? `
               <button class="btn btn-sm btn-primary" onclick="initializeDemoAccountFromDashboard('driver')" style="background:#16a34a; border-color:#16a34a;">
                 <i class="ri-car-fill"></i> تهيئة وتفعيل حساب كابتن ديمو الآن
               </button>
@@ -5209,13 +5269,53 @@ function updateSetting(key, value) {
 }
 
 async function toggleDemoMode(enabled) {
-  mockData.settings.demo_mode_enabled = enabled;
+  mockData.settings.demo_mode_enabled = !!enabled;
+  if (!enabled) {
+    mockData.settings.demo_passenger_enabled = false;
+    mockData.settings.demo_driver_enabled = false;
+  } else {
+    mockData.settings.demo_passenger_enabled = true;
+    mockData.settings.demo_driver_enabled = true;
+  }
+  try {
+    localStorage.setItem('inride_demo_mode_enabled', enabled ? 'true' : 'false');
+    localStorage.setItem('inride_demo_passenger_enabled', mockData.settings.demo_passenger_enabled ? 'true' : 'false');
+    localStorage.setItem('inride_demo_driver_enabled', mockData.settings.demo_driver_enabled ? 'true' : 'false');
+  } catch (_) {}
   settingsDirty = true;
   if (enabled) {
     await enableAndCreateDemoFeature();
   } else {
     await purgeDemoAccountFromDashboard(true);
   }
+}
+
+async function toggleDemoPassenger(enabled) {
+  mockData.settings.demo_passenger_enabled = !!enabled;
+  try {
+    localStorage.setItem('inride_demo_passenger_enabled', enabled ? 'true' : 'false');
+  } catch (_) {}
+  settingsDirty = true;
+  if (enabled) {
+    await initializeDemoAccountFromDashboard('rider');
+  }
+  await saveSettings();
+  showToast(enabled ? '✅ تم تفعيل ميزة الراكب التجريبي بالتطبيق' : '⚠️ تم إغلاق وتعطيل ميزة الراكب التجريبي بالتطبيق نهائياً');
+  if (typeof debouncedSync === 'function') debouncedSync();
+}
+
+async function toggleDemoDriver(enabled) {
+  mockData.settings.demo_driver_enabled = !!enabled;
+  try {
+    localStorage.setItem('inride_demo_driver_enabled', enabled ? 'true' : 'false');
+  } catch (_) {}
+  settingsDirty = true;
+  if (enabled) {
+    await initializeDemoAccountFromDashboard('driver');
+  }
+  await saveSettings();
+  showToast(enabled ? '✅ تم تفعيل ميزة الكابتن التجريبي بالتطبيق' : '⚠️ تم إغلاق وتعطيل ميزة الكابتن التجريبي بالتطبيق نهائياً');
+  if (typeof debouncedSync === 'function') debouncedSync();
 }
 
 function updateDemoSetting(key, val) {
@@ -5230,6 +5330,13 @@ async function enableAndCreateDemoFeature() {
   const name = mockData.settings.demo_driver_name || 'كابتن تجريبي (Demo)';
   showToast(`⏳ جاري تفعيل ميزة الديمو وإنشاء الحسابات التجريبية...`);
   mockData.settings.demo_mode_enabled = true;
+  mockData.settings.demo_passenger_enabled = true;
+  mockData.settings.demo_driver_enabled = true;
+  try {
+    localStorage.setItem('inride_demo_mode_enabled', 'true');
+    localStorage.setItem('inride_demo_passenger_enabled', 'true');
+    localStorage.setItem('inride_demo_driver_enabled', 'true');
+  } catch (_) {}
   
   if (supabaseClient) {
     try {
@@ -5281,6 +5388,14 @@ async function purgeDemoAccountFromDashboard(isSilent = false) {
   }
   showToast(`⏳ جاري تعطيل الميزة وحذف بيانات الديمو من النظام...`);
   mockData.settings.demo_mode_enabled = false;
+  mockData.settings.demo_passenger_enabled = false;
+  mockData.settings.demo_driver_enabled = false;
+  try {
+    localStorage.setItem('inride_demo_mode_enabled', 'false');
+    localStorage.setItem('inride_demo_passenger_enabled', 'false');
+    localStorage.setItem('inride_demo_driver_enabled', 'false');
+  } catch (_) {}
+
   if (supabaseClient) {
     try {
       const { error } = await supabaseClient.rpc('purge_demo_account', {
@@ -5291,7 +5406,7 @@ async function purgeDemoAccountFromDashboard(isSilent = false) {
       if (error) {
         showToast(`❌ خطأ في حذف الحساب: ${error.message}`);
       } else {
-        showToast(`🗑️ تم إخفاء ميزة الديمو من تطبيق الهاتف وحذف بياناتها بنجاح.`);
+        showToast(`🗑️ تم إغلاق ميزة الديمو وحذف حساباتها بنجاح.`);
         if (typeof debouncedSync === 'function') debouncedSync();
       }
     } catch(e) {
@@ -5442,7 +5557,9 @@ async function saveSettings() {
         heat_end_hour: parseInt(mockData.settings.heat_end_hour ?? 15),
         surge_enabled: mockData.settings.surge_enabled !== false,
         region_fares: mockData.settings.region_fares || [],
-        demo_mode_enabled: mockData.settings.demo_mode_enabled !== false,
+        demo_mode_enabled: mockData.settings.demo_mode_enabled === true,
+        demo_passenger_enabled: mockData.settings.demo_passenger_enabled === true,
+        demo_driver_enabled: mockData.settings.demo_driver_enabled === true,
         demo_phone: mockData.settings.demo_phone || '01000000000',
         demo_otp: mockData.settings.demo_otp || '123456',
         demo_driver_name: mockData.settings.demo_driver_name || 'كابتن تجريبي (Demo)',
@@ -7778,12 +7895,20 @@ function initSupabaseSync() {
           heat_end_hour: settingsData.heat_end_hour !== undefined && settingsData.heat_end_hour !== null ? parseInt(settingsData.heat_end_hour) : 15,
           surge_enabled: settingsData.surge_enabled !== false,
           region_fares: Array.isArray(settingsData.region_fares) ? settingsData.region_fares : [],
-          demo_mode_enabled: settingsData.demo_mode_enabled !== false,
+          demo_mode_enabled: settingsData.demo_mode_enabled === true,
+          demo_passenger_enabled: settingsData.demo_passenger_enabled === true,
+          demo_driver_enabled: settingsData.demo_driver_enabled === true,
           demo_phone: settingsData.demo_phone || '01000000000',
           demo_otp: settingsData.demo_otp || '123456',
           demo_driver_name: settingsData.demo_driver_name || 'كابتن تجريبي (Demo)',
           demo_passenger_name: settingsData.demo_passenger_name || 'راكب تجريبي (Demo)'
         };
+
+        try {
+          localStorage.setItem('inride_demo_mode_enabled', mockData.settings.demo_mode_enabled ? 'true' : 'false');
+          localStorage.setItem('inride_demo_passenger_enabled', mockData.settings.demo_passenger_enabled ? 'true' : 'false');
+          localStorage.setItem('inride_demo_driver_enabled', mockData.settings.demo_driver_enabled ? 'true' : 'false');
+        } catch (_) {}
       }
 
       globalSyncState.status = 'success';

@@ -390,13 +390,18 @@ class PhoneAuthService {
     required String roleName,
     String? nameOverride,
   }) async {
-    if (!GlobalState.instance.isDemoModeEnabled) {
-      throw Exception('ميزة الحساب التجريبي معطلة حالياً من قبل إدارة التطبيق.');
+    final isDriver = roleName == 'driver';
+    final isAllowed = isDriver
+        ? GlobalState.instance.isDemoDriverEnabled
+        : GlobalState.instance.isDemoPassengerEnabled;
+    if (!isAllowed) {
+      throw Exception(isDriver
+          ? 'ميزة حساب الكابتن التجريبي معطلة حالياً من قبل إدارة التطبيق.'
+          : 'ميزة حساب الراكب التجريبي معطلة حالياً من قبل إدارة التطبيق.');
     }
 
     final cleanedPhone = formatPhoneForWaPilot(phoneNumber);
     final e164Phone = formatPhoneE164(phoneNumber);
-    final isDriver = roleName == 'driver';
     final displayName = nameOverride ?? (isDriver ? 'كابتن تجريبي (Demo)' : 'راكب تجريبي (Demo)');
 
     final authEmail = 'phone_$cleanedPhone@inride.app';

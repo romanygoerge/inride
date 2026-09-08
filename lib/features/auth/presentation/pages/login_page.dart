@@ -586,7 +586,11 @@ class _LoginPageState extends State<LoginPage> {
                 ListenableBuilder(
                   listenable: GlobalState.instance,
                   builder: (context, _) {
-                    if (!GlobalState.instance.isDemoModeEnabled) {
+                    final isDriver = _selectedRole == UserRole.driver;
+                    final isEnabled = isDriver
+                        ? GlobalState.instance.isDemoDriverEnabled
+                        : GlobalState.instance.isDemoPassengerEnabled;
+                    if (!isEnabled) {
                       return const SizedBox.shrink();
                     }
                     return _buildDemoLoginSection();

@@ -1063,7 +1063,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       'minFare': 20.0,
       'maxFare': 10000.0,
       'surge_enabled': true,
-      'demo_mode_enabled': true,
+      'demo_mode_enabled': false,
+      'demo_passenger_enabled': false,
+      'demo_driver_enabled': false,
       'demo_phone': '01000000000',
       'demo_otp': '123456',
       'demo_driver_name': 'كابتن تجريبي (Demo)',
@@ -3481,7 +3483,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// Demo Account Properties
-  bool get isDemoModeEnabled => (appSettings['demo_mode_enabled'] as bool?) ?? true;
+  bool get isDemoModeEnabled => (appSettings['demo_mode_enabled'] as bool?) ?? false;
+  bool get isDemoPassengerEnabled => isDemoModeEnabled && ((appSettings['demo_passenger_enabled'] as bool?) ?? false);
+  bool get isDemoDriverEnabled => isDemoModeEnabled && ((appSettings['demo_driver_enabled'] as bool?) ?? false);
   String get demoPhone => (appSettings['demo_phone'] as String?) ?? '01000000000';
   String get demoOtp => (appSettings['demo_otp'] as String?) ?? '123456';
   String get demoDriverName => (appSettings['demo_driver_name'] as String?) ?? 'كابتن تجريبي (Demo)';

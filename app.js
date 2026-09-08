@@ -1332,11 +1332,19 @@ function changeTripPricePrompt(requestId) {
   }
   
   if (supabaseClient) {
-    supabaseClient.from('ride_requests').update({ offered_fare: newPrice }).eq('id', requestId)
+    supabaseClient.from('ride_requests').update({ offered_fare: newPrice, updated_at: new Date().toISOString() }).eq('id', requestId)
       .then(async ({ error }) => {
         if (!error) {
+          const trip = mockData.trips.find(t => t.requestId === requestId || t.id === requestId);
+          if (trip) {
+            trip.price = newPrice;
+            renderPage('trips');
+          }
           logAction(`تعديل سعر الرحلة ${requestId} إلى ${newPrice} ج.م`);
           showToast(`✅ تم تعديل سعر الرحلة بنجاح`);
+          if (typeof window.runBulkSync === 'function') {
+            window.runBulkSync();
+          }
 
           // Push Notification: إبلاغ الراكب بتعديل سعر الرحلة
           try {
@@ -1662,6 +1670,10 @@ function approveDriver(driverUidOrId) {
     return;
   }
 
+  const prevStatus = driver ? driver.status : null;
+  const prevStatusAr = driver ? driver.statusAr : null;
+  const prevReason = driver ? driver.rejectionReason : null;
+
   const approveTitle = "Your driver account has been approved.";
   const approveBody = "Congratulations! Your driver account has been approved. You can now start accepting trips.";
 
@@ -1694,9 +1706,23 @@ function approveDriver(driverUidOrId) {
             window.runBulkSync();
           }
         } else {
+          if (driver) {
+            driver.status = prevStatus;
+            driver.statusAr = prevStatusAr;
+            driver.rejectionReason = prevReason;
+            updatePendingBadge();
+            renderPage(currentPage);
+          }
           showToast(`❌ فشل الاعتماد: ${error.message}`);
         }
       }).catch(err => {
+        if (driver) {
+          driver.status = prevStatus;
+          driver.statusAr = prevStatusAr;
+          driver.rejectionReason = prevReason;
+          updatePendingBadge();
+          renderPage(currentPage);
+        }
         showToast(`❌ فشل الاعتماد: ${err.message}`);
       });
   }
@@ -1738,6 +1764,10 @@ function confirmRejectDriver(driverUid) {
   const driver = mockData.drivers.find(d => d.uid === driverUid || d.id === driverUid);
   const driverName = driver ? driver.name : 'السائق';
 
+  const prevStatus = driver ? driver.status : null;
+  const prevStatusAr = driver ? driver.statusAr : null;
+  const prevReason = driver ? driver.rejectionReason : null;
+
   const rejectTitle = "Driver application rejected.";
   const rejectBody = rejectionReason ? `Driver application rejected: ${rejectionReason}` : "Driver application rejected.";
 
@@ -1770,9 +1800,23 @@ function confirmRejectDriver(driverUid) {
             window.runBulkSync();
           }
         } else {
+          if (driver) {
+            driver.status = prevStatus;
+            driver.statusAr = prevStatusAr;
+            driver.rejectionReason = prevReason;
+            updatePendingBadge();
+            renderPage(currentPage);
+          }
           showToast(`❌ فشل عملية الرفض: ${error.message}`);
         }
       }).catch(err => {
+        if (driver) {
+          driver.status = prevStatus;
+          driver.statusAr = prevStatusAr;
+          driver.rejectionReason = prevReason;
+          updatePendingBadge();
+          renderPage(currentPage);
+        }
         showToast(`❌ فشل عملية الرفض: ${err.message}`);
       });
   }
@@ -7078,6 +7122,9 @@ function renderLogs() {
 // In-line actions for trips manually (Trip cancel/complete)
 function modifyTripStatus(requestId, newStatus) {
   const trip = mockData.trips.find(t => t.requestId === requestId || t.id === requestId);
+  const previousStatus = trip ? trip.status : null;
+  const previousRawStatus = trip ? trip.rawStatus : null;
+
   if (trip) {
     trip.status = newStatus === 'Completed' ? 'مكتملة' : (newStatus === 'Cancelled' ? 'ملغاة' : 'جارية');
     trip.rawStatus = newStatus;
@@ -7085,7 +7132,19 @@ function modifyTripStatus(requestId, newStatus) {
   renderPage(currentPage);
 
   if (supabaseClient) {
-    supabaseClient.from('ride_requests').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', requestId)
+    const nowIso = new Date().toISOString();
+    const updatePayload = {
+      status: newStatus,
+      updated_at: nowIso
+    };
+    if (newStatus === 'Cancelled') {
+      updatePayload.cancelled_at = nowIso;
+      updatePayload.cancelled_by = 'admin';
+      updatePayload.cancellation_reason = 'تم الإلغاء بواسطة إدارة النظام';
+      updatePayload.cancel_reason = 'تم الإلغاء بواسطة إدارة النظام';
+    }
+
+    supabaseClient.from('ride_requests').update(updatePayload).eq('id', requestId)
       .then(async ({ error }) => {
         if (!error) {
           logAction(`تغيير حالة الرحلة ${requestId} إلى ${newStatus} يدوياً من الإدارة`);
@@ -7142,9 +7201,19 @@ function modifyTripStatus(requestId, newStatus) {
             console.warn('[PushNotificationLog] Trip status push error:', pushErr);
           }
         } else {
+          if (trip) {
+            trip.status = previousStatus;
+            trip.rawStatus = previousRawStatus;
+            renderPage(currentPage);
+          }
           showToast(`❌ فشل التحديث: ${error.message}`);
         }
       }).catch(err => {
+        if (trip) {
+          trip.status = previousStatus;
+          trip.rawStatus = previousRawStatus;
+          renderPage(currentPage);
+        }
         showToast(`❌ فشل التحديث: ${err.message}`);
       });
   } else {
@@ -7155,9 +7224,22 @@ function modifyTripStatus(requestId, newStatus) {
 
 // User action handler (Verify, Suspend, Ban, Reset Pass)
 function modifyUserStatus(uid, action, userRole) {
+  // Save previous state for rollback
+  let prevDriverStatus = null, prevDriverStatusAr = null;
+  let prevPassengerStatus = null, prevPassengerStatusAr = null;
+  const driver = mockData.drivers.find(d => d.uid === uid || d.id === uid);
+  if (driver) {
+    prevDriverStatus = driver.status;
+    prevDriverStatusAr = driver.statusAr;
+  }
+  const passenger = mockData.passengers.find(p => p.uid === uid || p.id === uid);
+  if (passenger) {
+    prevPassengerStatus = passenger.status;
+    prevPassengerStatusAr = passenger.statusAr;
+  }
+
   // Optimistic immediate update
   if (userRole === 'driver' || action === 'verify') {
-    const driver = mockData.drivers.find(d => d.uid === uid || d.id === uid);
     if (driver) {
       if (action === 'verify' || action === 'activate') {
         driver.status = 'verified';
@@ -7171,7 +7253,6 @@ function modifyUserStatus(uid, action, userRole) {
       }
     }
   } else {
-    const passenger = mockData.passengers.find(p => p.uid === uid || p.id === uid);
     if (passenger) {
       if (action === 'suspend') {
         passenger.status = 'suspended';
@@ -7257,6 +7338,16 @@ function modifyUserStatus(uid, action, userRole) {
           window.runBulkSync();
         }
       } catch (err) {
+        if (driver && prevDriverStatus !== null) {
+          driver.status = prevDriverStatus;
+          driver.statusAr = prevDriverStatusAr;
+        }
+        if (passenger && prevPassengerStatus !== null) {
+          passenger.status = prevPassengerStatus;
+          passenger.statusAr = prevPassengerStatusAr;
+        }
+        updatePendingBadge();
+        renderPage(currentPage);
         showToast(`❌ فشل الإجراء: ${err.message}`);
       }
     })();
@@ -7347,6 +7438,16 @@ function adjustUserWallet(uid, amountStr, role) {
           window.runBulkSync();
         }
       } catch (err) {
+        if (d) {
+          d.walletBalance = (parseFloat(d.walletBalance || 0) - amount);
+          d.driverWalletBalance = d.walletBalance;
+          d.earnings = (parseFloat(d.earnings || 0) - amount);
+        }
+        if (p) {
+          p.walletBalance = (parseFloat(p.walletBalance || 0) - amount);
+          p.passengerWalletBalance = p.walletBalance;
+        }
+        renderPage(currentPage);
         showToast(`❌ فشل التحديث: ${err.message}`);
       }
     })();
@@ -7367,6 +7468,10 @@ function submitDocApproval(uid, decision) {
   } else {
     // Rejected
     const driver = mockData.drivers.find(dr => dr.uid === uid || dr.id === uid);
+    const prevStatus = driver ? driver.status : null;
+    const prevStatusAr = driver ? driver.statusAr : null;
+    const prevReason = driver ? driver.rejectionReason : null;
+
     if (driver) {
       driver.status = 'rejected';
       driver.statusAr = 'مرفوض';
@@ -7395,9 +7500,25 @@ function submitDocApproval(uid, decision) {
               window.runBulkSync();
             }
           } else {
+            if (driver) {
+              driver.status = prevStatus;
+              driver.statusAr = prevStatusAr;
+              driver.rejectionReason = prevReason;
+              updatePendingBadge();
+              renderPage(currentPage);
+            }
             showToast(`❌ فشل: ${error.message}`);
           }
-        }).catch(err => showToast(`❌ فشل: ${err.message}`));
+        }).catch(err => {
+          if (driver) {
+            driver.status = prevStatus;
+            driver.statusAr = prevStatusAr;
+            driver.rejectionReason = prevReason;
+            updatePendingBadge();
+            renderPage(currentPage);
+          }
+          showToast(`❌ فشل: ${err.message}`);
+        });
     } else {
       logAction(`رفض مستندات الكابتن ${uid} محلياً بسبب: ${reason}`);
       showToast('❌ تم الرفض محلياً');

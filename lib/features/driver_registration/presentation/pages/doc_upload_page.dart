@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
+import '../../../../core/services/meta_analytics_service.dart';
 import '../../../../core/localization/locale_controller.dart';
 import 'review_pending_page.dart';
 
@@ -319,6 +321,15 @@ class _DocUploadPageState extends State<DocUploadPage> {
 
         if (!mounted) return;
         Navigator.pop(context); // Dismiss loading dialog
+
+        final uid = GlobalState.instance.userUid ?? '';
+        if (uid.isNotEmpty) {
+          unawaited(MetaAnalyticsService.instance.logCompleteRegistration(
+            userId: uid,
+            role: 'driver',
+            method: 'phone',
+          ));
+        }
 
         // Route to review pending page
         Navigator.pushReplacement(

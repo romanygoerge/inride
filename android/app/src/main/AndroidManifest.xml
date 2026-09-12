@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Meta / Google Play Advertising ID permission for Android 13+ (Required for Meta App Install & Attribution) -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
 
     <application
         android:label="inRide"
@@ -84,6 +86,20 @@
             android:name="onesignal_notification_accent_color"
             android:value="FF1976D2" />
 
+        <!-- Meta / Facebook SDK Configuration -->
+        <meta-data
+            android:name="com.facebook.sdk.ApplicationId"
+            android:value="@string/facebook_app_id" />
+        <meta-data
+            android:name="com.facebook.sdk.ClientToken"
+            android:value="@string/facebook_client_token" />
+        <meta-data
+            android:name="com.facebook.sdk.AutoLogAppEventsEnabled"
+            android:value="true" />
+        <meta-data
+            android:name="com.facebook.sdk.AdvertiserIDCollectionEnabled"
+            android:value="true" />
+
         <!-- Geolocator background service override to stop service when application task is closed -->
         <service
             android:name="com.baseflow.geolocator.GeolocatorLocationService"
@@ -120,5 +136,6 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="sms" />
         </intent>
+        <provider android:authorities="com.facebook.katana.provider.PlatformProvider" />
     </queries>
 </manifest>

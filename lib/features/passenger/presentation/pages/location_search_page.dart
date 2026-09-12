@@ -9,6 +9,7 @@ import '../../../../core/models/place_location.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/places_search_service.dart';
 import '../../../../core/services/search_history_service.dart';
+import '../../../../core/services/meta_analytics_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -329,6 +330,12 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
           radiusKm: 100.0,
           limit: 20,
         );
+
+        unawaited(MetaAnalyticsService.instance.logSearch(
+          query: query,
+          resultCount: results.length,
+          searchType: 'location',
+        ));
 
         if (mounted) {
           setState(() {

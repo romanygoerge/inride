@@ -38,6 +38,7 @@ import '../services/ride_sound_service.dart';
 import '../services/driver_location_service.dart';
 import '../controllers/notification_controller.dart';
 import '../services/phone_auth_service.dart';
+import '../services/meta_analytics_service.dart';
 
 enum UserRole { rider, driver }
 
@@ -768,6 +769,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
             userUid = user.id;
             phoneNumber = user.phone;
             isLoggedIn = true;
+
+            unawaited(MetaAnalyticsService.instance.logLogin(
+              userId: user.id,
+              method: user.appMetadata['provider']?.toString() ?? 'phone',
+            ));
             
             try {
               // حفظ OneSignal Player ID الحقيقي (بدلاً من 'default_token' السابق)
@@ -796,6 +802,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
                   final ctx = navigatorKey.currentContext;
                   if (status == 'approved') {
+                    unawaited(MetaAnalyticsService.instance.logPayment(
+                      transactionId: reqId,
+                      amount: amount,
+                      paymentType: 'wallet_recharge',
+                    ));
                     try {
                       sl<RideSoundService>().playNotification();
                     } catch (_) {}
@@ -1058,6 +1069,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
             _startPresenceTracking();
           } else {
             debugPrint('[GlobalState] Auth state changed to signedOut. Cleaning up state & location streams...');
+            unawaited(MetaAnalyticsService.instance.clearUserId());
             _stopPresenceTracking();
             try {
               stopDriverLocationTracking();
@@ -2109,6 +2121,15 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       recipientToken: recipientToken,
     );
 
+    if (currentRequestId != null) {
+      unawaited(MetaAnalyticsService.instance.logRideRequested(
+        rideId: currentRequestId!,
+        fare: fare,
+        vehicleType: vehicleType,
+        serviceType: serviceType,
+      ));
+    }
+
     try {
       final nearbyDrivers = await RideRepository.instance.searchAvailableDrivers(
         pickupLat: startLatLng.latitude,
@@ -2183,12 +2204,26 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           _rideTimeoutTimer?.cancel();
           _rideTimeoutTimer = null;
           rideStatus = RideStatus.driverOnWay;
+          unawaited(MetaAnalyticsService.instance.logRideAccepted(
+            rideId: request.requestId,
+            fare: request.offeredFare,
+            serviceType: request.serviceType,
+          ));
         } else if (request.status == 'DriverArriving') {
           rideStatus = RideStatus.arrived;
         } else if (request.status == 'TripStarted') {
           rideStatus = RideStatus.tripStarted;
+          unawaited(MetaAnalyticsService.instance.logRideStarted(
+            rideId: request.requestId,
+            serviceType: request.serviceType,
+          ));
         } else if (request.status == 'Completed') {
           rideStatus = RideStatus.completed;
+          unawaited(MetaAnalyticsService.instance.logRideCompleted(
+            rideId: request.requestId,
+            fare: request.offeredFare > 0 ? request.offeredFare : offeredFare,
+            paymentMethod: request.paymentMethod,
+          ));
           try {
             final userRes = await _supabase.from('users').select('wallet_balance').eq('id', userUid!).maybeSingle();
             if (_isCancelling || currentRequestId != listenedRequestId) return;
@@ -2558,6 +2593,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     if (currentRequestId != null) {
+      unawaited(MetaAnalyticsService.instance.logRideAccepted(
+        rideId: currentRequestId!,
+        fare: offer.price,
+        serviceType: currentServiceType,
+      ));
       try {
         await _supabase.from('ride_requests').update({
           'status': 'Accepted',
@@ -2659,6 +2699,10 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     if (currentRequestId != null) {
+      unawaited(MetaAnalyticsService.instance.logRideStarted(
+        rideId: currentRequestId!,
+        serviceType: currentServiceType,
+      ));
       await RideRepository.instance.updateRideStatus(currentRequestId!, 'TripStarted');
 
       String pId = currentRideRequest?.passengerId ?? activePassengerId ?? '';
@@ -2753,6 +2797,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
       // Updating status to 'Completed' triggers Supabase DB trigger `trg_handle_trip_completion_finances`
       // which automatically deducts 10% commission, logs the transaction, and updates balances atomically.
+      unawaited(MetaAnalyticsService.instance.logRideCompleted(
+        rideId: reqId,
+        fare: offeredFare > 0 ? offeredFare : 10.0,
+        paymentMethod: activeRidePaymentMethod ?? 'cash',
+      ));
       await RideRepository.instance.updateRideStatus(reqId, 'Completed');
 
       // Refresh wallet transactions and user profile in the app
@@ -3058,6 +3107,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       // ────────────────────────────────────────────────────────────────────────
 
       rideStatus = RideStatus.driverOnWay;
+      unawaited(MetaAnalyticsService.instance.logRideAccepted(
+        rideId: requestId,
+        fare: fare,
+        serviceType: 'ride',
+      ));
       _listenToDriverAssignedRides();
 
       // Send push notification to passenger

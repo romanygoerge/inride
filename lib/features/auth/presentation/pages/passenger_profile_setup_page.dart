@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/services/meta_analytics_service.dart';
 import '../../../../core/utils/map_coordinates_helper.dart';
 import 'package:inride_app/features/passenger/presentation/pages/passenger_home_page.dart';
 
@@ -203,6 +205,12 @@ class _PassengerProfileSetupPageState extends State<PassengerProfileSetupPage> {
           state.passengerGender = _selectedGender;
           state.passengerAddress = addressText;
           state.phoneNumber = e164Phone;
+
+          unawaited(MetaAnalyticsService.instance.logCompleteRegistration(
+            userId: uid,
+            role: 'passenger',
+            method: 'phone',
+          ));
 
           debugPrint('[ProfileSetup] ✓ Profile saved — navigating to PassengerHomePage');
 

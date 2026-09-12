@@ -25,6 +25,7 @@ import 'package:url_launcher/url_launcher.dart' as import_url;
 import 'core/DI/injection_container.dart' as di;
 import 'core/services/deep_link_service.dart';
 import 'core/services/app_notification_service.dart';
+import 'core/services/meta_analytics_service.dart';
 import 'core/utils/app_logger.dart';
 import 'features/common/maintenance_page.dart';
 
@@ -118,6 +119,13 @@ void main() async {
     }
   }
   await di.init();
+  if (!kIsWeb) {
+    try {
+      await MetaAnalyticsService.instance.init();
+    } catch (e) {
+      debugPrint("MetaAnalyticsService initialization failed: $e");
+    }
+  }
   runApp(
     const ProviderScope(
       child: InRideApp(),

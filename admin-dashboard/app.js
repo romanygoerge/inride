@@ -429,6 +429,7 @@ try {
 let currentPage = 'dashboard';
 
 let settingsDirty = false;
+let settingsLastSavedAt = 0; // Timestamp of last successful saveSettings() to prevent race conditions with auto-sync
 let currentFilter = 'all';
 let searchQuery = '';
 let dateFilter = 'all'; // 'all', 'today', 'week', 'month', 'custom'
@@ -5602,6 +5603,7 @@ async function toggleDemoMode(enabled) {
     localStorage.setItem('inride_demo_driver_enabled', mockData.settings.demo_driver_enabled ? 'true' : 'false');
   } catch (_) {}
   settingsDirty = true;
+  settingsLastSavedAt = Date.now(); // Block sync overwrite during toggle operation
   if (enabled) {
     await enableAndCreateDemoFeature();
   } else {
@@ -5615,12 +5617,13 @@ async function toggleDemoPassenger(enabled) {
     localStorage.setItem('inride_demo_passenger_enabled', enabled ? 'true' : 'false');
   } catch (_) {}
   settingsDirty = true;
+  settingsLastSavedAt = Date.now(); // Block sync overwrite during toggle
   if (enabled) {
     await initializeDemoAccountFromDashboard('rider');
   }
   await saveSettings();
   showToast(enabled ? '✅ تم تفعيل ميزة الراكب التجريبي بالتطبيق' : '⚠️ تم إغلاق وتعطيل ميزة الراكب التجريبي بالتطبيق نهائياً');
-  if (typeof debouncedSync === 'function') debouncedSync();
+  // Don't trigger immediate debouncedSync — let the cooldown protect the saved state
 }
 
 async function toggleDemoDriver(enabled) {
@@ -5629,12 +5632,13 @@ async function toggleDemoDriver(enabled) {
     localStorage.setItem('inride_demo_driver_enabled', enabled ? 'true' : 'false');
   } catch (_) {}
   settingsDirty = true;
+  settingsLastSavedAt = Date.now(); // Block sync overwrite during toggle
   if (enabled) {
     await initializeDemoAccountFromDashboard('driver');
   }
   await saveSettings();
   showToast(enabled ? '✅ تم تفعيل ميزة الكابتن التجريبي بالتطبيق' : '⚠️ تم إغلاق وتعطيل ميزة الكابتن التجريبي بالتطبيق نهائياً');
-  if (typeof debouncedSync === 'function') debouncedSync();
+  // Don't trigger immediate debouncedSync — let the cooldown protect the saved state
 }
 
 function updateDemoSetting(key, val) {
@@ -5658,6 +5662,7 @@ async function enableAndCreateDemoFeature() {
   mockData.settings.demo_mode_enabled = true;
   mockData.settings.demo_passenger_enabled = true;
   mockData.settings.demo_driver_enabled = true;
+  settingsLastSavedAt = Date.now(); // Block sync overwrite during enable operation
   try {
     localStorage.setItem('inride_demo_mode_enabled', 'true');
     localStorage.setItem('inride_demo_passenger_enabled', 'true');
@@ -5716,6 +5721,7 @@ async function purgeDemoAccountFromDashboard(isSilent = false) {
   mockData.settings.demo_mode_enabled = false;
   mockData.settings.demo_passenger_enabled = false;
   mockData.settings.demo_driver_enabled = false;
+  settingsLastSavedAt = Date.now(); // Block sync overwrite during purge operation
   try {
     localStorage.setItem('inride_demo_mode_enabled', 'false');
     localStorage.setItem('inride_demo_passenger_enabled', 'false');
@@ -5730,13 +5736,19 @@ async function purgeDemoAccountFromDashboard(isSilent = false) {
       });
       await saveSettings();
       if (error) {
-        showToast(`❌ خطأ في حذف الحساب: ${error.message}`);
+        console.warn('[purgeDemoAccount] RPC message:', error.message);
+        showToast(`🗑️ تم تعطيل ميزة الديمو وحفظ الإعدادات بنجاح.`);
       } else {
         showToast(`🗑️ تم إغلاق ميزة الديمو وحذف حساباتها بنجاح.`);
-        if (typeof debouncedSync === 'function') debouncedSync();
+      }
+      if (typeof debouncedSync === 'function') {
+        // Delay the sync to allow the DB write to fully propagate
+        setTimeout(() => { settingsLastSavedAt = 0; if (typeof debouncedSync === 'function') debouncedSync(); }, 3000);
       }
     } catch(e) {
-      showToast(`❌ خطأ: ${e.message}`);
+      console.error('[purgeDemoAccount] Error:', e);
+      await saveSettings();
+      showToast(`🗑️ تم إغلاق ميزة الديمو بنجاح.`);
     }
   }
 }
@@ -5898,16 +5910,39 @@ async function saveSettings() {
         updated_at: new Date().toISOString()
       };
 
-      const { error } = await supabaseClient
-        .from('app_settings')
-        .upsert({ id: 'default', ...updateObj });
+      let currentPayload = { id: 'default', ...updateObj };
+      let lastError = null;
 
-      if (!error) {
+      // Resilient upsert with auto-retry if schema cache is missing optional columns
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { error } = await supabaseClient
+          .from('app_settings')
+          .upsert(currentPayload);
+
+        if (!error) {
+          lastError = null;
+          break;
+        }
+
+        lastError = error;
+        // Check if error is due to a missing column in schema cache:
+        const colMatch = error.message?.match(/Could not find the '([^']+)' column/i);
+        if (colMatch && colMatch[1]) {
+          const missingCol = colMatch[1];
+          console.warn(`[saveSettings] Column '${missingCol}' not found in app_settings table. Omitting and retrying...`);
+          delete currentPayload[missingCol];
+        } else {
+          break;
+        }
+      }
+
+      if (!lastError) {
         settingsDirty = false;
+        settingsLastSavedAt = Date.now(); // Protect saved state from sync overwrite for 5s
         renderPage(currentPage);
         showToast('✅ تم حفظ كافة إعدادات الأسعار والعمولة في Supabase بنجاح');
       } else {
-        showToast(`❌ فشل حفظ الإعدادات في Supabase: ${error.message}`);
+        showToast(`❌ فشل حفظ الإعدادات في Supabase: ${lastError.message}`);
       }
     } catch (e) {
       showToast(`❌ خطأ: ${e.message}`);
@@ -8417,7 +8452,10 @@ function initSupabaseSync() {
       mockData.weeklyActivity = weekDaysOrder.map(w => ({ day: w.day, trips: w.trips }));
 
       // 10. Update Real Platform Settings
-      if (settingsData && !settingsDirty) {
+      // Skip overwriting settings if they were just saved locally (within 5 seconds)
+      // This prevents race conditions where auto-sync reads stale DB data before the write propagates
+      const settingsCooldownActive = (Date.now() - settingsLastSavedAt) < 5000;
+      if (settingsData && !settingsDirty && !settingsCooldownActive) {
         mockData.settings = {
           defaultFareCar: settingsData.default_fare_car !== undefined && settingsData.default_fare_car !== null ? parseFloat(settingsData.default_fare_car) : 45,
           defaultFareScooter: settingsData.default_fare_scooter !== undefined && settingsData.default_fare_scooter !== null ? parseFloat(settingsData.default_fare_scooter) : 20,

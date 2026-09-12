@@ -7,6 +7,7 @@ import '../services/location_service.dart';
 import '../services/driver_location_service.dart';
 import '../services/app_notification_service.dart';
 import '../services/notification_service.dart';
+import '../services/meta_analytics_service.dart';
 import '../services/route_provider.dart';
 import '../services/route_service.dart';
 import '../services/trip_navigation_manager.dart';
@@ -39,6 +40,7 @@ Future<void> init() async {
   sl.registerLazySingleton<DriverLocationService>(() => DriverLocationService.instance);
   sl.registerLazySingleton<AppNotificationService>(() => AppNotificationService.instance);
   sl.registerLazySingleton<NotificationService>(() => NotificationService.instance);
+  sl.registerLazySingleton<MetaAnalyticsService>(() => MetaAnalyticsService.instance);
 
   // Navigation Services (low-level)
   sl.registerLazySingleton<RouteProvider>(() => OSRMRouteProvider());

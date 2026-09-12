@@ -397,6 +397,7 @@ const mockData = {
     demo_otp: '123456',
     demo_driver_name: 'كابتن تجريبي (Demo)',
     demo_passenger_name: 'راكب تجريبي (Demo)',
+    otp_support_whatsapp: '01204062941',
   },
   supportChats: {},
   tripsDataMap: {},
@@ -603,6 +604,63 @@ function getVehicleIcon(type) {
   }
 }
 
+function formatAppUsageDuration(totalSeconds) {
+  const secs = parseInt(totalSeconds || 0);
+  if (!secs || secs < 60) {
+    return secs > 0 ? `${secs} ثانية` : 'أقل من دقيقة';
+  }
+  const minutes = Math.floor(secs / 60);
+  if (minutes < 60) {
+    return `${minutes} دقيقة`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
+  if (remMinutes === 0) {
+    return `${hours} ${hours === 1 ? 'ساعة' : (hours === 2 ? 'ساعتان' : (hours <= 10 ? 'ساعات' : 'ساعة'))}`;
+  }
+  return `${hours} س و ${remMinutes} د`;
+}
+
+function formatLastOpenedDateTime(dateStrOrObj) {
+  if (!dateStrOrObj) return 'لم يفتح بعد';
+  try {
+    const d = new Date(dateStrOrObj);
+    if (isNaN(d.getTime())) return 'لم يفتح بعد';
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const isYesterday = d.toDateString() === yesterday.toDateString();
+
+    const timeStr = d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    if (isToday) {
+      return `اليوم ${timeStr}`;
+    }
+    if (isYesterday) {
+      return `أمس ${timeStr}`;
+    }
+    const dayName = d.toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric', month: 'short' });
+    return `${dayName} ${timeStr}`;
+  } catch (_) {
+    return 'غير متاح';
+  }
+}
+
+function isUserCurrentlyOnline(userObj, fallbackIsOnline = false) {
+  if (!userObj) return !!fallbackIsOnline;
+  const isAppOpen = userObj.is_app_open === true;
+  const isDrvOnline = userObj.is_online === true || fallbackIsOnline === true;
+  if (!userObj.last_seen_at) {
+    return isAppOpen || isDrvOnline;
+  }
+  const lastSeenMs = new Date(userObj.last_seen_at).getTime();
+  if (isNaN(lastSeenMs)) return isAppOpen || isDrvOnline;
+  const diffMinutes = (Date.now() - lastSeenMs) / 60000;
+  // User is considered active/online only if app was open and active within the last 4 minutes
+  if (diffMinutes > 4) return false;
+  return isAppOpen || isDrvOnline;
+}
+
 function getStatusClass(status) {
   switch (status) {
     case 'مكتملة':
@@ -673,7 +731,7 @@ function initDashboardAnimations() {
 // ============================================
 
 function navigateTo(page) {
-  const validPages = ['dashboard', 'trips', 'drivers', 'passengers', 'ratings', 'driver-profile', 'passenger-profile', 'wallet', 'pricing', 'communication', 'messages', 'support', 'content', 'monitoring', 'logs', 'settings'];
+  const validPages = ['dashboard', 'trips', 'drivers', 'passengers', 'ratings', 'driver-profile', 'passenger-profile', 'wallet', 'pricing', 'places', 'communication', 'messages', 'support', 'content', 'monitoring', 'logs', 'settings'];
   if (!validPages.includes(page)) {
     page = 'dashboard';
   }
@@ -717,6 +775,7 @@ function updateHeaderTitle(page) {
     'passenger-profile': { title: 'الملف الشخصي للراكب', sub: 'عرض بيانات الراكب ورحلاته والدعم المباشر' },
     wallet: { title: 'المحفظة والمالية', sub: 'مراجعة عمليات الشحن والسحب وإدارة الرصيد المالي' },
     pricing: { title: 'التسعير والمناطق', sub: 'إدارة تسعير الرحلات والعمولات ونسبة الـ Surge' },
+    places: { title: 'أماكن ومحلات مدينة السادات', sub: 'دليل شامل وقابل للتوسع للمحلات والخدمات والمولات مقسمة إلى 25 تصنيفاً' },
     communication: { title: 'مركز التواصل والمحادثات', sub: 'عرض وإدارة محادثات العملاء والكباتن والدعم الفني والتحكم بالتذاكر' },
     messages: { title: 'الإشعارات والرسائل', sub: 'إرسال الإشعارات الجماعية والمستهدفة وجدولة التنبيهات' },
     support: { title: 'الدعم الفني والشكاوى', sub: 'استقبال شكاوى المستخدمين والرد عليها وإغلاق التذاكر' },
@@ -748,8 +807,6 @@ function closeSidebar() {
   if (sidebar && sidebar.classList) sidebar.classList.remove('open');
   if (overlay && overlay.classList) overlay.classList.remove('active');
 }
-
-// ============================================
 // PAGE RENDERERS
 // ============================================
 
@@ -793,6 +850,9 @@ function renderPage(page) {
         break;
       case 'pricing':
         container.innerHTML = renderPricing();
+        break;
+      case 'places':
+        container.innerHTML = renderPlaces();
         break;
       case 'communication':
       case 'support':
@@ -1393,16 +1453,38 @@ function setDriverStatusFilter(status) {
 // ---- DRIVERS ----
 function renderDrivers() {
   const q = (searchQuery || '').toLowerCase().trim();
+  const allDrivers = mockData.drivers || [];
+
+  // 1. Calculate vehicle counts (cars vs motorcycles/scooters)
+  const carsCount = allDrivers.filter(d => {
+    const vt = (d.vehicleType || '').toLowerCase();
+    return vt === 'car' || vt === 'private_car' || vt === 'سيارة' || vt === '' || !vt;
+  }).length;
+
+  const motorcyclesCount = allDrivers.filter(d => {
+    const vt = (d.vehicleType || '').toLowerCase();
+    return vt === 'motorcycle' || vt === 'scooter' || vt === 'bike' || vt.includes('موتوسيكل') || vt.includes('سكوتر') || vt.includes('دراجة');
+  }).length;
   
-  // Filter by status tab & ghost records
-  const filteredDrivers = (mockData.drivers || []).filter(d => {
-    // Tab filter
-    if (driverStatusFilter === 'verified' && d.status !== 'verified') return false;
-    if (driverStatusFilter === 'submitted' && d.status !== 'submitted') return false;
-    if (driverStatusFilter === 'rejected' && d.status !== 'rejected') return false;
-    if (driverStatusFilter === 'unregistered') {
-      return d.status === 'unregistered' || !d.status || d.status === 'draft';
+  // 2. Filter by status / vehicle tab & ghost records
+  const filteredDrivers = allDrivers.filter(d => {
+    // Vehicle filters
+    if (driverStatusFilter === 'cars') {
+      const vt = (d.vehicleType || '').toLowerCase();
+      if (!(vt === 'car' || vt === 'private_car' || vt === 'سيارة' || vt === '' || !vt)) return false;
+    } else if (driverStatusFilter === 'motorcycles') {
+      const vt = (d.vehicleType || '').toLowerCase();
+      if (!(vt === 'motorcycle' || vt === 'scooter' || vt === 'bike' || vt.includes('موتوسيكل') || vt.includes('سكوتر') || vt.includes('دراجة'))) return false;
+    } else {
+      // Tab filter
+      if (driverStatusFilter === 'verified' && d.status !== 'verified') return false;
+      if (driverStatusFilter === 'submitted' && d.status !== 'submitted') return false;
+      if (driverStatusFilter === 'rejected' && d.status !== 'rejected') return false;
+      if (driverStatusFilter === 'unregistered') {
+        return d.status === 'unregistered' || !d.status || d.status === 'draft';
+      }
     }
+
     if (driverStatusFilter === 'all') {
       // In "all" tab, exclude completely blank ghost records with 0 trips, no vehicle, no phone, no docs
       if (d.status === 'unregistered' && (!d.phone || d.phone === '—') && (!d.vehicleName || d.vehicleName === 'مركبة') && !d.idCardFrontUrl && !d.nationalIdUrl && d.totalTrips === 0) {
@@ -1422,6 +1504,9 @@ function renderDrivers() {
     return true;
   });
 
+  // 3. Always sort from newest to oldest by registration date
+  filteredDrivers.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
   const page = currentPages['drivers'] || 1;
   const totalItems = filteredDrivers.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
@@ -1430,37 +1515,52 @@ function renderDrivers() {
   const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
   const paginatedDrivers = filteredDrivers.slice(startIndex, endIndex);
 
-  const verifiedCount = (mockData.drivers || []).filter(d => d.status === 'verified').length;
-  const submittedCount = (mockData.drivers || []).filter(d => d.status === 'submitted').length;
-  const rejectedCount = (mockData.drivers || []).filter(d => d.status === 'rejected').length;
-  const unregisteredCount = (mockData.drivers || []).filter(d => d.status === 'unregistered' || !d.status).length;
+  const verifiedCount = allDrivers.filter(d => d.status === 'verified').length;
+  const submittedCount = allDrivers.filter(d => d.status === 'submitted').length;
+  const rejectedCount = allDrivers.filter(d => d.status === 'rejected').length;
+  const unregisteredCount = allDrivers.filter(d => d.status === 'unregistered' || !d.status).length;
+  const activeNowCount = allDrivers.filter(d => d.isOnline).length;
 
   return `
     <div class="page-section">
-      <!-- Stats Overview -->
-      <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px;">
-        <div class="stat-card blue" style="cursor:pointer;" onclick="setDriverStatusFilter('all')">
+      <!-- Stats Overview with Cars and Motorcycles -->
+      <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 24px;">
+        <div class="stat-card blue" style="cursor:pointer;" onclick="setDriverStatusFilter('all')" title="عرض جميع الكباتن">
           <div class="stat-card-header">
             <div class="stat-card-icon"><i class="ri-steering-2-fill"></i></div>
           </div>
-          <div class="stat-card-value">${(mockData.drivers || []).length}</div>
-          <div class="stat-card-label">إجمالي الكباتن المسجلين</div>
+          <div class="stat-card-value">${allDrivers.length}</div>
+          <div class="stat-card-label">إجمالي الكباتن</div>
         </div>
-        <div class="stat-card green" style="cursor:pointer;" onclick="setDriverStatusFilter('verified')">
+        <div class="stat-card green" style="cursor:pointer;" onclick="setDriverStatusFilter('verified')" title="عرض السائقين المعتمدين">
           <div class="stat-card-header">
             <div class="stat-card-icon"><i class="ri-check-double-fill"></i></div>
           </div>
           <div class="stat-card-value">${verifiedCount}</div>
           <div class="stat-card-label">سائقين معتمدين</div>
         </div>
-        <div class="stat-card orange" style="cursor:pointer;" onclick="setDriverStatusFilter('submitted')">
+        <div class="stat-card purple" style="cursor:pointer; background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border: 1px solid #ddd6fe;" onclick="setDriverStatusFilter('cars')" title="فلترة عرض السيارات فقط">
+          <div class="stat-card-header">
+            <div class="stat-card-icon" style="background: rgba(124, 58, 237, 0.12); color: #7c3aed;"><i class="ri-car-fill"></i></div>
+          </div>
+          <div class="stat-card-value" style="color: #6d28d9;">${carsCount}</div>
+          <div class="stat-card-label" style="color: #7c3aed; font-weight: 700;">🚗 سيارات</div>
+        </div>
+        <div class="stat-card cyan" style="cursor:pointer; background: linear-gradient(135deg, #ecfeff 0%, #cffafe 100%); border: 1px solid #a5f3fc;" onclick="setDriverStatusFilter('motorcycles')" title="فلترة عرض الموتوسيكلات والسكوتر">
+          <div class="stat-card-header">
+            <div class="stat-card-icon" style="background: rgba(8, 145, 178, 0.12); color: #0891b2;"><i class="ri-motorbike-fill"></i></div>
+          </div>
+          <div class="stat-card-value" style="color: #0e7490;">${motorcyclesCount}</div>
+          <div class="stat-card-label" style="color: #0891b2; font-weight: 700;">🛵 موتوسيكلات وسكوتر</div>
+        </div>
+        <div class="stat-card orange" style="cursor:pointer;" onclick="setDriverStatusFilter('submitted')" title="عرض بانتظار الاعتماد">
           <div class="stat-card-header">
             <div class="stat-card-icon"><i class="ri-time-fill"></i></div>
           </div>
           <div class="stat-card-value">${submittedCount}</div>
-          <div class="stat-card-label">بانتظار الاعتماد والتوثيق</div>
+          <div class="stat-card-label">بانتظار الاعتماد</div>
         </div>
-        <div class="stat-card red" style="cursor:pointer;" onclick="setDriverStatusFilter('rejected')">
+        <div class="stat-card red" style="cursor:pointer;" onclick="setDriverStatusFilter('rejected')" title="عرض السائقين المرفوضين">
           <div class="stat-card-header">
             <div class="stat-card-icon"><i class="ri-close-circle-fill"></i></div>
           </div>
@@ -1470,12 +1570,18 @@ function renderDrivers() {
       </div>
 
       <!-- Filter Tabs -->
-      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
         <button class="btn ${driverStatusFilter === 'all' ? 'btn-primary' : 'btn-outline'} btn-sm" onclick="setDriverStatusFilter('all')">
-          <i class="ri-list-check"></i> الكل (${(mockData.drivers || []).length})
+          <i class="ri-list-check"></i> الكل (${allDrivers.length})
         </button>
         <button class="btn ${driverStatusFilter === 'verified' ? 'btn-success' : 'btn-outline'} btn-sm" style="${driverStatusFilter === 'verified' ? 'background:var(--success);' : ''}" onclick="setDriverStatusFilter('verified')">
           <i class="ri-checkbox-circle-line"></i> معتمدين (${verifiedCount})
+        </button>
+        <button class="btn ${driverStatusFilter === 'cars' ? 'btn-primary' : 'btn-outline'} btn-sm" style="${driverStatusFilter === 'cars' ? 'background:#7c3aed;border-color:#7c3aed;' : 'color:#7c3aed;border-color:#ddd6fe;'}" onclick="setDriverStatusFilter('cars')">
+          <i class="ri-car-line"></i> سيارات (${carsCount})
+        </button>
+        <button class="btn ${driverStatusFilter === 'motorcycles' ? 'btn-primary' : 'btn-outline'} btn-sm" style="${driverStatusFilter === 'motorcycles' ? 'background:#0891b2;border-color:#0891b2;' : 'color:#0891b2;border-color:#a5f3fc;'}" onclick="setDriverStatusFilter('motorcycles')">
+          <i class="ri-motorbike-line"></i> موتوسيكلات (${motorcyclesCount})
         </button>
         <button class="btn ${driverStatusFilter === 'submitted' ? 'btn-primary' : 'btn-outline'} btn-sm" style="${driverStatusFilter === 'submitted' ? 'background:var(--warning);border-color:var(--warning);' : ''}" onclick="setDriverStatusFilter('submitted')">
           <i class="ri-time-line"></i> بانتظار الاعتماد (${submittedCount})
@@ -1486,12 +1592,16 @@ function renderDrivers() {
         <button class="btn ${driverStatusFilter === 'unregistered' ? 'btn-outline' : 'btn-outline'} btn-sm" style="${driverStatusFilter === 'unregistered' ? 'background:var(--bg-secondary);font-weight:700;' : ''}" onclick="setDriverStatusFilter('unregistered')">
           <i class="ri-draft-line"></i> غير مسجلين / مسودة (${unregisteredCount})
         </button>
+        <span style="margin-right:auto;font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:4px;">
+          <span style="width:8px;height:8px;background:#10b981;border-radius:50%;display:inline-block;"></span>
+          متصلين الآن (فاتحين التطبيق): <strong>${activeNowCount}</strong>
+        </span>
       </div>
 
       <!-- Drivers Table -->
       <div class="card">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-          <h3><i class="ri-steering-2-fill text-blue" style="margin-left:8px;"></i> قائمة الكباتن والسائقين</h3>
+          <h3><i class="ri-steering-2-fill text-blue" style="margin-left:8px;"></i> قائمة الكباتن والسائقين <small style="font-size:12px;color:var(--text-light);font-weight:normal;">(مرتبة من الأحدث إلى الأقدم)</small></h3>
           <div style="display:flex;gap:10px;align-items:center;">
             <span class="text-light" style="font-size:13px;">${filteredDrivers.length} كابتن</span>
             <button class="btn btn-primary btn-sm" onclick="showAddUserModal('driver')"><i class="ri-user-add-line"></i> إضافة سائق جديد</button>
@@ -1510,13 +1620,13 @@ function renderDrivers() {
                 <th>الرصيد الحالي</th>
                 <th>التقييم</th>
                 <th>الرحلات</th>
-                <th>الحالة</th>
-                <th>متصل</th>
+                <th>حالة الحساب</th>
+                <th>التواجد ونشاط التطبيق</th>
                 <th>إجراء</th>
               </tr>
             </thead>
             <tbody>
-              ${paginatedDrivers.length === 0 ? `<tr><td colspan="10" style="text-align:center;padding:32px;color:var(--text-light);">لا يوجد كباتن مسجلون يطابقون خيارات الفرز المحددة</td></tr>` : ''}
+              ${paginatedDrivers.length === 0 ? `<tr><td colspan="11" style="text-align:center;padding:32px;color:var(--text-light);">لا يوجد كباتن مسجلون يطابقون خيارات الفرز المحددة</td></tr>` : ''}
               ${paginatedDrivers.map(driver => `
                 <tr>
                   <td><span class="font-outfit fw-700" style="color:var(--medium-blue);cursor:pointer;" onclick="viewUserProfile('${driver.uid}', 'driver')" title="عرض الملف الشخصي">${driver.id}</span></td>
@@ -1572,9 +1682,17 @@ function renderDrivers() {
                   </td>
                   <td>
                     ${driver.isOnline 
-                      ? '<span class="status-badge completed"><span class="status-dot"></span> متصل</span>'
-                      : '<span style="color:var(--text-light);font-size:12px;">غير متصل</span>'
+                      ? '<span class="status-badge completed" style="background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;font-weight:700;"><span class="status-dot" style="background:#10b981;"></span> متصل (فاتح التطبيق)</span>'
+                      : '<span style="color:var(--text-light);font-size:12px;"><i class="ri-moon-line"></i> غير متصل</span>'
                     }
+                    <div style="font-size:11px;color:var(--text-secondary);margin-top:5px;line-height:1.4;">
+                      <div title="تاريخ ووقت آخر فتح للتطبيق"><i class="ri-history-line" style="color:var(--medium-blue);"></i> آخر فتح: <strong>${formatLastOpenedDateTime(driver.lastOpenedAt)}</strong></div>
+                      <div style="display:flex;gap:6px;font-size:10px;color:var(--text-light);margin-top:2px;">
+                        <span><i class="ri-login-box-line"></i> ${driver.appOpenCount || 0} مرة</span>
+                        <span>•</span>
+                        <span><i class="ri-time-line"></i> ${formatAppUsageDuration(driver.totalAppTimeSeconds)}</span>
+                      </div>
+                    </div>
                   </td>
                   <td>
                     <div style="display:flex;gap:4px;align-items:center;">
@@ -1943,10 +2061,11 @@ function updatePendingBadge() {
 }
 
 // ---- PASSENGERS ----
-// ---- PASSENGERS ----
 function renderPassengers() {
   const q = (searchQuery || '').toLowerCase().trim();
-  const filteredPassengers = (mockData.passengers || []).filter(p => {
+  const allPassengers = mockData.passengers || [];
+
+  const filteredPassengers = allPassengers.filter(p => {
     if (!q) return true;
     return (p.id || '').toString().toLowerCase().includes(q) ||
            (p.uid || '').toString().toLowerCase().includes(q) ||
@@ -1954,6 +2073,9 @@ function renderPassengers() {
            (p.phone || '').toString().includes(q) ||
            (p.email || '').toString().toLowerCase().includes(q);
   });
+
+  // Always sort from newest to oldest by registration date
+  filteredPassengers.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
   const page = currentPages['passengers'] || 1;
   const totalItems = filteredPassengers.length;
@@ -1963,6 +2085,8 @@ function renderPassengers() {
   const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
   const paginatedPassengers = filteredPassengers.slice(startIndex, endIndex);
 
+  const activeNowPassengersCount = allPassengers.filter(p => p.isOnline).length;
+
   return `
     <div class="page-section">
       <!-- Stats Overview -->
@@ -1971,21 +2095,21 @@ function renderPassengers() {
           <div class="stat-card-header">
             <div class="stat-card-icon"><i class="ri-group-fill"></i></div>
           </div>
-          <div class="stat-card-value">${(mockData.passengers || []).length}</div>
+          <div class="stat-card-value">${allPassengers.length}</div>
           <div class="stat-card-label">إجمالي الركاب المسجلين</div>
         </div>
         <div class="stat-card green">
           <div class="stat-card-header">
             <div class="stat-card-icon"><i class="ri-user-follow-fill"></i></div>
           </div>
-          <div class="stat-card-value">${(mockData.passengers || []).filter(p => p.status === 'active').length}</div>
-          <div class="stat-card-label">ركاب نشطين</div>
+          <div class="stat-card-value">${activeNowPassengersCount}</div>
+          <div class="stat-card-label">متصلين الآن (فاتحين التطبيق)</div>
         </div>
         <div class="stat-card orange">
           <div class="stat-card-header">
             <div class="stat-card-icon"><i class="ri-money-pound-circle-fill"></i></div>
           </div>
-          <div class="stat-card-value">${((mockData.passengers || []).reduce((sum, p) => sum + (p.totalSpent || 0), 0)).toLocaleString()} ج.م</div>
+          <div class="stat-card-value">${(allPassengers.reduce((sum, p) => sum + (p.totalSpent || 0), 0)).toLocaleString()} ج.م</div>
           <div class="stat-card-label">إجمالي الإنفاق للرحلات</div>
         </div>
       </div>
@@ -1993,7 +2117,7 @@ function renderPassengers() {
       <!-- Passengers Table -->
       <div class="card">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-          <h3><i class="ri-group-fill text-blue" style="margin-left:8px;"></i> جميع الركاب والعملاء</h3>
+          <h3><i class="ri-group-fill text-blue" style="margin-left:8px;"></i> جميع الركاب والعملاء <small style="font-size:12px;color:var(--text-light);font-weight:normal;">(مرتبة من الأحدث إلى الأقدم)</small></h3>
           <div style="display:flex;gap:10px;align-items:center;">
             <span class="text-light" style="font-size:13px;">${filteredPassengers.length} راكب</span>
             <button class="btn btn-primary btn-sm" onclick="showAddUserModal('rider')"><i class="ri-user-add-line"></i> إضافة راكب جديد</button>
@@ -2011,12 +2135,12 @@ function renderPassengers() {
                 <th>التقييم</th>
                 <th>الرحلات</th>
                 <th>تاريخ الانضمام</th>
-                <th>الحالة</th>
+                <th>الحالة والنشاط اللحظي</th>
                 <th>إجراء</th>
               </tr>
             </thead>
             <tbody>
-              ${paginatedPassengers.length === 0 ? `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-light);">لا يوجد ركاب مسجلون حالياً</td></tr>` : ''}
+              ${paginatedPassengers.length === 0 ? `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text-light);">لا يوجد ركاب مسجلون حالياً</td></tr>` : ''}
               ${paginatedPassengers.map(p => `
                 <tr>
                   <td><span class="font-outfit fw-700" style="color:var(--medium-blue);cursor:pointer;" onclick="viewUserProfile('${p.uid}', 'rider')" title="عرض الملف الشخصي">${p.id}</span></td>
@@ -2055,10 +2179,19 @@ function renderPassengers() {
                   <td><span class="font-outfit fw-700" style="white-space:nowrap;">${p.totalTrips} رحلة</span></td>
                   <td><span style="font-size:12px;color:var(--text-light);font-weight:600;">${p.joinDate}</span></td>
                   <td>
-                    <span class="status-badge ${getStatusClass(p.status)}">
-                      <span class="status-dot"></span>
-                      ${p.statusAr}
-                    </span>
+                    ${p.isOnline 
+                      ? '<span class="status-badge completed" style="background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;font-weight:700;"><span class="status-dot" style="background:#10b981;"></span> نشط (فاتح التطبيق)</span>'
+                      : '<span style="color:var(--text-light);font-size:12px;"><i class="ri-moon-line"></i> غير متصل</span>'
+                    }
+                    <div style="font-size:11px;color:var(--text-secondary);margin-top:5px;line-height:1.4;">
+                      <div title="تاريخ ووقت آخر فتح للتطبيق"><i class="ri-history-line" style="color:var(--medium-blue);"></i> آخر فتح: <strong>${formatLastOpenedDateTime(p.lastOpenedAt)}</strong></div>
+                      <div style="display:flex;gap:6px;font-size:10px;color:var(--text-light);margin-top:2px;">
+                        <span><i class="ri-login-box-line"></i> ${p.appOpenCount || 0} مرة</span>
+                        <span>•</span>
+                        <span><i class="ri-time-line"></i> ${formatAppUsageDuration(p.totalAppTimeSeconds)}</span>
+                      </div>
+                    </div>
+                    ${p.status === 'suspended' ? '<span class="badge badge-warning" style="margin-top:4px;display:inline-block;">معلق</span>' : (p.status === 'banned' ? '<span class="badge badge-danger" style="margin-top:4px;display:inline-block;">محظور</span>' : '')}
                   </td>
                   <td>
                     <div style="display:flex;gap:4px;align-items:center;">
@@ -5179,6 +5312,24 @@ function renderSettings() {
               </div>
               <span style="font-size:13px;font-weight:700;color:var(--text-primary);">العربية</span>
             </div>
+            <div class="settings-item" style="flex-wrap: wrap; gap: 12px; padding: 14px 0;">
+              <div class="settings-item-info">
+                <div class="settings-item-icon" style="background: rgba(37, 211, 102, 0.12); color: #25D366; font-size: 20px;">
+                  <i class="ri-whatsapp-fill"></i>
+                </div>
+                <div class="settings-item-text">
+                  <h5 style="color:var(--text-primary); font-weight:700;">رقم واتساب دعم كود التحقق (OTP)</h5>
+                  <p>الرقم الذي يتواصل عليه المستخدم عند تعذر استلام رمز التحقق أو إشعار خطأ الرمز</p>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="text" class="form-control" style="width: 170px; direction: ltr; text-align: center; font-weight: 700; font-family: monospace; font-size: 14px; border: 1.5px solid #25D366;" 
+                  value="${mockData.settings.otp_support_whatsapp || '01204062941'}" 
+                  id="otpSupportWhatsAppInput"
+                  onchange="updateStringSetting('otp_support_whatsapp', this.value)"
+                  placeholder="01204062941">
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -5363,6 +5514,13 @@ async function toggleDemoDriver(enabled) {
 }
 
 function updateDemoSetting(key, val) {
+  mockData.settings[key] = val;
+  settingsDirty = true;
+  const saveBtn = document.getElementById('settings-save-container');
+  if (saveBtn) saveBtn.style.display = 'flex';
+}
+
+function updateStringSetting(key, val) {
   mockData.settings[key] = val;
   settingsDirty = true;
   const saveBtn = document.getElementById('settings-save-container');
@@ -5608,6 +5766,7 @@ async function saveSettings() {
         demo_otp: mockData.settings.demo_otp || '123456',
         demo_driver_name: mockData.settings.demo_driver_name || 'كابتن تجريبي (Demo)',
         demo_passenger_name: mockData.settings.demo_passenger_name || 'راكب تجريبي (Demo)',
+        otp_support_whatsapp: (mockData.settings.otp_support_whatsapp || '01204062941').trim(),
         updated_at: new Date().toISOString()
       };
 
@@ -7777,7 +7936,13 @@ function initSupabaseSync() {
           earnings: parseFloat(drv.total_earnings || userObj.wallet_balance || 0),
           walletBalance: drvWallet,
           driverWalletBalance: drvWallet,
-          isOnline: drv.is_online || false,
+          createdAt: dateObj.getTime(),
+          appOpenCount: parseInt(userObj.app_open_count || drv.app_open_count || 0),
+          totalAppTimeSeconds: parseInt(userObj.total_app_time_seconds || drv.total_app_time_seconds || 0),
+          lastOpenedAt: userObj.last_opened_at || drv.last_opened_at || null,
+          lastSeenAt: userObj.last_seen_at ? new Date(userObj.last_seen_at).getTime() : (drv.last_seen_at ? new Date(drv.last_seen_at).getTime() : null),
+          isAppOpen: userObj.is_app_open === true || drv.is_app_open === true,
+          isOnline: isUserCurrentlyOnline(userObj, drv.is_online),
           joinDate: dateObj.toLocaleDateString('ar-EG'),
           avatar: driverName.charAt(0).toUpperCase(),
           nationalIdUrl: drv.national_id_url || drv.id_card_front_url || userObj.national_id_url || drv.nationalIdUrl || '',
@@ -7835,7 +8000,13 @@ function initSupabaseSync() {
             earnings: parseFloat(u.wallet_balance || 0),
             walletBalance: uDrvWallet,
             driverWalletBalance: uDrvWallet,
-            isOnline: false,
+            createdAt: new Date(u.created_at || Date.now()).getTime(),
+            appOpenCount: parseInt(u.app_open_count || 0),
+            totalAppTimeSeconds: parseInt(u.total_app_time_seconds || 0),
+            lastOpenedAt: u.last_opened_at || null,
+            lastSeenAt: u.last_seen_at ? new Date(u.last_seen_at).getTime() : null,
+            isAppOpen: u.is_app_open === true,
+            isOnline: isUserCurrentlyOnline(u, false),
             joinDate: new Date(u.created_at || Date.now()).toLocaleDateString('ar-EG'),
             avatar: dName.charAt(0).toUpperCase(),
             nationalIdUrl: u.national_id_url || u.id_card_front_url || '',
@@ -7856,6 +8027,8 @@ function initSupabaseSync() {
         }
       });
 
+      // Sort drivers from newest to oldest
+      fullDrivers.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       mockData.drivers = fullDrivers;
       mockData.stats.activeDrivers = fullDrivers.filter(d => d.isOnline).length;
 
@@ -7900,6 +8073,13 @@ function initSupabaseSync() {
             totalSpent: totalSpent,
             walletBalance: pWallet,
             passengerWalletBalance: pWallet,
+            createdAt: dateObj.getTime(),
+            appOpenCount: parseInt(data.app_open_count || pRecord.app_open_count || 0),
+            totalAppTimeSeconds: parseInt(data.total_app_time_seconds || pRecord.total_app_time_seconds || 0),
+            lastOpenedAt: data.last_opened_at || pRecord.last_opened_at || null,
+            lastSeenAt: data.last_seen_at ? new Date(data.last_seen_at).getTime() : (pRecord.last_seen_at ? new Date(pRecord.last_seen_at).getTime() : null),
+            isAppOpen: data.is_app_open === true || pRecord.is_app_open === true,
+            isOnline: isUserCurrentlyOnline(data, false),
             joinDate: dateObj.toLocaleDateString('ar-EG'),
             status: data.status || 'active',
             statusAr: data.status === 'suspended' ? 'معلق' : (data.status === 'banned' ? 'محظور' : 'نشط'),
@@ -7909,6 +8089,8 @@ function initSupabaseSync() {
         }
       });
 
+      // Sort passengers from newest to oldest
+      fullPassengers.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       mockData.passengers = fullPassengers;
       mockData.stats.totalPassengers = fullPassengers.length;
 
@@ -8022,7 +8204,8 @@ function initSupabaseSync() {
           demo_phone: settingsData.demo_phone || '01000000000',
           demo_otp: settingsData.demo_otp || '123456',
           demo_driver_name: settingsData.demo_driver_name || 'كابتن تجريبي (Demo)',
-          demo_passenger_name: settingsData.demo_passenger_name || 'راكب تجريبي (Demo)'
+          demo_passenger_name: settingsData.demo_passenger_name || 'راكب تجريبي (Demo)',
+          otp_support_whatsapp: settingsData.otp_support_whatsapp || '01204062941'
         };
 
         try {
@@ -8659,6 +8842,32 @@ function renderDriverProfile() {
                     </div>
                   `}
                 </div>
+
+                <!-- App Activity & Usage Stats Card -->
+                <div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); padding: 14px 16px; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-top: 14px; grid-column: span 2;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
+                    <h5 style="margin:0; font-size:13px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                      <i class="ri-smartphone-fill text-blue"></i> إحصائيات التفاعل ونشاط التطبيق
+                    </h5>
+                    <span class="status-badge ${driver.isOnline ? 'completed' : 'pending'}" style="font-size:11px;">
+                      <span class="status-dot"></span> ${driver.isOnline ? 'متصل الآن (فاتح التطبيق)' : 'غير متصل'}
+                    </span>
+                  </div>
+                  <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align:center;">
+                    <div style="background: white; padding: 8px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                      <div style="font-size:10px; color:var(--text-light); margin-bottom: 2px;">آخر فتح للتطبيق</div>
+                      <div style="font-weight:700; font-size:12px; color:var(--medium-blue);">${formatLastOpenedDateTime(driver.lastOpenedAt)}</div>
+                    </div>
+                    <div style="background: white; padding: 8px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                      <div style="font-size:10px; color:var(--text-light); margin-bottom: 2px;">عدد مرات الفتح</div>
+                      <div style="font-weight:700; font-size:13px; color:var(--text-primary);">${driver.appOpenCount || 0} مرة</div>
+                    </div>
+                    <div style="background: white; padding: 8px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                      <div style="font-size:10px; color:var(--text-light); margin-bottom: 2px;">الوقت المستغرق</div>
+                      <div style="font-weight:700; font-size:12px; color:#16a34a;">${formatAppUsageDuration(driver.totalAppTimeSeconds)}</div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <!-- Quick Verification Actions -->
@@ -8833,8 +9042,8 @@ function renderPassengerProfile() {
               <i class="ri-customer-service-2-fill text-blue"></i>
               محادثة الدعم الفني المباشرة مع الراكب
             </h3>
-            <span class="status-badge completed" style="font-size:11px;">
-              <span class="status-dot"></span> متصل
+            <span class="status-badge ${passenger.isOnline ? 'completed' : 'pending'}" style="font-size:11px;">
+              <span class="status-dot"></span> ${passenger.isOnline ? 'متصل الآن (فاتح التطبيق)' : 'غير متصل'}
             </span>
           </div>
           
@@ -8913,6 +9122,32 @@ function renderPassengerProfile() {
                       <span>جديد (بدون تقييم)</span>
                     </div>
                   `}
+                </div>
+
+                <!-- App Activity & Usage Stats Card -->
+                <div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); padding: 14px 16px; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-top: 14px; grid-column: span 2;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
+                    <h5 style="margin:0; font-size:13px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                      <i class="ri-smartphone-fill text-blue"></i> إحصائيات التفاعل ونشاط التطبيق
+                    </h5>
+                    <span class="status-badge ${passenger.isOnline ? 'completed' : 'pending'}" style="font-size:11px;">
+                      <span class="status-dot"></span> ${passenger.isOnline ? 'متصل الآن (فاتح التطبيق)' : 'غير متصل'}
+                    </span>
+                  </div>
+                  <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align:center;">
+                    <div style="background: white; padding: 8px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                      <div style="font-size:10px; color:var(--text-light); margin-bottom: 2px;">آخر فتح للتطبيق</div>
+                      <div style="font-weight:700; font-size:12px; color:var(--medium-blue);">${formatLastOpenedDateTime(passenger.lastOpenedAt)}</div>
+                    </div>
+                    <div style="background: white; padding: 8px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                      <div style="font-size:10px; color:var(--text-light); margin-bottom: 2px;">عدد مرات الفتح</div>
+                      <div style="font-weight:700; font-size:13px; color:var(--text-primary);">${passenger.appOpenCount || 0} مرة</div>
+                    </div>
+                    <div style="background: white; padding: 8px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                      <div style="font-size:10px; color:var(--text-light); margin-bottom: 2px;">الوقت المستغرق</div>
+                      <div style="font-weight:700; font-size:12px; color:#16a34a;">${formatAppUsageDuration(passenger.totalAppTimeSeconds)}</div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -10686,5 +10921,5316 @@ async function showUserWalletHistoryModal(userId, role = 'rider') {
     `;
   } catch (e) {
     if (listEl) listEl.innerHTML = `<div style="color:var(--error); text-align:center; padding:20px;">تعذر تحميل البيانات: ${e.message || e}</div>`;
+  }
+}
+
+
+
+// =============================================================================
+// SADAT CITY PLACES & SERVICES DIRECTORY (25 CATEGORIES)
+// =============================================================================
+
+const SADAT_CATEGORIES = [
+  { id: 'all', name: 'جميع الأقسام', icon: 'ri-apps-2-fill', color: '#2563eb' },
+  { id: 'supermarket', name: 'سوبر ماركت وبقالات', icon: 'ri-shopping-cart-2-fill', color: '#16a34a' },
+  { id: 'restaurant', name: 'مطاعم', icon: 'ri-restaurant-2-fill', color: '#ea580c' },
+  { id: 'cafe', name: 'كافيهات', icon: 'ri-cup-fill', color: '#854d0e' },
+  { id: 'pharmacy', name: 'صيدليات', icon: 'ri-capsule-fill', color: '#0284c7' },
+  { id: 'clothing', name: 'ملابس وأزياء', icon: 'ri-t-shirt-fill', color: '#9333ea' },
+  { id: 'electronics', name: 'موبايلات وإلكترونيات', icon: 'ri-smartphone-fill', color: '#4f46e5' },
+  { id: 'butcher', name: 'جزارات ولحوم', icon: 'ri-knife-line', color: '#dc2626' },
+  { id: 'bakery', name: 'مخابز وحلوانيات', icon: 'ri-cake-3-fill', color: '#d97706' },
+  { id: 'general_retail', name: 'محلات عامة ومكتبات', icon: 'ri-store-2-fill', color: '#0d9488' },
+  { id: 'maintenance', name: 'الصيانة والخدمات الفنية', icon: 'ri-tools-fill', color: '#ca8a04' },
+  { id: 'automotive', name: 'السيارات وقطع الغيار', icon: 'ri-car-fill', color: '#e11d48' },
+  { id: 'gas_station', name: 'محطات البنزين', icon: 'ri-gas-station-fill', color: '#b91c1c' },
+  { id: 'medical', name: 'الخدمات الطبية', icon: 'ri-hospital-fill', color: '#059669' },
+  { id: 'education', name: 'التعليم والمدارس', icon: 'ri-graduation-cap-fill', color: '#2563eb' },
+  { id: 'mall', name: 'المولات والأسواق', icon: 'ri-shopping-bag-3-fill', color: '#7c3aed' },
+  { id: 'finance', name: 'البنوك والخدمات المالية', icon: 'ri-bank-fill', color: '#15803d' },
+  { id: 'shipping', name: 'الشحن والتوصيل', icon: 'ri-truck-fill', color: '#c2410c' },
+  { id: 'hotel', name: 'الفنادق والإقامة', icon: 'ri-hotel-bed-fill', color: '#0891b2' },
+  { id: 'events', name: 'القاعات والمناسبات', icon: 'ri-vip-diamond-fill', color: '#db2777' },
+  { id: 'sports', name: 'الرياضة والترفيه', icon: 'ri-football-fill', color: '#16a34a' },
+  { id: 'corporate', name: 'الشركات والمكاتب', icon: 'ri-building-4-fill', color: '#475569' },
+  { id: 'factory', name: 'المصانع والشركات الصناعية', icon: 'ri-building-line', color: '#334155' },
+  { id: 'religious', name: 'المساجد والكنائس', icon: 'ri-ancient-gate-fill', color: '#047857' },
+  { id: 'government', name: 'الخدمات الحكومية', icon: 'ri-government-fill', color: '#1e3a8a' },
+  { id: 'transport', name: 'المواصلات والمواقف', icon: 'ri-bus-fill', color: '#b45309' }
+];
+
+const initialSadatPlaces = [
+  {
+    "id": "shp_sup_001",
+    "place_id": "SDT_SHP_SUP_001",
+    "name": "هايبر شعلان - فرع المنطقة الأولى (شارع جمال عبد الناصر)",
+    "name_ar": "هايبر شعلان - فرع المنطقة الأولى",
+    "name_en": "Shaalan Hypermarket - Zone 1 Branch",
+    "category": "supermarket",
+    "sub_category": "hypermarket",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3664,
+    "lng": 30.5031,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "شعلان",
+      "سوبر ماركت شعلان",
+      "هايبر شعلان",
+      "ماركت شعلان",
+      "شعلان المنطقة الأولى",
+      "سوبر ماركت",
+      "سوبرماركت",
+      "ماركت",
+      "بقالة",
+      "هايبر",
+      "مواد غذائية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_001_b",
+    "place_id": "SDT_SHP_SUP_001_B",
+    "name": "هايبر شعلان - فرع المحور المركزي الجديد",
+    "name_ar": "هايبر شعلان - فرع المحور المركزي",
+    "name_en": "Shaalan Hypermarket - Central Axis Branch",
+    "category": "supermarket",
+    "sub_category": "hypermarket",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي التجاري الجديد، أمام سيتي مول، مدينة السادات",
+    "lat": 30.3682,
+    "lng": 30.5061,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "شعلان المحور",
+      "شعلان الجديد",
+      "هايبر شعلان المحور",
+      "شعلان",
+      "سوبر ماركت شعلان",
+      "سوبر ماركت",
+      "ماركت"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_002",
+    "place_id": "SDT_SHP_SUP_002",
+    "name": "سوبر ماركت زهران - سوق المنطقة الرابعة",
+    "name_ar": "سوبر ماركت زهران",
+    "name_en": "Zahran Market",
+    "category": "supermarket",
+    "sub_category": "supermarket",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "مول زهران، سوق المنطقة الرابعة التجاري، مدينة السادات",
+    "lat": 30.3804,
+    "lng": 30.5158,
+    "mall_name": "مول زهران",
+    "popularity": 96,
+    "aliases": [
+      "زهران",
+      "سوبر ماركت زهران",
+      "ماركت زهران",
+      "زهران ماركت",
+      "سوبر ماركت",
+      "سوبرماركت",
+      "ماركت",
+      "بقالة",
+      "مول زهران"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_003",
+    "place_id": "SDT_SHP_SUP_003",
+    "name": "سوبر ماركت خير زمان - محور الخدمات",
+    "name_ar": "سوبر ماركت خير زمان",
+    "name_en": "Kheir Zaman Supermarket",
+    "category": "supermarket",
+    "sub_category": "supermarket",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "محور الخدمات الرئيسي، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3688,
+    "lng": 30.5052,
+    "mall_name": null,
+    "popularity": 94,
+    "aliases": [
+      "خير زمان",
+      "سوبر ماركت خير زمان",
+      "ماركت خير زمان",
+      "سوبر ماركت",
+      "ماركت",
+      "بقالة",
+      "مواد غذائية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_004_a",
+    "place_id": "SDT_SHP_SUP_004_A",
+    "name": "سوبر ماركت الراية - فرع المنطقة الثانية",
+    "name_ar": "سوبر ماركت الراية - فرع المنطقة 2",
+    "name_en": "Al Raya Supermarket - Zone 2",
+    "category": "supermarket",
+    "sub_category": "supermarket",
+    "place_type": "commercial",
+    "district": "المنطقة الثانية",
+    "address": "شارع النصر، المنطقة السكنية الثانية، مدينة السادات",
+    "lat": 30.3695,
+    "lng": 30.5112,
+    "mall_name": null,
+    "popularity": 92,
+    "aliases": [
+      "الراية",
+      "ماركت الراية",
+      "سوبر ماركت الراية",
+      "الرايه",
+      "سوبر ماركت",
+      "بقالة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_004_b",
+    "place_id": "SDT_SHP_SUP_004_B",
+    "name": "سوبر ماركت الراية - فرع المنطقة السابعة",
+    "name_ar": "سوبر ماركت الراية - فرع المنطقة 7",
+    "name_en": "Al Raya Supermarket - Zone 7",
+    "category": "supermarket",
+    "sub_category": "supermarket",
+    "place_type": "commercial",
+    "district": "المنطقة السابعة",
+    "address": "شارع التجاريين، المنطقة السابعة، مدينة السادات",
+    "lat": 30.3752,
+    "lng": 30.5234,
+    "mall_name": null,
+    "popularity": 91,
+    "aliases": [
+      "الراية 7",
+      "ماركت الراية المنطقة السابعة",
+      "الراية",
+      "سوبر ماركت الراية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_005",
+    "place_id": "SDT_SHP_SUP_005",
+    "name": "كارفور ماركت - سيتي مول السادات",
+    "name_ar": "كارفور ماركت سيتي مول",
+    "name_en": "Carrefour Market - City Mall",
+    "category": "supermarket",
+    "sub_category": "hypermarket",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "الدور الأرضي، سيتي مول السادات، المحور المركزي، مدينة السادات",
+    "lat": 30.3678,
+    "lng": 30.5056,
+    "mall_name": "سيتي مول",
+    "popularity": 97,
+    "aliases": [
+      "كارفور",
+      "كارفور السادات",
+      "هايبر كارفور",
+      "سوبر ماركت كارفور",
+      "كارفور سيتي مول",
+      "سيتي مول",
+      "ماركت كارفور"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_006",
+    "place_id": "SDT_SHP_SUP_006",
+    "name": "سبينيس هايبر ماركت - السادات",
+    "name_ar": "سبينيس هايبر ماركت",
+    "name_en": "Spinneys Hypermarket",
+    "category": "supermarket",
+    "sub_category": "hypermarket",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي، أمام مجمع البنوك، مدينة السادات",
+    "lat": 30.3691,
+    "lng": 30.5075,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "سبينيس",
+      "هايبر سبينيس",
+      "ماركت سبينيس",
+      "سوبر ماركت سبينيس",
+      "spinneys"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_007",
+    "place_id": "SDT_SHP_SUP_007",
+    "name": "فتح الله جملة ماركت السادات",
+    "name_ar": "فتح الله جملة ماركت",
+    "name_en": "Fathalla Gomla Market",
+    "category": "supermarket",
+    "sub_category": "hypermarket",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي التجاري، مدينة السادات",
+    "lat": 30.3705,
+    "lng": 30.509,
+    "mall_name": null,
+    "popularity": 94,
+    "aliases": [
+      "فتح الله",
+      "جملة ماركت",
+      "فتح الله ماركت",
+      "سوبر ماركت فتح الله",
+      "هايبر فتح الله"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_008_a",
+    "place_id": "SDT_SHP_SUP_008_A",
+    "name": "كازيون ماركت - فرع المنطقة الأولى",
+    "name_ar": "كازيون ماركت - فرع المنطقة 1",
+    "name_en": "Kazyon Market - Zone 1 Branch",
+    "category": "supermarket",
+    "sub_category": "discount_store",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3659,
+    "lng": 30.5015,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "كازيون",
+      "ماركت كازيون",
+      "سوبر ماركت كازيون",
+      "كازيون 1",
+      "كازيون المنطقة الأولى"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_008_b",
+    "place_id": "SDT_SHP_SUP_008_B",
+    "name": "كازيون ماركت - فرع سوق المنطقة الرابعة",
+    "name_ar": "كازيون ماركت - فرع سوق 4",
+    "name_en": "Kazyon Market - Zone 4 Market",
+    "category": "supermarket",
+    "sub_category": "discount_store",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "شارع السوق التجاري، المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3798,
+    "lng": 30.5162,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "كازيون سوق 4",
+      "كازيون المنطقة الرابعة",
+      "كازيون",
+      "ماركت كازيون"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_008_c",
+    "place_id": "SDT_SHP_SUP_008_C",
+    "name": "كازيون ماركت - فرع المنطقة السادسة",
+    "name_ar": "كازيون ماركت - فرع المنطقة 6",
+    "name_en": "Kazyon Market - Zone 6 Branch",
+    "category": "supermarket",
+    "sub_category": "discount_store",
+    "place_type": "commercial",
+    "district": "المنطقة السادسة",
+    "address": "الشارع الرئيسي، المنطقة السادسة، مدينة السادات",
+    "lat": 30.3721,
+    "lng": 30.5189,
+    "mall_name": null,
+    "popularity": 93,
+    "aliases": [
+      "كازيون 6",
+      "كازيون المنطقة السادسة",
+      "كازيون",
+      "ماركت كازيون"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_008_d",
+    "place_id": "SDT_SHP_SUP_008_D",
+    "name": "كازيون ماركت - فرع المنطقة الحادية عشرة",
+    "name_ar": "كازيون ماركت - فرع المنطقة 11",
+    "name_en": "Kazyon Market - Zone 11 Branch",
+    "category": "supermarket",
+    "sub_category": "discount_store",
+    "place_type": "commercial",
+    "district": "المنطقة الحادية عشرة",
+    "address": "المنطقة 11، بالقرب من مجمع الخدمات، مدينة السادات",
+    "lat": 30.3842,
+    "lng": 30.528,
+    "mall_name": null,
+    "popularity": 92,
+    "aliases": [
+      "كازيون 11",
+      "كازيون المنطقة الحادية عشرة",
+      "كازيون المنطقه 11",
+      "كازيون"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_008_e",
+    "place_id": "SDT_SHP_SUP_008_E",
+    "name": "كازيون ماركت - فرع المنطقة الثانية عشرة (ابني بيتك)",
+    "name_ar": "كازيون ماركت - فرع المنطقة 12",
+    "name_en": "Kazyon Market - Zone 12 Branch",
+    "category": "supermarket",
+    "sub_category": "discount_store",
+    "place_type": "commercial",
+    "district": "المنطقة الثانية عشرة",
+    "address": "محور الخدمات، المنطقة 12 (ابني بيتك)، مدينة السادات",
+    "lat": 30.3891,
+    "lng": 30.5342,
+    "mall_name": null,
+    "popularity": 90,
+    "aliases": [
+      "كازيون 12",
+      "كازيون ابني بيتك",
+      "كازيون المنطقة الثانية عشرة",
+      "كازيون"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_009_a",
+    "place_id": "SDT_SHP_SUP_009_A",
+    "name": "بيم ماركت - فرع المنطقة الثانية",
+    "name_ar": "بيم ماركت - فرع المنطقة 2",
+    "name_en": "BIM Market - Zone 2",
+    "category": "supermarket",
+    "sub_category": "discount_store",
+    "place_type": "commercial",
+    "district": "المنطقة الثانية",
+    "address": "شارع أحمد عرابي، المنطقة الثانية، مدينة السادات",
+    "lat": 30.3681,
+    "lng": 30.5105,
+    "mall_name": null,
+    "popularity": 93,
+    "aliases": [
+      "بيم",
+      "ماركت بيم",
+      "بيم 2",
+      "بيم المنطقة الثانية",
+      "سوبر ماركت بيم"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_009_b",
+    "place_id": "SDT_SHP_SUP_009_B",
+    "name": "بيم ماركت - فرع المنطقة الثالثة",
+    "name_ar": "بيم ماركت - فرع المنطقة 3",
+    "name_en": "BIM Market - Zone 3",
+    "category": "supermarket",
+    "sub_category": "discount_store",
+    "place_type": "commercial",
+    "district": "المنطقة الثالثة",
+    "address": "شارع الزهور، المنطقة الثالثة، مدينة السادات",
+    "lat": 30.3735,
+    "lng": 30.5122,
+    "mall_name": null,
+    "popularity": 92,
+    "aliases": [
+      "بيم 3",
+      "بيم المنطقة الثالثة",
+      "بيم",
+      "ماركت بيم"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_009_c",
+    "place_id": "SDT_SHP_SUP_009_C",
+    "name": "بيم ماركت - فرع المنطقة الخامسة",
+    "name_ar": "بيم ماركت - فرع المنطقة 5",
+    "name_en": "BIM Market - Zone 5",
+    "category": "supermarket",
+    "sub_category": "discount_store",
+    "place_type": "commercial",
+    "district": "المنطقة الخامسة",
+    "address": "ميدان المنطقة الخامسة، مدينة السادات",
+    "lat": 30.3768,
+    "lng": 30.5145,
+    "mall_name": null,
+    "popularity": 91,
+    "aliases": [
+      "بيم 5",
+      "بيم المنطقة الخامسة",
+      "بيم",
+      "ماركت بيم"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_009_d",
+    "place_id": "SDT_SHP_SUP_009_D",
+    "name": "بيم ماركت - فرع المنطقة السابعة",
+    "name_ar": "بيم ماركت - فرع المنطقة 7",
+    "name_en": "BIM Market - Zone 7",
+    "category": "supermarket",
+    "sub_category": "discount_store",
+    "place_type": "commercial",
+    "district": "المنطقة السابعة",
+    "address": "الشارع التجاري، المنطقة السابعة، مدينة السادات",
+    "lat": 30.3748,
+    "lng": 30.524,
+    "mall_name": null,
+    "popularity": 91,
+    "aliases": [
+      "بيم 7",
+      "بيم المنطقة السابعة",
+      "بيم",
+      "ماركت بيم"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_010",
+    "place_id": "SDT_SHP_SUP_010",
+    "name": "أولاد رجب ماركت السادات",
+    "name_ar": "أولاد رجب ماركت",
+    "name_en": "Awlad Ragab Market",
+    "category": "supermarket",
+    "sub_category": "supermarket",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "بجوار مجمع المدارس، المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3785,
+    "lng": 30.517,
+    "mall_name": null,
+    "popularity": 92,
+    "aliases": [
+      "اولاد رجب",
+      "أولاد رجب",
+      "سوبر ماركت اولاد رجب",
+      "ماركت اولاد رجب"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_011",
+    "place_id": "SDT_SHP_SUP_011",
+    "name": "أسواق المزرعة للمنتجات الغذائية واللحوم",
+    "name_ar": "أسواق المزرعة",
+    "name_en": "Al Mazraah Supermarket",
+    "category": "supermarket",
+    "sub_category": "supermarket",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة الأولى، بجوار مركز الشباب، مدينة السادات",
+    "lat": 30.367,
+    "lng": 30.504,
+    "mall_name": null,
+    "popularity": 90,
+    "aliases": [
+      "المزرعة",
+      "اسواق المزرعة",
+      "ماركت المزرعة",
+      "سوبر ماركت المزرعة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_012",
+    "place_id": "SDT_SHP_SUP_012",
+    "name": "ماركت البركة للمواد الغذائية والتموينية",
+    "name_ar": "ماركت البركة",
+    "name_en": "Al Baraka Market",
+    "category": "supermarket",
+    "sub_category": "grocery",
+    "place_type": "commercial",
+    "district": "المنطقة السادسة",
+    "address": "شارع مسجد النور، المنطقة السادسة، مدينة السادات",
+    "lat": 30.3715,
+    "lng": 30.5175,
+    "mall_name": null,
+    "popularity": 88,
+    "aliases": [
+      "البركة",
+      "ماركت البركة",
+      "بقالة البركة",
+      "سوبر ماركت"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_013",
+    "place_id": "SDT_SHP_SUP_013",
+    "name": "واحة الفواكه والخضروات الطازجة",
+    "name_ar": "واحة الفواكه والخضار",
+    "name_en": "Fruits & Vegetables Oasis",
+    "category": "supermarket",
+    "sub_category": "greengrocer",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3662,
+    "lng": 30.5025,
+    "mall_name": null,
+    "popularity": 90,
+    "aliases": [
+      "خضار",
+      "فاكهة",
+      "فواكه",
+      "محل خضار",
+      "خضري",
+      "فاكهاني",
+      "خضار وفاكهة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_sup_014",
+    "place_id": "SDT_SHP_SUP_014",
+    "name": "خضار وفاكهة الباشا - سوق 4",
+    "name_ar": "خضار وفاكهة الباشا",
+    "name_en": "El Basha Vegetables & Fruits",
+    "category": "supermarket",
+    "sub_category": "greengrocer",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق الخضار المركزي، المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3808,
+    "lng": 30.5165,
+    "mall_name": null,
+    "popularity": 91,
+    "aliases": [
+      "خضار سوق 4",
+      "فاكهة سوق 4",
+      "الباشا خضار",
+      "خضار وفاكهة",
+      "خضري"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_001_a",
+    "place_id": "SDT_SHP_RST_001_A",
+    "name": "مطعم البرنس للمشويات والأكلات الشرقية - فرع سوق 4",
+    "name_ar": "مطعم البرنس - فرع سوق المنطقة الرابعة",
+    "name_en": "El Prince Restaurant - Zone 4 Market",
+    "category": "restaurant",
+    "sub_category": "grill",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة التجاري، مدينة السادات",
+    "lat": 30.3802,
+    "lng": 30.516,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "البرنس",
+      "مطعم البرنس",
+      "مشويات البرنس",
+      "كبابجي البرنس",
+      "مشويات",
+      "كباب",
+      "كفتة",
+      "مطعم",
+      "اكل شرقي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_001_b",
+    "place_id": "SDT_SHP_RST_001_B",
+    "name": "مطعم البرنس - فرع المحور المركزي التجاري",
+    "name_ar": "مطعم البرنس - فرع المحور المركزي",
+    "name_en": "El Prince Restaurant - Central Axis Branch",
+    "category": "restaurant",
+    "sub_category": "grill",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي، بالقرب من سيتي مول، مدينة السادات",
+    "lat": 30.3685,
+    "lng": 30.5058,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "البرنس المحور",
+      "مطعم البرنس الجديد",
+      "مشويات البرنس المحور",
+      "البرنس"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_002_a",
+    "place_id": "SDT_SHP_RST_002_A",
+    "name": "مطعم الشبراوي السادات - فرع المنطقة الأولى (جمال عبد الناصر)",
+    "name_ar": "مطعم الشبراوي - فرع المنطقة الأولى",
+    "name_en": "El Shabrawy - Zone 1 Branch",
+    "category": "restaurant",
+    "sub_category": "oriental_fast_food",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3665,
+    "lng": 30.5033,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "الشبراوي",
+      "مطعم الشبراوي",
+      "شبراوي المنطقة الأولى",
+      "شبراوي",
+      "فول وطعمية",
+      "فول",
+      "طعمية",
+      "شاورما",
+      "فطار",
+      "مطعم"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_002_b",
+    "place_id": "SDT_SHP_RST_002_B",
+    "name": "مطعم الشبراوي السادات - فرع سوق المنطقة الرابعة",
+    "name_ar": "مطعم الشبراوي - فرع سوق المنطقة الرابعة",
+    "name_en": "El Shabrawy - Zone 4 Market Branch",
+    "category": "restaurant",
+    "sub_category": "oriental_fast_food",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "السوق التجاري، المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3795,
+    "lng": 30.5155,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "شبراوي سوق 4",
+      "الشبراوي المنطقة الرابعة",
+      "الشبراوي",
+      "شبراوي",
+      "فول وطعمية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_003_a",
+    "place_id": "SDT_SHP_RST_003_A",
+    "name": "كريب أند وافل Crepe & Waffle - مول زهران",
+    "name_ar": "كريب أند وافل - مول زهران",
+    "name_en": "Crepe & Waffle - Zahran Mall",
+    "category": "restaurant",
+    "sub_category": "crepe_waffle",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "مول زهران، سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3805,
+    "lng": 30.5159,
+    "mall_name": "مول زهران",
+    "popularity": 96,
+    "aliases": [
+      "كريب اند وافل",
+      "كريب",
+      "وافل",
+      "كريب زهران",
+      "crepe and waffle",
+      "مطعم كريب",
+      "ساندوتشات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_003_b",
+    "place_id": "SDT_SHP_RST_003_B",
+    "name": "كريب أند وافل Crepe & Waffle - فرع سيتي مول",
+    "name_ar": "كريب أند وافل - سيتي مول",
+    "name_en": "Crepe & Waffle - City Mall Branch",
+    "category": "restaurant",
+    "sub_category": "crepe_waffle",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "فود كورت، سيتي مول السادات، المحور المركزي، مدينة السادات",
+    "lat": 30.3679,
+    "lng": 30.5057,
+    "mall_name": "سيتي مول",
+    "popularity": 95,
+    "aliases": [
+      "كريب سيتي مول",
+      "كريب اند وافل سيتي مول",
+      "كريب",
+      "وافل",
+      "crepe"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_004",
+    "place_id": "SDT_SHP_RST_004",
+    "name": "مطعم أسماك السادات للأكلات البحرية والجمبري",
+    "name_ar": "مطعم أسماك السادات",
+    "name_en": "Sadat Fish Restaurant",
+    "category": "restaurant",
+    "sub_category": "seafood",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع المدارس، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3672,
+    "lng": 30.5042,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "اسماك السادات",
+      "أسماك السادات",
+      "سمك",
+      "اسماك",
+      "جمبري",
+      "مطعم سمك",
+      "ماكولات بحرية",
+      "فسفور"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_005",
+    "place_id": "SDT_SHP_RST_005",
+    "name": "أسماك بحري والجمبري - سوق المنطقة الرابعة",
+    "name_ar": "أسماك بحري والجمبري",
+    "name_en": "Bahary Seafood & Shrimp",
+    "category": "restaurant",
+    "sub_category": "seafood",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3801,
+    "lng": 30.5168,
+    "mall_name": null,
+    "popularity": 94,
+    "aliases": [
+      "اسماك بحري",
+      "سمك بحري",
+      "اسماك سوق 4",
+      "سمك",
+      "جمبري",
+      "مطعم سمك"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_006",
+    "place_id": "SDT_SHP_RST_006",
+    "name": "أسماك القنال السادات للأسماك المشوية والمقلية",
+    "name_ar": "أسماك القنال",
+    "name_en": "Al Canal Fish & Seafood",
+    "category": "restaurant",
+    "sub_category": "seafood",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3658,
+    "lng": 30.5028,
+    "mall_name": null,
+    "popularity": 93,
+    "aliases": [
+      "القنال",
+      "اسماك القنال",
+      "سمك القنال",
+      "مطعم سمك"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_007",
+    "place_id": "SDT_SHP_RST_007",
+    "name": "بيتزا كوين Pizza Queen السادات - المحور التجاري",
+    "name_ar": "بيتزا كوين السادات",
+    "name_en": "Pizza Queen Sadat",
+    "category": "restaurant",
+    "sub_category": "pizza",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي، بجوار بنك مصر، مدينة السادات",
+    "lat": 30.3687,
+    "lng": 30.5065,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "بيتزا كوين",
+      "بيتزا",
+      "pizza queen",
+      "فطير",
+      "كريب",
+      "ايطالي",
+      "مطعم بيتزا"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_008",
+    "place_id": "SDT_SHP_RST_008",
+    "name": "بيتزا كينج Pizza King - المنطقة الرابعة",
+    "name_ar": "بيتزا كينج السادات",
+    "name_en": "Pizza King Sadat",
+    "category": "restaurant",
+    "sub_category": "pizza",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "الشارع التجاري، المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3792,
+    "lng": 30.5152,
+    "mall_name": null,
+    "popularity": 93,
+    "aliases": [
+      "بيتزا كينج",
+      "بيتزا",
+      "pizza king",
+      "مطعم بيتزا"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_009",
+    "place_id": "SDT_SHP_RST_009",
+    "name": "دومينوز بيتزا Domino's Pizza السادات",
+    "name_ar": "دومينوز بيتزا",
+    "name_en": "Domino's Pizza Sadat",
+    "category": "restaurant",
+    "sub_category": "pizza",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي التجاري، مدينة السادات",
+    "lat": 30.3684,
+    "lng": 30.5059,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "دومينوز",
+      "دومينوز بيتزا",
+      "dominos",
+      "pizza",
+      "بيتزا"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_010",
+    "place_id": "SDT_SHP_RST_010",
+    "name": "بابا جونز Papa John's Pizza السادات",
+    "name_ar": "بابا جونز بيتزا",
+    "name_en": "Papa John's Pizza",
+    "category": "restaurant",
+    "sub_category": "pizza",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "سيتي مول السادات، المحور المركزي، مدينة السادات",
+    "lat": 30.3676,
+    "lng": 30.5054,
+    "mall_name": "سيتي مول",
+    "popularity": 95,
+    "aliases": [
+      "بابا جونز",
+      "papa johns",
+      "بيتزا بابا جونز",
+      "بيتزا"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_011",
+    "place_id": "SDT_SHP_RST_011",
+    "name": "بيتزا روما Pizza Roma السادات",
+    "name_ar": "بيتزا روما",
+    "name_en": "Pizza Roma Sadat",
+    "category": "restaurant",
+    "sub_category": "pizza",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3661,
+    "lng": 30.5029,
+    "mall_name": null,
+    "popularity": 93,
+    "aliases": [
+      "بيتزا روما",
+      "روما بيتزا",
+      "بيتزا",
+      "فطير وفطاطري"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_012",
+    "place_id": "SDT_SHP_RST_012",
+    "name": "مطعم حاتي السادات للمأكولات الشرقية والمشويات",
+    "name_ar": "حاتي السادات للمشويات",
+    "name_en": "Sadat Haty Grill",
+    "category": "restaurant",
+    "sub_category": "grill",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، أمام مجمع المصالح، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3667,
+    "lng": 30.5036,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "حاتي السادات",
+      "الحاتي",
+      "مشويات الحاتي",
+      "كبابجي",
+      "كباب وكفتة",
+      "مشويات",
+      "مطعم"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_013",
+    "place_id": "SDT_SHP_RST_013",
+    "name": "حضرموت شيخ المندي والأكلات البدوية السادات",
+    "name_ar": "حضرموت شيخ المندي",
+    "name_en": "Hadramout Sheikh El Mandi",
+    "category": "restaurant",
+    "sub_category": "oriental_mandi",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور التجاري، مدينة السادات",
+    "lat": 30.3693,
+    "lng": 30.5071,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "حضرموت",
+      "شيخ المندي",
+      "مندي",
+      "مظبي",
+      "كبسة",
+      "اكل يمني",
+      "لحم مندي",
+      "مطعم حضرموت"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_014",
+    "place_id": "SDT_SHP_RST_014",
+    "name": "حضرموت عنتر السادات للمندي والمشويات",
+    "name_ar": "حضرموت عنتر السادات",
+    "name_en": "Hadramout Antar Sadat",
+    "category": "restaurant",
+    "sub_category": "oriental_mandi",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة الأولى، بجوار فندق أمون، مدينة السادات",
+    "lat": 30.3654,
+    "lng": 30.5021,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "عنتر",
+      "حضرموت عنتر",
+      "مندي عنتر",
+      "مطعم عنتر",
+      "مندي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_015",
+    "place_id": "SDT_SHP_RST_015",
+    "name": "مطعم كبابجي المنوفي السادات",
+    "name_ar": "كبابجي المنوفي",
+    "name_en": "El Menoufy Grill & Kebab",
+    "category": "restaurant",
+    "sub_category": "grill",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي، بالقرب من جهاز تنمية المدينة، مدينة السادات",
+    "lat": 30.3689,
+    "lng": 30.5068,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "المنوفي",
+      "كبابجي المنوفي",
+      "مشويات المنوفي",
+      "كباب",
+      "كفتة",
+      "طرب"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_016",
+    "place_id": "SDT_SHP_RST_016",
+    "name": "مطعم أهل الشام للمأكولات السورية والشاورما - فرع 4",
+    "name_ar": "مطعم أهل الشام السوري",
+    "name_en": "Ahl El Sham Syrian Restaurant",
+    "category": "restaurant",
+    "sub_category": "syrian",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، أمام مسجد الشهداء، مدينة السادات",
+    "lat": 30.3807,
+    "lng": 30.5163,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "اهل الشام",
+      "أهل الشام",
+      "مطعم سوري",
+      "شاورما سوري",
+      "شاورما",
+      "فتة شاورما",
+      "بروستد",
+      "مناقيش"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_017",
+    "place_id": "SDT_SHP_RST_017",
+    "name": "مطعم كرم الشام / روستو - المحور التجاري",
+    "name_ar": "مطعم كرم الشام وروستو",
+    "name_en": "Karam El Sham / Rosto Sadat",
+    "category": "restaurant",
+    "sub_category": "syrian",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي، بجوار سيتي مول، مدينة السادات",
+    "lat": 30.3683,
+    "lng": 30.5062,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "كرم الشام",
+      "روستو",
+      "شاورما كرم الشام",
+      "مطعم سوري",
+      "شاورما فراخ",
+      "شاورما لحمة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_018",
+    "place_id": "SDT_SHP_RST_018",
+    "name": "مطعم شاورما الريم السادات",
+    "name_ar": "شاورما الريم",
+    "name_en": "Al Reem Shawarma Sadat",
+    "category": "restaurant",
+    "sub_category": "syrian",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3799,
+    "lng": 30.5158,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "الريم",
+      "شاورما الريم",
+      "مطعم الريم",
+      "شاورما سوري"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_019",
+    "place_id": "SDT_SHP_RST_019",
+    "name": "مطعم الدمشقي للمأكولات السورية",
+    "name_ar": "مطعم الدمشقي السوري",
+    "name_en": "Al Dameshqi Restaurant",
+    "category": "restaurant",
+    "sub_category": "syrian",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3663,
+    "lng": 30.5032,
+    "mall_name": null,
+    "popularity": 94,
+    "aliases": [
+      "الدمشقي",
+      "مطعم الدمشقي",
+      "شاورما دمشقي",
+      "اكل سوري"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_020_a",
+    "place_id": "SDT_SHP_RST_020_A",
+    "name": "كشري الزعيم السادات - فرع المنطقة الأولى",
+    "name_ar": "كشري الزعيم - فرع المنطقة الأولى",
+    "name_en": "Koshary El Zaeem - Zone 1 Branch",
+    "category": "restaurant",
+    "sub_category": "koshary",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3668,
+    "lng": 30.5037,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "كشري الزعيم",
+      "الزعيم",
+      "كشري",
+      "طاجن",
+      "طواجن",
+      "مطعم كشري"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_020_b",
+    "place_id": "SDT_SHP_RST_020_B",
+    "name": "كشري الزعيم السادات - فرع سوق المنطقة الرابعة",
+    "name_ar": "كشري الزعيم - فرع سوق المنطقة الرابعة",
+    "name_en": "Koshary El Zaeem - Zone 4 Market",
+    "category": "restaurant",
+    "sub_category": "koshary",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.38,
+    "lng": 30.5161,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "كشري الزعيم سوق 4",
+      "الزعيم سوق 4",
+      "كشري",
+      "مطعم كشري"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_021",
+    "place_id": "SDT_SHP_RST_021",
+    "name": "كشري التحرير السادات",
+    "name_ar": "كشري التحرير",
+    "name_en": "Koshary El Tahrir Sadat",
+    "category": "restaurant",
+    "sub_category": "koshary",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.366,
+    "lng": 30.5026,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "كشري التحرير",
+      "التحرير",
+      "كشري",
+      "مطعم كشري"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_022",
+    "place_id": "SDT_SHP_RST_022",
+    "name": "كشري هند السادات - سوق المنطقة الرابعة",
+    "name_ar": "كشري هند",
+    "name_en": "Koshary Hend Sadat",
+    "category": "restaurant",
+    "sub_category": "koshary",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق 4 التجاري، مدينة السادات",
+    "lat": 30.3794,
+    "lng": 30.5153,
+    "mall_name": null,
+    "popularity": 93,
+    "aliases": [
+      "كشري هند",
+      "هند",
+      "كشري",
+      "طواجن"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_023",
+    "place_id": "SDT_SHP_RST_023",
+    "name": "مطعم البغل للمأكولات الشعبية والفول والفلافل",
+    "name_ar": "مطعم البغل السادات",
+    "name_en": "El Baghl Restaurant Sadat",
+    "category": "restaurant",
+    "sub_category": "oriental_fast_food",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3797,
+    "lng": 30.5157,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "البغل",
+      "مطعم البغل",
+      "فول البغل",
+      "فول وطعمية",
+      "فلافل"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_024",
+    "place_id": "SDT_SHP_RST_024",
+    "name": "مطعم جاد السادات للأكلات الشعبية والشرقية",
+    "name_ar": "مطعم جاد السادات",
+    "name_en": "Gad Restaurant Sadat",
+    "category": "restaurant",
+    "sub_category": "oriental_fast_food",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3666,
+    "lng": 30.5034,
+    "mall_name": null,
+    "popularity": 94,
+    "aliases": [
+      "جاد",
+      "مطعم جاد",
+      "فول وطعمية",
+      "فطير جاد",
+      "شاورما جاد"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_025",
+    "place_id": "SDT_SHP_RST_025",
+    "name": "مطعم بازوكا فرايد تشيكن Bazooka Fried Chicken السادات",
+    "name_ar": "مطعم بازوكا فرايد تشيكن",
+    "name_en": "Bazooka Fried Chicken Sadat",
+    "category": "restaurant",
+    "sub_category": "fast_food",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي التجاري، مدينة السادات",
+    "lat": 30.3686,
+    "lng": 30.5064,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "بازوكا",
+      "فراخ بازوكا",
+      "برجر بازوكا",
+      "bazooka",
+      "fried chicken",
+      "بروستد",
+      "دجاج مقلي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_026",
+    "place_id": "SDT_SHP_RST_026",
+    "name": "مطعم زاكس Zaks Fried Chicken السادات",
+    "name_ar": "مطعم زاكس السادات",
+    "name_en": "Zaks Fried Chicken Sadat",
+    "category": "restaurant",
+    "sub_category": "fast_food",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة الأولى، بالقرب من مجمع المصالح، مدينة السادات",
+    "lat": 30.3669,
+    "lng": 30.5039,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "زاكس",
+      "zaks",
+      "زاكس فرايد تشيكن",
+      "فراخ مقلية",
+      "برجر"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_027",
+    "place_id": "SDT_SHP_RST_027",
+    "name": "مطعم هارت أتاك Heart Attack برجر وفراخ السادات",
+    "name_ar": "مطعم هارت أتاك السادات",
+    "name_en": "Heart Attack Restaurant Sadat",
+    "category": "restaurant",
+    "sub_category": "fast_food",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور التجاري، مدينة السادات",
+    "lat": 30.369,
+    "lng": 30.507,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "هارت اتاك",
+      "هارت أتاك",
+      "heart attack",
+      "برجر",
+      "فرايد تشيكن",
+      "وجبات سريعة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_028",
+    "place_id": "SDT_SHP_RST_028",
+    "name": "كنتاكي KFC السادات - طريق الخدمات الصحراوي",
+    "name_ar": "كنتاكي KFC السادات",
+    "name_en": "KFC Sadat City",
+    "category": "restaurant",
+    "sub_category": "fast_food",
+    "place_type": "commercial",
+    "district": "مدخل السادات الصحراوي",
+    "address": "محطة الوطنية، طريق القاهرة الإسكندرية الصحراوي، مدخل السادات",
+    "lat": 30.345,
+    "lng": 30.528,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "كنتاكي",
+      "kfc",
+      "دجاج كنتاكي",
+      "فرايد تشيكن",
+      "وجبات سريعة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_029",
+    "place_id": "SDT_SHP_RST_029",
+    "name": "ماكدونالدز McDonald's السادات - محطة وطنية الصحراوي",
+    "name_ar": "ماكدونالدز McDonald's",
+    "name_en": "McDonald's Sadat City",
+    "category": "restaurant",
+    "sub_category": "fast_food",
+    "place_type": "commercial",
+    "district": "مدخل السادات الصحراوي",
+    "address": "مجمع خدمات وطنية، طريق القاهرة الإسكندرية الصحراوي، مدخل السادات",
+    "lat": 30.3452,
+    "lng": 30.5285,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "ماكدونالدز",
+      "ماك",
+      "mcdonalds",
+      "mcdonald",
+      "برجر",
+      "وجبات سريعة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_030",
+    "place_id": "SDT_SHP_RST_030",
+    "name": "برجر كينج Burger King السادات - محطة شيل أوت",
+    "name_ar": "برجر كينج Burger King",
+    "name_en": "Burger King Sadat",
+    "category": "restaurant",
+    "sub_category": "fast_food",
+    "place_type": "commercial",
+    "district": "مدخل السادات الصحراوي",
+    "address": "محطة شيل أوت ChillOut، مدخل السادات الصحراوي، مدينة السادات",
+    "lat": 30.3475,
+    "lng": 30.526,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "برجر كينج",
+      "burger king",
+      "برجر",
+      "ساندوتشات برجر"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_031",
+    "place_id": "SDT_SHP_RST_031",
+    "name": "بوفالو برجر Buffalo Burger السادات",
+    "name_ar": "بوفالو برجر السادات",
+    "name_en": "Buffalo Burger Sadat",
+    "category": "restaurant",
+    "sub_category": "burger",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "سيتي مول السادات، الدور الأول، المحور المركزي، مدينة السادات",
+    "lat": 30.3677,
+    "lng": 30.5055,
+    "mall_name": "سيتي مول",
+    "popularity": 96,
+    "aliases": [
+      "بوفالو برجر",
+      "بافلو برجر",
+      "buffalo burger",
+      "برجر",
+      "سيتي مول"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_032",
+    "place_id": "SDT_SHP_RST_032",
+    "name": "مطعم كوك دور Cook Door السادات",
+    "name_ar": "مطعم كوك دور",
+    "name_en": "Cook Door Sadat",
+    "category": "restaurant",
+    "sub_category": "fast_food",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3662,
+    "lng": 30.503,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "كوك دور",
+      "cook door",
+      "ساندوتشات كوك دور",
+      "مطعم كوك دور"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_033",
+    "place_id": "SDT_SHP_RST_033",
+    "name": "مطعم واحة السادات للأكلات البدوية والمندي والمظبي",
+    "name_ar": "مطعم واحة السادات البدوي",
+    "name_en": "Sadat Oasis Bedouin Restaurant",
+    "category": "restaurant",
+    "sub_category": "oriental_mandi",
+    "place_type": "commercial",
+    "district": "طريق الخدمات الصحراوي",
+    "address": "طريق الخدمات، مدخل مدينة السادات، المنوفية",
+    "lat": 30.352,
+    "lng": 30.521,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "واحة السادات",
+      "مطعم بدوي",
+      "مندي",
+      "مظبي",
+      "خروف مشوي",
+      "قعدة بدوية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_034",
+    "place_id": "SDT_SHP_RST_034",
+    "name": "مطعم حواوشي الأصلي السادات",
+    "name_ar": "حواوشي الأصلي",
+    "name_en": "El Asly Hawawshi Sadat",
+    "category": "restaurant",
+    "sub_category": "hawawshi",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3796,
+    "lng": 30.5154,
+    "mall_name": null,
+    "popularity": 92,
+    "aliases": [
+      "حواوشي الاصلي",
+      "حواوشي",
+      "ساندوتشات حواوشي",
+      "مطعم حواوشي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rst_035",
+    "place_id": "SDT_SHP_RST_035",
+    "name": "مطعم طشة للمأكولات البيتي والمحاشي",
+    "name_ar": "مطعم طشة البيتي",
+    "name_en": "Tashet Sadat Home Food",
+    "category": "restaurant",
+    "sub_category": "oriental",
+    "place_type": "commercial",
+    "district": "المنطقة الثانية",
+    "address": "المنطقة الثانية، بجوار صيدلية د. سامح، مدينة السادات",
+    "lat": 30.369,
+    "lng": 30.511,
+    "mall_name": null,
+    "popularity": 91,
+    "aliases": [
+      "طشة",
+      "طشه",
+      "اكل بيتي",
+      "محاشي",
+      "طواجن بيتي",
+      "وجبات بيتي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_001",
+    "place_id": "SDT_SHP_CAF_001",
+    "name": "ستاربكس Starbucks السادات - مدخل المدينة الصحراوي",
+    "name_ar": "ستاربكس Starbucks السادات",
+    "name_en": "Starbucks Sadat City",
+    "category": "cafe",
+    "sub_category": "coffee_shop",
+    "place_type": "commercial",
+    "district": "مدخل السادات الصحراوي",
+    "address": "مجمع خدمات شيل أوت، مدخل مدينة السادات، طريق مصر إسكندرية الصحراوي",
+    "lat": 30.3478,
+    "lng": 30.5262,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "ستاربكس",
+      "starbucks",
+      "ستار بكس",
+      "كافيه ستاربكس",
+      "قهوة ستاربكس",
+      "فرابوتشينو",
+      "ايس كوفي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_002",
+    "place_id": "SDT_SHP_CAF_002",
+    "name": "كوستا كوفي Costa Coffee - محطة توتال المحور المركزي",
+    "name_ar": "كوستا كوفي Costa Coffee",
+    "name_en": "Costa Coffee Sadat",
+    "category": "cafe",
+    "sub_category": "coffee_shop",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "محطة توتال إرجيز، المحور المركزي، مدينة السادات",
+    "lat": 30.3692,
+    "lng": 30.5078,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "كوستا",
+      "كوستا كوفي",
+      "costa",
+      "costa coffee",
+      "كافيه كوستا",
+      "قهوة",
+      "اسبريسو"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_003",
+    "place_id": "SDT_SHP_CAF_003",
+    "name": "بينوس كافيه Beanos Cafe - سيتي مول السادات",
+    "name_ar": "بينوس كافيه سيتي مول",
+    "name_en": "Beanos Cafe City Mall",
+    "category": "cafe",
+    "sub_category": "coffee_shop",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "سيتي مول، المحور المركزي، مدينة السادات",
+    "lat": 30.36785,
+    "lng": 30.50565,
+    "mall_name": "سيتي مول",
+    "popularity": 96,
+    "aliases": [
+      "بينوس",
+      "beanos",
+      "كافيه بينوس",
+      "قهوة بينوس",
+      "سيتي مول"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_004",
+    "place_id": "SDT_SHP_CAF_004",
+    "name": "جراند كافيه Grand Cafe السادات - جمال عبد الناصر",
+    "name_ar": "جراند كافيه السادات",
+    "name_en": "Grand Cafe Sadat",
+    "category": "cafe",
+    "sub_category": "lounge",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، أمام مستشفى السادات المركزي، مدينة السادات",
+    "lat": 30.3666,
+    "lng": 30.5035,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "جراند كافيه",
+      "grand cafe",
+      "جراند",
+      "كافيه عائلي",
+      "مقهى",
+      "كافيه"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_005",
+    "place_id": "SDT_SHP_CAF_005",
+    "name": "كافيه الروضة العائلي - الروضة كافيه سوق 4",
+    "name_ar": "كافيه الروضة العائلي",
+    "name_en": "Al Rawda Family Cafe",
+    "category": "cafe",
+    "sub_category": "family_cafe",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، أمام مول زهران، مدينة السادات",
+    "lat": 30.3803,
+    "lng": 30.5157,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "الروضة كافيه",
+      "كافيه الروضة",
+      "مقهى الروضة",
+      "كافيه سوق 4",
+      "شيشة",
+      "مشروبات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_006",
+    "place_id": "SDT_SHP_CAF_006",
+    "name": "كوستا ريكا كافيه Costa Rica - المحور المركزي",
+    "name_ar": "كوستا ريكا كافيه",
+    "name_en": "Costa Rica Cafe",
+    "category": "cafe",
+    "sub_category": "coffee_shop",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي التجاري، مدينة السادات",
+    "lat": 30.3684,
+    "lng": 30.5063,
+    "mall_name": null,
+    "popularity": 94,
+    "aliases": [
+      "كوستاريكا",
+      "كوستا ريكا",
+      "costa rica",
+      "كافيه كوستا ريكا"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_007",
+    "place_id": "SDT_SHP_CAF_007",
+    "name": "ليالي السادات لاونج وكافيه - المنطقة الخامسة",
+    "name_ar": "ليالي السادات لاونج",
+    "name_en": "Layali Sadat Lounge",
+    "category": "cafe",
+    "sub_category": "lounge",
+    "place_type": "commercial",
+    "district": "المنطقة الخامسة",
+    "address": "الشارع الرئيسي، المنطقة الخامسة، مدينة السادات",
+    "lat": 30.377,
+    "lng": 30.5148,
+    "mall_name": null,
+    "popularity": 93,
+    "aliases": [
+      "ليالي السادات",
+      "كافيه ليالي السادات",
+      "لاونج",
+      "كافيه"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_008",
+    "place_id": "SDT_SHP_CAF_008",
+    "name": "بونجورنو كافيه ومخبوزات Buongiorno Cafe - المنطقة السادسة",
+    "name_ar": "بونجورنو كافيه ومخبوزات",
+    "name_en": "Buongiorno Cafe & Bakery",
+    "category": "cafe",
+    "sub_category": "bakery_cafe",
+    "place_type": "commercial",
+    "district": "المنطقة السادسة",
+    "address": "ميدان المنطقة السادسة، مدينة السادات",
+    "lat": 30.3725,
+    "lng": 30.5192,
+    "mall_name": null,
+    "popularity": 92,
+    "aliases": [
+      "بونجورنو",
+      "كافيه بونجورنو",
+      "buongiorno",
+      "كرواسون",
+      "قهوة ومخبوزات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_009",
+    "place_id": "SDT_SHP_CAF_009",
+    "name": "كافيه السلطان ومقهى الشباب - سوق المنطقة الرابعة",
+    "name_ar": "كافيه السلطان",
+    "name_en": "El Soltan Cafe",
+    "category": "cafe",
+    "sub_category": "traditional_cafe",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3797,
+    "lng": 30.5156,
+    "mall_name": null,
+    "popularity": 92,
+    "aliases": [
+      "السلطان",
+      "قهوة السلطان",
+      "كافيه السلطان",
+      "مقهى",
+      "قهوة بلدي",
+      "شاي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_010",
+    "place_id": "SDT_SHP_CAF_010",
+    "name": "كافيه ركن القهوة Coffee Corner السادات",
+    "name_ar": "كافيه ركن القهوة",
+    "name_en": "Coffee Corner Sadat",
+    "category": "cafe",
+    "sub_category": "coffee_shop",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "شارع الخدمات، المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3801,
+    "lng": 30.5165,
+    "mall_name": null,
+    "popularity": 93,
+    "aliases": [
+      "ركن القهوة",
+      "coffee corner",
+      "كوفي كورنر",
+      "قهوة اسبريسو"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_011",
+    "place_id": "SDT_SHP_CAF_011",
+    "name": "كافيه أروما Aroma Cafe السادات",
+    "name_ar": "كافيه أروما",
+    "name_en": "Aroma Cafe Sadat",
+    "category": "cafe",
+    "sub_category": "coffee_shop",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3664,
+    "lng": 30.50315,
+    "mall_name": null,
+    "popularity": 92,
+    "aliases": [
+      "اروما",
+      "أروما",
+      "aroma cafe",
+      "كافيه اروما"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_012",
+    "place_id": "SDT_SHP_CAF_012",
+    "name": "حلواني إيتوال Etoile السادات - جمال عبد الناصر",
+    "name_ar": "حلواني إيتوال Etoile",
+    "name_en": "Etoile Pastry Sadat",
+    "category": "cafe",
+    "sub_category": "pastry_shop",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.36655,
+    "lng": 30.50345,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "ايتوال",
+      "إيتوال",
+      "etoile",
+      "حلواني ايتوال",
+      "تورتة",
+      "جاتوه",
+      "حلويات شرقية",
+      "بسبوسة",
+      "كنافة",
+      "حلاوة المولد"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_013",
+    "place_id": "SDT_SHP_CAF_013",
+    "name": "حلواني العبد El Abd السادات - المحور المركزي",
+    "name_ar": "حلواني العبد",
+    "name_en": "El Abd Pastry Sadat",
+    "category": "cafe",
+    "sub_category": "pastry_shop",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي التجاري، أمام سيتي مول، مدينة السادات",
+    "lat": 30.3683,
+    "lng": 30.506,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "العبد",
+      "حلواني العبد",
+      "el abd",
+      "كحك العيد",
+      "بسكويت",
+      "حلويات العبد",
+      "ايس كريم"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_014",
+    "place_id": "SDT_SHP_CAF_014",
+    "name": "حلواني لابوار La Poire السادات",
+    "name_ar": "حلواني لابوار",
+    "name_en": "La Poire Pastry Sadat",
+    "category": "cafe",
+    "sub_category": "pastry_shop",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي التجاري، مدينة السادات",
+    "lat": 30.3688,
+    "lng": 30.5067,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "لابوار",
+      "la poire",
+      "حلواني لابوار",
+      "تورت",
+      "شوكولاتة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_015",
+    "place_id": "SDT_SHP_CAF_015",
+    "name": "حلواني شهد الملكة - سوق المنطقة الرابعة",
+    "name_ar": "حلواني شهد الملكة",
+    "name_en": "Shahd El Maleka Pastry",
+    "category": "cafe",
+    "sub_category": "pastry_shop",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، أمام مول زهران، مدينة السادات",
+    "lat": 30.3806,
+    "lng": 30.5162,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "شهد الملكة",
+      "حلواني شهد الملكة",
+      "تورتة",
+      "جاتوه",
+      "حلويات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_016",
+    "place_id": "SDT_SHP_CAF_016",
+    "name": "عصائر فرغلي السادات - كوكتيلات وعصائر طبيعية",
+    "name_ar": "عصائر فرغلي السادات",
+    "name_en": "Farghaly Juices Sadat",
+    "category": "cafe",
+    "sub_category": "juice_bar",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.36635,
+    "lng": 30.50315,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "فرغلي",
+      "عصير فرغلي",
+      "عصائر",
+      "قصب",
+      "مانجو",
+      "كوكتيل",
+      "سموذي",
+      "محل عصير"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_017",
+    "place_id": "SDT_SHP_CAF_017",
+    "name": "عصير تايم Juice Time السادات - سوق 4",
+    "name_ar": "عصير تايم السادات",
+    "name_en": "Juice Time Sadat",
+    "category": "cafe",
+    "sub_category": "juice_bar",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.37995,
+    "lng": 30.51585,
+    "mall_name": null,
+    "popularity": 94,
+    "aliases": [
+      "عصير تايم",
+      "juice time",
+      "عصير",
+      "ايس كريم",
+      "وافل وميلك شيك"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_caf_018",
+    "place_id": "SDT_SHP_CAF_018",
+    "name": "ألبان مكة - سوق المنطقة الرابعة",
+    "name_ar": "ألبان مكة",
+    "name_en": "Mecca Dairy & Ice Cream",
+    "category": "cafe",
+    "sub_category": "dairy_ice_cream",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.38025,
+    "lng": 30.51615,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "البان مكة",
+      "ألبان مكة",
+      "زبادي",
+      "لبن",
+      "ارز بلبن",
+      "ايس كريم",
+      "قشطة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_phm_001_a",
+    "place_id": "SDT_SHP_PHM_001_A",
+    "name": "صيدلية العزبي - فرع المنطقة الأولى (جمال عبد الناصر)",
+    "name_ar": "صيدلية العزبي - فرع المنطقة الأولى",
+    "name_en": "El Ezaby Pharmacy - Zone 1 Branch",
+    "category": "pharmacy",
+    "sub_category": "chain_pharmacy",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، أمام بنك مصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3663,
+    "lng": 30.503,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "العزبي",
+      "صيدلية العزبي",
+      "صيدلية",
+      "دواء",
+      "ادوية",
+      "روشتة",
+      "مستحضرات تجميل",
+      "عزبي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_phm_001_b",
+    "place_id": "SDT_SHP_PHM_001_B",
+    "name": "صيدلية العزبي - فرع مدخل السادات الصحراوي (محطة شيل أوت)",
+    "name_ar": "صيدلية العزبي - فرع شيل أوت الصحراوي",
+    "name_en": "El Ezaby Pharmacy - ChillOut Desert Road Branch",
+    "category": "pharmacy",
+    "sub_category": "chain_pharmacy",
+    "place_type": "amenity",
+    "district": "مدخل السادات الصحراوي",
+    "address": "محطة شيل أوت، طريق القاهرة الإسكندرية الصحراوي، مدخل السادات",
+    "lat": 30.3476,
+    "lng": 30.5261,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "العزبي الصحراوي",
+      "صيدلية العزبي شيل اوت",
+      "العزبي",
+      "صيدلية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_phm_002_a",
+    "place_id": "SDT_SHP_PHM_002_A",
+    "name": "صيدلية سيف - فرع سوق المنطقة الرابعة",
+    "name_ar": "صيدلية سيف - فرع سوق 4",
+    "name_en": "Seif Pharmacy - Zone 4 Market",
+    "category": "pharmacy",
+    "sub_category": "chain_pharmacy",
+    "place_type": "amenity",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، أمام مول زهران، مدينة السادات",
+    "lat": 30.38035,
+    "lng": 30.51575,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "صيدلية سيف",
+      "سيف",
+      "صيدلية",
+      "seif pharmacy",
+      "دواء"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_phm_002_b",
+    "place_id": "SDT_SHP_PHM_002_B",
+    "name": "صيدلية سيف - فرع سيتي مول السادات",
+    "name_ar": "صيدلية سيف - سيتي مول",
+    "name_en": "Seif Pharmacy - City Mall Branch",
+    "category": "pharmacy",
+    "sub_category": "chain_pharmacy",
+    "place_type": "amenity",
+    "district": "المحور المركزي",
+    "address": "سيتي مول، المحور المركزي، مدينة السادات",
+    "lat": 30.36775,
+    "lng": 30.50555,
+    "mall_name": "سيتي مول",
+    "popularity": 96,
+    "aliases": [
+      "سيف سيتي مول",
+      "صيدلية سيف سيتي مول",
+      "صيدلية سيف",
+      "سيف"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_phm_003",
+    "place_id": "SDT_SHP_PHM_003",
+    "name": "صيدليات مصر السادات - المحور المركزي",
+    "name_ar": "صيدليات مصر السادات",
+    "name_en": "Misr Pharmacies Sadat",
+    "category": "pharmacy",
+    "sub_category": "chain_pharmacy",
+    "place_type": "amenity",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي التجاري، مدينة السادات",
+    "lat": 30.3687,
+    "lng": 30.5066,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "صيدليات مصر",
+      "مصر للصيدليات",
+      "صيدلية مصر",
+      "صيدلية",
+      "دواء"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_phm_004",
+    "place_id": "SDT_SHP_PHM_004",
+    "name": "صيدلية 19011 السادات - شارع جمال عبد الناصر",
+    "name_ar": "صيدلية 19011 السادات",
+    "name_en": "19011 Pharmacy Sadat",
+    "category": "pharmacy",
+    "sub_category": "chain_pharmacy",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.36645,
+    "lng": 30.50325,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "19011",
+      "صيدلية 19011",
+      "صيدلية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_phm_005",
+    "place_id": "SDT_SHP_PHM_005",
+    "name": "صيدلية د. أحمد عبد العزيز 24 ساعة - سوق 4",
+    "name_ar": "صيدلية د. أحمد عبد العزيز (24 ساعة)",
+    "name_en": "Dr. Ahmed Abdelaziz 24/7 Pharmacy",
+    "category": "pharmacy",
+    "sub_category": "community_pharmacy_24h",
+    "place_type": "amenity",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة التجاري، مدينة السادات",
+    "lat": 30.37985,
+    "lng": 30.51595,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "احمد عبد العزيز",
+      "صيدلية احمد عبد العزيز",
+      "صيدلية 24 ساعة",
+      "صيدلية طوارئ",
+      "دكتور احمد"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_phm_006",
+    "place_id": "SDT_SHP_PHM_006",
+    "name": "صيدلية الأمل 24 ساعة - المنطقة الأولى",
+    "name_ar": "صيدلية الأمل (24 ساعة)",
+    "name_en": "Al Amal 24/7 Pharmacy",
+    "category": "pharmacy",
+    "sub_category": "community_pharmacy_24h",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "بجوار مستشفى السادات العام، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3671,
+    "lng": 30.5041,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "الامل",
+      "صيدلية الامل",
+      "صيدلية ٢٤ ساعة",
+      "صيدلية طوارئ مستشفى السادات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_phm_007",
+    "place_id": "SDT_SHP_PHM_007",
+    "name": "صيدلية د. سامح - المنطقة السكنية الثانية",
+    "name_ar": "صيدلية د. سامح",
+    "name_en": "Dr. Sameh Pharmacy",
+    "category": "pharmacy",
+    "sub_category": "community_pharmacy",
+    "place_type": "amenity",
+    "district": "المنطقة الثانية",
+    "address": "شارع النصر، المنطقة السكنية الثانية، مدينة السادات",
+    "lat": 30.3692,
+    "lng": 30.5108,
+    "mall_name": null,
+    "popularity": 92,
+    "aliases": [
+      "صيدلية سامح",
+      "دكتور سامح",
+      "صيدلية المنطقة الثانية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_phm_008",
+    "place_id": "SDT_SHP_PHM_008",
+    "name": "صيدلية د. محمود يونس - المنطقة السادسة",
+    "name_ar": "صيدلية د. محمود يونس",
+    "name_en": "Dr. Mahmoud Younis Pharmacy",
+    "category": "pharmacy",
+    "sub_category": "community_pharmacy",
+    "place_type": "amenity",
+    "district": "المنطقة السادسة",
+    "address": "ميدان المنطقة السادسة، مدينة السادات",
+    "lat": 30.3722,
+    "lng": 30.5191,
+    "mall_name": null,
+    "popularity": 92,
+    "aliases": [
+      "محمود يونس",
+      "صيدلية محمود يونس",
+      "صيدلية المنطقة السادسة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_phm_009",
+    "place_id": "SDT_SHP_PHM_009",
+    "name": "صيدلية النور - المنطقة الخامسة",
+    "name_ar": "صيدلية النور",
+    "name_en": "Al Nour Pharmacy",
+    "category": "pharmacy",
+    "sub_category": "community_pharmacy",
+    "place_type": "amenity",
+    "district": "المنطقة الخامسة",
+    "address": "المنطقة الخامسة، بجوار مول ريحانة، مدينة السادات",
+    "lat": 30.3765,
+    "lng": 30.5142,
+    "mall_name": null,
+    "popularity": 91,
+    "aliases": [
+      "صيدلية النور",
+      "النور",
+      "صيدلية المنطقة الخامسة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_phm_010",
+    "place_id": "SDT_SHP_PHM_010",
+    "name": "صيدلية د. طارق - المنطقة الحادية عشرة",
+    "name_ar": "صيدلية د. طارق",
+    "name_en": "Dr. Tarek Pharmacy",
+    "category": "pharmacy",
+    "sub_category": "community_pharmacy",
+    "place_type": "amenity",
+    "district": "المنطقة الحادية عشرة",
+    "address": "المنطقة 11، أمام كازيون ماركت، مدينة السادات",
+    "lat": 30.3845,
+    "lng": 30.5283,
+    "mall_name": null,
+    "popularity": 90,
+    "aliases": [
+      "صيدلية طارق",
+      "صيدلية المنطقة 11",
+      "صيدلية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_clo_000",
+    "place_id": "SDT_SHP_CLO_000",
+    "name": "براند ستور ملابس رجالي - سيتي مول",
+    "name_ar": "براند ستور ملابس رجالي",
+    "name_en": "Brand Store Men Wear",
+    "category": "clothing",
+    "sub_category": "menswear",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "سيتي مول، الدور الأول، المحور المركزي، مدينة السادات",
+    "lat": 30.36782,
+    "lng": 30.50562,
+    "mall_name": "سيتي مول",
+    "popularity": 96,
+    "aliases": [
+      "براند ستور",
+      "براند ستور ملابس",
+      "ملابس رجالي",
+      "سيتي مول",
+      "محل ملابس"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_clo_001_a",
+    "place_id": "SDT_SHP_CLO_001_A",
+    "name": "تاون تيم Town Team السادات - فرع جمال عبد الناصر",
+    "name_ar": "تاون تيم - فرع المنطقة الأولى",
+    "name_en": "Town Team - Zone 1 Branch",
+    "category": "clothing",
+    "sub_category": "menswear",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3664,
+    "lng": 30.5031,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "تاون تيم",
+      "town team",
+      "ملابس رجالي",
+      "قميص",
+      "بنطلون",
+      "بدلة",
+      "كاجوال",
+      "شوزات",
+      "محل ملابس"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_clo_001_b",
+    "place_id": "SDT_SHP_CLO_001_B",
+    "name": "تاون تيم Town Team السادات - فرع سيتي مول",
+    "name_ar": "تاون تيم - فرع سيتي مول",
+    "name_en": "Town Team - City Mall Branch",
+    "category": "clothing",
+    "sub_category": "menswear",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "الدور الأرضي، سيتي مول السادات، المحور المركزي، مدينة السادات",
+    "lat": 30.3678,
+    "lng": 30.5056,
+    "mall_name": "سيتي مول",
+    "popularity": 96,
+    "aliases": [
+      "تاون تيم سيتي مول",
+      "تاون تيم",
+      "town team",
+      "ملابس"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_clo_002",
+    "place_id": "SDT_SHP_CLO_002",
+    "name": "أكتيف أبو علاء Active Abu Alaa - سيتي مول السادات",
+    "name_ar": "أكتيف أبو علاء Active",
+    "name_en": "Active Abu Alaa City Mall",
+    "category": "clothing",
+    "sub_category": "sportswear",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "سيتي مول السادات، المحور المركزي، مدينة السادات",
+    "lat": 30.3679,
+    "lng": 30.5057,
+    "mall_name": "سيتي مول",
+    "popularity": 96,
+    "aliases": [
+      "اكتيف",
+      "أكتيف",
+      "active",
+      "ابو علاء",
+      "ملابس رياضية",
+      "كوتشيات",
+      "ترنجات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_clo_003",
+    "place_id": "SDT_SHP_CLO_003",
+    "name": "دالي دريس Daly Dress السادات",
+    "name_ar": "دالي دريس Daly Dress",
+    "name_en": "Daly Dress Sadat",
+    "category": "clothing",
+    "sub_category": "fashion",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور التجاري، بجوار سيتي مول، مدينة السادات",
+    "lat": 30.3685,
+    "lng": 30.5062,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "دالي دريس",
+      "daly dress",
+      "ملابس كاجوال",
+      "ازياء"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_clo_004",
+    "place_id": "SDT_SHP_CLO_004",
+    "name": "كارينا Carina السادات - سيتي مول",
+    "name_ar": "كارينا Carina السادات",
+    "name_en": "Carina Wear City Mall",
+    "category": "clothing",
+    "sub_category": "womenswear",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "سيتي مول السادات، المحور المركزي، مدينة السادات",
+    "lat": 30.3677,
+    "lng": 30.5055,
+    "mall_name": "سيتي مول",
+    "popularity": 94,
+    "aliases": [
+      "كارينا",
+      "carina",
+      "ملابس حريمي",
+      "بادي كارينا",
+      "لانجري"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_clo_005",
+    "place_id": "SDT_SHP_CLO_005",
+    "name": "سنتر الحجاز للملابس والأقمشة - سوق المنطقة الرابعة",
+    "name_ar": "سنتر الحجاز للملابس",
+    "name_en": "Al Hegaz Clothing Center",
+    "category": "clothing",
+    "sub_category": "department_store",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، أمام مول زهران، مدينة السادات",
+    "lat": 30.3804,
+    "lng": 30.5159,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "الحجاز",
+      "سنتر الحجاز",
+      "ملابس اطفال",
+      "ملابس حريمي",
+      "اقمشة",
+      "طرح وعبايات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_clo_006",
+    "place_id": "SDT_SHP_CLO_006",
+    "name": "أحذية باتا Bata السادات - سوق المنطقة الأولى",
+    "name_ar": "أحذية باتا Bata",
+    "name_en": "Bata Shoes Sadat",
+    "category": "clothing",
+    "sub_category": "shoes",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "سوق المنطقة الأولى، بجوار مسجد الهدى، مدينة السادات",
+    "lat": 30.3662,
+    "lng": 30.5028,
+    "mall_name": null,
+    "popularity": 93,
+    "aliases": [
+      "باتا",
+      "احذية باتا",
+      "bata",
+      "جزم",
+      "كوتشيات",
+      "شوزات",
+      "احذية جلدية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ele_001_a",
+    "place_id": "SDT_SHP_ELE_001_A",
+    "name": "فودافون مصر Vodafone - فرع شارع جمال عبد الناصر",
+    "name_ar": "فرع فودافون - المنطقة الأولى",
+    "name_en": "Vodafone Egypt - Zone 1 Branch",
+    "category": "electronics",
+    "sub_category": "telecom",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3663,
+    "lng": 30.503,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "فودافون",
+      "فرع فودافون",
+      "vodafone",
+      "فودافون كاش",
+      "خطوط فودافون",
+      "نت فودافون",
+      "خدمة عملاء فودافون"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ele_001_b",
+    "place_id": "SDT_SHP_ELE_001_B",
+    "name": "فودافون مصر Vodafone - فرع سيتي مول السادات",
+    "name_ar": "فرع فودافون - سيتي مول",
+    "name_en": "Vodafone Egypt - City Mall Branch",
+    "category": "electronics",
+    "sub_category": "telecom",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "سيتي مول السادات، المحور المركزي، مدينة السادات",
+    "lat": 30.3678,
+    "lng": 30.5056,
+    "mall_name": "سيتي مول",
+    "popularity": 97,
+    "aliases": [
+      "فودافون سيتي مول",
+      "فودافون",
+      "vodafone",
+      "فودافون كاش"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ele_002_a",
+    "place_id": "SDT_SHP_ELE_002_A",
+    "name": "المصرية للاتصالات وي WE - فرع سنترال السادات الرئيسي",
+    "name_ar": "فرع وي WE - سنترال السادات",
+    "name_en": "Telecom Egypt WE - Main Central",
+    "category": "electronics",
+    "sub_category": "telecom",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "مبنى السنترال الرئيسي، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3655,
+    "lng": 30.502,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "وي",
+      "we",
+      "المصرية للاتصالات",
+      "سنترال السادات",
+      "تليفون ارضي",
+      "نت منزلي",
+      "راوتر",
+      "خط وي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ele_002_b",
+    "place_id": "SDT_SHP_ELE_002_B",
+    "name": "المصرية للاتصالات وي WE - فرع سيتي مول السادات",
+    "name_ar": "فرع وي WE - سيتي مول",
+    "name_en": "Telecom Egypt WE - City Mall",
+    "category": "electronics",
+    "sub_category": "telecom",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "سيتي مول السادات، الدور الأرضي، مدينة السادات",
+    "lat": 30.36785,
+    "lng": 30.50565,
+    "mall_name": "سيتي مول",
+    "popularity": 96,
+    "aliases": [
+      "وي سيتي مول",
+      "we سيتي مول",
+      "وي",
+      "المصرية للاتصالات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ele_003",
+    "place_id": "SDT_SHP_ELE_003",
+    "name": "أورنج مصر Orange - فرع المنطقة الأولى بالسادات",
+    "name_ar": "فرع أورنج Orange السادات",
+    "name_en": "Orange Egypt - Sadat City",
+    "category": "electronics",
+    "sub_category": "telecom",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.36645,
+    "lng": 30.5032,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "اورنج",
+      "أورنج",
+      "orange",
+      "موبينيل",
+      "اورنج كاش",
+      "فرع اورنج",
+      "خطوط اورنج"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ele_004_a",
+    "place_id": "SDT_SHP_ELE_004_A",
+    "name": "إي آند مصر e& (اتصالات سابقاً) - فرع المحور المركزي",
+    "name_ar": "فرع إي آند مصر e& - المحور المركزي",
+    "name_en": "e& Egypt (Etisalat) - Central Axis",
+    "category": "electronics",
+    "sub_category": "telecom",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي التجاري، بجوار سيتي مول، مدينة السادات",
+    "lat": 30.3684,
+    "lng": 30.5061,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "اتصالات",
+      "اي اند",
+      "e&",
+      "etisalat",
+      "اتصالات كاش",
+      "فرع اتصالات",
+      "شركة اتصالات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ele_004_b",
+    "place_id": "SDT_SHP_ELE_004_B",
+    "name": "إي آند مصر e& (اتصالات) - فرع سوق المنطقة الرابعة",
+    "name_ar": "فرع إي آند مصر e& - سوق 4",
+    "name_en": "e& Egypt (Etisalat) - Zone 4 Market",
+    "category": "electronics",
+    "sub_category": "telecom",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، أمام مول زهران، مدينة السادات",
+    "lat": 30.3802,
+    "lng": 30.5158,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "اتصالات سوق 4",
+      "فرع اتصالات سوق 4",
+      "اتصالات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ele_005",
+    "place_id": "SDT_SHP_ELE_005",
+    "name": "بي تك B.Tech السادات للأجهزة الكهربائية والمنزلية والموبايل",
+    "name_ar": "بي تك B.Tech السادات",
+    "name_en": "B.Tech Sadat City",
+    "category": "electronics",
+    "sub_category": "home_appliances",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي التجاري، أمام مجمع البنوك، مدينة السادات",
+    "lat": 30.369,
+    "lng": 30.5072,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "بي تك",
+      "btech",
+      "b.tech",
+      "تقسيط بي تك",
+      "ميني كاش",
+      "اجهزة كهربائية",
+      "ثلاجات",
+      "غسالات",
+      "شاشات",
+      "موبايلات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ele_006",
+    "place_id": "SDT_SHP_ELE_006",
+    "name": "مجموعة العربي El Araby Store (توشيبا وشارب وتورنيدو)",
+    "name_ar": "العربي جروب El Araby Store",
+    "name_en": "El Araby Group Store Sadat",
+    "category": "electronics",
+    "sub_category": "home_appliances",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي التجاري، مدينة السادات",
+    "lat": 30.3698,
+    "lng": 30.508,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "العربي",
+      "توشيبا العربي",
+      "elaraby",
+      "تورنيدو",
+      "شارب",
+      "اجهزة كهربائية",
+      "شاشات",
+      "مراوح"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ele_007",
+    "place_id": "SDT_SHP_ELE_007",
+    "name": "رنين Raneen للأجهزة والأدوات المنزلية السادات",
+    "name_ar": "رنين Raneen السادات",
+    "name_en": "Raneen Sadat City",
+    "category": "electronics",
+    "sub_category": "home_appliances",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور التجاري، مدينة السادات",
+    "lat": 30.3702,
+    "lng": 30.5085,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "رنين",
+      "raneen",
+      "عروض رنين",
+      "اجهزة كهربائية",
+      "ادوات منزلية",
+      "مفروشات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ele_008",
+    "place_id": "SDT_SHP_ELE_008",
+    "name": "الشناوي موبايل El Shennawy - المنطقة الأولى",
+    "name_ar": "الشناوي موبايل السادات",
+    "name_en": "El Shennawy Mobile Sadat",
+    "category": "electronics",
+    "sub_category": "mobile_phones",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.36625,
+    "lng": 30.50295,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "الشناوي",
+      "الشناوي موبايل",
+      "elshennawy",
+      "موبايلات",
+      "ايفون",
+      "سامسونج",
+      "اكسسوارات موبايل",
+      "صيانة موبايل"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_btc_001",
+    "place_id": "SDT_SHP_BTC_001",
+    "name": "جزارة البرنس للبلدي والمفروم - سوق 4",
+    "name_ar": "جزارة البرنس للحوم البلدية",
+    "name_en": "El Prince Butcher",
+    "category": "butcher",
+    "sub_category": "butcher",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.38015,
+    "lng": 30.51585,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "جزارة البرنس",
+      "جزارة",
+      "لحوم بلدي",
+      "كندوز",
+      "ضاني",
+      "مفروم",
+      "جزار"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_btc_002",
+    "place_id": "SDT_SHP_BTC_002",
+    "name": "جزارة الهدى للحوم الطازجة والضاني - المنطقة الأولى",
+    "name_ar": "جزارة الهدى",
+    "name_en": "Al Hoda Fresh Meat",
+    "category": "butcher",
+    "sub_category": "butcher",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة الأولى، بجوار مسجد الهدى والنور، مدينة السادات",
+    "lat": 30.3668,
+    "lng": 30.5034,
+    "mall_name": null,
+    "popularity": 94,
+    "aliases": [
+      "جزارة الهدى",
+      "جزار",
+      "لحمة",
+      "لحوم طازجة",
+      "ضاني"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_btc_003",
+    "place_id": "SDT_SHP_BTC_003",
+    "name": "مجزر ودواجن الوطنية والريفي - سوق 4",
+    "name_ar": "دواجن الوطنية والريفي",
+    "name_en": "Al Watania Poultry",
+    "category": "butcher",
+    "sub_category": "poultry",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق الطيور، المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3807,
+    "lng": 30.5167,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "فراخ",
+      "دواجن",
+      "فراخ بيضاء",
+      "بانيه",
+      "بط",
+      "حمام",
+      "محل فراخ",
+      "دواجن الوطنية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_bak_001",
+    "place_id": "SDT_SHP_BAK_001",
+    "name": "مخابز وحلواني الأمانة - المنطقة الأولى",
+    "name_ar": "مخابز وحلواني الأمانة",
+    "name_en": "Al Amana Bakery",
+    "category": "bakery",
+    "sub_category": "bakery",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.36615,
+    "lng": 30.50275,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "مخبز الامانة",
+      "مخابز الامانة",
+      "الامانة",
+      "فينو",
+      "عيش",
+      "مخبوزات",
+      "باتيه",
+      "كرواسون"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_bak_002",
+    "place_id": "SDT_SHP_BAK_002",
+    "name": "مخبز وحلواني البركة الفينو والآلي - سوق 4",
+    "name_ar": "مخبز وحلواني البركة",
+    "name_en": "Al Baraka Modern Bakery",
+    "category": "bakery",
+    "sub_category": "bakery",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.38005,
+    "lng": 30.51595,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "مخبز البركة",
+      "البركة",
+      "فينو",
+      "عيش فينو",
+      "مخبوزات سوق 4"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_bak_003",
+    "place_id": "SDT_SHP_BAK_003",
+    "name": "أفران العهد الجديد للعيش البلدي المدعم والحر",
+    "name_ar": "أفران العهد الجديد للعيش البلدي",
+    "name_en": "Al Ahed El Gadeed Baladi Bread",
+    "category": "bakery",
+    "sub_category": "baladi_bread",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة الأولى، خلف المعهد الفندقي، مدينة السادات",
+    "lat": 30.3657,
+    "lng": 30.5022,
+    "mall_name": null,
+    "popularity": 94,
+    "aliases": [
+      "فرن عيش",
+      "عيش بلدي",
+      "فرن بلدي",
+      "مخبز بلدي",
+      "بطاقة التموين"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_bak_004",
+    "place_id": "SDT_SHP_BAK_004",
+    "name": "مخابز الشرق الآلية للعيش والمعجنات - المنطقة الثانية",
+    "name_ar": "مخابز الشرق الآلية",
+    "name_en": "Al Sharq Automated Bakery",
+    "category": "bakery",
+    "sub_category": "bakery",
+    "place_type": "commercial",
+    "district": "المنطقة الثانية",
+    "address": "المنطقة الثانية، بجوار سوبر ماركت الراية، مدينة السادات",
+    "lat": 30.3694,
+    "lng": 30.5111,
+    "mall_name": null,
+    "popularity": 93,
+    "aliases": [
+      "مخبز الشرق",
+      "الشرق",
+      "مخبوزات",
+      "عيش آلي",
+      "توست"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ret_001",
+    "place_id": "SDT_SHP_RET_001",
+    "name": "مكتبة ومطبعة الأهرام الحديثة - المنطقة الأولى",
+    "name_ar": "مكتبة الأهرام الحديثة",
+    "name_en": "Al Ahram Modern Bookshop",
+    "category": "general_retail",
+    "sub_category": "stationery",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.36645,
+    "lng": 30.50325,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "مكتبة الاهرام",
+      "الاهرام",
+      "مكتبة",
+      "تصوير مستندات",
+      "طباعة",
+      "ادوات مدرسية",
+      "كتب وكشاكيل"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ret_002",
+    "place_id": "SDT_SHP_RET_002",
+    "name": "سنتر البيت بيتك للأدوات المنزلية والزجاج - سوق 4",
+    "name_ar": "سنتر البيت بيتك للأدوات المنزلية",
+    "name_en": "El Beit Beitak Houseware",
+    "category": "general_retail",
+    "sub_category": "houseware",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، أمام مول زهران، مدينة السادات",
+    "lat": 30.38045,
+    "lng": 30.51605,
+    "mall_name": null,
+    "popularity": 94,
+    "aliases": [
+      "البيت بيتك",
+      "ادوات منزلية",
+      "جهاز عرائس",
+      "حلل وصواني",
+      "زجاج وبلاستيكات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_ret_003",
+    "place_id": "SDT_SHP_RET_003",
+    "name": "محل ألعاب وهدايا توي بوكس Toy Box - سيتي مول",
+    "name_ar": "توي بوكس Toy Box للهدايا والألعاب",
+    "name_en": "Toy Box City Mall",
+    "category": "general_retail",
+    "sub_category": "toys_gifts",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "سيتي مول السادات، الدور الأول، مدينة السادات",
+    "lat": 30.36775,
+    "lng": 30.50555,
+    "mall_name": "سيتي مول",
+    "popularity": 93,
+    "aliases": [
+      "توي بوكس",
+      "العاب اطفال",
+      "هدايا",
+      "toy box",
+      "سيتي مول"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_mnt_000",
+    "place_id": "SDT_SHP_MNT_000",
+    "name": "مركز الدولية لصيانة الأجهزة والتكييف - المنطقة الحرفية",
+    "name_ar": "مركز صيانة الأجهزة والتكييف",
+    "name_en": "Sadat Home Appliance & AC Repair Center",
+    "category": "maintenance",
+    "sub_category": "appliance_repair",
+    "place_type": "commercial",
+    "district": "المنطقة الحرفية",
+    "address": "شارع الورش، المنطقة الحرفية، مدينة السادات",
+    "lat": 30.362,
+    "lng": 30.512,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "صيانة",
+      "صيانة اجهزة",
+      "تصليح غسالات",
+      "تصليح ثلاجات",
+      "صيانة تكييف",
+      "مركز صيانة",
+      "تصليح",
+      "ورشة صيانة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_mnt_001",
+    "place_id": "SDT_SHP_MNT_001",
+    "name": "محلات أولاد علي للحدادة والمسامير والعدد والآلات - سوق 4",
+    "name_ar": "محلات أولاد علي للعدد والحدادة",
+    "name_en": "Awlad Ali Hardware & Tools",
+    "category": "maintenance",
+    "sub_category": "hardware_tools",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3793,
+    "lng": 30.5151,
+    "mall_name": null,
+    "popularity": 94,
+    "aliases": [
+      "اولاد علي",
+      "عدد وادوات",
+      "مسامير",
+      "حدادة",
+      "دريل وشنيور",
+      "محل عدد"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_mnt_002",
+    "place_id": "SDT_SHP_MNT_002",
+    "name": "سنتر المهندس للأدوات الصحية والسباكة - المنطقة الأولى",
+    "name_ar": "سنتر المهندس للسباكة والأدوات الصحية",
+    "name_en": "Al Mohandes Sanitary & Plumbing",
+    "category": "maintenance",
+    "sub_category": "plumbing",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة الأولى، شارع المدارس، مدينة السادات",
+    "lat": 30.367,
+    "lng": 30.5039,
+    "mall_name": null,
+    "popularity": 93,
+    "aliases": [
+      "المهندس للسباكة",
+      "سباكة",
+      "ادوات صحية",
+      "حنفيات ومواسير",
+      "سيراميك وخلاطات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_mnt_003",
+    "place_id": "SDT_SHP_MNT_003",
+    "name": "شركة الأهرام للكهرباء والتوريدات والليدات - المنطقة الثانية",
+    "name_ar": "شركة الأهرام للتوريدات الكهربائية",
+    "name_en": "Al Ahram Electrical Supplies",
+    "category": "maintenance",
+    "sub_category": "electrical_supplies",
+    "place_type": "commercial",
+    "district": "المنطقة الثانية",
+    "address": "المنطقة الثانية، الشارع التجاري، مدينة السادات",
+    "lat": 30.3688,
+    "lng": 30.5102,
+    "mall_name": null,
+    "popularity": 92,
+    "aliases": [
+      "الاهرام للكهرباء",
+      "كهربائي",
+      "ليدات",
+      "اسلاك وكابلات",
+      "مفاتيح كهرباء"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_aut_001",
+    "place_id": "SDT_SHP_AUT_001",
+    "name": "مركز غبور أوتو Ghabbour Auto لخدمة وصيانة السيارات",
+    "name_ar": "مركز غبور أوتو السادات",
+    "name_en": "Ghabbour Auto Service Sadat",
+    "category": "automotive",
+    "sub_category": "car_service",
+    "place_type": "commercial",
+    "district": "المنطقة الصناعية الأولى",
+    "address": "المنطقة الصناعية الأولى، مدينة السادات",
+    "lat": 30.355,
+    "lng": 30.51,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "غبور",
+      "غبور اوتو",
+      "ghabbour",
+      "صيانة سيارات",
+      "توكيل هيونداي",
+      "شيري",
+      "هافال"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_aut_002",
+    "place_id": "SDT_SHP_AUT_002",
+    "name": "مركز المنصور للسيارات شيفروليه وأوبل السادات",
+    "name_ar": "مركز المنصور للسيارات",
+    "name_en": "Mansour Automotive Sadat",
+    "category": "automotive",
+    "sub_category": "car_dealership",
+    "place_type": "commercial",
+    "district": "المنطقة الصناعية الثالثة",
+    "address": "المنطقة الصناعية الثالثة، مدينة السادات",
+    "lat": 30.36,
+    "lng": 30.49,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "المنصور",
+      "المنصور للسيارات",
+      "شيفروليه",
+      "اوبل",
+      "mansour",
+      "توكيل سيارات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_aut_003",
+    "place_id": "SDT_SHP_AUT_003",
+    "name": "مركز الأمل لصيانة وضبط الزوايا والإطارات بريدجستون",
+    "name_ar": "مركز الأمل للإطارات وضبط الزوايا",
+    "name_en": "Al Amal Tires & Alignment Bridgestone",
+    "category": "automotive",
+    "sub_category": "tires_alignment",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، أمام مول زهران، مدينة السادات",
+    "lat": 30.3795,
+    "lng": 30.5152,
+    "mall_name": null,
+    "popularity": 94,
+    "aliases": [
+      "الامل للاطارات",
+      "ضبط زوايا",
+      "كاوتش",
+      "بريدجستون",
+      "ترصيص",
+      "نيتروجين"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_aut_004",
+    "place_id": "SDT_SHP_AUT_004",
+    "name": "مغسلة وكير لخدمات وغسيل السيارات VIP - المحور المركزي",
+    "name_ar": "مغسلة سيارات VIP السادات",
+    "name_en": "VIP Car Wash & Detailing Sadat",
+    "category": "automotive",
+    "sub_category": "car_wash",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي، بجوار محطة توتال، مدينة السادات",
+    "lat": 30.3693,
+    "lng": 30.5079,
+    "mall_name": null,
+    "popularity": 93,
+    "aliases": [
+      "مغسلة سيارات",
+      "كار واش",
+      "غسيل كيماوي",
+      "تلميع سيارات",
+      "دراي كلين"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_gas_001",
+    "place_id": "SDT_SHP_GAS_001",
+    "name": "محطة وطنية والخدمات الوطنية - طريق مصر إسكندرية الصحراوي",
+    "name_ar": "محطة وطنية مدخل السادات",
+    "name_en": "Wataniya Gas Station Desert Road Sadat",
+    "category": "gas_station",
+    "sub_category": "gas_station",
+    "place_type": "amenity",
+    "district": "مدخل السادات الصحراوي",
+    "address": "طريق القاهرة الإسكندرية الصحراوي، مدخل مدينة السادات الرئيسي",
+    "lat": 30.3451,
+    "lng": 30.5282,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "وطنية",
+      "محطة وطنية",
+      "بنزينة وطنية",
+      "بنزين 92",
+      "بنزين 95",
+      "سولار",
+      "استراحة وطنية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_gas_002",
+    "place_id": "SDT_SHP_GAS_002",
+    "name": "محطة شيل أوت ChillOut - مدخل مدينة السادات الصحراوي",
+    "name_ar": "محطة شيل أوت مدخل السادات",
+    "name_en": "ChillOut Gas Station Sadat Entrance",
+    "category": "gas_station",
+    "sub_category": "gas_station",
+    "place_type": "amenity",
+    "district": "مدخل السادات الصحراوي",
+    "address": "طريق القاهرة الإسكندرية الصحراوي، مدخل مدينة السادات",
+    "lat": 30.3477,
+    "lng": 30.52615,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "شيل اوت",
+      "chillout",
+      "بنزينة شيل اوت",
+      "محطة شيل اوت",
+      "شيل أوت"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_gas_003",
+    "place_id": "SDT_SHP_GAS_003",
+    "name": "محطة توتال إرجيز TotalEnergies - المحور المركزي",
+    "name_ar": "محطة توتال المحور المركزي",
+    "name_en": "TotalEnergies Central Axis Sadat",
+    "category": "gas_station",
+    "sub_category": "gas_station",
+    "place_type": "amenity",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي، بالقرب من جهاز المدينة، مدينة السادات",
+    "lat": 30.36915,
+    "lng": 30.50765,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "توتال",
+      "بنزينة توتال",
+      "total",
+      "محطة بنزين المحور",
+      "توتال انرجيز"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_gas_004",
+    "place_id": "SDT_SHP_GAS_004",
+    "name": "محطة مصر للبترول Misr Petroleum - مدخل المنطقة الصناعية",
+    "name_ar": "محطة مصر للبترول - المنطقة الصناعية",
+    "name_en": "Misr Petroleum Industrial Zone Sadat",
+    "category": "gas_station",
+    "sub_category": "gas_station",
+    "place_type": "amenity",
+    "district": "المنطقة الصناعية الأولى",
+    "address": "مدخل المنطقة الصناعية الأولى، طريق السادات الرئيسي",
+    "lat": 30.358,
+    "lng": 30.512,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "مصر للبترول",
+      "بنزينة مصر للبترول",
+      "سولار للمصانع",
+      "بنزينة المنطقة الصناعية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_gas_005",
+    "place_id": "SDT_SHP_GAS_005",
+    "name": "محطة غاز تك Gastec لتموين السيارات بالغاز الطبيعي",
+    "name_ar": "محطة غاز تك للغاز الطبيعي",
+    "name_en": "Gastec Natural Gas Station Sadat",
+    "category": "gas_station",
+    "sub_category": "cng_station",
+    "place_type": "amenity",
+    "district": "طريق الخدمات الصحراوي",
+    "address": "طريق الخدمات، مدخل مدينة السادات",
+    "lat": 30.35,
+    "lng": 30.523,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "غاز تك",
+      "gastec",
+      "غاز طبيعي للسيارات",
+      "محطة غاز",
+      "تموين غاز"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_med_001",
+    "place_id": "SDT_SHP_MED_001",
+    "name": "مستشفى السادات المركزي العام - المنطقة الأولى",
+    "name_ar": "مستشفى السادات المركزي العام",
+    "name_en": "Sadat General Central Hospital",
+    "category": "medical",
+    "sub_category": "general_hospital",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة السكنية الأولى، مدينة السادات، المنوفية",
+    "lat": 30.3674,
+    "lng": 30.5043,
+    "mall_name": null,
+    "popularity": 99,
+    "aliases": [
+      "مستشفى السادات",
+      "المستشفى العام",
+      "مستشفى السادات العام",
+      "طوارئ مستشفى السادات",
+      "مستشفي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_med_002",
+    "place_id": "SDT_SHP_MED_002",
+    "name": "مستشفى دار الشفاء التخصصي بالسادات",
+    "name_ar": "مستشفى دار الشفاء التخصصي",
+    "name_en": "Dar Al Shifa Specialized Hospital Sadat",
+    "category": "medical",
+    "sub_category": "specialized_hospital",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3668,
+    "lng": 30.5036,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "دار الشفاء",
+      "مستشفى دار الشفاء",
+      "مستشفي دار الشفا",
+      "طوارئ خاصة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_med_003",
+    "place_id": "SDT_SHP_MED_003",
+    "name": "مستشفى الهلال الأحمر التخصصي السادات - المنطقة الرابعة",
+    "name_ar": "مستشفى الهلال الأحمر التخصصي",
+    "name_en": "Red Crescent Hospital Sadat",
+    "category": "medical",
+    "sub_category": "hospital",
+    "place_type": "amenity",
+    "district": "المنطقة الرابعة",
+    "address": "المنطقة الرابعة، بجوار مجمع المدارس، مدينة السادات",
+    "lat": 30.3789,
+    "lng": 30.5168,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "الهلال الاحمر",
+      "مستشفى الهلال الاحمر",
+      "الهلال الاحمر السادات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_med_004",
+    "place_id": "SDT_SHP_MED_004",
+    "name": "معمل البرج Al Borg Laboratory - شارع جمال عبد الناصر",
+    "name_ar": "معمل البرج للتحاليل الطبية",
+    "name_en": "Al Borg Medical Laboratories Sadat",
+    "category": "medical",
+    "sub_category": "laboratory",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.36635,
+    "lng": 30.5031,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "معمل البرج",
+      "البرج",
+      "تحاليل طبية",
+      "معمل تحاليل",
+      "al borg"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_med_005",
+    "place_id": "SDT_SHP_MED_005",
+    "name": "معمل المختبر Al Mokhtabar - المنطقة الأولى",
+    "name_ar": "معمل المختبر للتحاليل الطبية",
+    "name_en": "Al Mokhtabar Laboratory Sadat",
+    "category": "medical",
+    "sub_category": "laboratory",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، أمام مستشفى السادات المركزي، مدينة السادات",
+    "lat": 30.3665,
+    "lng": 30.5033,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "المختبر",
+      "معمل المختبر",
+      "تحاليل المختبر",
+      "معمل تحاليل"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_med_006",
+    "place_id": "SDT_SHP_MED_006",
+    "name": "معمل ألفا سكان ولاب Alfa Scan & Lab - سيتي مول",
+    "name_ar": "معمل ألفا سكان للتحاليل والأشعة",
+    "name_en": "Alfa Scan & Lab City Mall Sadat",
+    "category": "medical",
+    "sub_category": "radiology_lab",
+    "place_type": "amenity",
+    "district": "المحور المركزي",
+    "address": "سيتي مول السادات، الدور الثاني الطبي، مدينة السادات",
+    "lat": 30.3678,
+    "lng": 30.5056,
+    "mall_name": "سيتي مول",
+    "popularity": 96,
+    "aliases": [
+      "الفا سكان",
+      "ألفا سكان",
+      "alfa scan",
+      "مركز اشعة",
+      "اشعة مقطعية",
+      "رنين مغناطيسي",
+      "سونار"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_edu_001",
+    "place_id": "SDT_SHP_EDU_001",
+    "name": "جامعة مدينة السادات - المبنى الإداري ورئاسة الجامعة",
+    "name_ar": "جامعة مدينة السادات - رئاسة الجامعة",
+    "name_en": "University of Sadat City - Headquarters",
+    "category": "education",
+    "sub_category": "university_hq",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3658,
+    "lng": 30.5018,
+    "mall_name": null,
+    "popularity": 99,
+    "aliases": [
+      "جامعة السادات",
+      "جامعة مدينة السادات",
+      "ادارة الجامعة",
+      "رئاسة جامعة السادات",
+      "جامعه السادات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_edu_002",
+    "place_id": "SDT_SHP_EDU_002",
+    "name": "كلية الطب البيطري - جامعة مدينة السادات",
+    "name_ar": "كلية الطب البيطري جامعة السادات",
+    "name_en": "Faculty of Veterinary Medicine - USC",
+    "category": "education",
+    "sub_category": "college",
+    "place_type": "amenity",
+    "district": "المنطقة السابعة",
+    "address": "المنطقة السابعة، مجمع كليات جامعة السادات، مدينة السادات",
+    "lat": 30.376,
+    "lng": 30.525,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "طب بيطري",
+      "بيطري السادات",
+      "كلية الطب البيطري",
+      "جامعة السادات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_edu_003",
+    "place_id": "SDT_SHP_EDU_003",
+    "name": "كلية الصيدلة - جامعة مدينة السادات",
+    "name_ar": "كلية الصيدلة جامعة السادات",
+    "name_en": "Faculty of Pharmacy - USC",
+    "category": "education",
+    "sub_category": "college",
+    "place_type": "amenity",
+    "district": "الحرم الجامعي الجديد",
+    "address": "الحرم الجامعي الجديد، طريق الجامعة، مدينة السادات",
+    "lat": 30.385,
+    "lng": 30.53,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "صيدلة السادات",
+      "كلية الصيدلة",
+      "صيدلة جامعة السادات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_edu_004",
+    "place_id": "SDT_SHP_EDU_004",
+    "name": "كلية التجارة والحقوق - جامعة مدينة السادات",
+    "name_ar": "كليات التجارة والحقوق جامعة السادات",
+    "name_en": "Faculties of Commerce & Law - USC",
+    "category": "education",
+    "sub_category": "college",
+    "place_type": "amenity",
+    "district": "المنطقة الثالثة",
+    "address": "المنطقة الثالثة، الحرم الجامعي، مدينة السادات",
+    "lat": 30.373,
+    "lng": 30.513,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "تجارة السادات",
+      "حقوق السادات",
+      "كلية التجارة",
+      "كلية الحقوق"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_edu_005",
+    "place_id": "SDT_SHP_EDU_005",
+    "name": "معهد الهندسة الوراثية والتكنولوجيا الحيوية - جامعة السادات",
+    "name_ar": "معهد الهندسة الوراثية والتكنولوجيا الحيوية",
+    "name_en": "Genetic Engineering & Biotechnology Institute (GEBRI)",
+    "category": "education",
+    "sub_category": "institute",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة الأولى، الحرم الجامعي، مدينة السادات",
+    "lat": 30.365,
+    "lng": 30.501,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "الهندسة الوراثية",
+      "معهد الهندسة الوراثية",
+      "gebri"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_edu_006",
+    "place_id": "SDT_SHP_EDU_006",
+    "name": "مدرسة السلام الرسمية المتميزة للغات - المنطقة الأولى",
+    "name_ar": "مدرسة السلام الرسمية للغات",
+    "name_en": "Al Salam Official Language School",
+    "category": "education",
+    "sub_category": "school",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "شارع المدارس، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3675,
+    "lng": 30.5045,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "مدرسة السلام",
+      "السلام لغات",
+      "مدرسة لغات",
+      "تجريبي لغات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_mal_001",
+    "place_id": "SDT_SHP_MAL_001",
+    "name": "سيتي مول السادات City Mall - أكبر مركز تجاري وترفيهي",
+    "name_ar": "سيتي مول السادات",
+    "name_en": "City Mall Sadat City",
+    "category": "mall",
+    "sub_category": "shopping_mall",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي، بالقرب من جهاز تنمية المدينة، مدينة السادات",
+    "lat": 30.3678,
+    "lng": 30.5056,
+    "mall_name": "سيتي مول",
+    "popularity": 100,
+    "aliases": [
+      "سيتي مول",
+      "city mall",
+      "المول",
+      "مول السادات",
+      "سيتي مول السادات",
+      "مول تجاري",
+      "فود كورت"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_mal_002",
+    "place_id": "SDT_SHP_MAL_002",
+    "name": "مول زهران التجاري - سوق المنطقة الرابعة",
+    "name_ar": "مول زهران التجاري",
+    "name_en": "Zahran Mall Sadat",
+    "category": "mall",
+    "sub_category": "shopping_mall",
+    "place_type": "commercial",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3804,
+    "lng": 30.5158,
+    "mall_name": "مول زهران",
+    "popularity": 98,
+    "aliases": [
+      "مول زهران",
+      "زهران مول",
+      "مول 4",
+      "مول المنطقة الرابعة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_mal_003",
+    "place_id": "SDT_SHP_MAL_003",
+    "name": "سيتي سنتر السادات التجاري - المنطقة الأولى",
+    "name_ar": "سيتي سنتر السادات التجاري",
+    "name_en": "City Center Sadat",
+    "category": "mall",
+    "sub_category": "commercial_center",
+    "place_type": "commercial",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3663,
+    "lng": 30.503,
+    "mall_name": "سيتي سنتر السادات",
+    "popularity": 96,
+    "aliases": [
+      "سيتي سنتر",
+      "مول سيتي سنتر",
+      "سيتي سنتر السادات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_mal_004",
+    "place_id": "SDT_SHP_MAL_004",
+    "name": "مول ريحانة سنتر التجاري - المنطقة الخامسة",
+    "name_ar": "مول ريحانة سنتر",
+    "name_en": "Rihana Center Mall",
+    "category": "mall",
+    "sub_category": "shopping_mall",
+    "place_type": "commercial",
+    "district": "المنطقة الخامسة",
+    "address": "ميدان المنطقة الخامسة، مدينة السادات",
+    "lat": 30.3768,
+    "lng": 30.5146,
+    "mall_name": "مول ريحانة سنتر",
+    "popularity": 94,
+    "aliases": [
+      "مول ريحانة",
+      "ريحانة سنتر",
+      "مول المنطقة الخامسة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fin_001_a",
+    "place_id": "SDT_SHP_FIN_001_A",
+    "name": "البنك الأهلي المصري NBE - فرع المنطقة السكنية الأولى",
+    "name_ar": "البنك الأهلي المصري - فرع المنطقة الأولى",
+    "name_en": "National Bank of Egypt - Zone 1 Branch",
+    "category": "finance",
+    "sub_category": "bank",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3662,
+    "lng": 30.5028,
+    "mall_name": null,
+    "popularity": 99,
+    "aliases": [
+      "البنك الاهلي",
+      "البنك الأهلي",
+      "nbe",
+      "الاهلي",
+      "فرع البنك الاهلي",
+      "atm الاهلي",
+      "بنك"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fin_001_b",
+    "place_id": "SDT_SHP_FIN_001_B",
+    "name": "البنك الأهلي المصري NBE - فرع المنطقة الصناعية الأولى",
+    "name_ar": "البنك الأهلي المصري - فرع المنطقة الصناعية",
+    "name_en": "National Bank of Egypt - Industrial Zone Branch",
+    "category": "finance",
+    "sub_category": "bank",
+    "place_type": "amenity",
+    "district": "المنطقة الصناعية الأولى",
+    "address": "المنطقة الصناعية الأولى، أمام مجمع الخدمات الصناعي، مدينة السادات",
+    "lat": 30.3565,
+    "lng": 30.5115,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "البنك الاهلي المنطقة الصناعية",
+      "اهلي صناعية",
+      "البنك الاهلي المصري"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fin_002_a",
+    "place_id": "SDT_SHP_FIN_002_A",
+    "name": "بنك مصر Banque Misr - فرع شارع جمال عبد الناصر",
+    "name_ar": "بنك مصر - فرع المنطقة الأولى",
+    "name_en": "Banque Misr - Zone 1 Branch",
+    "category": "finance",
+    "sub_category": "bank",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، بجوار مجمع المصالح، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3667,
+    "lng": 30.5036,
+    "mall_name": null,
+    "popularity": 99,
+    "aliases": [
+      "بنك مصر",
+      "banque misr",
+      "فرع بنك مصر",
+      "atm بنك مصر",
+      "بنك"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fin_002_b",
+    "place_id": "SDT_SHP_FIN_002_B",
+    "name": "بنك مصر Banque Misr - فرع سوق المنطقة الرابعة",
+    "name_ar": "بنك مصر - فرع سوق 4",
+    "name_en": "Banque Misr - Zone 4 Market Branch",
+    "category": "finance",
+    "sub_category": "bank",
+    "place_type": "amenity",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، أمام مول زهران، مدينة السادات",
+    "lat": 30.3803,
+    "lng": 30.5157,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "بنك مصر سوق 4",
+      "فرع بنك مصر سوق 4",
+      "بنك مصر"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fin_003",
+    "place_id": "SDT_SHP_FIN_003",
+    "name": "البنك التجاري الدولي CIB السادات - المحور المركزي",
+    "name_ar": "البنك التجاري الدولي CIB",
+    "name_en": "Commercial International Bank CIB Sadat",
+    "category": "finance",
+    "sub_category": "bank",
+    "place_type": "amenity",
+    "district": "المحور المركزي",
+    "address": "مجمع البنوك، المحور المركزي، مدينة السادات",
+    "lat": 30.3694,
+    "lng": 30.5074,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "cib",
+      "بنك cib",
+      "البنك التجاري الدولي",
+      "سي اي بي",
+      "فرع cib",
+      "atm cib"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fin_004",
+    "place_id": "SDT_SHP_FIN_004",
+    "name": "بنك QNB الأهلي قطر الوطني السادات - المنطقة الأولى",
+    "name_ar": "بنك QNB الأهلي",
+    "name_en": "QNB Alahli Bank Sadat",
+    "category": "finance",
+    "sub_category": "bank",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3665,
+    "lng": 30.5033,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "qnb",
+      "بنك qnb",
+      "قطر الوطني",
+      "كيو ان بي",
+      "بنك"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fin_005",
+    "place_id": "SDT_SHP_FIN_005",
+    "name": "بنك القاهرة Banque du Caire السادات - المنطقة الأولى",
+    "name_ar": "بنك القاهرة السادات",
+    "name_en": "Banque du Caire Sadat",
+    "category": "finance",
+    "sub_category": "bank",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة السكنية الأولى، بجوار مجلس المدينة، مدينة السادات",
+    "lat": 30.3659,
+    "lng": 30.5021,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "بنك القاهرة",
+      "القاهرة",
+      "banque du caire",
+      "فرع بنك القاهرة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fin_006",
+    "place_id": "SDT_SHP_FIN_006",
+    "name": "بنك التعمير والإسكان HDB السادات - المنطقة الثانية",
+    "name_ar": "بنك التعمير والإسكان",
+    "name_en": "Housing & Development Bank Sadat",
+    "category": "finance",
+    "sub_category": "bank",
+    "place_type": "amenity",
+    "district": "المنطقة الثانية",
+    "address": "المنطقة الثانية، بجوار مستشفى اليوم الواحد، مدينة السادات",
+    "lat": 30.3696,
+    "lng": 30.5113,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "بنك الاسكان والتعمير",
+      "بنك الاسكان",
+      "التعمير والاسكان",
+      "شقق الاسكان",
+      "حجز اراضي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_shp_001_a",
+    "place_id": "SDT_SHP_SHP_001_A",
+    "name": "مكتب بريد السادات الرئيسي - المنطقة الأولى",
+    "name_ar": "مكتب بريد السادات الرئيسي",
+    "name_en": "Sadat Main Post Office",
+    "category": "shipping",
+    "sub_category": "post_office",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، أمام مجلس المدينة، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3656,
+    "lng": 30.5021,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "البريد",
+      "بريد السادات",
+      "مكتب البريد",
+      "البوسطة",
+      "حساب توفير",
+      "قبض المعاش",
+      "طرود البريد"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_shp_001_b",
+    "place_id": "SDT_SHP_SHP_001_B",
+    "name": "مكتب بريد المنطقة الرابعة - سوق 4",
+    "name_ar": "مكتب بريد المنطقة الرابعة",
+    "name_en": "Zone 4 Post Office Sadat",
+    "category": "shipping",
+    "sub_category": "post_office",
+    "place_type": "amenity",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، مدينة السادات",
+    "lat": 30.3796,
+    "lng": 30.5154,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "بريد سوق 4",
+      "بريد المنطقة الرابعة",
+      "بوسطة سوق 4"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_shp_002",
+    "place_id": "SDT_SHP_SHP_002",
+    "name": "فرع شركة أرامكس Aramex للشحن السريع بالسادات",
+    "name_ar": "فرع أرامكس Aramex للشحن",
+    "name_en": "Aramex Express Sadat City",
+    "category": "shipping",
+    "sub_category": "courier",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي التجاري، مدينة السادات",
+    "lat": 30.3686,
+    "lng": 30.5064,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "ارامكس",
+      "أرامكس",
+      "aramex",
+      "شحن طرود",
+      "شركة شحن",
+      "توصيل شحنات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_htl_001",
+    "place_id": "SDT_SHP_HTL_001",
+    "name": "فندق أمون السادات Amoun Hotel Sadat City",
+    "name_ar": "فندق أمون السادات",
+    "name_en": "Amoun Hotel Sadat City",
+    "category": "hotel",
+    "sub_category": "hotel",
+    "place_type": "tourism",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة الأولى، بالقرب من جهاز المدينة، مدينة السادات",
+    "lat": 30.3653,
+    "lng": 30.5019,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "فندق امون",
+      "فندق أمون",
+      "amoun hotel",
+      "حجز غرف",
+      "اوتيل",
+      "فندق"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_htl_002",
+    "place_id": "SDT_SHP_HTL_002",
+    "name": "فندق سياحي النزهة رويال - طريق الخدمات الصحراوي",
+    "name_ar": "فندق النزهة رويال",
+    "name_en": "Al Nozha Royal Hotel Sadat",
+    "category": "hotel",
+    "sub_category": "resort_hotel",
+    "place_type": "tourism",
+    "district": "طريق الخدمات الصحراوي",
+    "address": "طريق الخدمات، مدخل مدينة السادات، طريق مصر إسكندرية الصحراوي",
+    "lat": 30.351,
+    "lng": 30.522,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "فندق النزهة",
+      "النزهة رويال",
+      "منتجع النزهة",
+      "فندق سياحي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_evt_001",
+    "place_id": "SDT_SHP_EVT_001",
+    "name": "قاعة اللؤلؤة الملكية للمناسبات والأفراح - طريق الحزام الأخضر",
+    "name_ar": "قاعة اللؤلؤة الملكية للأفراح",
+    "name_en": "Royal Pearl Wedding Hall",
+    "category": "events",
+    "sub_category": "wedding_hall",
+    "place_type": "commercial",
+    "district": "طريق الحزام الأخضر",
+    "address": "طريق الحزام الأخضر، مدخل مدينة السادات",
+    "lat": 30.354,
+    "lng": 30.518,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "قاعة اللؤلؤة",
+      "قاعة افراح",
+      "حجز قاعة",
+      "افراح السادات",
+      "قاعات مناسبات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_evt_002",
+    "place_id": "SDT_SHP_EVT_002",
+    "name": "قاعة جراند بالاس Grand Palace للمؤتمرات والأفراح",
+    "name_ar": "قاعة جراند بالاس للمناسبات",
+    "name_en": "Grand Palace Events & Conferences",
+    "category": "events",
+    "sub_category": "banquet_hall",
+    "place_type": "commercial",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي، بالقرب من سيتي مول، مدينة السادات",
+    "lat": 30.3689,
+    "lng": 30.5069,
+    "mall_name": null,
+    "popularity": 96,
+    "aliases": [
+      "جراند بالاس",
+      "grand palace",
+      "قاعة مؤتمرات",
+      "حفلات",
+      "قاعة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_spt_001",
+    "place_id": "SDT_SHP_SPT_001",
+    "name": "جولدز جيم Gold's Gym السادات - المحور المركزي",
+    "name_ar": "جولدز جيم Gold's Gym",
+    "name_en": "Gold's Gym Sadat City",
+    "category": "sports",
+    "sub_category": "gym",
+    "place_type": "leisure",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي التجاري، أمام سيتي مول، مدينة السادات",
+    "lat": 30.3685,
+    "lng": 30.5063,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "جولدز جيم",
+      "golds gym",
+      "جيم",
+      "لياقة بدنية",
+      "كمال اجسام",
+      "فتنس",
+      "جيم رجالي وحريمي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_spt_002",
+    "place_id": "SDT_SHP_SPT_002",
+    "name": "نادي مدينة السادات الرياضي الاجتماعي - المنطقة الأولى",
+    "name_ar": "نادي مدينة السادات الرياضي",
+    "name_en": "Sadat City Sports Club",
+    "category": "sports",
+    "sub_category": "sports_club",
+    "place_type": "leisure",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة السكنية الأولى، مدينة السادات",
+    "lat": 30.368,
+    "lng": 30.505,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "نادي السادات",
+      "النادي الرياضي",
+      "ملاعب السادات",
+      "حمام سباحة نادي السادات",
+      "تنس وكورة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_spt_003",
+    "place_id": "SDT_SHP_SPT_003",
+    "name": "نادي النجوم الرياضي والاجتماعي بالسادات - المنطقة الرابعة",
+    "name_ar": "نادي النجوم الرياضي",
+    "name_en": "Al Nogoom Sports Club Sadat",
+    "category": "sports",
+    "sub_category": "sports_club",
+    "place_type": "leisure",
+    "district": "المنطقة الرابعة",
+    "address": "المنطقة الرابعة، بجوار مجمع الخدمات، مدينة السادات",
+    "lat": 30.3791,
+    "lng": 30.5165,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "نادي النجوم",
+      "ملعب النجوم",
+      "ملاعب نجيل صناعي",
+      "اكاديمية كورة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_cor_001",
+    "place_id": "SDT_SHP_COR_001",
+    "name": "جمعية مستثمري مدينة السادات - المقر الرئيسي",
+    "name_ar": "جمعية مستثمري مدينة السادات",
+    "name_en": "Sadat City Investors Association (SCIA)",
+    "category": "corporate",
+    "sub_category": "business_association",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة الأولى، مبنى مجمع المصالح، مدينة السادات",
+    "lat": 30.366,
+    "lng": 30.5023,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "جمعية المستثمرين",
+      "مستثمري السادات",
+      "خدمات رجال الاعمال",
+      "استثمار"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_cor_002",
+    "place_id": "SDT_SHP_COR_002",
+    "name": "الغرفة التجارية بالسادات - مكاتب خدمات التجار",
+    "name_ar": "الغرفة التجارية بالسادات",
+    "name_en": "Chamber of Commerce Sadat Branch",
+    "category": "corporate",
+    "sub_category": "business_services",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3659,
+    "lng": 30.5022,
+    "mall_name": null,
+    "popularity": 95,
+    "aliases": [
+      "الغرفة التجارية",
+      "سجل تجاري",
+      "شهادة مزاولة المهنة",
+      "خدمات التجار"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fac_001",
+    "place_id": "SDT_SHP_FAC_001",
+    "name": "مصنع حديد عز السادات Ezz Steel - المنطقة الصناعية الثالثة",
+    "name_ar": "مصانع حديد عز السادات",
+    "name_en": "Ezz Steel Factory Sadat City",
+    "category": "factory",
+    "sub_category": "heavy_industry",
+    "place_type": "industrial",
+    "district": "المنطقة الصناعية الثالثة",
+    "address": "المنطقة الصناعية الثالثة، مجمع مصانع الصلب، مدينة السادات",
+    "lat": 30.362,
+    "lng": 30.485,
+    "mall_name": null,
+    "popularity": 99,
+    "aliases": [
+      "حديد عز",
+      "عز للصلب",
+      "ezz steel",
+      "مصنع عز",
+      "مصنع حديد"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fac_002",
+    "place_id": "SDT_SHP_FAC_002",
+    "name": "مصنع السويدي للكابلات والكهرباء Elsewedy Electric - الصناعية 2",
+    "name_ar": "مصنع السويدي للكابلات Elsewedy",
+    "name_en": "Elsewedy Electric Cables Sadat",
+    "category": "factory",
+    "sub_category": "cables_industry",
+    "place_type": "industrial",
+    "district": "المنطقة الصناعية الثانية",
+    "address": "المنطقة الصناعية الثانية، مدينة السادات",
+    "lat": 30.3585,
+    "lng": 30.495,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "السويدي",
+      "السويدي للكابلات",
+      "elsewedy electric",
+      "كابلات السويدي",
+      "مصنع السويدي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fac_003",
+    "place_id": "SDT_SHP_FAC_003",
+    "name": "مصنع سيراميكا رويال السادات Ceramica Royal - الصناعية 2",
+    "name_ar": "مصنع سيراميكا رويال السادات",
+    "name_en": "Ceramica Royal Factory Sadat",
+    "category": "factory",
+    "sub_category": "ceramics_industry",
+    "place_type": "industrial",
+    "district": "المنطقة الصناعية الثانية",
+    "address": "المنطقة الصناعية الثانية، مدينة السادات",
+    "lat": 30.37,
+    "lng": 30.478,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "سيراميكا رويال",
+      "رويال للسيراميك",
+      "ceramica royal",
+      "مصنع رويال"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fac_004",
+    "place_id": "SDT_SHP_FAC_004",
+    "name": "مصنع جهينة للألبان والعصائر Juhayna - الصناعية الأولى",
+    "name_ar": "مصنع جهينة للصناعات الغذائية",
+    "name_en": "Juhayna Food Industries Sadat",
+    "category": "factory",
+    "sub_category": "food_industry",
+    "place_type": "industrial",
+    "district": "المنطقة الصناعية الأولى",
+    "address": "المنطقة الصناعية الأولى، مدينة السادات",
+    "lat": 30.354,
+    "lng": 30.508,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "جهينة",
+      "مصنع جهينة",
+      "juhayna",
+      "البان جهينة",
+      "عصائر جهينة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fac_005",
+    "place_id": "SDT_SHP_FAC_005",
+    "name": "مصنع فاركو للأدوية Pharco Pharmaceuticals - الصناعية 3",
+    "name_ar": "مصنع فاركو للأدوية",
+    "name_en": "Pharco Pharmaceuticals Sadat",
+    "category": "factory",
+    "sub_category": "pharma_industry",
+    "place_type": "industrial",
+    "district": "المنطقة الصناعية الثالثة",
+    "address": "المنطقة الصناعية الثالثة، مدينة السادات",
+    "lat": 30.364,
+    "lng": 30.488,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "فاركو",
+      "مصنع فاركو",
+      "pharco",
+      "ادوية فاركو",
+      "مصنع ادوية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_fac_006",
+    "place_id": "SDT_SHP_FAC_006",
+    "name": "مصنع إيفا فارما Eva Pharma للأدوية - الصناعية 4",
+    "name_ar": "مصنع إيفا فارما للأدوية",
+    "name_en": "Eva Pharma Factory Sadat City",
+    "category": "factory",
+    "sub_category": "pharma_industry",
+    "place_type": "industrial",
+    "district": "المنطقة الصناعية الرابعة",
+    "address": "المنطقة الصناعية الرابعة، مدينة السادات",
+    "lat": 30.372,
+    "lng": 30.476,
+    "mall_name": null,
+    "popularity": 97,
+    "aliases": [
+      "ايفا فارما",
+      "إيفا فارما",
+      "eva pharma",
+      "مصنع ايفا",
+      "ادوية"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rel_001",
+    "place_id": "SDT_SHP_REL_001",
+    "name": "مسجد الهدى والنور الكبير - المنطقة الأولى",
+    "name_ar": "مسجد الهدى والنور الكبير",
+    "name_en": "Al Hoda & Al Nour Grand Mosque",
+    "category": "religious",
+    "sub_category": "mosque",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "ميدان الهدى، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3669,
+    "lng": 30.5035,
+    "mall_name": null,
+    "popularity": 99,
+    "aliases": [
+      "مسجد الهدى والنور",
+      "الهدى والنور",
+      "جامع الهدى",
+      "مسجد كبير",
+      "صلاة الجمعة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rel_002",
+    "place_id": "SDT_SHP_REL_002",
+    "name": "مسجد الشهداء الكبير - سوق المنطقة الرابعة",
+    "name_ar": "مسجد الشهداء الكبير",
+    "name_en": "Al Shohadaa Grand Mosque",
+    "category": "religious",
+    "sub_category": "mosque",
+    "place_type": "amenity",
+    "district": "المنطقة الرابعة",
+    "address": "سوق المنطقة الرابعة، أمام مول زهران، مدينة السادات",
+    "lat": 30.3805,
+    "lng": 30.5162,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "مسجد الشهداء",
+      "جامع الشهداء",
+      "مسجد سوق 4",
+      "صلاة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_rel_003",
+    "place_id": "SDT_SHP_REL_003",
+    "name": "كنيسة السيدة العذراء مريم والشهيد مارجرجس - المنطقة الأولى",
+    "name_ar": "كنيسة العذراء ومارجرجس بالسادات",
+    "name_en": "St. Mary & St. George Coptic Orthodox Church",
+    "category": "religious",
+    "sub_category": "church",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة السكنية الأولى، مدينة السادات",
+    "lat": 30.3645,
+    "lng": 30.5015,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "كنيسة السادات",
+      "كنيسة العذراء",
+      "كنيسة مارجرجس",
+      "مطرانية السادات",
+      "قداس"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_gov_001",
+    "place_id": "SDT_SHP_GOV_001",
+    "name": "جهاز تنمية مدينة السادات - المقر الرئيسي",
+    "name_ar": "جهاز تنمية مدينة السادات",
+    "name_en": "Sadat City Development Authority",
+    "category": "government",
+    "sub_category": "city_hall",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "المبنى الرئيسي لجهاز المدينة، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3654,
+    "lng": 30.5023,
+    "mall_name": null,
+    "popularity": 100,
+    "aliases": [
+      "جهاز المدينة",
+      "جهاز تنمية السادات",
+      "رئاسة الجهاز",
+      "مجلس المدينة",
+      "تراخيص البناء",
+      "تخصيص اراضي"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_gov_002",
+    "place_id": "SDT_SHP_GOV_002",
+    "name": "قسم شرطة مدينة السادات ومجمع النيابات",
+    "name_ar": "قسم شرطة مدينة السادات",
+    "name_en": "Sadat City Police Station & Prosecution",
+    "category": "government",
+    "sub_category": "police",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات",
+    "lat": 30.365,
+    "lng": 30.5027,
+    "mall_name": null,
+    "popularity": 99,
+    "aliases": [
+      "قسم الشرطة",
+      "قسم السادات",
+      "مركز شرطة السادات",
+      "النيابة",
+      "محكمة السادات",
+      "شرطة"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_gov_003",
+    "place_id": "SDT_SHP_GOV_003",
+    "name": "وحدة مرور مدينة السادات وتراخيص السيارات - الصناعية 1",
+    "name_ar": "وحدة مرور مدينة السادات",
+    "name_en": "Sadat City Traffic Unit",
+    "category": "government",
+    "sub_category": "traffic_unit",
+    "place_type": "amenity",
+    "district": "المنطقة الصناعية الأولى",
+    "address": "المنطقة الصناعية الأولى، طريق السادات الرئيسي",
+    "lat": 30.3555,
+    "lng": 30.5105,
+    "mall_name": null,
+    "popularity": 99,
+    "aliases": [
+      "المرور",
+      "مرور السادات",
+      "تراخيص سيارات",
+      "رخصة قيادة",
+      "فحص السيارات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_gov_004",
+    "place_id": "SDT_SHP_GOV_004",
+    "name": "مصلحة الجوازات والهجرة والجنسية بالسادات",
+    "name_ar": "مكتب جوازات السادات",
+    "name_en": "Sadat Passports & Immigration Office",
+    "category": "government",
+    "sub_category": "passport_office",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "مجمع قسم شرطة السادات، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3651,
+    "lng": 30.5028,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "جوازات السادات",
+      "مكتب الجوازات",
+      "استخراج جواز سفر",
+      "الجوازات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_gov_005",
+    "place_id": "SDT_SHP_GOV_005",
+    "name": "مجمع المصالح الحكومية والتأمينات الاجتماعية بالسادات",
+    "name_ar": "مجمع المصالح الحكومية والتأمينات",
+    "name_en": "Government Services & Social Insurance Complex",
+    "category": "government",
+    "sub_category": "government_complex",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "المنطقة الأولى، أمام مجلس المدينة، مدينة السادات",
+    "lat": 30.3658,
+    "lng": 30.5024,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "مجمع المصالح",
+      "التامينات",
+      "التأمينات والمعاشات",
+      "الشهر العقاري",
+      "الضرائب"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_trn_001",
+    "place_id": "SDT_SHP_TRN_001",
+    "name": "مجمع مواقف السادات العمومي (موقف الأقاليم والمحافظات)",
+    "name_ar": "مجمع مواقف السادات العمومي",
+    "name_en": "Sadat Public Bus & Microbus Terminal",
+    "category": "transport",
+    "sub_category": "bus_terminal",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "مدخل المنطقة الأولى، طريق الخدمات، مدينة السادات",
+    "lat": 30.365,
+    "lng": 30.5005,
+    "mall_name": null,
+    "popularity": 100,
+    "aliases": [
+      "الموقف",
+      "موقف السادات",
+      "مجمع المواقف",
+      "موقف الميكروباص",
+      "موقف القاهرة",
+      "موقف اسكندرية",
+      "موقف منوف",
+      "موقف شبين"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_trn_002",
+    "place_id": "SDT_SHP_TRN_002",
+    "name": "محطة أتوبيسات غرب ووسط الدلتا وجو باص GoBus السادات",
+    "name_ar": "محطة غرب الدلتا وجو باص السادات",
+    "name_en": "West Delta & GoBus Station Sadat",
+    "category": "transport",
+    "sub_category": "intercity_bus",
+    "place_type": "amenity",
+    "district": "المحور المركزي",
+    "address": "المحور المركزي، بالقرب من سيتي مول، مدينة السادات",
+    "lat": 30.366,
+    "lng": 30.502,
+    "mall_name": null,
+    "popularity": 98,
+    "aliases": [
+      "غرب الدلتا",
+      "جو باص",
+      "اتوبيسات السادات",
+      "سوبرجيت",
+      "محطة الاتوبيس",
+      "مواصلات"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  },
+  {
+    "id": "shp_trn_003",
+    "place_id": "SDT_SHP_TRN_003",
+    "name": "موقف ميكروباص السادات - التحرير ورمسيس والمؤسسة",
+    "name_ar": "موقف ميكروباص التحرير ورمسيس",
+    "name_en": "Cairo Microbus Stand Sadat",
+    "category": "transport",
+    "sub_category": "microbus_stand",
+    "place_type": "amenity",
+    "district": "المنطقة الأولى",
+    "address": "بجوار مجمع المواقف، المنطقة الأولى، مدينة السادات",
+    "lat": 30.3651,
+    "lng": 30.5008,
+    "mall_name": null,
+    "popularity": 99,
+    "aliases": [
+      "موقف رمسيس",
+      "موقف التحرير",
+      "موقف المؤسسة",
+      "ميكروباص القاهرة",
+      "موقف مصر"
+    ],
+    "coordinates_verified": true,
+    "city": "مدينة السادات"
+  }
+];
+
+let sadatPlacesState = {
+  places: initialSadatPlaces,
+  selectedCategory: 'all',
+  searchQuery: '',
+  filterMallOnly: false,
+  modalPlace: null,
+  isEditing: false
+};
+
+function getCategoryBadge(catId) {
+  const cat = SADAT_CATEGORIES.find(c => c.id === catId);
+  if (!cat) return `<span class="badge" style="background:#f1f5f9;color:#475569;">${catId || 'عام'}</span>`;
+  return `<span class="badge" style="background:${cat.color}15;color:${cat.color};border:1px solid ${cat.color}30;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11px;display:inline-flex;align-items:center;gap:4px;">
+    <i class="${cat.icon}"></i> ${cat.name}
+  </span>`;
+}
+
+function renderPlaces() {
+  const totalCount = sadatPlacesState.places.length;
+  const mallShopsCount = sadatPlacesState.places.filter(p => p.mall_name).length;
+  const verifiedCount = sadatPlacesState.places.filter(p => p.coordinates_verified).length;
+
+  let filtered = sadatPlacesState.places;
+  if (sadatPlacesState.selectedCategory && sadatPlacesState.selectedCategory !== 'all') {
+    filtered = filtered.filter(p => p.category === sadatPlacesState.selectedCategory);
+  }
+  if (sadatPlacesState.filterMallOnly) {
+    filtered = filtered.filter(p => p.mall_name);
+  }
+  if (sadatPlacesState.searchQuery && sadatPlacesState.searchQuery.trim().length > 0) {
+    const q = sadatPlacesState.searchQuery.trim().toLowerCase();
+    filtered = filtered.filter(p => {
+      const nameMatch = (p.name_ar || '').toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q);
+      const districtMatch = (p.district || '').toLowerCase().includes(q);
+      const mallMatch = (p.mall_name || '').toLowerCase().includes(q);
+      const addrMatch = (p.address || '').toLowerCase().includes(q);
+      const catMatch = (p.category || '').toLowerCase().includes(q);
+      const aliasMatch = (p.aliases || []).some(a => a.toLowerCase().includes(q));
+      return nameMatch || districtMatch || mallMatch || addrMatch || catMatch || aliasMatch;
+    });
+  }
+
+  // Count per category
+  const catCounts = {};
+  sadatPlacesState.places.forEach(p => {
+    catCounts[p.category] = (catCounts[p.category] || 0) + 1;
+  });
+
+  return `
+    <div class="places-page-container" style="padding: 20px 0;">
+      <!-- Top Stat Cards -->
+      <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <div class="stat-card" style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;padding:18px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:12px;color:var(--text-light);font-weight:600;">إجمالي الأماكن والمحلات</div>
+              <div style="font-size:24px;font-weight:800;color:var(--text-primary);margin-top:4px;">${totalCount}</div>
+            </div>
+            <div style="width:44px;height:44px;border-radius:10px;background:rgba(37,99,235,0.12);color:#2563eb;display:flex;align-items:center;justify-content:center;font-size:22px;">
+              <i class="ri-map-pin-2-fill"></i>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text-light);margin-top:8px;">مغطاة بالكامل داخل مدينة السادات</div>
+        </div>
+
+        <div class="stat-card" style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;padding:18px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:12px;color:var(--text-light);font-weight:600;">تصنيفات الخدمات</div>
+              <div style="font-size:24px;font-weight:800;color:#16a34a;margin-top:4px;">25 تصنيفاً</div>
+            </div>
+            <div style="width:44px;height:44px;border-radius:10px;background:rgba(22,163,74,0.12);color:#16a34a;display:flex;align-items:center;justify-content:center;font-size:22px;">
+              <i class="ri-grid-fill"></i>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text-light);margin-top:8px;">مطاعم، كافيهات، بقالات، صيدليات والمزيد</div>
+        </div>
+
+        <div class="stat-card" style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;padding:18px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:12px;color:var(--text-light);font-weight:600;">محلات داخل المولات</div>
+              <div style="font-size:24px;font-weight:800;color:#7c3aed;margin-top:4px;">${mallShopsCount}</div>
+            </div>
+            <div style="width:44px;height:44px;border-radius:10px;background:rgba(124,58,237,0.12);color:#7c3aed;display:flex;align-items:center;justify-content:center;font-size:22px;">
+              <i class="ri-shopping-bag-3-fill"></i>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text-light);margin-top:8px;">سيتي مول، مول زهران، بدر وغيرها</div>
+        </div>
+
+        <div class="stat-card" style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;padding:18px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:12px;color:var(--text-light);font-weight:600;">موثقة بالإحداثيات الدقيقة</div>
+              <div style="font-size:24px;font-weight:800;color:#0284c7;margin-top:4px;">${verifiedCount}</div>
+            </div>
+            <div style="width:44px;height:44px;border-radius:10px;background:rgba(2,132,199,0.12);color:#0284c7;display:flex;align-items:center;justify-content:center;font-size:22px;">
+              <i class="ri-checkbox-circle-fill"></i>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text-light);margin-top:8px;">إحداثيات GPS فعلية ومحققة 100%</div>
+        </div>
+      </div>
+
+      <!-- Categories Filter Bar (Horizontal Chips) -->
+      <div class="card" style="margin-bottom: 20px; border-radius: 12px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+          <div>
+            <h4 style="margin:0;font-weight:800;color:var(--text-primary);">تصفح حسب التصنيف (25 فئة رئيسية)</h4>
+            <p style="margin:4px 0 0;font-size:12px;color:var(--text-light);">اختر التصنيف لعرض كافة المحلات والخدمات التابعة له</p>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" onclick="openPlaceModal()" style="display:flex;align-items:center;gap:6px;font-weight:700;">
+              <i class="ri-add-circle-fill"></i> إضافة مكان أو محل جديد
+            </button>
+            <button class="btn btn-outline" onclick="syncPlacesWithSupabase()" title="مزامنة فورية مع Supabase" style="display:flex;align-items:center;gap:6px;">
+              <i class="ri-refresh-line"></i> مزامنة
+            </button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:14px 18px;">
+          <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;scrollbar-width:thin;">
+            ${SADAT_CATEGORIES.map(cat => {
+              const isActive = sadatPlacesState.selectedCategory === cat.id;
+              const count = cat.id === 'all' ? totalCount : (catCounts[cat.id] || 0);
+              return `
+                <button type="button" class="btn btn-sm" 
+                  onclick="selectPlacesCategory('${cat.id}')"
+                  style="white-space:nowrap;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px;transition:all 0.2s;
+                  ${isActive ? `background:${cat.color};color:#fff;border:1px solid ${cat.color};box-shadow:0 2px 6px ${cat.color}40;` : `background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);`}">
+                  <i class="${cat.icon}"></i>
+                  ${cat.name}
+                  <span style="background:${isActive ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.06)'};padding:1px 6px;border-radius:10px;font-size:10px;">${count}</span>
+                </button>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+
+      <!-- Search & Data Table Card -->
+      <div class="card" style="border-radius:12px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+          <div style="display:flex;align-items:center;gap:12px;flex:1;max-width:480px;">
+            <div class="input-wrapper" style="width:100%;">
+              <i class="ri-search-line"></i>
+              <input type="text" id="placesSearchInput" 
+                class="form-control" 
+                placeholder="ابحث باسم المحل (شعلان، البرنس)، أو الحي، أو التصنيف..." 
+                value="${sadatPlacesState.searchQuery}" 
+                oninput="handlePlacesSearch(this.value)">
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;user-select:none;">
+              <input type="checkbox" ${sadatPlacesState.filterMallOnly ? 'checked' : ''} onchange="toggleMallOnlyFilter(this.checked)">
+              <span>داخل المولات فقط</span>
+            </label>
+            <span style="font-size:12px;color:var(--text-light);font-weight:600;">النتائج: ${filtered.length} مكان</span>
+          </div>
+        </div>
+
+        <div class="card-body" style="padding:0;overflow-x:auto;">
+          <table class="data-table" style="width:100%;font-size:12px;">
+            <thead>
+              <tr style="background:var(--bg-primary);">
+                <th>اسم المكان / المحل</th>
+                <th>التصنيف والفئة</th>
+                <th>الحي / المنطقة</th>
+                <th>المول الحاضن</th>
+                <th>العنوان</th>
+                <th>الإحداثيات الجغرافية</th>
+                <th>الحالة</th>
+                <th style="text-align:center;">إجراءات</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filtered.length === 0 ? `
+                <tr>
+                  <td colspan="8" style="text-align:center;padding:36px;color:var(--text-light);">
+                    <i class="ri-map-pin-line" style="font-size:32px;display:block;margin-bottom:8px;color:#cbd5e1;"></i>
+                    لا توجد محلات أو أماكن مطابقة للبحث
+                  </td>
+                </tr>
+              ` : filtered.map(place => {
+                const mapUrl = `https://www.google.com/maps?q=${place.lat},${place.lng}`;
+                return `
+                  <tr>
+                    <td>
+                      <div style="font-weight:800;color:var(--text-primary);font-size:13px;">${place.name_ar || place.name}</div>
+                      ${place.name_en ? `<div style="font-size:11px;color:var(--text-light);font-family:monospace;">${place.name_en}</div>` : ''}
+                      ${place.aliases && place.aliases.length > 0 ? `
+                        <div style="font-size:10px;color:#64748b;margin-top:2px;">
+                          <i class="ri-price-tag-3-line"></i> ${place.aliases.slice(0, 3).join(' • ')}
+                        </div>
+                      ` : ''}
+                    </td>
+                    <td>
+                      ${getCategoryBadge(place.category)}
+                      ${place.sub_category ? `<div style="font-size:10px;color:var(--text-light);margin-top:3px;">${place.sub_category}</div>` : ''}
+                    </td>
+                    <td>
+                      <span style="font-weight:700;color:var(--text-primary);">${place.district || 'مدينة السادات'}</span>
+                    </td>
+                    <td>
+                      ${place.mall_name ? `
+                        <span class="badge" style="background:rgba(124,58,237,0.12);color:#7c3aed;border:1px solid rgba(124,58,237,0.25);font-weight:700;padding:3px 8px;border-radius:6px;">
+                          <i class="ri-shopping-bag-3-line"></i> ${place.mall_name}
+                        </span>
+                      ` : '<span style="color:#94a3b8;">—</span>'}
+                    </td>
+                    <td style="max-width:200px;">
+                      <div style="color:var(--text-secondary);font-size:11px;line-height:1.4;">${place.address || 'مدينة السادات'}</div>
+                    </td>
+                    <td>
+                      <a href="${mapUrl}" target="_blank" class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:11px;display:inline-flex;align-items:center;gap:4px;" title="عرض على خرائط GPS">
+                        <i class="ri-navigation-line"></i> ${place.lat.toFixed(4)}, ${place.lng.toFixed(4)}
+                      </a>
+                    </td>
+                    <td>
+                      ${place.coordinates_verified ? `
+                        <span class="badge" style="background:#dcfce7;color:#15803d;font-weight:700;padding:2px 6px;border-radius:4px;font-size:10px;">
+                          <i class="ri-check-line"></i> موثق
+                        </span>
+                      ` : '<span class="badge" style="background:#fef3c7;color:#b45309;">قيد المراجعة</span>'}
+                    </td>
+                    <td style="text-align:center;white-space:nowrap;">
+                      <button class="btn btn-sm btn-outline" style="padding:3px 8px;" onclick="editPlaceItem('${place.place_id || place.id}')" title="تعديل">
+                        <i class="ri-edit-line"></i>
+                      </button>
+                      <button class="btn btn-sm btn-outline" style="padding:3px 8px;color:#ef4444;border-color:#fca5a5;" onclick="deletePlaceItem('${place.place_id || place.id}')" title="حذف">
+                        <i class="ri-delete-bin-line"></i>
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Add / Edit Place Modal Container -->
+      <div id="placeModalBackdrop" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-card);width:90%;max-width:600px;max-height:90vh;overflow-y:auto;border-radius:14px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.2);padding:24px;position:relative;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;border-bottom:1px solid var(--border-color);padding-bottom:12px;">
+            <h3 id="placeModalTitle" style="margin:0;font-weight:800;color:var(--text-primary);">إضافة مكان / محل جديد</h3>
+            <button type="button" class="btn btn-sm btn-outline" onclick="closePlaceModal()" style="border:none;font-size:18px;">
+              <i class="ri-close-line"></i>
+            </button>
+          </div>
+
+          <form id="placeModalForm" onsubmit="handlePlaceFormSubmit(event)">
+            <input type="hidden" id="modalPlaceId">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+              <div class="form-group">
+                <label style="font-weight:700;font-size:12px;">اسم المكان بالعربي *</label>
+                <input type="text" id="modalNameAr" class="form-control" required placeholder="سوبر ماركت شعلان">
+              </div>
+              <div class="form-group">
+                <label style="font-weight:700;font-size:12px;">الاسم بالإنجليزي</label>
+                <input type="text" id="modalNameEn" class="form-control" placeholder="Shaalan Market" dir="ltr">
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+              <div class="form-group">
+                <label style="font-weight:700;font-size:12px;">التصنيف الرئيسي (25 فئة) *</label>
+                <select id="modalCategory" class="form-control" required>
+                  ${SADAT_CATEGORIES.filter(c => c.id !== 'all').map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group">
+                <label style="font-weight:700;font-size:12px;">التصنيف الفرعي</label>
+                <input type="text" id="modalSubCategory" class="form-control" placeholder="hypermarket, fast_food, etc.">
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+              <div class="form-group">
+                <label style="font-weight:700;font-size:12px;">الحي / المنطقة بالسادات *</label>
+                <input type="text" id="modalDistrict" class="form-control" required placeholder="المنطقة الأولى، المنطقة 21، سوق 4...">
+              </div>
+              <div class="form-group">
+                <label style="font-weight:700;font-size:12px;">المول الحاضن (إن كان المحل داخل مول)</label>
+                <input type="text" id="modalMallName" class="form-control" placeholder="سيتي مول، مول زهران...">
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:12px;">
+              <label style="font-weight:700;font-size:12px;">العنوان التفصيلي *</label>
+              <input type="text" id="modalAddress" class="form-control" required placeholder="شارع جمال عبد الناصر، المنطقة الأولى، مدينة السادات">
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+              <div class="form-group">
+                <label style="font-weight:700;font-size:12px;">خط العرض (Latitude) *</label>
+                <input type="number" step="0.000001" id="modalLat" class="form-control" required placeholder="30.3664" dir="ltr">
+              </div>
+              <div class="form-group">
+                <label style="font-weight:700;font-size:12px;">خط الطول (Longitude) *</label>
+                <input type="number" step="0.000001" id="modalLng" class="form-control" required placeholder="30.5031" dir="ltr">
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:16px;">
+              <label style="font-weight:700;font-size:12px;">الكلمات الدلالية ومترادفات البحث (مفصولة بفاصلة)</label>
+              <input type="text" id="modalAliases" class="form-control" placeholder="شعلان, ماركت شعلان, سوبر ماركت, بقالة">
+              <small style="color:var(--text-light);font-size:11px;">تساعد المستخدم في العثور على المكان عند كتابة أي كلمة عامة أو عامية</small>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--border-color);padding-top:16px;">
+              <button type="button" class="btn btn-outline" onclick="closePlaceModal()">إلغاء</button>
+              <button type="submit" class="btn btn-primary" style="font-weight:700;">
+                <i class="ri-save-line"></i> حفظ وتحديث البيانات
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function selectPlacesCategory(catId) {
+  sadatPlacesState.selectedCategory = catId;
+  const container = document.getElementById('pageContent');
+  if (container) container.innerHTML = renderPlaces();
+}
+
+function handlePlacesSearch(val) {
+  sadatPlacesState.searchQuery = val;
+  const container = document.getElementById('pageContent');
+  if (container) container.innerHTML = renderPlaces();
+}
+
+function toggleMallOnlyFilter(checked) {
+  sadatPlacesState.filterMallOnly = checked;
+  const container = document.getElementById('pageContent');
+  if (container) container.innerHTML = renderPlaces();
+}
+
+function openPlaceModal(placeId) {
+  const backdrop = document.getElementById('placeModalBackdrop');
+  if (!backdrop) return;
+
+  const titleEl = document.getElementById('placeModalTitle');
+  const idEl = document.getElementById('modalPlaceId');
+  const nameArEl = document.getElementById('modalNameAr');
+  const nameEnEl = document.getElementById('modalNameEn');
+  const catEl = document.getElementById('modalCategory');
+  const subCatEl = document.getElementById('modalSubCategory');
+  const districtEl = document.getElementById('modalDistrict');
+  const mallEl = document.getElementById('modalMallName');
+  const addrEl = document.getElementById('modalAddress');
+  const latEl = document.getElementById('modalLat');
+  const lngEl = document.getElementById('modalLng');
+  const aliasesEl = document.getElementById('modalAliases');
+
+  if (placeId) {
+    const p = sadatPlacesState.places.find(x => (x.place_id || x.id) === placeId);
+    if (p) {
+      titleEl.textContent = 'تعديل بيانات المكان';
+      idEl.value = p.place_id || p.id;
+      nameArEl.value = p.name_ar || p.name || '';
+      nameEnEl.value = p.name_en || '';
+      catEl.value = p.category || 'supermarket';
+      subCatEl.value = p.sub_category || '';
+      districtEl.value = p.district || '';
+      mallEl.value = p.mall_name || '';
+      addrEl.value = p.address || '';
+      latEl.value = p.lat || '';
+      lngEl.value = p.lng || '';
+      aliasesEl.value = (p.aliases || []).join(', ');
+    }
+  } else {
+    titleEl.textContent = 'إضافة مكان / محل جديد';
+    idEl.value = '';
+    nameArEl.value = '';
+    nameEnEl.value = '';
+    catEl.value = sadatPlacesState.selectedCategory !== 'all' ? sadatPlacesState.selectedCategory : 'supermarket';
+    subCatEl.value = '';
+    districtEl.value = '';
+    mallEl.value = '';
+    addrEl.value = '';
+    latEl.value = 30.3789;
+    lngEl.value = 30.5182;
+    aliasesEl.value = '';
+  }
+
+  backdrop.style.display = 'flex';
+}
+
+function closePlaceModal() {
+  const backdrop = document.getElementById('placeModalBackdrop');
+  if (backdrop) backdrop.style.display = 'none';
+}
+
+async function handlePlaceFormSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('modalPlaceId').value;
+  const nameAr = document.getElementById('modalNameAr').value.trim();
+  const nameEn = document.getElementById('modalNameEn').value.trim();
+  const cat = document.getElementById('modalCategory').value;
+  const subCat = document.getElementById('modalSubCategory').value.trim();
+  const district = document.getElementById('modalDistrict').value.trim();
+  const mall = document.getElementById('modalMallName').value.trim() || null;
+  const addr = document.getElementById('modalAddress').value.trim();
+  const lat = parseFloat(document.getElementById('modalLat').value);
+  const lng = parseFloat(document.getElementById('modalLng').value);
+  const aliases = document.getElementById('modalAliases').value.split(',').map(s => s.trim()).filter(Boolean);
+
+  const placeId = id || ('SDT_CUSTOM_' + Date.now());
+  const newPlaceObj = {
+    id: placeId,
+    place_id: placeId,
+    name: nameAr,
+    name_ar: nameAr,
+    name_en: nameEn || null,
+    category: cat,
+    sub_category: subCat || null,
+    district: district,
+    mall_name: mall,
+    address: addr,
+    lat: lat,
+    lng: lng,
+    coordinates_verified: true,
+    popularity: 90,
+    city: 'مدينة السادات',
+    aliases: aliases.length > 0 ? aliases : [nameAr]
+  };
+
+  if (id) {
+    const idx = sadatPlacesState.places.findIndex(x => (x.place_id || x.id) === id);
+    if (idx !== -1) {
+      sadatPlacesState.places[idx] = { ...sadatPlacesState.places[idx], ...newPlaceObj };
+    }
+  } else {
+    sadatPlacesState.places.unshift(newPlaceObj);
+  }
+
+  closePlaceModal();
+
+  // Re-render
+  const container = document.getElementById('pageContent');
+  if (container) container.innerHTML = renderPlaces();
+
+  // Persist to Supabase
+  if (typeof supabaseClient !== 'undefined' && supabaseClient) {
+    try {
+      await supabaseClient.from('sadat_places').upsert({
+        id: placeId,
+        name_ar: nameAr,
+        name_en: nameEn,
+        normalized_name: nameAr.toLowerCase().replace(/[إأآٱ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي'),
+        category: cat,
+        sub_category: subCat,
+        district: district,
+        mall_name: mall,
+        address: addr,
+        latitude: lat,
+        longitude: lng,
+        coordinates_verified: true,
+        is_active: true,
+        popularity_score: 90,
+        aliases: newPlaceObj.aliases
+      });
+      showNotification('تم حفظ المكان بنجاح في قاعدة بيانات السادات');
+    } catch (err) {
+      console.warn('Error upserting place to Supabase:', err);
+    }
+  }
+}
+
+function editPlaceItem(placeId) {
+  openPlaceModal(placeId);
+}
+
+async function deletePlaceItem(placeId) {
+  if (!confirm('هل أنت متأكد من رغبتك في حذف هذا المكان؟')) return;
+  sadatPlacesState.places = sadatPlacesState.places.filter(x => (x.place_id || x.id) !== placeId);
+  const container = document.getElementById('pageContent');
+  if (container) container.innerHTML = renderPlaces();
+
+  if (typeof supabaseClient !== 'undefined' && supabaseClient) {
+    try {
+      await supabaseClient.from('sadat_places').update({ is_active: false }).eq('id', placeId);
+      showNotification('تم حذف المكان بنجاح');
+    } catch (e) {
+      console.warn('Error deleting place:', e);
+    }
+  }
+}
+
+async function syncPlacesWithSupabase() {
+  if (typeof supabaseClient === 'undefined' || !supabaseClient) {
+    alert('قاعدة بيانات Supabase غير متصلة');
+    return;
+  }
+  try {
+    const { data, error } = await supabaseClient.from('sadat_places').select('*').eq('is_active', true).limit(500);
+    if (!error && data && data.length > 0) {
+      sadatPlacesState.places = data.map(row => ({
+        id: row.id,
+        place_id: row.id,
+        name: row.name_ar,
+        name_ar: row.name_ar,
+        name_en: row.name_en,
+        category: row.category || 'supermarket',
+        sub_category: row.sub_category,
+        district: row.district,
+        mall_name: row.mall_name,
+        address: row.address,
+        lat: row.latitude,
+        lng: row.longitude,
+        coordinates_verified: row.coordinates_verified,
+        popularity: row.popularity_score || 80,
+        city: row.city || 'مدينة السادات',
+        aliases: row.aliases || []
+      }));
+      const container = document.getElementById('pageContent');
+      if (container) container.innerHTML = renderPlaces();
+      showNotification(`تم مزامنة ${data.length} مكان من قاعدة بيانات السادات`);
+    } else {
+      showNotification('لا توجد بيانات إضافية في Supabase، تم الاعتماد على الفهرس المحلي الموثق');
+    }
+  } catch (e) {
+    console.warn('Sync error:', e);
   }
 }

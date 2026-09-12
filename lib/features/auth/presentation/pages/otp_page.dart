@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
 import '../../../../core/utils/auth_error_handler.dart';
@@ -302,7 +305,10 @@ class _OtpPageState extends State<OtpPage> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 36),
+
+                        // Tip message under the OTP input boxes
+                        _buildPasteTipWidget(),
+                        const SizedBox(height: 24),
 
                         // Timer / Resend Code
                         Center(
@@ -368,7 +374,11 @@ class _OtpPageState extends State<OtpPage> {
                                   ),
                                 ),
                         ),
-                        const SizedBox(height: 48),
+                        const SizedBox(height: 12),
+
+                        // WhatsApp Quick Support Actions
+                        _buildWhatsAppSupportSection(),
+                        const SizedBox(height: 32),
 
                         // Confirm button
                         Container(
@@ -418,6 +428,212 @@ class _OtpPageState extends State<OtpPage> {
         ),
       ),
     );
+  }
+
+  /// Helpful message & paste button under the OTP input boxes
+  Widget _buildPasteTipWidget() {
+    return Container(
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            size: 18,
+            color: AppColors.mediumBlue,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'لو الرمز اللي بدخله خاطئ جرب تنسخ الرمز وتلصقه في هنا',
+              style: GoogleFonts.cairo(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+                height: 1.4,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          InkWell(
+            onTap: _pasteFromClipboard,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.mediumBlue.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.mediumBlue.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.content_paste_rounded, size: 14, color: AppColors.mediumBlue),
+                  const SizedBox(width: 4),
+                  Text(
+                    'لصق',
+                    style: GoogleFonts.cairo(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.mediumBlue,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Extracts digits from clipboard and populates OTP input
+  Future<void> _pasteFromClipboard() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text ?? '';
+      final digits = text.replaceAll(RegExp(r'[^\d]'), '');
+      if (digits.isNotEmpty) {
+        final code = digits.length >= 6 ? digits.substring(0, 6) : digits;
+        setState(() {
+          _otpController.text = code;
+          _otp = code;
+        });
+        if (code.length == 6) {
+          _onConfirmPressed();
+        }
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('الحافظة لا تحتوي على أرقام لنسخها', style: GoogleFonts.cairo()),
+            duration: const Duration(seconds: 2),
+            backgroundColor: AppColors.mediumBlue,
+          ),
+        );
+      }
+    } catch (_) {}
+  }
+
+  /// WhatsApp Quick Support Actions ("الرمز لم يصل" & "لما بسجل الرمز بيقولي خطأ")
+  Widget _buildWhatsAppSupportSection() {
+    return ListenableBuilder(
+      listenable: GlobalState.instance,
+      builder: (context, _) {
+        final whatsappNumber = GlobalState.instance.otpSupportWhatsApp;
+
+        return Container(
+          margin: const EdgeInsets.only(top: 8),
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _buildWhatsAppActionChip(
+                text: 'الرمز لم يصل',
+                icon: FontAwesomeIcons.whatsapp,
+                whatsappNumber: whatsappNumber,
+                message: 'الرمز لم يصل\nرقم الهاتف: ${widget.phoneNumber}',
+                color: const Color(0xFF16A34A),
+                bgColor: const Color(0xFFF0FDF4),
+                borderColor: const Color(0xFFBBF7D0),
+              ),
+              _buildWhatsAppActionChip(
+                text: 'لما بسجل الرمز بيقولي خطأ',
+                icon: FontAwesomeIcons.whatsapp,
+                whatsappNumber: whatsappNumber,
+                message: 'لما بسجل الرمز بيقولي خطأ\nرقم الهاتف: ${widget.phoneNumber}',
+                color: const Color(0xFFEA580C),
+                bgColor: const Color(0xFFFFF7ED),
+                borderColor: const Color(0xFFFED7AA),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildWhatsAppActionChip({
+    required String text,
+    required IconData icon,
+    required String whatsappNumber,
+    required String message,
+    required Color color,
+    required Color bgColor,
+    required Color borderColor,
+  }) {
+    return InkWell(
+      onTap: () => _openWhatsApp(phone: whatsappNumber, message: message),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: borderColor, width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.06),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 6),
+            Text(
+              text,
+              style: GoogleFonts.cairo(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openWhatsApp({required String phone, required String message}) async {
+    String cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
+    if (cleanPhone.startsWith('0')) {
+      cleanPhone = '2$cleanPhone';
+    } else if (!cleanPhone.startsWith('20') && cleanPhone.length == 10) {
+      cleanPhone = '20$cleanPhone';
+    }
+
+    final encodedMessage = Uri.encodeComponent(message);
+    final appUri = Uri.parse('whatsapp://send?phone=$cleanPhone&text=$encodedMessage');
+    final webUri = Uri.parse('https://wa.me/$cleanPhone?text=$encodedMessage');
+
+    try {
+      if (await canLaunchUrl(appUri)) {
+        await launchUrl(appUri);
+      } else {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      try {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذر فتح تطبيق واتساب ($cleanPhone)', style: GoogleFonts.cairo()),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 }
 

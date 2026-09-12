@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import '../data/sadat_city_geo_data.dart';
 
 class MapCoordinatesHelper {
   /// Caches the actual GPS device location
@@ -18,7 +19,7 @@ class MapCoordinatesHelper {
   /// Resolves the address text into real coordinates
   static LatLng getLatLngForAddress(String? address) {
     if (address == null || address.trim().isEmpty) {
-      return deviceLocation ?? const LatLng(30.0444, 31.2357);
+      return deviceLocation ?? SadatCityGeoData.cityCenter;
     }
 
     final addr = address.toLowerCase().trim();
@@ -50,7 +51,20 @@ class MapCoordinatesHelper {
       }
     }
 
-    return deviceLocation ?? const LatLng(30.0444, 31.2357);
+    // 4. Check local Sadat City index
+    final sadatMatches = SadatCityGeoData.searchLocal(
+      query: address,
+      userLat: deviceLocation?.latitude ?? SadatCityGeoData.cityCenter.latitude,
+      userLng: deviceLocation?.longitude ?? SadatCityGeoData.cityCenter.longitude,
+      limit: 1,
+    );
+    if (sadatMatches.isNotEmpty && (sadatMatches.first.finalScore ?? 0) >= 65.0) {
+      final coord = LatLng(sadatMatches.first.latitude, sadatMatches.first.longitude);
+      registerCoordinate(address, coord);
+      return coord;
+    }
+
+    return deviceLocation ?? SadatCityGeoData.cityCenter;
   }
 
   /// Interpolates coordinates between a start and end LatLng based on a progress [0.0 - 1.0]
@@ -139,38 +153,26 @@ class MapCoordinatesHelper {
       return _dynamicCoordinatesCache[lower];
     }
 
-    final latBias = biasLat ?? deviceLocation?.latitude ?? 30.0444;
-    final lngBias = biasLng ?? deviceLocation?.longitude ?? 31.2357;
+    final latBias = biasLat ?? deviceLocation?.latitude ?? SadatCityGeoData.cityCenter.latitude;
+    final lngBias = biasLng ?? deviceLocation?.longitude ?? SadatCityGeoData.cityCenter.longitude;
 
-    // 1. Try Photon Geocoding
-    try {
-      final photonUrl = Uri.parse(
-        'https://photon.komoot.io/api/?q=${Uri.encodeComponent(trimmed)}&lat=$latBias&lon=$lngBias&limit=1',
-      );
-      final response = await http.get(photonUrl, headers: {
-        'User-Agent': 'inRideApp/2.0 (contact: support@inride.app)'
-      }).timeout(const Duration(seconds: 4));
+    // 0. Check local Sadat City index first (0ms instant lookup)
+    final sadatMatches = SadatCityGeoData.searchLocal(
+      query: trimmed,
+      userLat: latBias,
+      userLng: lngBias,
+      limit: 1,
+    );
+    if (sadatMatches.isNotEmpty && (sadatMatches.first.finalScore ?? 0) >= 65.0) {
+      final latLng = LatLng(sadatMatches.first.latitude, sadatMatches.first.longitude);
+      registerCoordinate(trimmed, latLng);
+      return latLng;
+    }
 
-      if (response.statusCode == 200) {
-        final data = json.decode(utf8.decode(response.bodyBytes));
-        final features = data['features'] as List?;
-        if (features != null && features.isNotEmpty) {
-          final coords = features[0]['geometry']?['coordinates'] as List?;
-          if (coords != null && coords.length >= 2) {
-            final lon = (coords[0] as num).toDouble();
-            final lat = (coords[1] as num).toDouble();
-            final latLng = LatLng(lat, lon);
-            registerCoordinate(trimmed, latLng);
-            return latLng;
-          }
-        }
-      }
-    } catch (_) {}
-
-    // 2. Try Nominatim Geocoding
+    // 1. Try Nominatim Geocoding restricted to Egypt & bounded to Sadat City
     try {
       final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(trimmed)}&format=json&accept-language=ar,en&limit=1',
+        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(trimmed)}&format=json&accept-language=ar,en&countrycodes=eg&viewbox=30.3200,30.5500,30.7200,30.2200&bounded=0&limit=1',
       );
       final response = await http.get(url, headers: {
         'User-Agent': 'inRideApp/2.0 (contact: support@inride.app)'
@@ -185,6 +187,39 @@ class MapCoordinatesHelper {
             final latLng = LatLng(lat, lon);
             registerCoordinate(trimmed, latLng);
             return latLng;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 2. Try Photon Geocoding with user bias and Egypt verification
+    try {
+      final photonUrl = Uri.parse(
+        'https://photon.komoot.io/api/?q=${Uri.encodeComponent(trimmed)}&lat=$latBias&lon=$lngBias&limit=3',
+      );
+      final response = await http.get(photonUrl, headers: {
+        'User-Agent': 'inRideApp/2.0 (contact: support@inride.app)'
+      }).timeout(const Duration(seconds: 4));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(utf8.decode(response.bodyBytes));
+        final features = data['features'] as List?;
+        if (features != null && features.isNotEmpty) {
+          for (final feat in features) {
+            final props = feat['properties'] as Map<String, dynamic>?;
+            final countryCode = props?['countrycode']?.toString().toUpperCase() ?? '';
+            final countryName = props?['country']?.toString() ?? '';
+            final isEgypt = countryCode == 'EG' || countryName.contains('مصر') || countryName.toLowerCase() == 'egypt';
+            if (!isEgypt && countryCode.isNotEmpty) continue;
+
+            final coords = feat['geometry']?['coordinates'] as List?;
+            if (coords != null && coords.length >= 2) {
+              final lon = (coords[0] as num).toDouble();
+              final lat = (coords[1] as num).toDouble();
+              final latLng = LatLng(lat, lon);
+              registerCoordinate(trimmed, latLng);
+              return latLng;
+            }
           }
         }
       }

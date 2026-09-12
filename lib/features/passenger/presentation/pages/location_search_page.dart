@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 import '../../../../core/DI/injection_container.dart';
 import '../../../../core/controllers/map_controller.dart';
+import '../../../../core/data/sadat_city_geo_data.dart';
 import '../../../../core/models/place_location.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/places_search_service.dart';
@@ -55,30 +56,46 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
     _loadInitialPlaces();
   }
 
+  bool _isDokkiOrInvalid(LatLng coord) {
+    return (coord.latitude - 30.0130).abs() < 0.01 && (coord.longitude - 31.2080).abs() < 0.01;
+  }
+
   void _determineReferenceCoordinates() {
-    if (widget.initialCoordinates != null &&
-        widget.initialCoordinates!.latitude != 0.0 &&
-        widget.initialCoordinates!.longitude != 0.0) {
-      _referenceCoordinates = widget.initialCoordinates!;
+    // 1. If GPS device location is available and valid, prioritize it for accurate distances to user
+    final deviceLoc = MapCoordinatesHelper.deviceLocation;
+    if (deviceLoc != null &&
+        deviceLoc.latitude != 0.0 &&
+        deviceLoc.longitude != 0.0 &&
+        !_isDokkiOrInvalid(deviceLoc)) {
+      _referenceCoordinates = deviceLoc;
+      _isUsingMapCenter = false;
+      return;
+    }
+
+    // 2. Initial coordinates passed from parent (if user moved the map)
+    final initial = widget.initialCoordinates;
+    if (initial != null &&
+        initial.latitude != 0.0 &&
+        initial.longitude != 0.0 &&
+        !_isDokkiOrInvalid(initial)) {
+      _referenceCoordinates = initial;
       _isUsingMapCenter = true;
       return;
     }
 
+    // 3. Current map camera center if valid and not Dokki fallback
     final mapCenter = sl<MapController>().currentMapCenter;
-    if (mapCenter != null && mapCenter.latitude != 0.0 && mapCenter.longitude != 0.0) {
+    if (mapCenter != null &&
+        mapCenter.latitude != 0.0 &&
+        mapCenter.longitude != 0.0 &&
+        !_isDokkiOrInvalid(mapCenter)) {
       _referenceCoordinates = mapCenter;
       _isUsingMapCenter = true;
       return;
     }
 
-    if (MapCoordinatesHelper.deviceLocation != null) {
-      _referenceCoordinates = MapCoordinatesHelper.deviceLocation!;
-      _isUsingMapCenter = false;
-      return;
-    }
-
-    // Default Cairo fallback
-    _referenceCoordinates = const LatLng(30.0444, 31.2357);
+    // 4. Default to Sadat City Center
+    _referenceCoordinates = SadatCityGeoData.cityCenter;
     _isUsingMapCenter = false;
   }
 
@@ -88,14 +105,38 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
     });
 
     try {
-      // 1. Load local search history
+      // 1. Load local search history & recalculate dynamic distances from reference coordinate
       await SearchHistoryService.instance.init();
-      _recentHistory = SearchHistoryService.instance.getHistory();
+      final rawHistory = SearchHistoryService.instance.getHistory();
+      _recentHistory = rawHistory.map((p) {
+        final dist = SadatCityGeoData.calculateDistance(
+          _referenceCoordinates.latitude,
+          _referenceCoordinates.longitude,
+          p.latitude,
+          p.longitude,
+        );
+        return p.copyWith(
+          distanceKm: double.parse(dist.toStringAsFixed(1)),
+          distanceMeters: dist * 1000.0,
+        );
+      }).toList();
 
-      // 2. Load saved places
-      _savedPlaces = await PlacesSearchService.instance.getSavedPlaces();
+      // 2. Load saved places & recalculate dynamic distances
+      final rawSaved = await PlacesSearchService.instance.getSavedPlaces();
+      _savedPlaces = rawSaved.map((p) {
+        final dist = SadatCityGeoData.calculateDistance(
+          _referenceCoordinates.latitude,
+          _referenceCoordinates.longitude,
+          p.latitude,
+          p.longitude,
+        );
+        return p.copyWith(
+          distanceKm: double.parse(dist.toStringAsFixed(1)),
+          distanceMeters: dist * 1000.0,
+        );
+      }).toList();
 
-      // 3. Load nearby reference places
+      // 3. Load nearby reference places in Sadat City
       _nearbyPlaces = await PlacesSearchService.instance.getNearbyAndPopularPlaces(
         latitude: _referenceCoordinates.latitude,
         longitude: _referenceCoordinates.longitude,
@@ -122,7 +163,8 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
   void _onSearchChanged(String query) {
     _debounceTimer?.cancel();
 
-    if (query.trim().isEmpty) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
       setState(() {
         _searchQuery = '';
         _searchResults = [];
@@ -131,25 +173,40 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
       return;
     }
 
+    // 1. Instant 0ms response: match immediately against Sadat City Local Geo-Index
+    final instantLocalMatches = SadatCityGeoData.searchLocal(
+      query: trimmed,
+      userLat: _referenceCoordinates.latitude,
+      userLng: _referenceCoordinates.longitude,
+      limit: 15,
+    );
+
     setState(() {
       _searchQuery = query;
-      _isLoading = true;
+      _searchResults = instantLocalMatches;
+      // Show loading indicator only if we need external background enrichment
+      _isLoading = instantLocalMatches.isEmpty;
     });
 
-    // 250ms debounce for rapid, snappy results
-    _debounceTimer = Timer(const Duration(milliseconds: 250), () async {
+    // 2. Debounce (400ms) for background multi-tier search (Nominatim / Photon / DB)
+    _debounceTimer = Timer(const Duration(milliseconds: 400), () async {
       try {
+        if (!mounted) return;
+        setState(() {
+          _isLoading = true;
+        });
+
         final results = await PlacesSearchService.instance.searchPlaces(
           query: query,
           latitude: _referenceCoordinates.latitude,
           longitude: _referenceCoordinates.longitude,
-          radiusKm: 300.0,
+          radiusKm: 100.0,
           limit: 20,
         );
 
         if (mounted) {
           setState(() {
-            _searchResults = results;
+            _searchResults = results.isNotEmpty ? results : instantLocalMatches;
             _isLoading = false;
           });
         }

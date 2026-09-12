@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../data/sadat_city_geo_data.dart';
 import '../models/place_location.dart';
 import '../services/location_service.dart';
 import '../services/search_history_service.dart';
@@ -28,18 +29,19 @@ class PlacesSearchService {
   }
 
   /// Primary multi-tier smart search function.
-  /// Combines Photon Global Geocoder, OpenStreetMap Nominatim, Supabase PostGIS, and Local Egyptian Directory.
+  /// Combines Sadat City Local Geo-Index, Photon, OpenStreetMap Nominatim, and Supabase.
+  /// Prioritizes Sadat City and proximity to user's GPS position.
   Future<List<PlaceLocation>> searchPlaces({
     required String query,
     required double latitude,
     required double longitude,
-    double radiusKm = 300.0,
+    double radiusKm = 100.0,
     int limit = 20,
   }) async {
     _checkCacheValidity();
     final trimmedQuery = query.trim();
 
-    // If query is empty, return saved places, history, and nearby reference landmarks
+    // If query is empty, return saved places, history, and nearby reference landmarks in Sadat City
     if (trimmedQuery.isEmpty) {
       return getNearbyAndPopularPlaces(latitude: latitude, longitude: longitude);
     }
@@ -55,7 +57,8 @@ class PlacesSearchService {
     void addResult(PlaceLocation loc) {
       if (!loc.isValid) return;
       // Key based on normalized name and rounded coordinates
-      final key = '${loc.placeName.toLowerCase().trim()}_${loc.latitude.toStringAsFixed(3)}_${loc.longitude.toStringAsFixed(3)}';
+      final normName = SadatCityGeoData.normalizeArabic(loc.placeName);
+      final key = '${normName}_${loc.latitude.toStringAsFixed(3)}_${loc.longitude.toStringAsFixed(3)}';
       if (!seenKeys.contains(key) && !combinedResults.any((r) => r.isDuplicateOf(loc))) {
         seenKeys.add(key);
         combinedResults.add(loc);
@@ -89,23 +92,41 @@ class PlacesSearchService {
       }
     }
 
-    // 1. Parallel fetch from Photon (Komoot) and OpenStreetMap Nominatim
+    // 1. Instant Layer: High-speed local search in Sadat City Geo-Index
+    final sadatMatches = SadatCityGeoData.searchLocal(
+      query: trimmedQuery,
+      userLat: latitude,
+      userLng: longitude,
+      limit: limit,
+    );
+    for (final loc in sadatMatches) {
+      addResult(loc);
+    }
+
+    // 2. Search local general Egyptian directory as fallback
+    final localGeneralMatches = _searchLocalDirectory(trimmedQuery, latitude, longitude);
+    for (final loc in localGeneralMatches) {
+      addResult(loc);
+    }
+
+    // 3. Parallel fetch from External APIs (Nominatim, Photon, Supabase)
+    // Only execute external network calls if local results are below threshold
     final photonFuture = _searchPhoton(trimmedQuery, latitude, longitude);
     final nominatimFuture = _searchNominatim(trimmedQuery, latitude, longitude);
     final supabaseFuture = _searchSupabase(trimmedQuery, latitude, longitude, limit: limit);
 
     final resultsList = await Future.wait([
-      photonFuture.catchError((_) => <PlaceLocation>[]),
       nominatimFuture.catchError((_) => <PlaceLocation>[]),
+      photonFuture.catchError((_) => <PlaceLocation>[]),
       supabaseFuture.catchError((_) => <PlaceLocation>[]),
     ]);
 
-    // Add Photon results first (High accuracy and rich address details)
+    // Add Nominatim results (restricted to Egypt & prioritized for Sadat City)
     for (final loc in resultsList[0]) {
       addResult(loc);
     }
 
-    // Add Nominatim results
+    // Add Photon results (verified Egypt only)
     for (final loc in resultsList[1]) {
       addResult(loc);
     }
@@ -115,29 +136,30 @@ class PlacesSearchService {
       addResult(loc);
     }
 
-    // 2. Search local built-in Egyptian directory
-    final localMatches = _searchLocalDirectory(trimmedQuery, latitude, longitude);
-    for (final loc in localMatches) {
-      addResult(loc);
-    }
+    // 4. Smart Multi-Factor Ranking & Strict Relevance Filtering
+    final cleanQuery = SadatCityGeoData.normalizeArabic(trimmedQuery);
+    final queryTokens = cleanQuery.split(' ').where((t) => t.length > 1).toList();
 
-    // 3. Sort results by proximity and relevance
-    combinedResults.sort((a, b) {
-      final aExact = a.placeName.trim().toLowerCase() == trimmedQuery.toLowerCase() ? 1 : 0;
-      final bExact = b.placeName.trim().toLowerCase() == trimmedQuery.toLowerCase() ? 1 : 0;
-      if (aExact != bExact) return bExact.compareTo(aExact);
+    // Filter out places with no text/fuzzy relevance or distant non-matching places
+    final filteredResults = combinedResults.where((loc) {
+      final score = _computeRankingScore(loc, cleanQuery, queryTokens, latitude, longitude);
+      return score > 0.0;
+    }).toList();
 
-      final aStarts = a.placeName.trim().toLowerCase().startsWith(trimmedQuery.toLowerCase()) ? 1 : 0;
-      final bStarts = b.placeName.trim().toLowerCase().startsWith(trimmedQuery.toLowerCase()) ? 1 : 0;
-      if (aStarts != bStarts) return bStarts.compareTo(aStarts);
+    filteredResults.sort((a, b) {
+      final scoreA = _computeRankingScore(a, cleanQuery, queryTokens, latitude, longitude);
+      final scoreB = _computeRankingScore(b, cleanQuery, queryTokens, latitude, longitude);
 
-      // Distance comparison
+      if ((scoreB - scoreA).abs() > 3.0) {
+        return scoreB.compareTo(scoreA);
+      }
+
       final distA = a.distanceKm ?? 999999.0;
       final distB = b.distanceKm ?? 999999.0;
       return distA.compareTo(distB);
     });
 
-    final finalResults = combinedResults.take(limit).toList();
+    final finalResults = filteredResults.take(limit).toList();
     if (finalResults.isNotEmpty) {
       _queryCache[cacheKey] = List.unmodifiable(finalResults);
     }
@@ -145,7 +167,111 @@ class PlacesSearchService {
     return finalResults;
   }
 
-  /// High-speed Photon (Komoot) Search Engine with location bias
+  /// Calculates a multi-factor ranking score for place sorting
+  double _computeRankingScore(
+    PlaceLocation loc,
+    String cleanQuery,
+    List<String> queryTokens,
+    double userLat,
+    double userLng,
+  ) {
+    final nameNorm = SadatCityGeoData.normalizeArabic(loc.placeName);
+    final addrNorm = SadatCityGeoData.normalizeArabic(loc.formattedAddress);
+    final phoneticName = SadatCityGeoData.phoneticNormalize(loc.placeName);
+    final phoneticQuery = SadatCityGeoData.phoneticNormalize(cleanQuery);
+
+    double textScore = 0.0;
+    if (loc.finalScore != null && loc.finalScore! > 0) {
+      textScore = loc.finalScore!;
+    } else if (nameNorm == cleanQuery || phoneticName == phoneticQuery) {
+      textScore = 100.0;
+    } else if (loc.aliases.any((a) => SadatCityGeoData.normalizeArabic(a) == cleanQuery)) {
+      textScore = 95.0;
+    } else if (nameNorm.startsWith(cleanQuery) || phoneticName.startsWith(phoneticQuery)) {
+      textScore = 85.0;
+    } else if (loc.aliases.any((a) => SadatCityGeoData.normalizeArabic(a).contains(cleanQuery))) {
+      textScore = 80.0;
+    } else if (nameNorm.contains(cleanQuery) || phoneticName.contains(phoneticQuery)) {
+      textScore = 70.0;
+    } else if (loc.mallName != null && SadatCityGeoData.normalizeArabic(loc.mallName!).contains(cleanQuery)) {
+      textScore = 75.0;
+    } else if (queryTokens.isNotEmpty && queryTokens.every((t) => nameNorm.contains(t) || addrNorm.contains(t) || phoneticName.contains(t))) {
+      textScore = 65.0;
+    } else if (queryTokens.isNotEmpty && queryTokens.any((t) => nameNorm.contains(t) || phoneticName.contains(t))) {
+      textScore = 45.0;
+    } else if (addrNorm.contains(cleanQuery)) {
+      textScore = 35.0;
+    } else {
+      // Check category intent dictionary
+      for (final entry in SadatCityGeoData.categoryIntentKeywords.entries) {
+        for (final kw in entry.value) {
+          final normKw = SadatCityGeoData.normalizeArabic(kw);
+          if (cleanQuery == normKw || cleanQuery.startsWith(normKw) || normKw.startsWith(cleanQuery)) {
+            if (loc.category == entry.key || loc.subCategory == entry.key) {
+              textScore = 80.0;
+              break;
+            }
+          }
+        }
+        if (textScore > 0) break;
+      }
+
+      if (textScore == 0.0) {
+        // Fuzzy token similarity check for misspelled queries
+        final targetTokens = [
+          ...nameNorm.split(' '),
+          ...phoneticName.split(' '),
+          ...addrNorm.split(' '),
+          ...loc.aliases.expand((a) => SadatCityGeoData.normalizeArabic(a).split(' ')),
+        ].where((t) => t.length > 1).toList();
+
+        final fScore = SadatCityGeoData.computeTokenScore(
+          queryTokens: queryTokens,
+          targetTokens: targetTokens,
+        );
+        if (fScore >= 35.0) {
+          textScore = fScore;
+        }
+      }
+    }
+
+    // STRICT REJECTION: If there is NO text/fuzzy relevance to the query, reject completely!
+    if (textScore <= 0.0) {
+      return -1.0;
+    }
+
+    // Proximity score: places closer to user's current GPS position get a progressive bonus
+    final distKm = loc.distanceKm ?? LocationService.instance.calculateDistance(userLat, userLng, loc.latitude, loc.longitude);
+
+    // Geographic Fence: When user is in/near Sadat City, discard external places (> 45km away)
+    // unless query explicitly targets that city/governorate.
+    final isUserInSadat = SadatCityGeoData.isInSadatCity(userLat, userLng) ||
+                          LocationService.instance.calculateDistance(userLat, userLng, SadatCityGeoData.cityCenter.latitude, SadatCityGeoData.cityCenter.longitude) < 35.0;
+    if (isUserInSadat && distKm > 45.0) {
+      final isExplicitExternal = cleanQuery.contains('قاهرة') ||
+                                 cleanQuery.contains('جيزة') ||
+                                 cleanQuery.contains('اسكندرية') ||
+                                 cleanQuery.contains('طنطا') ||
+                                 cleanQuery.contains('اكتوبر') ||
+                                 cleanQuery.contains('زايد');
+      if (!isExplicitExternal) {
+        return -1.0;
+      }
+    }
+
+    final double proxScore = (distKm <= 35.0) ? (25.0 * (1.0 - (distKm / 35.0))) : 0.0;
+
+    // Sadat City Metropolitan Priority Bonus (+30 points)
+    final bool inSadat = SadatCityGeoData.isInSadatCity(loc.latitude, loc.longitude);
+    final double cityBonus = inSadat ? 30.0 : -10.0;
+
+    // User saved/history boost
+    final double historyBonus = (loc.isSaved ? 10.0 : 0.0) + (loc.isHistory ? 5.0 : 0.0);
+
+    return textScore + proxScore + cityBonus + historyBonus;
+  }
+
+  /// High-speed Photon (Komoot) Search Engine with location bias and Egypt-only filter
   Future<List<PlaceLocation>> _searchPhoton(String query, double userLat, double userLng) async {
     final List<PlaceLocation> list = [];
     try {
@@ -154,7 +280,7 @@ class PlacesSearchService {
       );
       final response = await http.get(url, headers: {
         'User-Agent': 'inRideApp/2.0 (contact: support@inride.app)'
-      }).timeout(const Duration(seconds: 5));
+      }).timeout(const Duration(seconds: 4));
 
       if (response.statusCode == 200) {
         final data = json.decode(utf8.decode(response.bodyBytes));
@@ -164,6 +290,14 @@ class PlacesSearchService {
             final geom = f['geometry'] as Map<String, dynamic>?;
             final props = f['properties'] as Map<String, dynamic>?;
             if (geom != null && props != null) {
+              // Strictly ensure result is from Egypt
+              final countryCode = props['countrycode']?.toString().toUpperCase() ?? '';
+              final countryName = props['country']?.toString() ?? '';
+              final isEgypt = countryCode == 'EG' || countryName.contains('مصر') || countryName.toLowerCase() == 'egypt';
+              if (!isEgypt && countryCode.isNotEmpty) {
+                continue;
+              }
+
               final coords = geom['coordinates'] as List?;
               if (coords != null && coords.length >= 2) {
                 final lon = (coords[0] as num).toDouble();
@@ -209,16 +343,17 @@ class PlacesSearchService {
     return list;
   }
 
-  /// OpenStreetMap Nominatim Search Engine with rich address details
+  /// OpenStreetMap Nominatim Search Engine restricted to Egypt and bounded for Sadat City
   Future<List<PlaceLocation>> _searchNominatim(String query, double userLat, double userLng) async {
     final List<PlaceLocation> list = [];
     try {
+      // Bounding box prioritizing Sadat City metropolitan area: [minLon, maxLat, maxLon, minLat]
       final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&format=jsonv2&addressdetails=1&accept-language=ar,en&limit=10',
+        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&format=jsonv2&addressdetails=1&accept-language=ar,en&countrycodes=eg&viewbox=30.3200,30.5500,30.7200,30.2200&bounded=0&limit=10',
       );
       final response = await http.get(url, headers: {
         'User-Agent': 'inRideApp/2.0 (contact: support@inride.app)'
-      }).timeout(const Duration(seconds: 5));
+      }).timeout(const Duration(seconds: 4));
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
@@ -228,6 +363,12 @@ class PlacesSearchService {
           final lon = double.tryParse(item['lon']?.toString() ?? '');
           final placeId = item['place_id']?.toString();
           final type = item['type']?.toString();
+
+          final addressObj = item['address'] as Map<String, dynamic>?;
+          final countryCode = addressObj?['country_code']?.toString().toLowerCase() ?? '';
+          if (countryCode.isNotEmpty && countryCode != 'eg') {
+            continue;
+          }
 
           if (lat != null && lon != null && lat != 0.0 && lon != 0.0) {
             final parts = displayName.split(',');
@@ -255,10 +396,72 @@ class PlacesSearchService {
     return list;
   }
 
-  /// Search Supabase PostGIS `search_places` RPC
+  /// Search Supabase for verified Sadat City places and general places
   Future<List<PlaceLocation>> _searchSupabase(String query, double userLat, double userLng, {int limit = 10}) async {
     final List<PlaceLocation> list = [];
     try {
+      // 1. Try dedicated Sadat City RPC first
+      try {
+        final sadatRpcResp = await _supabase.rpc(
+          'search_sadat_places',
+          params: {
+            'p_query': query,
+            'p_lat': userLat,
+            'p_lng': userLng,
+            'p_limit': limit,
+          },
+        ).timeout(const Duration(seconds: 3));
+
+        if (sadatRpcResp is List && sadatRpcResp.isNotEmpty) {
+          for (final item in sadatRpcResp) {
+            if (item is Map) {
+              final loc = PlaceLocation.fromJson(Map<String, dynamic>.from(item));
+              if (loc.isValid) {
+                list.add(loc);
+              }
+            }
+          }
+          if (list.isNotEmpty) return list;
+        }
+      } catch (_) {
+        // If RPC not created yet, query sadat_places table directly
+        try {
+          String orFilter = 'name_ar.ilike.%$query%,normalized_name.ilike.%$query%,address.ilike.%$query%';
+
+          // Check if query matches a known category
+          final normQ = SadatCityGeoData.normalizeArabic(query);
+          for (final entry in SadatCityGeoData.categoryIntentKeywords.entries) {
+            for (final kw in entry.value) {
+              final normKw = SadatCityGeoData.normalizeArabic(kw);
+              if (normQ == normKw || normQ.startsWith(normKw)) {
+                orFilter += ',category.eq.${entry.key}';
+                break;
+              }
+            }
+          }
+          orFilter += ',mall_name.ilike.%$query%,district.ilike.%$query%';
+
+          final tableResp = await _supabase
+              .from('sadat_places')
+              .select()
+              .eq('is_active', true)
+              .or(orFilter)
+              .limit(limit)
+              .timeout(const Duration(seconds: 3));
+
+          if (tableResp.isNotEmpty) {
+            for (final item in tableResp) {
+              final loc = PlaceLocation.fromJson(Map<String, dynamic>.from(item));
+              if (loc.isValid) {
+                list.add(loc);
+              }
+            }
+            if (list.isNotEmpty) return list;
+          }
+        } catch (_) {}
+      }
+
+      // 2. Fallback to general Supabase PostGIS search_places RPC
       final currentUserId = _supabase.auth.currentUser?.id;
       final response = await _supabase.rpc(
         'search_places',
@@ -266,11 +469,11 @@ class PlacesSearchService {
           'p_query': query,
           'p_lat': userLat,
           'p_lng': userLng,
-          'p_radius_km': 500.0,
+          'p_radius_km': 50.0,
           'p_limit': limit,
           'p_user_id': currentUserId,
         },
-      ).timeout(const Duration(seconds: 4));
+      ).timeout(const Duration(seconds: 3));
 
       if (response is List) {
         for (final item in response) {
@@ -327,31 +530,49 @@ class PlacesSearchService {
     final List<PlaceLocation> results = [];
     final Set<String> seen = {};
 
-    // 1. Check local directory sorted by distance
-    final localCopy = List<Map<String, dynamic>>.from(_egyptianHubs);
-    localCopy.sort((a, b) {
-      final distA = LocationService.instance.calculateDistance(latitude, longitude, a['lat'] as double, a['lng'] as double);
-      final distB = LocationService.instance.calculateDistance(latitude, longitude, b['lat'] as double, b['lng'] as double);
-      return distA.compareTo(distB);
-    });
+    // 1. Prioritize Sadat City places sorted by proximity to user
+    final sadatTop = SadatCityGeoData.getTopNearbyPlaces(
+      userLat: latitude,
+      userLng: longitude,
+      limit: limit,
+    );
+    for (final loc in sadatTop) {
+      if (seen.add(loc.placeName)) {
+        results.add(loc);
+      }
+    }
 
-    for (final entry in localCopy.take(limit)) {
-      final lat = entry['lat'] as double;
-      final lng = entry['lng'] as double;
-      final dist = LocationService.instance.calculateDistance(latitude, longitude, lat, lng);
-      final loc = PlaceLocation(
-        placeId: 'hub_${entry['id']}',
-        latitude: lat,
-        longitude: lng,
-        placeName: entry['name'] as String,
-        formattedAddress: entry['address'] as String,
-        category: entry['category'] as String? ?? 'landmark',
-        timestamp: DateTime.now(),
-        distanceKm: dist,
-        distanceMeters: dist * 1000,
-      );
-      seen.add(loc.placeName);
-      results.add(loc);
+    // 2. Add local directory reference hubs if needed
+    if (results.length < limit) {
+      final localCopy = List<Map<String, dynamic>>.from(_egyptianHubs);
+      localCopy.sort((a, b) {
+        final distA = LocationService.instance.calculateDistance(latitude, longitude, a['lat'] as double, a['lng'] as double);
+        final distB = LocationService.instance.calculateDistance(latitude, longitude, b['lat'] as double, b['lng'] as double);
+        return distA.compareTo(distB);
+      });
+
+      for (final entry in localCopy) {
+        final name = entry['name'] as String;
+        if (!seen.contains(name)) {
+          final lat = entry['lat'] as double;
+          final lng = entry['lng'] as double;
+          final dist = LocationService.instance.calculateDistance(latitude, longitude, lat, lng);
+          final loc = PlaceLocation(
+            placeId: 'hub_${entry['id']}',
+            latitude: lat,
+            longitude: lng,
+            placeName: name,
+            formattedAddress: entry['address'] as String,
+            category: entry['category'] as String? ?? 'landmark',
+            timestamp: DateTime.now(),
+            distanceKm: dist,
+            distanceMeters: dist * 1000,
+          );
+          seen.add(name);
+          results.add(loc);
+          if (results.length >= limit) break;
+        }
+      }
     }
 
     return results;
@@ -527,15 +748,7 @@ class PlacesSearchService {
     }
   }
 
-  String _normalizeArabic(String text) {
-    var s = text.toLowerCase().trim();
-    s = s.replaceAll(RegExp(r'[إأآٱ]'), 'ا');
-    s = s.replaceAll('ة', 'ه');
-    s = s.replaceAll('ى', 'ي');
-    s = s.replaceAll(RegExp(r'[\u064B-\u065F\u0670]'), '');
-    s = s.replaceAll(RegExp(r'\s+'), ' ');
-    return s;
-  }
+  String _normalizeArabic(String text) => SadatCityGeoData.normalizeArabic(text);
 
   // Comprehensive Egyptian Directory of major hubs, cities, landmarks, and zones
   static final List<Map<String, dynamic>> _egyptianHubs = [

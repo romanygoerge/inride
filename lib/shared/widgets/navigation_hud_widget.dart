@@ -7,6 +7,7 @@ import '../../core/services/trip_navigation_manager.dart';
 import '../../core/DI/injection_container.dart' show sl;
 import '../../core/utils/map_coordinates_helper.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
+import '../../core/data/sadat_city_geo_data.dart';
 import '../../generated/app_localizations.dart';
 
 /// Professional navigation HUD overlay widget displayed during active navigation.
@@ -230,7 +231,7 @@ class NavigationHudWidget extends StatelessWidget {
                       final snapped = navCtrl.snappedLocation ??
                           (deviceLoc != null
                               ? LatLng(deviceLoc.latitude, deviceLoc.longitude)
-                              : const LatLng(30.0130, 31.2080));
+                              : SadatCityGeoData.cityCenter);
                       sl<TripNavigationManager>().cameraController?.recenter(snapped, 0.0);
                     },
                   ),

@@ -14,6 +14,7 @@ import 'passenger_ride_matching_page.dart';
 import 'location_search_page.dart';
 import '../../../../core/controllers/map_controller.dart';
 import '../../../../core/DI/injection_container.dart' show sl;
+import '../../../../core/data/sadat_city_geo_data.dart';
 
 
 class PassengerDeliveryBookingPage extends StatefulWidget {
@@ -118,7 +119,7 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
   }
 
   void _openSearchPickup() async {
-    final mapCenter = sl<MapController>().currentMapCenter ?? MapCoordinatesHelper.deviceLocation;
+    final mapCenter = MapCoordinatesHelper.deviceLocation ?? sl<MapController>().currentMapCenter ?? SadatCityGeoData.cityCenter;
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -165,7 +166,7 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
   }
 
   void _openSearchDestination() async {
-    final mapCenter = sl<MapController>().currentMapCenter ?? MapCoordinatesHelper.deviceLocation;
+    final mapCenter = MapCoordinatesHelper.deviceLocation ?? sl<MapController>().currentMapCenter ?? SadatCityGeoData.cityCenter;
     final result = await Navigator.push(
       context,
       MaterialPageRoute(

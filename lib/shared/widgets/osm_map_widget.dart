@@ -18,6 +18,7 @@ import '../../core/controllers/navigation_controller.dart';
 import '../../core/DI/injection_container.dart' show sl;
 import '../../core/controllers/marker_manager.dart'; // VehicleMarkerWidget
 import '../../core/utils/vehicle_helper.dart';
+import '../../core/data/sadat_city_geo_data.dart';
 
 class NearbyDriverInfo {
   final double lat;
@@ -406,7 +407,7 @@ class _OsmMapWidgetState extends State<OsmMapWidget> with TickerProviderStateMix
     final navManager = sl<TripNavigationManager>();
     final isNavigating = navManager.isNavigating;
     
-    final defaultLoc = MapCoordinatesHelper.deviceLocation ?? const ll.LatLng(30.0130, 31.2080);
+    final defaultLoc = MapCoordinatesHelper.deviceLocation ?? SadatCityGeoData.cityCenter;
     
     return Stack(
       children: [

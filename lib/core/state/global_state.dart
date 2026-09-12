@@ -193,6 +193,141 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   String? driverVehicleFrontUrl;
   List<String> driverVehicleImages = [];
 
+  // App usage & presence tracking
+  DateTime? _lastHeartbeatTime;
+  Timer? _presenceHeartbeatTimer;
+  bool _isAppInForeground = true;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      _onAppResumed();
+    } else if (state == AppLifecycleState.paused || 
+               state == AppLifecycleState.inactive || 
+               state == AppLifecycleState.detached) {
+      _onAppPaused();
+    }
+  }
+
+  void _startPresenceTracking() {
+    _lastHeartbeatTime = DateTime.now();
+    _isAppInForeground = true;
+    _recordAppOpen();
+    _presenceHeartbeatTimer?.cancel();
+    _presenceHeartbeatTimer = Timer.periodic(const Duration(seconds: 40), (_) {
+      _sendPresenceHeartbeat();
+    });
+  }
+
+  void _stopPresenceTracking() {
+    _presenceHeartbeatTimer?.cancel();
+    _presenceHeartbeatTimer = null;
+    _recordAppClose();
+    _isAppInForeground = false;
+  }
+
+  void _onAppResumed() {
+    if (_isAppInForeground) return;
+    _isAppInForeground = true;
+    _lastHeartbeatTime = DateTime.now();
+    _recordAppOpen();
+    _presenceHeartbeatTimer?.cancel();
+    _presenceHeartbeatTimer = Timer.periodic(const Duration(seconds: 40), (_) {
+      _sendPresenceHeartbeat();
+    });
+  }
+
+  void _onAppPaused() {
+    if (!_isAppInForeground) return;
+    _isAppInForeground = false;
+    _presenceHeartbeatTimer?.cancel();
+    _presenceHeartbeatTimer = null;
+    _recordAppClose();
+  }
+
+  Future<void> _recordAppOpen() async {
+    final uid = userUid ?? _supabase.auth.currentUser?.id;
+    if (uid == null) return;
+    final nowIso = DateTime.now().toIso8601String();
+    try {
+      await _supabase.rpc('record_user_app_open', params: {'p_user_id': uid});
+    } catch (_) {
+      try {
+        final res = await _supabase.from('users').select('app_open_count').eq('id', uid).maybeSingle();
+        final currentCount = (res?['app_open_count'] as num?)?.toInt() ?? 0;
+        await _supabase.from('users').update({
+          'is_app_open': true,
+          'last_opened_at': nowIso,
+          'last_seen_at': nowIso,
+          'app_open_count': currentCount + 1,
+        }).eq('id', uid);
+      } catch (e) {
+        debugPrint('[Presence] _recordAppOpen fallback error: $e');
+      }
+    }
+  }
+
+  Future<void> _sendPresenceHeartbeat() async {
+    final uid = userUid ?? _supabase.auth.currentUser?.id;
+    if (uid == null || !_isAppInForeground) return;
+    final now = DateTime.now();
+    final elapsedSecs = _lastHeartbeatTime != null 
+        ? now.difference(_lastHeartbeatTime!).inSeconds 
+        : 40;
+    _lastHeartbeatTime = now;
+    final nowIso = now.toIso8601String();
+
+    try {
+      await _supabase.rpc('record_user_app_heartbeat', params: {
+        'p_user_id': uid,
+        'p_elapsed_seconds': elapsedSecs,
+      });
+    } catch (_) {
+      try {
+        final res = await _supabase.from('users').select('total_app_time_seconds').eq('id', uid).maybeSingle();
+        final currentTime = (res?['total_app_time_seconds'] as num?)?.toInt() ?? 0;
+        await _supabase.from('users').update({
+          'is_app_open': true,
+          'last_seen_at': nowIso,
+          'total_app_time_seconds': currentTime + elapsedSecs,
+        }).eq('id', uid);
+      } catch (e) {
+        debugPrint('[Presence] _sendPresenceHeartbeat fallback error: $e');
+      }
+    }
+  }
+
+  Future<void> _recordAppClose() async {
+    final uid = userUid ?? _supabase.auth.currentUser?.id;
+    if (uid == null) return;
+    final now = DateTime.now();
+    final elapsedSecs = _lastHeartbeatTime != null 
+        ? now.difference(_lastHeartbeatTime!).inSeconds 
+        : 0;
+    _lastHeartbeatTime = now;
+    final nowIso = now.toIso8601String();
+
+    try {
+      await _supabase.rpc('record_user_app_close', params: {
+        'p_user_id': uid,
+        'p_elapsed_seconds': elapsedSecs,
+      });
+    } catch (_) {
+      try {
+        final res = await _supabase.from('users').select('total_app_time_seconds').eq('id', uid).maybeSingle();
+        final currentTime = (res?['total_app_time_seconds'] as num?)?.toInt() ?? 0;
+        await _supabase.from('users').update({
+          'is_app_open': false,
+          'last_seen_at': nowIso,
+          'total_app_time_seconds': currentTime + elapsedSecs,
+        }).eq('id', uid);
+      } catch (e) {
+        debugPrint('[Presence] _recordAppClose fallback error: $e');
+      }
+    }
+  }
+
   bool get hasDriverProfile => verificationStatus == DriverVerificationStatus.verified || verificationStatus == DriverVerificationStatus.submitted || driverNationalIdUrl != null;
   bool get hasPassengerProfile {
     final pName = passengerName?.trim() ?? '';
@@ -920,8 +1055,10 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
               debugPrint("Error fetching trip history: $e");
             }
             _listenToActiveRideMessages();
+            _startPresenceTracking();
           } else {
             debugPrint('[GlobalState] Auth state changed to signedOut. Cleaning up state & location streams...');
+            _stopPresenceTracking();
             try {
               stopDriverLocationTracking();
               _stopAllLocationAndTimers();
@@ -1073,7 +1210,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       'region_fares': [
         {'id': '1', 'name': 'القاهرة الكبرى', 'surcharge': 0, 'is_default': true},
         {'id': '2', 'name': 'الإسكندرية (الساحل)', 'surcharge': 5, 'is_default': false}
-      ]
+      ],
+      'otp_support_whatsapp': '01204062941',
     };
 
     try {
@@ -3491,6 +3629,15 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   String get demoDriverName => (appSettings['demo_driver_name'] as String?) ?? 'كابتن تجريبي (Demo)';
   String get demoPassengerName => (appSettings['demo_passenger_name'] as String?) ?? 'راكب تجريبي (Demo)';
 
+  /// WhatsApp OTP Support Number (configurable from dashboard / Supabase)
+  String get otpSupportWhatsApp {
+    final val = (appSettings['otp_support_whatsapp'] as String?)?.trim();
+    if (val != null && val.isNotEmpty) {
+      return val;
+    }
+    return '01204062941';
+  }
+
   /// Direct Instant Demo Login Method (bypasses OTP & admin approvals)
   Future<void> loginAsDemo({required UserRole role}) async {
     debugPrint('[GlobalState] 🚀 loginAsDemo called for role: ${role.name}');
@@ -3538,6 +3685,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     await _saveProfileToCache();
+    _startPresenceTracking();
     notifyListeners();
     debugPrint('[GlobalState] ✓ loginAsDemo complete — Demo user ${activeUser.id} signed in successfully as ${role.name}');
   }

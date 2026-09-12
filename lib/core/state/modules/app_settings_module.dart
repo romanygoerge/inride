@@ -26,6 +26,7 @@ class AppSettingsModule {
     'demo_otp': '123456',
     'demo_driver_name': 'كابتن تجريبي (Demo)',
     'demo_passenger_name': 'راكب تجريبي (Demo)',
+    'otp_support_whatsapp': '01204062941',
   };
 
   void initSettingsListener(VoidCallback onUpdate) {

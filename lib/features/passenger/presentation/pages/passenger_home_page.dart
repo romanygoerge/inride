@@ -15,6 +15,7 @@ import '../../../../core/DI/injection_container.dart' show sl;
 import '../../../../core/controllers/notification_controller.dart';
 import '../../../../core/controllers/map_controller.dart';
 import '../../../../core/models/place_location.dart';
+import '../../../../core/data/sadat_city_geo_data.dart';
 import 'passenger_ride_matching_page.dart';
 import 'passenger_delivery_booking_page.dart';
 import 'location_search_page.dart';
@@ -133,7 +134,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
 
   void _openSearchPickup() async {
     final l10n = AppLocalizations.of(context)!;
-    final mapCenter = sl<MapController>().currentMapCenter ?? MapCoordinatesHelper.deviceLocation;
+    final mapCenter = MapCoordinatesHelper.deviceLocation ?? sl<MapController>().currentMapCenter ?? SadatCityGeoData.cityCenter;
     final result = await Navigator.push(
       context,
       SnappyPageRoute(
@@ -181,7 +182,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
 
   void _openSearchDestination() async {
     final l10n = AppLocalizations.of(context)!;
-    final mapCenter = sl<MapController>().currentMapCenter ?? MapCoordinatesHelper.deviceLocation;
+    final mapCenter = MapCoordinatesHelper.deviceLocation ?? sl<MapController>().currentMapCenter ?? SadatCityGeoData.cityCenter;
     final result = await Navigator.push(
       context,
       SnappyPageRoute(

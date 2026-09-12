@@ -23,6 +23,7 @@ import '../../../../core/controllers/navigation_state_manager.dart';
 import '../../../../core/services/driver_location_service.dart';
 import '../../../../core/localization/locale_controller.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
+import '../../../../core/data/sadat_city_geo_data.dart';
 
 class DriverRideActivePage extends StatefulWidget {
   const DriverRideActivePage({super.key});
@@ -251,7 +252,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
       final deviceLoc = MapCoordinatesHelper.deviceLocation;
       final startLatLng = deviceLoc != null
           ? LatLng(deviceLoc.latitude, deviceLoc.longitude)
-          : const LatLng(30.0130, 31.2080);
+          : SadatCityGeoData.cityCenter;
       
       final isHeadingToPickup = state.rideStatus == RideStatus.driverOnWay;
       

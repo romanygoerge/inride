@@ -8,6 +8,15 @@ class PlaceLocation {
   final String formattedAddress;
   final DateTime timestamp;
   final String? category;
+  final String? subCategory;
+  final String? placeType;
+  final String city;
+  final String? district;
+  final String? mallName;
+  final String? phone;
+  final bool coordinatesVerified;
+  final String? source;
+  final List<String> aliases;
   final String? nameAr;
   final String? nameEn;
   final double? distanceKm;
@@ -25,6 +34,15 @@ class PlaceLocation {
     required this.formattedAddress,
     required this.timestamp,
     this.category,
+    this.subCategory,
+    this.placeType,
+    this.city = 'مدينة السادات',
+    this.district,
+    this.mallName,
+    this.phone,
+    this.coordinatesVerified = true,
+    this.source,
+    this.aliases = const [],
     this.nameAr,
     this.nameEn,
     this.distanceKm,
@@ -65,6 +83,15 @@ class PlaceLocation {
       'formattedAddress': formattedAddress,
       'timestamp': timestamp.toIso8601String(),
       'category': category,
+      'subCategory': subCategory,
+      'placeType': placeType,
+      'city': city,
+      'district': district,
+      'mallName': mallName,
+      'phone': phone,
+      'coordinatesVerified': coordinatesVerified,
+      'source': source,
+      'aliases': aliases,
       'nameAr': nameAr,
       'nameEn': nameEn,
       'distanceKm': distanceKm,
@@ -95,6 +122,17 @@ class PlaceLocation {
           ? DateTime.tryParse(json['timestamp'] as String) ?? DateTime.now()
           : DateTime.now(),
       category: json['category'] as String?,
+      subCategory: json['subCategory'] as String? ?? json['sub_category'] as String?,
+      placeType: json['placeType'] as String? ?? json['place_type'] as String?,
+      city: json['city'] as String? ?? 'مدينة السادات',
+      district: json['district'] as String?,
+      mallName: json['mallName'] as String? ?? json['mall_name'] as String? ?? json['parent_place'] as String?,
+      phone: json['phone'] as String?,
+      coordinatesVerified: json['coordinatesVerified'] == true ||
+          json['coordinates_verified'] == true ||
+          (json['coordinatesVerified'] == null && json['coordinates_verified'] == null),
+      source: json['source'] as String?,
+      aliases: (json['aliases'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       nameAr: json['name_ar'] as String? ?? json['nameAr'] as String?,
       nameEn: json['name_en'] as String? ?? json['nameEn'] as String?,
       distanceKm: (json['distance_km'] as num?)?.toDouble() ?? (json['distanceKm'] as num?)?.toDouble(),
@@ -150,6 +188,15 @@ class PlaceLocation {
     String? formattedAddress,
     DateTime? timestamp,
     String? category,
+    String? subCategory,
+    String? placeType,
+    String? city,
+    String? district,
+    String? mallName,
+    String? phone,
+    bool? coordinatesVerified,
+    String? source,
+    List<String>? aliases,
     String? nameAr,
     String? nameEn,
     double? distanceKm,
@@ -167,6 +214,15 @@ class PlaceLocation {
       formattedAddress: formattedAddress ?? this.formattedAddress,
       timestamp: timestamp ?? this.timestamp,
       category: category ?? this.category,
+      subCategory: subCategory ?? this.subCategory,
+      placeType: placeType ?? this.placeType,
+      city: city ?? this.city,
+      district: district ?? this.district,
+      mallName: mallName ?? this.mallName,
+      phone: phone ?? this.phone,
+      coordinatesVerified: coordinatesVerified ?? this.coordinatesVerified,
+      source: source ?? this.source,
+      aliases: aliases ?? this.aliases,
       nameAr: nameAr ?? this.nameAr,
       nameEn: nameEn ?? this.nameEn,
       distanceKm: distanceKm ?? this.distanceKm,

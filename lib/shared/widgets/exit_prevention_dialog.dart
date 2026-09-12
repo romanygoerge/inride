@@ -91,7 +91,11 @@ void showExitPreventionAlert(BuildContext context) {
             
             // Action button
             ElevatedButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                if (context.mounted && Navigator.canPop(context)) {
+                  Navigator.pop(context);
+                }
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.mediumBlue,
                 foregroundColor: Colors.white,

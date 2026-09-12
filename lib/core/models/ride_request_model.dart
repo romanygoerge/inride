@@ -1,6 +1,7 @@
 class RideRequestModel {
   final String requestId;
   final String passengerId;
+  final String? passengerPhone;
   final String? driverId;
   final double pickupLatitude;
   final double pickupLongitude;
@@ -37,6 +38,7 @@ class RideRequestModel {
   RideRequestModel({
     required this.requestId,
     required this.passengerId,
+    this.passengerPhone,
     this.driverId,
     required this.pickupLatitude,
     required this.pickupLongitude,
@@ -73,6 +75,7 @@ class RideRequestModel {
   RideRequestModel copyWith({
     String? requestId,
     String? passengerId,
+    String? passengerPhone,
     String? driverId,
     double? pickupLatitude,
     double? pickupLongitude,
@@ -108,6 +111,7 @@ class RideRequestModel {
     return RideRequestModel(
       requestId: requestId ?? this.requestId,
       passengerId: passengerId ?? this.passengerId,
+      passengerPhone: passengerPhone ?? this.passengerPhone,
       driverId: driverId ?? this.driverId,
       pickupLatitude: pickupLatitude ?? this.pickupLatitude,
       pickupLongitude: pickupLongitude ?? this.pickupLongitude,
@@ -168,6 +172,7 @@ class RideRequestModel {
     return RideRequestModel(
       requestId: id,
       passengerId: data['passenger_id'] ?? data['passengerId'] ?? '',
+      passengerPhone: data['passenger_phone'] ?? data['passengerPhone'] ?? data['phone_number'] ?? data['phone'],
       driverId: data['driver_id'] ?? data['driverId'],
       pickupLatitude: ((data['pickup_latitude'] ?? data['pickupLatitude']) as num? ?? 0.0).toDouble(),
       pickupLongitude: ((data['pickup_longitude'] ?? data['pickupLongitude']) as num? ?? 0.0).toDouble(),
@@ -229,6 +234,7 @@ class RideRequestModel {
     };
 
     if (driverId != null) map['driver_id'] = driverId;
+    if (passengerPhone != null && passengerPhone!.isNotEmpty) map['passenger_phone'] = passengerPhone;
     if (packageDescription != null) map['package_description'] = packageDescription;
     if (deliveryNotes != null) map['delivery_notes'] = deliveryNotes;
     if (pickupPhotoUrl != null) map['pickup_photo_url'] = pickupPhotoUrl;

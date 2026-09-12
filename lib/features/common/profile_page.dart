@@ -118,9 +118,12 @@ class _ProfilePageState extends State<ProfilePage> {
           } catch (e) {
             if (mounted) {
               navigator.pop(); // Dismiss loading
+              final errorMsg = e.toString().contains('TimeoutException')
+                  ? 'استغرق رفع الصورة وقتاً أطول من المعتاد. يرجى التأكد من اتصال الإنترنت والمحاولة ثانية.'
+                  : 'فشل رفع الصورة: $e';
               messenger.showSnackBar(
                 SnackBar(
-                  content: Text('فشل رفع الصورة: $e', style: GoogleFonts.cairo()),
+                  content: Text(errorMsg, style: GoogleFonts.cairo()),
                   backgroundColor: AppColors.error,
                 ),
               );
@@ -386,8 +389,8 @@ class _ProfilePageState extends State<ProfilePage> {
                             const SizedBox(width: 4),
                             Text(
                               state.userRating > 0.0
-                                  ? '${state.userRating.toStringAsFixed(1)} ${l10n.ratingsAndReviews}'
-                                  : l10n.noRatingsYet,
+                                  ? '${state.userRating.toStringAsFixed(1)} ${LocaleController.instance.isArabic ? "التقييمات" : "Ratings"}'
+                                  : (LocaleController.instance.isArabic ? 'التقييمات' : 'Ratings'),
                               style: GoogleFonts.cairo(
                                 fontSize: 13,
                                 color: AppColors.mediumBlue,

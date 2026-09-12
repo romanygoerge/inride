@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/notification_model.dart';
 import '../repositories/notification_repository.dart';
 import '../state/global_state.dart';
@@ -12,7 +13,9 @@ import '../../features/driver/presentation/pages/driver_home_page.dart';
 import '../../features/driver/presentation/pages/driver_ride_active_page.dart';
 import '../utils/snappy_page_route.dart';
 import '../../features/common/support_chat_page.dart';
+import '../../features/common/notification_details_page.dart';
 import '../../features/common/wallet_page.dart';
+import '../../shared/widgets/trip_status_sheet.dart';
 import '../config/onesignal_config.dart';
 
 class NotificationService {
@@ -60,20 +63,31 @@ class NotificationService {
 
     if (!context.mounted) return;
 
-    // 1. الدعم الفني ومحادثات الإدارة (Support Chat / Admin Messages)
-    final bool isSupportOrAdminChat = type == 'support_chat' ||
-        type == 'support' ||
-        type == 'admin_chat' ||
-        type == 'communication' ||
-        type == 'support_message' ||
-        type == 'ticket' ||
-        data['sender_id'] == 'admin' ||
-        data['senderId'] == 'admin' ||
-        title.contains('الدعم') ||
-        title.contains('support') ||
-        title.contains('خدمة العملاء');
+    // 1. الإشعارات والرسائل والتعميمات الإدارية -> تفتح صفحة تفاصيل الإشعار الأصلية
+    final bool isAdminNotification = type == 'admin_notifications' ||
+        type == 'admin_announcement' ||
+        type == 'system_broadcast' ||
+        type == 'offers' ||
+        type == 'app_updates' ||
+        type == 'broadcast' ||
+        type == 'general' ||
+        data['adminNotificationId'] != null ||
+        data['admin_notification_id'] != null;
 
-    if (isSupportOrAdminChat) {
+    if (isAdminNotification) {
+      final notifModel = NotificationModel.fromMap(data);
+      Navigator.push(
+        context,
+        SnappyPageRoute(page: NotificationDetailsPage(notification: notifModel)),
+      );
+      return;
+    }
+
+    // 2. محادثة الدعم الفني المباشرة فقط عند وجود تذكرة أو محادثة دعم حقيقية
+    final bool isRealSupportChat = (type == 'support_chat' || type == 'support_message' || type == 'ticket') &&
+        (data['conversation_id'] != null || data['message_id'] != null || data['ticket_id'] != null);
+
+    if (isRealSupportChat) {
       Navigator.push(
         context,
         SnappyPageRoute(page: const SupportChatPage()),
@@ -81,13 +95,12 @@ class NotificationService {
       return;
     }
 
-    // 2. رسالة دردشة بين الركاب والسائقين (Direct Passenger/Driver Chat)
+    // 3. رسالة دردشة بين الركاب والسائقين (Direct Passenger/Driver Chat)
     final bool isDirectUserChat = type == 'new_message' ||
         type == 'chat_message' ||
         type == 'chat' ||
         title.contains('رسالة جديدة') ||
-        title.contains('new message') ||
-        title.contains('محادثة');
+        title.contains('new message');
 
     if (isDirectUserChat) {
       final tripId = data['tripId'] ?? data['trip_id'] ?? data['requestId'] ?? data['request_id'] ?? GlobalState.instance.currentRequestId;
@@ -117,10 +130,11 @@ class NotificationService {
         );
         return;
       } else {
-        // Fallback: If it's a message without active trip context, open support chat
+        // Fallback: If it's a message without active trip context, show the notification details
+        final notifModel = NotificationModel.fromMap(data);
         Navigator.push(
           context,
-          SnappyPageRoute(page: const SupportChatPage()),
+          SnappyPageRoute(page: NotificationDetailsPage(notification: notifModel)),
         );
         return;
       }
@@ -155,35 +169,117 @@ class NotificationService {
       return;
     }
 
-    // 4. رحلة حالية قيد التنفيذ (Active Ride)
-    final bool isRideActive = type == 'accept_trip' ||
+    // 4. فحص الإشعارات المرتبطة برحلة أو طلب معين والتحقق من حالتها اللحظية (Live Ride Status Check)
+    final String reqId = (data['requestId'] ??
+            data['request_id'] ??
+            data['tripId'] ??
+            data['trip_id'] ??
+            '')
+        .toString()
+        .trim();
+
+    final bool isRideEvent = type == 'accept_trip' ||
         type == 'ride_accepted' ||
         type == 'delivery_accepted' ||
         type == 'driver_arrived' ||
         type == 'captain_arrived' ||
         type == 'trip_started' ||
+        type == 'trip_finished' ||
+        type == 'cancel_trip' ||
+        type == 'ride_expired' ||
+        type == 'offer_rejected' ||
+        type == 'reject_offer' ||
+        type.contains('trip') ||
+        type.contains('ride') ||
         title.contains('وصل الكابتن') ||
         title.contains('بدأت الرحلة') ||
         title.contains('تم قبول طلبك') ||
-        title.contains('قبول الرحلة');
+        title.contains('قبول الرحلة') ||
+        title.contains('اكتملت') ||
+        title.contains('إلغاء') ||
+        reqId.isNotEmpty;
 
-    if (isRideActive) {
-      if (GlobalState.instance.currentRole == UserRole.rider) {
-        Navigator.push(
-          context,
-          SnappyPageRoute(page: const PassengerRideActivePage()),
-        );
-      } else {
-        final reqId = data['requestId']?.toString() ?? data['request_id']?.toString() ?? data['tripId']?.toString() ?? data['trip_id']?.toString();
-        if (reqId != null && reqId.isNotEmpty) {
-          GlobalState.instance.currentRequestId = reqId;
+    if (isRideEvent) {
+      final tripIdToQuery = reqId.isNotEmpty ? reqId : (GlobalState.instance.currentRequestId ?? '');
+
+      if (tripIdToQuery.isNotEmpty) {
+        Map<String, dynamic>? tripDoc;
+        try {
+          final res = await Supabase.instance.client
+              .from('ride_requests')
+              .select()
+              .eq('id', tripIdToQuery)
+              .maybeSingle();
+          if (res != null) {
+            tripDoc = Map<String, dynamic>.from(res);
+          }
+        } catch (e) {
+          debugPrint('[NotificationService] Error querying ride_requests for $tripIdToQuery: $e');
         }
-        Navigator.push(
-          context,
-          SnappyPageRoute(page: const DriverRideActivePage()),
-        );
+
+        if (!context.mounted) return;
+
+        if (tripDoc != null) {
+          final String status = (tripDoc['status'] ?? '').toString().trim().toLowerCase();
+
+          // أ. إذا كانت الرحلة مكتملة بالفعل -> إظهار نافذة الحالة المكتملة
+          if (status == 'completed' || status == 'finished' || status == 'ended') {
+            TripStatusSheet.show(context, requestId: tripIdToQuery, initialData: tripDoc);
+            return;
+          }
+
+          // ب. إذا كانت الرحلة ملغاة -> إظهار تفاصيل الإلغاء
+          if (status == 'cancelled' || status == 'canceled') {
+            TripStatusSheet.show(context, requestId: tripIdToQuery, initialData: tripDoc);
+            return;
+          }
+
+          // ج. إذا كانت فترة البحث منتهية -> إظهار انتهاء الطلب
+          if (status == 'expired') {
+            TripStatusSheet.show(context, requestId: tripIdToQuery, initialData: tripDoc);
+            return;
+          }
+
+          // د. إذا كانت الرحلة لا تزال نشطة (قيد التنفيذ / في الطريق / بانتظار الكابتن)
+          GlobalState.instance.currentRequestId = tripIdToQuery;
+          if (GlobalState.instance.currentRole == UserRole.rider) {
+            Navigator.push(
+              context,
+              SnappyPageRoute(page: const PassengerRideActivePage()),
+            );
+          } else {
+            Navigator.push(
+              context,
+              SnappyPageRoute(page: const DriverRideActivePage()),
+            );
+          }
+          return;
+        } else {
+          // لم توجد الرحلة في قاعدة البيانات ولكن بيانات الإشعار تشير لاكتمالها أو إلغائها
+          if (type == 'trip_finished' || type == 'cancel_trip' || type == 'ride_expired' || type == 'offer_rejected') {
+            TripStatusSheet.show(context, requestId: tripIdToQuery, initialData: data);
+            return;
+          }
+        }
+      } else {
+        // لا يوجد معرف رحلة صريح، والحدث منتهي أو ملغى
+        if (type == 'trip_finished' || title.contains('اكتملت') || title.contains('إنهاء')) {
+          TripStatusSheet.show(context, initialData: data);
+          return;
+        }
+        if (type == 'cancel_trip' || title.contains('إلغاء')) {
+          TripStatusSheet.show(context, initialData: data);
+          return;
+        }
+        if (type == 'ride_expired' || title.contains('انتهت')) {
+          TripStatusSheet.show(context, initialData: data);
+          return;
+        }
+        if (type == 'offer_rejected' || type == 'reject_offer' || title.contains('رفض')) {
+          TripStatusSheet.show(context, initialData: data);
+          return;
+        }
       }
-      return;
     }
 
     // 5. طلب رحلة / عرض جديد (New Trip / Request / Offer)
@@ -247,20 +343,9 @@ class NotificationService {
 
     if (!context.mounted) return;
 
-    // 9. إذا وجد معرف رحلة في البيانات -> فتح شاشة الرحلة
-    if (data['tripId'] != null || data['trip_id'] != null || data['requestId'] != null || data['request_id'] != null) {
-      if (GlobalState.instance.currentRole == UserRole.rider) {
-        Navigator.push(
-          context,
-          SnappyPageRoute(page: const PassengerRideActivePage()),
-        );
-      } else {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => const DriverHomePage()),
-          (route) => false,
-        );
-      }
+    // 9. إذا وجد معرف رحلة إضافي ولم تتم معالجته أعلاه
+    if (reqId.isNotEmpty) {
+      TripStatusSheet.show(context, requestId: reqId, initialData: data);
       return;
     }
   }
@@ -286,10 +371,17 @@ class NotificationService {
     Map<String, dynamic>? data,
     bool forceSelf = false,
   }) async {
+    // Strict isolation: block empty or invalid recipient IDs for private notifications
+    final cleanRecipient = recipientId.trim();
+    if (cleanRecipient.isEmpty || cleanRecipient == 'null' || cleanRecipient == 'undefined') {
+      debugPrint('[Notification] ⚠️ BLOCKED: Invalid recipientId "$recipientId" for type: $type. Private notification will not be sent.');
+      return;
+    }
+
     final myId = GlobalState.instance.userUid;
 
-    if (recipientId == myId && !forceSelf) {
-      debugPrint('[Notification] Skipped sending notification to self (id=$recipientId, type=$type). Use forceSelf=true to override.');
+    if (cleanRecipient == myId && !forceSelf) {
+      debugPrint('[Notification] Skipped sending notification to self (id=$cleanRecipient, type=$type). Use forceSelf=true to override.');
       return;
     }
 
@@ -301,7 +393,7 @@ class NotificationService {
             data?['tripId']?.toString() ??
             data?['id']?.toString() ??
             DateTime.now().millisecondsSinceEpoch.toString());
-    final String notifId = '${recipientId}_${type}_$tripRef';
+    final String notifId = '${cleanRecipient}_${type}_$tripRef';
 
     // Clean up stale dedup entries (older than 5 minutes)
     _cleanupDedupCache();
@@ -312,7 +404,7 @@ class NotificationService {
     }
     _sentNotificationIds[notifId] = DateTime.now();
 
-    debugPrint('[Notification] Event created: type=$type, recipientId=$recipientId');
+    debugPrint('[Notification] Event created: type=$type, recipientId=$cleanRecipient');
 
     // 1. Save notification in Supabase for recipient in-app history & Realtime stream
     final notification = NotificationModel(
@@ -324,11 +416,11 @@ class NotificationService {
       isRead: false,
       data: data ?? {},
     );
-    await _repository.saveNotification(recipientId, notification);
-    debugPrint('[Notification] Recipient identified: recipientId=$recipientId');
+    await _repository.saveNotification(cleanRecipient, notification);
+    debugPrint('[Notification] Recipient identified: recipientId=$cleanRecipient');
 
     // 2. Fetch active device tokens from user_devices table
-    final tokens = await _repository.getActiveDeviceTokens(recipientId);
+    final tokens = await _repository.getActiveDeviceTokens(cleanRecipient);
     debugPrint('[Notification] Active device tokens found: count=${tokens.length}');
 
     // 3. Dispatch Push Notification via Secure Backend Push Server (fcm_backend / Vercel API)
@@ -342,7 +434,8 @@ class NotificationService {
       };
 
       final payload = {
-        'recipientId': recipientId,
+        'recipientId': cleanRecipient,
+        'target': 'specific', // Explicitly indicate targeted recipient (NOT broadcast)
         'title': title,
         'body': body,
         'type': type,
@@ -391,6 +484,64 @@ class NotificationService {
         'via': 'backend',
         'success': false,
       });
+    }
+
+    // 4. Guaranteed Direct OneSignal REST API Fallback
+    if (lastError != null) {
+      try {
+        debugPrint('[Notification] Attempting direct OneSignal REST API fallback...');
+        final Map<String, String> stringifiedData = {};
+        if (data != null) {
+          data.forEach((k, v) => stringifiedData[k] = v.toString());
+        }
+        stringifiedData['type'] = type;
+        stringifiedData['recipientId'] = cleanRecipient;
+
+        final Map<String, dynamic> osPayload = {
+          'app_id': OneSignalConfig.appId,
+          'target_channel': 'push',
+          'headings': {'en': title, 'ar': title},
+          'contents': {'en': body, 'ar': body},
+          'data': stringifiedData,
+          'android_accent_color': 'FF1976D2',
+          'priority': 10,
+          'ttl': 86400,
+          'include_aliases': {
+            'external_id': [cleanRecipient]
+          },
+        };
+
+        if (tokens.isNotEmpty) {
+          osPayload['include_subscription_ids'] = tokens;
+        }
+
+        final osResponse = await http.post(
+          Uri.parse('https://api.onesignal.com/notifications'),
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Authorization': 'Key ${OneSignalConfig.restApiKey}',
+          },
+          body: jsonEncode(osPayload),
+        ).timeout(const Duration(seconds: 6));
+
+        if (osResponse.statusCode == 200 || osResponse.statusCode == 201) {
+          debugPrint('[Notification] ✅ Push notification delivered successfully via OneSignal direct fallback');
+          lastError = null;
+          lastPushSent = osPayload;
+          _addLog({
+            'timestamp': DateTime.now().toIso8601String().substring(11, 19),
+            'type': type,
+            'recipientId': recipientId,
+            'tokensCount': tokens.length,
+            'via': 'onesignal_direct',
+            'success': true,
+          });
+        } else {
+          debugPrint('[Notification] ⚠️ OneSignal direct error (HTTP ${osResponse.statusCode}): ${osResponse.body}');
+        }
+      } catch (osEx) {
+        debugPrint('[Notification] ⚠️ OneSignal direct fallback exception: $osEx');
+      }
     }
   }
 }

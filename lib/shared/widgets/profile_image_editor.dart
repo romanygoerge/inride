@@ -56,8 +56,8 @@ class _ProfileImageEditorState extends State<ProfileImageEditor> {
         throw Exception("Could not find crop repaint boundary");
       }
 
-      // Capture image with high resolution pixel ratio (3.0 keeps the image crisp and premium)
-      final ui.Image image = await boundary.toImage(pixelRatio: 3.0);
+      // Capture image with optimal pixel ratio for avatar (1.5 produces crisp 420x420 image and lightweight file size)
+      final ui.Image image = await boundary.toImage(pixelRatio: 1.5);
       final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       
       if (byteData == null) {

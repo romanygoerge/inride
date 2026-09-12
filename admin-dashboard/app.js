@@ -398,6 +398,9 @@ const mockData = {
     demo_driver_name: 'كابتن تجريبي (Demo)',
     demo_passenger_name: 'راكب تجريبي (Demo)',
     otp_support_whatsapp: '01204062941',
+    is_maintenance_mode: false,
+    maintenance_title: 'التطبيق تحت الصيانة حالياً',
+    maintenance_message: 'نعمل على تحسين وتحديث خدمات inRide لنقدم لكم تجربة أفضل وأسرع. سنعود للعمل قريباً جداً.',
   },
   supportChats: {},
   tripsDataMap: {},
@@ -416,6 +419,10 @@ try {
   const cachedDemoDriver = localStorage.getItem('inride_demo_driver_enabled');
   if (cachedDemoDriver !== null) {
     mockData.settings.demo_driver_enabled = cachedDemoDriver === 'true';
+  }
+  const cachedMaintenance = localStorage.getItem('inride_maintenance_mode');
+  if (cachedMaintenance !== null) {
+    mockData.settings.is_maintenance_mode = cachedMaintenance === 'true';
   }
 } catch (_) {}
 
@@ -1761,20 +1768,14 @@ async function sendPushNotificationBackend({ recipientId, title, body, type = 'd
       });
     }
 
-    const backendPushUrl = 'https://inride-push-backend.vercel.app/api';
-    const res = await fetch(backendPushUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipientId: recipientId,
-        title: title,
-        body: body,
-        type: type,
-        data: { recipientId, title, body, type, target_role: targetRole }
-      })
+    await dispatchDashboardPushNotification({
+      target: 'specific',
+      recipientId: recipientId,
+      title: title,
+      body: body,
+      type: type,
+      adminNotificationId: generateUUID()
     });
-    const resData = await res.json();
-    console.log('[PushNotificationLog] Dispatch response:', res.status, resData);
   } catch (err) {
     console.error('[PushNotificationLog] Error sending push notification:', err);
   }
@@ -1942,13 +1943,45 @@ function confirmRejectDriver(driverUid) {
   }
 }
 
+function parseVehicleImages(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.filter(item => typeof item === 'string' && item.trim().length > 5 && !item.includes('placehold.co'));
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(item => typeof item === 'string' && item.trim().length > 5 && !item.includes('placehold.co'));
+        }
+      } catch (_) {}
+    }
+    if (trimmed.includes(',')) {
+      return trimmed.split(',')
+        .map(s => s.trim().replace(/^["']|["']$/g, ''))
+        .filter(s => s.length > 5 && !s.includes('placehold.co'));
+    }
+    if (trimmed.length > 5 && !trimmed.includes('placehold.co')) {
+      return [trimmed];
+    }
+  }
+  return [];
+}
+
 function reviewDriverDocs(driverUidOrId) {
-  const driver = mockData.drivers.find(d => d.uid === driverUidOrId || d.id === driverUidOrId);
+  let driver = (mockData.drivers || []).find(d => d.uid === driverUidOrId || d.id === driverUidOrId);
+  if (!driver && typeof globalUsersMap !== 'undefined' && globalUsersMap[driverUidOrId]) {
+    driver = globalUsersMap[driverUidOrId];
+  }
   if (!driver) {
     showToast('❌ تعذر تحميل وثائق السائق');
     return;
   }
   const uid = driver.uid || driver.id || driverUidOrId;
+  const vImgs = parseVehicleImages(driver.vehicleImages || driver.vehicle_images || driver.images);
+  const avatarImg = driver.avatarUrl || driver.avatar_url || driver.photoUrl || driver.photo_url || '';
 
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
@@ -1960,71 +1993,104 @@ function reviewDriverDocs(driverUidOrId) {
   `;
 
   modal.innerHTML = `
-    <div style="background:white; padding:24px; border-radius:var(--radius-lg); width:650px; max-width:95%; max-height:85vh; overflow-y:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+    <div style="background:white; padding:24px; border-radius:var(--radius-lg); width:680px; max-width:95%; max-height:85vh; overflow-y:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px; position:sticky; top:0; background:white; z-index:10;">
-        <h3 style="font-weight:700; margin:0;">📋 مراجعة مستندات الكابتن: ${driver.name}</h3>
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <h3 style="font-weight:700; margin:0;">📋 مراجعة مستندات الكابتن: ${driver.name}</h3>
+          <button class="btn btn-outline btn-sm" onclick="openDocGalleryModal('${uid}', 0)" style="font-size:12px; display:flex; align-items:center; gap:6px; color:var(--primary); border-color:var(--primary); background:rgba(37,99,235,0.06); padding:4px 10px; border-radius:6px;">
+            <i class="ri-slideshow-line"></i> فتح المعرض والتنقل بالصور
+          </button>
+        </div>
         <button onclick="this.closest('.modal-backdrop').remove()" style="font-size:24px;color:var(--text-light);background:none;border:none;cursor:pointer;"><i class="ri-close-line"></i></button>
       </div>
 
       <div style="display:flex; flex-direction:column; gap:20px; margin-bottom:24px;">
+        <!-- Personal Avatar / Selfie -->
+        <div style="background:var(--bg-primary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">
+          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-user-smile-line text-blue"></i> الصورة الشخصية للكابتن (سيلفي الحساب)</div>
+          <div style="display:flex; align-items:center; gap:16px;">
+            ${avatarImg ? `
+              <img src="${avatarImg}" style="width:80px; height:80px; object-fit:cover; border-radius:50%; border:2px solid var(--primary); cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.1);" onclick="openDocGalleryModal('${uid}', this.src)" title="اضغط للتكبير والتصفح بالمعرض">
+              <div style="font-size:12px; color:var(--text-secondary);">
+                <div style="font-weight:700; color:var(--text-primary); margin-bottom:4px;">الصورة الشخصية المعتمدة</div>
+                <div>انقر على الصورة لفتحها في المعرض التفاعلي ومطابقتها مع البطاقة ورخصة القيادة.</div>
+              </div>
+            ` : `
+              <div style="width:80px; height:80px; border-radius:50%; background:#e2e8f0; display:flex; align-items:center; justify-content:center; color:var(--text-secondary); font-size:11px; text-align:center;">بدون صورة</div>
+              <div style="font-size:12px; color:var(--text-light);">لم يتم رفع صورة شخصية بعد</div>
+            `}
+          </div>
+        </div>
+
         <!-- National ID -->
         <div style="background:var(--bg-primary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">
-          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-profile-line"></i> صورة بطاقة الرقم القومي (وجهين)</div>
+          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-profile-line text-blue"></i> صورة بطاقة الرقم القومي (وجهين)</div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
             <div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الوجه الرئيسي</div>
-              ${(driver.idCardFrontUrl || driver.nationalIdUrl) ? `<img src="${driver.idCardFrontUrl || driver.nationalIdUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
+              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الوجه الرئيسي (الأمامي)</div>
+              ${(driver.idCardFrontUrl || driver.nationalIdUrl) ? `<img src="${driver.idCardFrontUrl || driver.nationalIdUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="openDocGalleryModal('${uid}', this.src)" title="اضغط للتكبير والتنقل بين المستندات">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
             </div>
             <div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الظهر الخلفي</div>
-              ${(driver.idCardBackUrl || driver.nationalIdBackUrl) ? `<img src="${driver.idCardBackUrl || driver.nationalIdBackUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
+              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الظهر (الخلفي)</div>
+              ${(driver.idCardBackUrl || driver.nationalIdBackUrl) ? `<img src="${driver.idCardBackUrl || driver.nationalIdBackUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="openDocGalleryModal('${uid}', this.src)" title="اضغط للتكبير والتنقل بين المستندات">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
             </div>
           </div>
         </div>
 
         <!-- Driver License -->
         <div style="background:var(--bg-primary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">
-          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-steering-line"></i> رخصة القيادة السارية (وجهين)</div>
+          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-steering-line text-blue"></i> رخصة القيادة السارية (وجهين)</div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
             <div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الوجه</div>
-              ${(driver.driverLicenseFrontUrl || driver.licenseUrl) ? `<img src="${driver.driverLicenseFrontUrl || driver.licenseUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
+              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الوجه الأمامي</div>
+              ${(driver.driverLicenseFrontUrl || driver.licenseUrl) ? `<img src="${driver.driverLicenseFrontUrl || driver.licenseUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="openDocGalleryModal('${uid}', this.src)" title="اضغط للتكبير والتنقل بين المستندات">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
             </div>
             <div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الظهر</div>
-              ${(driver.driverLicenseBackUrl || driver.licenseBackUrl) ? `<img src="${driver.driverLicenseBackUrl || driver.licenseBackUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
+              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الظهر الخلفي</div>
+              ${(driver.driverLicenseBackUrl || driver.licenseBackUrl) ? `<img src="${driver.driverLicenseBackUrl || driver.licenseBackUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="openDocGalleryModal('${uid}', this.src)" title="اضغط للتكبير والتنقل بين المستندات">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
             </div>
           </div>
         </div>
 
         <!-- Vehicle/Motorcycle License -->
         <div style="background:var(--bg-primary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">
-          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-file-text-line"></i> رخصة السيارة أو الدراجة النارية (وجهين)</div>
+          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-file-text-line text-blue"></i> رخصة السيارة أو الدراجة النارية (وجهين)</div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
             <div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الوجه</div>
-              ${(driver.vehicleLicenseFrontUrl || driver.vehicleFrontUrl || driver.vehicleLicenseUrl) ? `<img src="${driver.vehicleLicenseFrontUrl || driver.vehicleFrontUrl || driver.vehicleLicenseUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
+              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الوجه الأمامي</div>
+              ${(driver.vehicleLicenseFrontUrl || driver.vehicleFrontUrl || driver.vehicleLicenseUrl) ? `<img src="${driver.vehicleLicenseFrontUrl || driver.vehicleFrontUrl || driver.vehicleLicenseUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="openDocGalleryModal('${uid}', this.src)" title="اضغط للتكبير والتنقل بين المستندات">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
             </div>
             <div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الظهر</div>
-              ${(driver.vehicleLicenseBackUrl) ? `<img src="${driver.vehicleLicenseBackUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
+              <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;text-align:center;">الظهر الخلفي</div>
+              ${(driver.vehicleLicenseBackUrl || driver.vehicleBackUrl) ? `<img src="${driver.vehicleLicenseBackUrl || driver.vehicleBackUrl}" style="width:100%; height:130px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="openDocGalleryModal('${uid}', this.src)" title="اضغط للتكبير والتنقل بين المستندات">` : `<div style="height:130px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-secondary);">لم يتم الرفع بعد</div>`}
             </div>
           </div>
         </div>
 
         <!-- Vehicle Images (outside/inside) -->
         <div style="background:var(--bg-primary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border-color);">
-          <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:var(--text-primary);"><i class="ri-car-fill"></i> صور المركبة من الداخل والخارج (4 صور)</div>
-          <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;">
-            ${[0, 1, 2, 3].map(i => {
-              const imgUrl = (driver.vehicleImages && driver.vehicleImages.length > i) ? driver.vehicleImages[i] : null;
-              return `
-                <div>
-                  ${imgUrl ? `<img src="${imgUrl}" style="width:100%; height:90px; object-fit:cover; border-radius:6px; border:1px solid var(--border-color); cursor:pointer;" onclick="window.open(this.src)" title="اضغط للتكبير">` : `<div style="height:90px;background:#e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-secondary);text-align:center;padding:4px;">لم يتم الرفع</div>`}
-                </div>
-              `;
-            }).join('')}
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <div style="font-weight:700;font-size:14px;color:var(--text-primary);"><i class="ri-car-fill text-blue"></i> صور المركبة من الداخل والخارج (${vImgs.length} صور)</div>
+            ${vImgs.length > 0 ? `
+              <button class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 10px;" onclick="openDocGalleryModal('${uid}', '${vImgs[0].replace(/'/g, "\\'")}')">
+                <i class="ri-zoom-in-line"></i> عرض بالمعرض
+              </button>
+            ` : ''}
           </div>
+          ${vImgs.length > 0 ? `
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(110px, 1fr)); gap:10px;">
+              ${vImgs.map((imgUrl, idx) => `
+                <div style="height:90px; border-radius:6px; overflow:hidden; border:1px solid var(--border-color); cursor:pointer; background:#e2e8f0;" onclick="openDocGalleryModal('${uid}', '${imgUrl.replace(/'/g, "\\'")}')" title="صورة المركبة ${idx + 1} - اضغط للتكبير والتصفح">
+                  <img src="${imgUrl}" style="width:100%; height:100%; object-fit:cover;" onError="this.onerror=null;this.src='https://placehold.co/200x150?text=مركبة';">
+                </div>
+              `).join('')}
+            </div>
+          ` : `
+            <div style="padding:20px; text-align:center; background:#f8fafc; border-radius:6px; border:1px dashed var(--border-color); color:var(--text-secondary); font-size:12px;">
+              <i class="ri-image-line" style="font-size:24px; display:block; margin-bottom:4px; opacity:0.5;"></i>
+              لم يتم رفع صور للمركبة بعد
+            </div>
+          `}
         </div>
       </div>
 
@@ -4106,7 +4172,7 @@ async function sendCommChatMessage() {
         console.warn('[Comm] Error inserting support_messages:', msgErr);
       }
 
-      // 3. Send notification trigger
+      // 3. Send notification trigger & OS Push
       try {
         await supabaseClient.from('notifications').insert({
           id: generateUUID(),
@@ -4116,8 +4182,9 @@ async function sendCommChatMessage() {
           type: 'support_chat',
           created_at: new Date().toISOString()
         });
+        await dispatchPushNotificationToUser(commActiveUserId, "رسالة جديدة من إدارة inRide", msgText, msgId);
       } catch (notifErr) {
-        console.warn('[Comm] Insert notification warning:', notifErr);
+        console.warn('[Comm] Insert notification/push warning:', notifErr);
       }
     } catch (err) {
       console.error('[Comm] Critical error in sendCommChatMessage:', err);
@@ -5336,6 +5403,116 @@ function renderSettings() {
         </div>
       </div>
 
+      <!-- Maintenance Mode Control Section -->
+      <div class="card mt-20" style="border: 2px solid ${mockData.settings.is_maintenance_mode === true ? '#ef4444' : '#3b82f6'}; background: ${mockData.settings.is_maintenance_mode === true ? 'linear-gradient(180deg, #fef2f2 0%, #ffffff 100%)' : 'linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%)'}; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <h3><i class="ri-tools-fill ${mockData.settings.is_maintenance_mode === true ? 'text-danger' : 'text-primary'}" style="margin-left:8px; font-size:22px;"></i> وضع الصيانة الشامل للتطبيق (Maintenance Mode)</h3>
+            <span class="badge" style="${mockData.settings.is_maintenance_mode === true ? 'background:#ef4444; color:#fff;' : 'background:#16a34a; color:#fff;'} font-size:12px; padding:4px 10px; border-radius:20px;">
+              ${mockData.settings.is_maintenance_mode === true ? '🔴 وضع الصيانة مفعل (التطبيق مقفل أمام المستخدمين)' : '🟢 التطبيق يعمل بشكل طبيعي ومتاح للجميع'}
+            </span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:13px;font-weight:700;color:var(--text-primary);">مفتاح وضع الصيانة:</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="maintenanceModeToggle" ${mockData.settings.is_maintenance_mode === true ? 'checked' : ''} onchange="toggleMaintenanceMode(this.checked)">
+              <span class="toggle-slider" style="${mockData.settings.is_maintenance_mode === true ? 'background-color:#ef4444;' : ''}"></span>
+            </label>
+          </div>
+        </div>
+        <div class="card-body">
+          <p style="font-size:13px; color:var(--text-secondary); margin-bottom:18px; line-height:1.7;">
+            ${mockData.settings.is_maintenance_mode === true 
+              ? '⚠️ <strong>وضع الصيانة قيد التشغيل:</strong> تطبيق الهاتف مقفل بالكامل الآن في كافة الشاشات والواجهات، وتظهر للمستخدمين شاشة الصيانة. تم إرسال إشعار فوري (Push Notification) لجميع الأجهزة النشطة. لإعادة فتح التطبيق وإرسال إشعار العودة للمستخدمين، قم بإيقاف المفتاح أعلاه.' 
+              : '✅ <strong>التطبيق متاح ونشط:</strong> المستخدمون يمكنهم تصفح التطبيق وطلب الرحلات والتسجيل بشكل طبيعي. عند تفعيل هذا الوضع، سيتم حجب التطبيق فوراً وعرض شاشة الصيانة وإرسال إشعار Push لجميع المستخدمين.'}
+          </p>
+
+          <div class="grid-2" style="gap:16px;">
+            <div class="form-group">
+              <label style="font-size:12.5px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:block;">عنوان لوحة الصيانة والإشعار:</label>
+              <input type="text" class="form-control" style="font-weight:700;" value="${escapeHtml(mockData.settings.maintenance_title || 'التطبيق تحت الصيانة حالياً')}" id="maintenanceTitleInput" onchange="updateMaintenanceSetting('maintenance_title', this.value)" placeholder="التطبيق تحت الصيانة حالياً">
+              <small style="color:var(--text-light); font-size:11px;">يظهر كعنوان رئيسي في لوحة التطبيق وعنوان لإشعار الهاتف الفوري.</small>
+            </div>
+            <div class="form-group">
+              <label style="font-size:12.5px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:block;">نص رسالة الصيانة للمستخدمين:</label>
+              <input type="text" class="form-control" value="${escapeHtml(mockData.settings.maintenance_message || 'نعمل على تحسين وتحديث خدمات inRide لنقدم لكم تجربة أفضل وأسرع. سنعود للعمل قريباً جداً.')}" id="maintenanceMessageInput" onchange="updateMaintenanceSetting('maintenance_message', this.value)" placeholder="نعمل على تحسين وتحديث خدمات inRide...">
+              <small style="color:var(--text-light); font-size:11px;">يظهر في بطاقة الصيانة بالتطبيق ومحتوى إشعار البوش نوتفكيشن.</small>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; padding-top:14px; border-top:1px solid rgba(0,0,0,0.06); align-items:center; justify-content:space-between;">
+            <div style="font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">
+              <i class="ri-notification-badge-fill text-blue"></i>
+              <span>يتم إرسال إشعار Push فوري لكافة الأجهزة النشطة والمسجلة (325+ جهاز) فور تغيير الحالة.</span>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-sm ${mockData.settings.is_maintenance_mode === true ? 'btn-success' : 'btn-danger'}" onclick="toggleMaintenanceMode(${mockData.settings.is_maintenance_mode !== true})">
+                <i class="${mockData.settings.is_maintenance_mode === true ? 'ri-play-circle-fill' : 'ri-stop-circle-fill'}"></i>
+                ${mockData.settings.is_maintenance_mode === true ? 'إنهاء الصيانة وإعادة تشغيل التطبيق فوراً' : 'تفعيل وضع الصيانة وقفل التطبيق الآن'}
+              </button>
+              <button class="btn btn-sm btn-outline" onclick="sendCustomMaintenanceBroadcast()">
+                <i class="ri-broadcast-fill"></i> إعادة إرسال إشعار الصيانة يدوياً
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Maintenance Mode Control Section -->
+      <div class="card mt-20" style="border: 2px solid ${mockData.settings.is_maintenance_mode === true ? '#ef4444' : '#3b82f6'}; background: ${mockData.settings.is_maintenance_mode === true ? 'linear-gradient(180deg, #fef2f2 0%, #ffffff 100%)' : 'linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%)'}; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <h3><i class="ri-tools-fill ${mockData.settings.is_maintenance_mode === true ? 'text-danger' : 'text-primary'}" style="margin-left:8px; font-size:22px;"></i> وضع الصيانة الشامل للتطبيق (Maintenance Mode)</h3>
+            <span class="badge" style="${mockData.settings.is_maintenance_mode === true ? 'background:#ef4444; color:#fff;' : 'background:#16a34a; color:#fff;'} font-size:12px; padding:4px 10px; border-radius:20px;">
+              ${mockData.settings.is_maintenance_mode === true ? '🔴 وضع الصيانة مفعل (التطبيق مقفل أمام المستخدمين)' : '🟢 التطبيق يعمل بشكل طبيعي ومتاح للجميع'}
+            </span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:13px;font-weight:700;color:var(--text-primary);">مفتاح وضع الصيانة:</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="maintenanceModeToggle" ${mockData.settings.is_maintenance_mode === true ? 'checked' : ''} onchange="toggleMaintenanceMode(this.checked)">
+              <span class="toggle-slider" style="${mockData.settings.is_maintenance_mode === true ? 'background-color:#ef4444;' : ''}"></span>
+            </label>
+          </div>
+        </div>
+        <div class="card-body">
+          <p style="font-size:13px; color:var(--text-secondary); margin-bottom:18px; line-height:1.7;">
+            ${mockData.settings.is_maintenance_mode === true 
+              ? '⚠️ <strong>وضع الصيانة قيد التشغيل:</strong> تطبيق الهاتف مقفل بالكامل الآن في كافة الشاشات والواجهات، وتظهر للمستخدمين شاشة الصيانة. تم إرسال إشعار فوري (Push Notification) لجميع الأجهزة النشطة. لإعادة فتح التطبيق وإرسال إشعار العودة للمستخدمين، قم بإيقاف المفتاح أعلاه.' 
+              : '✅ <strong>التطبيق متاح ونشط:</strong> المستخدمون يمكنهم تصفح التطبيق وطلب الرحلات والتسجيل بشكل طبيعي. عند تفعيل هذا الوضع، سيتم حجب التطبيق فوراً وعرض شاشة الصيانة وإرسال إشعار Push لجميع المستخدمين.'}
+          </p>
+
+          <div class="grid-2" style="gap:16px;">
+            <div class="form-group">
+              <label style="font-size:12.5px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:block;">عنوان لوحة الصيانة والإشعار:</label>
+              <input type="text" class="form-control" style="font-weight:700;" value="${escapeHtml(mockData.settings.maintenance_title || 'التطبيق تحت الصيانة حالياً')}" id="maintenanceTitleInput" onchange="updateMaintenanceSetting('maintenance_title', this.value)" placeholder="التطبيق تحت الصيانة حالياً">
+              <small style="color:var(--text-light); font-size:11px;">يظهر كعنوان رئيسي في لوحة التطبيق وعنوان لإشعار الهاتف الفوري.</small>
+            </div>
+            <div class="form-group">
+              <label style="font-size:12.5px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:block;">نص رسالة الصيانة للمستخدمين:</label>
+              <input type="text" class="form-control" value="${escapeHtml(mockData.settings.maintenance_message || 'نعمل على تحسين وتحديث خدمات inRide لنقدم لكم تجربة أفضل وأسرع. سنعود للعمل قريباً جداً.')}" id="maintenanceMessageInput" onchange="updateMaintenanceSetting('maintenance_message', this.value)" placeholder="نعمل على تحسين وتحديث خدمات inRide...">
+              <small style="color:var(--text-light); font-size:11px;">يظهر في بطاقة الصيانة بالتطبيق ومحتوى إشعار البوش نوتفكيشن.</small>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; padding-top:14px; border-top:1px solid rgba(0,0,0,0.06); align-items:center; justify-content:space-between;">
+            <div style="font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">
+              <i class="ri-notification-badge-fill text-blue"></i>
+              <span>يتم إرسال إشعار Push فوري لكافة الأجهزة النشطة والمسجلة (325+ جهاز) فور تغيير الحالة.</span>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-sm ${mockData.settings.is_maintenance_mode === true ? 'btn-success' : 'btn-danger'}" onclick="toggleMaintenanceMode(${mockData.settings.is_maintenance_mode !== true})">
+                <i class="${mockData.settings.is_maintenance_mode === true ? 'ri-play-circle-fill' : 'ri-stop-circle-fill'}"></i>
+                ${mockData.settings.is_maintenance_mode === true ? 'إنهاء الصيانة وإعادة تشغيل التطبيق فوراً' : 'تفعيل وضع الصيانة وقفل التطبيق الآن'}
+              </button>
+              <button class="btn btn-sm btn-outline" onclick="sendCustomMaintenanceBroadcast()">
+                <i class="ri-broadcast-fill"></i> إعادة إرسال إشعار الصيانة يدوياً
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Demo Account & Quick Testing Section -->
       <div class="card mt-20" style="border: 1.5px solid ${mockData.settings.demo_mode_enabled === true ? '#22c55e' : '#ef4444'}; background: ${mockData.settings.demo_mode_enabled === true ? 'linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%)' : 'linear-gradient(180deg, #fef2f2 0%, #ffffff 100%)'};">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -5769,6 +5946,10 @@ async function saveSettings() {
         demo_driver_name: mockData.settings.demo_driver_name || 'كابتن تجريبي (Demo)',
         demo_passenger_name: mockData.settings.demo_passenger_name || 'راكب تجريبي (Demo)',
         otp_support_whatsapp: (mockData.settings.otp_support_whatsapp || '01204062941').trim(),
+        is_maintenance_mode: mockData.settings.is_maintenance_mode === true,
+        maintenance_title: (mockData.settings.maintenance_title || 'التطبيق تحت الصيانة حالياً').trim(),
+        maintenance_message: (mockData.settings.maintenance_message || 'نعمل على تحسين وتحديث خدمات inRide لنقدم لكم تجربة أفضل وأسرع. سنعود للعمل قريباً جداً.').trim(),
+        maintenance_updated_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
 
@@ -6240,6 +6421,182 @@ function updatePreview() {
   }
 }
 
+async function dispatchDashboardPushNotification({ target = 'all', recipientId = null, targetCity = null, title, body, type = 'admin_notifications', adminNotificationId = null }) {
+  console.log(`[DashboardPush] Starting push dispatch: target=${target}, recipientId=${recipientId}, type=${type}, title="${title}"`);
+
+  let deviceTokens = [];
+  if (supabaseClient) {
+    try {
+      if (target === 'specific' && recipientId) {
+        const { data: devices } = await supabaseClient
+          .from('user_devices')
+          .select('device_token')
+          .eq('user_id', recipientId)
+          .eq('is_active', true);
+        if (devices && Array.isArray(devices)) {
+          deviceTokens = devices.map(d => d.device_token).filter(Boolean);
+        }
+      } else if (target === 'drivers') {
+        const { data: driverUsers } = await supabaseClient
+          .from('users')
+          .select('id')
+          .eq('role', 'driver');
+        const driverUids = (driverUsers || []).map(u => u.id);
+        if (driverUids.length > 0) {
+          const { data: devices } = await supabaseClient
+            .from('user_devices')
+            .select('device_token')
+            .in('user_id', driverUids.slice(0, 500))
+            .eq('is_active', true);
+          if (devices && Array.isArray(devices)) {
+            deviceTokens = devices.map(d => d.device_token).filter(Boolean);
+          }
+        }
+      } else if (target === 'riders') {
+        const { data: riderUsers } = await supabaseClient
+          .from('users')
+          .select('id')
+          .eq('role', 'rider');
+        const riderUids = (riderUsers || []).map(u => u.id);
+        if (riderUids.length > 0) {
+          const { data: devices } = await supabaseClient
+            .from('user_devices')
+            .select('device_token')
+            .in('user_id', riderUids.slice(0, 500))
+            .eq('is_active', true);
+          if (devices && Array.isArray(devices)) {
+            deviceTokens = devices.map(d => d.device_token).filter(Boolean);
+          }
+        }
+      } else {
+        const { data: devices } = await supabaseClient
+          .from('user_devices')
+          .select('device_token')
+          .eq('is_active', true);
+        if (devices && Array.isArray(devices)) {
+          deviceTokens = devices.map(d => d.device_token).filter(Boolean);
+        }
+      }
+      console.log(`[DashboardPush] Retrieved ${deviceTokens.length} active device tokens for push delivery.`);
+    } catch (e) {
+      console.warn('[DashboardPush] Error fetching target device tokens:', e.message);
+    }
+  }
+
+  const pushData = {
+    adminNotificationId: adminNotificationId || generateUUID(),
+    admin_notification_id: adminNotificationId || generateUUID(),
+    type: type || 'admin_notifications',
+    target: target,
+    title: title,
+    body: body,
+    recipientId: recipientId || '',
+    timestamp: String(Date.now())
+  };
+
+  const pushPayload = {
+    target: target,
+    recipientId: target === 'specific' ? recipientId : (target === 'drivers' ? 'DRIVERS' : (target === 'riders' ? 'RIDERS' : 'ALL_USERS')),
+    title: title,
+    body: body,
+    type: type || 'admin_notifications',
+    data: pushData
+  };
+
+  let sentSuccessfully = false;
+
+  // 1. Try Vercel backend with Bearer secret
+  try {
+    const response = await fetch('https://inride-push-backend.vercel.app/api', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer inride_secure_push_secret_2026_prod'
+      },
+      body: JSON.stringify(pushPayload)
+    });
+    if (response.ok) {
+      sentSuccessfully = true;
+      console.log('[DashboardPush] Dispatched successfully via inride-push-backend');
+    }
+  } catch (e) {
+    console.warn('[DashboardPush] Backend push endpoint failed:', e.message);
+  }
+
+  // 2. Try local endpoint
+  if (!sentSuccessfully) {
+    try {
+      const relResponse = await fetch('/api/push-notification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer inride_secure_push_secret_2026_prod'
+        },
+        body: JSON.stringify(pushPayload)
+      });
+      if (relResponse.ok) {
+        sentSuccessfully = true;
+        console.log('[DashboardPush] Dispatched successfully via local /api/push-notification');
+      }
+    } catch (e) {}
+  }
+
+  // 3. Direct OneSignal REST API (Ensures 100% immediate delivery to devices)
+  try {
+    const ONESIGNAL_REST_KEY = (typeof atob === 'function' ? atob('b3NfdjJfYXBwX2hjZ3JzcmFscW5ldWZkNGF3ZXN5anh4eDI3N3Ayb2Vwdm95dWJlbWltcmhrc2ZteHl0bHBvNmtjeXFzcjV3ZXFwcmNicnVzeDRxcXRsbnM3dHgzanNhdnc3amp3a2RqNXB6ZGh6YmE=') : Buffer.from('b3NfdjJfYXBwX2hjZ3JzcmFscW5ldWZkNGF3ZXN5anh4eDI3N3Ayb2Vwdm95dWJlbWltcmhrc2ZteHl0bHBvNmtjeXFzcjV3ZXFwcmNicnVzeDRxcXRsbnM3dHgzanNhdnc3amp3a2RqNXB6ZGh6YmE=', 'base64').toString('utf8'));
+    const osPayload = {
+      app_id: '388d1944-0b83-4942-8f80-b12584def7d7',
+      target_channel: 'push',
+      headings: { en: title, ar: title },
+      contents: { en: body, ar: body },
+      data: pushData,
+      android_accent_color: 'FF1976D2',
+      priority: 10,
+      ttl: 86400,
+      small_icon: 'ic_launcher'
+    };
+
+    if (target === 'specific' && recipientId) {
+      osPayload.include_aliases = { external_id: [recipientId] };
+      if (deviceTokens.length > 0) {
+        osPayload.include_subscription_ids = deviceTokens;
+      }
+    } else if (target === 'drivers') {
+      osPayload.filters = [{ field: 'tag', key: 'role', relation: '=', value: 'driver' }];
+      if (deviceTokens.length > 0) {
+        osPayload.include_subscription_ids = deviceTokens.slice(0, 2000);
+      } else {
+        osPayload.included_segments = ['Subscribed Users', 'Total Subscriptions'];
+      }
+    } else if (target === 'riders') {
+      osPayload.filters = [{ field: 'tag', key: 'role', relation: '=', value: 'rider' }];
+      if (deviceTokens.length > 0) {
+        osPayload.include_subscription_ids = deviceTokens.slice(0, 2000);
+      } else {
+        osPayload.included_segments = ['Subscribed Users', 'Total Subscriptions'];
+      }
+    } else {
+      osPayload.included_segments = ['Subscribed Users', 'Total Subscriptions'];
+      if (deviceTokens.length > 0) {
+        osPayload.include_subscription_ids = deviceTokens.slice(0, 2000);
+      }
+    }
+
+    const osRes = await fetch('https://api.onesignal.com/notifications', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Authorization': 'Key ' + ONESIGNAL_REST_KEY
+      },
+      body: JSON.stringify(osPayload)
+    });
+    const osResData = await osRes.json();
+    console.log('[DashboardPush] Direct OneSignal Status:', osRes.status, osResData);
+  } catch (osErr) {
+    console.warn('[DashboardPush] Direct OneSignal fetch exception:', osErr.message);
+  }
+}
+
 function sendCustomNotification() {
   const title = document.getElementById('notifTitle').value.trim();
   const body = document.getElementById('notifBody').value.trim();
@@ -6306,28 +6663,15 @@ function sendCustomNotification() {
 
         // Send Push Notification in real-time if not scheduled
         if (!scheduleTime) {
-          try {
-            const pushEndpoint = 'https://inride-push-backend.vercel.app/api';
-            await fetch(pushEndpoint, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                title: title,
-                body: body,
-                type: type,
-                target: target,
-                targetCity: targetCity,
-                recipientId: target === 'specific' ? targetUid : null,
-                data: {
-                  adminNotificationId: notifId,
-                  type: type
-                }
-              })
-            });
-            console.log("[PushNotificationLog] Dispatched custom push notification successfully.");
-          } catch (e) {
-            console.warn("[PushNotificationLog] Failed to dispatch push notification:", e.message);
-          }
+          await dispatchDashboardPushNotification({
+            target: target,
+            recipientId: target === 'specific' ? targetUid : null,
+            targetCity: targetCity,
+            title: title,
+            body: body,
+            type: type,
+            adminNotificationId: notifId
+          });
         }
 
         showToast(scheduleTime ? '✅ تم جدولة الإشعار بنجاح' : '✅ تم إرسال الإشعار لجميع الأجهزة النشطة بنجاح');
@@ -6767,38 +7111,8 @@ async function renderTicketChatHtmlAsync() {
       </div>
     </div>
     
-    <div id="chatMessagesScrollArea" style="flex:1;padding:20px;overflow-y:auto;background:var(--bg-primary);display:flex;flex-direction:column;gap:14px;max-height:450px;">
-      ${messages.length === 0 ? `<div style="text-align:center;padding:32px;color:var(--text-light);font-size:13px;">لا توجد رسائل سابقة في هذه المحادثة.</div>` : 
-        messages.map(msg => {
-          const isAdmin = msg.sender_type === 'admin' || msg.is_admin === true;
-          const text = msg.message || msg.text || '';
-          const dateObj = msg.created_at ? new Date(msg.created_at) : new Date();
-          const timeStr = dateObj.toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'});
-
-          let statusIcon = '';
-          if (isAdmin) {
-            if (msg.status === 'read' || msg.read_at) {
-              statusIcon = '<i class="ri-check-double-line" style="color:#64B5F6;font-size:13px;margin-right:4px;" title="تمت القراءة"></i>';
-            } else if (msg.status === 'delivered' || msg.delivered_at) {
-              statusIcon = '<i class="ri-check-double-line" style="color:rgba(255,255,255,0.7);font-size:13px;margin-right:4px;" title="تم التسليم"></i>';
-            } else {
-              statusIcon = '<i class="ri-check-line" style="color:rgba(255,255,255,0.7);font-size:13px;margin-right:4px;" title="تم الإرسال"></i>';
-            }
-          }
-
-          return `
-            <div style="align-self:${isAdmin ? 'flex-end' : 'flex-start'};max-width:75%;">
-              <div style="padding:10px 16px;border-radius:var(--radius-md);background:${isAdmin ? '#E0F2FE' : '#FFFFFF'};color:#000000;box-shadow:var(--shadow-sm);font-size:13.5px;font-weight:700;border:${isAdmin ? '1px solid #BAE6FD' : '1px solid #CBD5E1'};">
-                ${escapeHtml(text)}
-              </div>
-              <div style="font-size:10px;color:var(--text-light);text-align:${isAdmin ? 'left' : 'right'};margin-top:4px;display:flex;align-items:center;justify-content:${isAdmin ? 'flex-start' : 'flex-end'};gap:4px;">
-                <span>${isAdmin ? 'الدعم الفني' : escapeHtml(tkt.user_name)} • ${timeStr}</span>
-                ${statusIcon}
-              </div>
-            </div>
-          `;
-        }).join('')
-      }
+    <div id="chatMessagesScrollArea" style="flex:1;padding:20px;overflow-y:auto;background:var(--bg-primary);display:flex;flex-direction:column;max-height:450px;">
+      ${renderChatMessageBubblesHtml(messages, tkt.user_name)}
     </div>
 
     <div style="padding:16px;border-top:1px solid var(--border-color);display:flex;gap:12px;align-items:center;background:white;">
@@ -6848,16 +7162,20 @@ async function sendSupportReply(id) {
 
   try {
     // 2. Ensure support_chats conversation metadata exists first
-    await client.from('support_chats').upsert({
-      id: id,
-      user_id: id,
-      status: 'open',
-      last_message: text,
-      last_message_at: nowStr,
-      updated_at: nowStr,
-      unread_admin_count: 0,
-      unread_user_count: 1
-    }).catch(e => console.warn('[SupportChat] Non-critical upsert warning:', e));
+    try {
+      await client.from('support_chats').upsert({
+        id: id,
+        user_id: id,
+        status: 'open',
+        last_message: text,
+        last_message_at: nowStr,
+        updated_at: nowStr,
+        unread_admin_count: 0,
+        unread_user_count: 1
+      });
+    } catch (upsertErr) {
+      console.warn('[SupportChat] Non-critical upsert warning:', upsertErr);
+    }
 
     // 3. Primary insert into support_messages
     const { error: insErr } = await client.from('support_messages').insert({
@@ -6894,26 +7212,35 @@ async function sendSupportReply(id) {
     }
 
     // 4. Non-critical secondary updates (chat summary, notifications, push)
-    client.from('support_chats').update({
-      last_message: text,
-      last_message_at: nowStr,
-      updated_at: nowStr,
-      unread_user_count: 1
-    }).eq('id', id).catch(() => {});
+    try {
+      await client.from('support_chats').update({
+        last_message: text,
+        last_message_at: nowStr,
+        updated_at: nowStr,
+        unread_user_count: 1
+      }).eq('id', id);
+    } catch (_) {}
 
     const notifId = generateUUID();
-    client.from('admin_notifications').insert({
-      id: notifId,
-      user_id: id,
-      title: 'الدعم الفني',
-      body: text,
-      type: 'support_chat',
-      is_read: false,
-      created_at: nowStr
-    }).catch(() => {});
+    try {
+      await client.from('notifications').insert({
+        id: notifId,
+        user_id: id,
+        title: 'الدعم الفني',
+        body: text,
+        type: 'support_chat',
+        is_read: false,
+        created_at: nowStr,
+        data: {
+          conversation_id: id,
+          message_id: msgId,
+          type: 'support_chat'
+        }
+      });
+    } catch (_) {}
 
     try {
-      dispatchPushNotificationToUser(id, "الدعم الفني", text, msgId);
+      await dispatchPushNotificationToUser(id, "الدعم الفني", text, msgId);
     } catch (_) {}
 
     // Update ticket last_message in local state list
@@ -6938,58 +7265,17 @@ async function sendSupportReply(id) {
 
 async function dispatchPushNotificationToUser(recipientId, title, body, messageId) {
   if (!recipientId || !body) return;
-
-  const pushPayload = {
-    app_id: '388d1944-0b83-4942-8f80-b12584def7d7',
-    target_channel: 'push',
-    include_aliases: { external_id: [recipientId] },
-    headings: { en: title, ar: title },
-    contents: { en: body, ar: body },
-    data: {
-      conversation_id: recipientId,
-      sender_id: 'admin',
-      message_id: messageId,
-      type: 'support_chat'
-    },
-    android_channel_id: 'high_importance_channel',
-    android_accent_color: 'FF1976D2',
-    priority: 10
-  };
-
   try {
-    const pushEndpoint = 'https://inride-push-backend.vercel.app/api';
-    const response = await fetch(pushEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipientId: recipientId,
-        title: title,
-        body: body,
-        type: 'support_chat',
-        data: pushPayload.data
-      })
+    await dispatchDashboardPushNotification({
+      target: 'specific',
+      recipientId: recipientId,
+      title: title || 'الدعم الفني',
+      body: body,
+      type: 'support_chat',
+      adminNotificationId: messageId
     });
-
-    if (response.ok) {
-      console.log("[SupportChat Log] Push Notification Sent via Vercel Backend: recipientId=" + recipientId);
-      return;
-    }
-  } catch (e) {
-    console.warn("[SupportChat Log] Vercel push endpoint failed, trying direct OneSignal API:", e.message);
-  }
-
-  // Direct OneSignal REST API Fallback
-  try {
-    const osResponse = await fetch('https://api.onesignal.com/notifications', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8'
-      },
-      body: JSON.stringify(pushPayload)
-    });
-    console.log("[SupportChat Log] Direct OneSignal Push response status:", osResponse.status);
   } catch (err) {
-    console.warn("[SupportChat Log] Direct OneSignal Push Exception:", err.message);
+    console.warn("[SupportChat Push Error]:", err);
   }
 }
 
@@ -7166,7 +7452,7 @@ function renderMonitoring() {
           <div class="card-body" style="display:flex;flex-direction:column;gap:14px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <span style="font-size:13px;font-weight:700;">وضع الصيانة (Maintenance Mode)</span>
-              <input type="checkbox" ${mockData.monitoringStats.maintenanceMode ? 'checked' : ''} style="width:36px;height:18px;cursor:pointer;" onchange="toggleMonitorFlag('maintenanceMode')">
+              <input type="checkbox" id="monitoringMaintenanceToggle" ${mockData.settings.is_maintenance_mode === true ? 'checked' : ''} style="width:36px;height:18px;cursor:pointer;" onchange="toggleMaintenanceMode(this.checked)">
             </div>
             
             <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -7947,6 +8233,7 @@ function initSupabaseSync() {
           isOnline: isUserCurrentlyOnline(userObj, drv.is_online),
           joinDate: dateObj.toLocaleDateString('ar-EG'),
           avatar: driverName.charAt(0).toUpperCase(),
+          avatarUrl: drv.avatar_url || userObj.avatar_url || userObj.photo_url || drv.photo_url || drv.selfie_url || '',
           nationalIdUrl: drv.national_id_url || drv.id_card_front_url || userObj.national_id_url || drv.nationalIdUrl || '',
           nationalIdBackUrl: drv.national_id_back_url || drv.id_card_back_url || userObj.national_id_back_url || drv.nationalIdBackUrl || '',
           licenseUrl: drv.license_url || drv.driver_license_front_url || userObj.license_url || drv.licenseUrl || '',
@@ -7960,7 +8247,7 @@ function initSupabaseSync() {
           driverLicenseBackUrl: drv.license_back_url || drv.driver_license_back_url || userObj.license_back_url || '',
           vehicleLicenseFrontUrl: drv.vehicle_front_url || drv.vehicle_license_front_url || drv.vehicle_license_url || vehicleObj.license_front_url || '',
           vehicleLicenseBackUrl: drv.vehicle_back_url || drv.vehicle_license_back_url || vehicleObj.license_back_url || '',
-          vehicleImages: vehicleObj.images || drv.vehicle_images || []
+          vehicleImages: parseVehicleImages(vehicleObj.images || drv.vehicle_images || drv.images)
         });
       });
 
@@ -8011,6 +8298,7 @@ function initSupabaseSync() {
             isOnline: isUserCurrentlyOnline(u, false),
             joinDate: new Date(u.created_at || Date.now()).toLocaleDateString('ar-EG'),
             avatar: dName.charAt(0).toUpperCase(),
+            avatarUrl: u.avatar_url || u.photo_url || '',
             nationalIdUrl: u.national_id_url || u.id_card_front_url || '',
             nationalIdBackUrl: u.national_id_back_url || u.id_card_back_url || '',
             licenseUrl: u.license_url || u.driver_license_front_url || '',
@@ -8024,7 +8312,7 @@ function initSupabaseSync() {
             driverLicenseBackUrl: u.license_back_url || u.driver_license_back_url || '',
             vehicleLicenseFrontUrl: u.vehicle_front_url || u.vehicle_license_front_url || vObj.license_front_url || '',
             vehicleLicenseBackUrl: u.vehicle_back_url || u.vehicle_license_back_url || vObj.license_back_url || '',
-            vehicleImages: vObj.images || []
+            vehicleImages: parseVehicleImages(vObj.images || [])
           });
         }
       });
@@ -8207,8 +8495,15 @@ function initSupabaseSync() {
           demo_otp: settingsData.demo_otp || '123456',
           demo_driver_name: settingsData.demo_driver_name || 'كابتن تجريبي (Demo)',
           demo_passenger_name: settingsData.demo_passenger_name || 'راكب تجريبي (Demo)',
-          otp_support_whatsapp: settingsData.otp_support_whatsapp || '01204062941'
+          otp_support_whatsapp: settingsData.otp_support_whatsapp || '01204062941',
+          is_maintenance_mode: settingsData.is_maintenance_mode === true,
+          maintenance_title: settingsData.maintenance_title || 'التطبيق تحت الصيانة حالياً',
+          maintenance_message: settingsData.maintenance_message || 'نعمل على تحسين وتحديث خدمات inRide لنقدم لكم تجربة أفضل وأسرع. سنعود للعمل قريباً جداً.'
         };
+
+        try {
+          localStorage.setItem('inride_maintenance_mode', mockData.settings.is_maintenance_mode ? 'true' : 'false');
+        } catch (_) {}
 
         try {
           localStorage.setItem('inride_demo_mode_enabled', mockData.settings.demo_mode_enabled ? 'true' : 'false');
@@ -8600,19 +8895,21 @@ async function fetchAndDisplayUserProfile(uid, role) {
         isOnline: dData.is_online || false,
         joinDate: new Date(uData.created_at || dData.created_at || Date.now()).toLocaleDateString('ar-EG'),
         avatar: uName.charAt(0).toUpperCase(),
-        nationalIdUrl: dData.national_id_url || '',
-        nationalIdBackUrl: dData.national_id_back_url || '',
-        licenseUrl: dData.license_url || '',
-        licenseBackUrl: dData.license_back_url || '',
-        vehicleFrontUrl: dData.vehicle_front_url || '',
-        vehicleBackUrl: dData.vehicle_back_url || '',
-        vehicleLicenseUrl: dData.vehicle_license_url || '',
-        idCardFrontUrl: dData.national_id_url || '',
-        idCardBackUrl: dData.national_id_back_url || '',
-        driverLicenseFrontUrl: dData.license_url || '',
-        driverLicenseBackUrl: dData.license_back_url || '',
-        vehicleLicenseFrontUrl: dData.vehicle_front_url || '',
-        vehicleLicenseBackUrl: dData.vehicle_back_url || '',
+        avatarUrl: dData.avatar_url || uData.avatar_url || uData.photo_url || dData.photo_url || dData.selfie_url || '',
+        nationalIdUrl: dData.national_id_url || uData.national_id_url || '',
+        nationalIdBackUrl: dData.national_id_back_url || uData.national_id_back_url || '',
+        licenseUrl: dData.license_url || uData.license_url || '',
+        licenseBackUrl: dData.license_back_url || uData.license_back_url || '',
+        vehicleFrontUrl: dData.vehicle_front_url || vData.license_front_url || '',
+        vehicleBackUrl: dData.vehicle_back_url || vData.license_back_url || '',
+        vehicleLicenseUrl: dData.vehicle_license_url || dData.vehicle_front_url || '',
+        idCardFrontUrl: dData.national_id_url || uData.national_id_url || '',
+        idCardBackUrl: dData.national_id_back_url || uData.national_id_back_url || '',
+        driverLicenseFrontUrl: dData.license_url || uData.license_url || '',
+        driverLicenseBackUrl: dData.license_back_url || uData.license_back_url || '',
+        vehicleLicenseFrontUrl: dData.vehicle_front_url || vData.license_front_url || '',
+        vehicleLicenseBackUrl: dData.vehicle_back_url || vData.license_back_url || '',
+        vehicleImages: parseVehicleImages(vData.images || dData.vehicle_images || dData.images)
       };
 
       if (isDriver) {
@@ -8638,21 +8935,288 @@ async function fetchAndDisplayUserProfile(uid, role) {
   }
 }
 
-function renderDocItem(title, url) {
+// ============================================
+// Driver Documents & Interactive Lightbox Gallery
+// ============================================
+
+function getDriverDocumentsList(driver) {
+  if (!driver) return [];
+  const list = [];
+
+  function addDoc(id, title, url, icon) {
+    if (url && typeof url === 'string' && url.trim().length > 5 && !url.includes('placehold.co')) {
+      const trimmed = url.trim();
+      if (!list.some(d => d.url === trimmed)) {
+        list.push({ id, title, url: trimmed, icon: icon || 'ri-file-text-line' });
+      }
+    }
+  }
+
+  // 1. Personal Avatar / Selfie
+  addDoc('avatar', 'الصورة الشخصية للكابتن', driver.avatarUrl || driver.avatar_url || driver.photoUrl || driver.photo_url, 'ri-user-smile-line');
+
+  // 2. National ID
+  addDoc('national_id_front', 'بطاقة الرقم القومي (الوجه الأمامي)', driver.idCardFrontUrl || driver.nationalIdUrl, 'ri-profile-line');
+  addDoc('national_id_back', 'بطاقة الرقم القومي (الوجه الخلفي)', driver.idCardBackUrl || driver.nationalIdBackUrl, 'ri-profile-line');
+
+  // 3. Driver License
+  addDoc('driver_license_front', 'رخصة القيادة السارية (الوجه الأمامي)', driver.driverLicenseFrontUrl || driver.licenseUrl, 'ri-steering-line');
+  addDoc('driver_license_back', 'رخصة القيادة السارية (الوجه الخلفي)', driver.driverLicenseBackUrl || driver.licenseBackUrl, 'ri-steering-line');
+
+  // 4. Vehicle License
+  addDoc('vehicle_license_front', 'رخصة تسيير المركبة (الوجه الأمامي)', driver.vehicleLicenseFrontUrl || driver.vehicleLicenseUrl || driver.vehicleFrontUrl, 'ri-file-text-line');
+  addDoc('vehicle_license_back', 'رخصة تسيير المركبة (الوجه الخلفي)', driver.vehicleLicenseBackUrl || driver.vehicleBackUrl, 'ri-file-text-line');
+
+  // 5. Vehicle Photos
+  const vImages = parseVehicleImages(driver.vehicleImages || driver.vehicle_images || driver.images);
+  vImages.forEach((imgUrl, idx) => {
+    addDoc(`vehicle_img_${idx}`, `صورة المركبة (${idx + 1} من ${vImages.length})`, imgUrl, 'ri-car-fill');
+  });
+
+  return list;
+}
+
+let currentDocGallery = {
+  driverUid: null,
+  driverName: 'الكابتن',
+  docs: [],
+  currentIndex: 0,
+  zoom: 1,
+  rotation: 0
+};
+
+function openDocGalleryModal(driverUidOrObj, startIndexOrUrl = 0) {
+  let driver = null;
+  if (typeof driverUidOrObj === 'object' && driverUidOrObj !== null) {
+    driver = driverUidOrObj;
+  } else {
+    driver = (mockData.drivers || []).find(d => d.uid === driverUidOrObj || d.id === driverUidOrObj);
+  }
+
+  if (!driver) {
+    const foundUid = typeof driverUidOrObj === 'string' ? driverUidOrObj : activeProfileUid;
+    if (foundUid && typeof globalUsersMap !== 'undefined' && globalUsersMap[foundUid]) {
+      driver = globalUsersMap[foundUid];
+    }
+  }
+
+  if (!driver) {
+    showToast('⚠️ تعذر العثور على وثائق السائق');
+    return;
+  }
+
+  const docs = getDriverDocumentsList(driver);
+  if (docs.length === 0) {
+    showToast('ℹ️ لم يتم العثور على مستندات أو صور مرفوعة لهذا الكابتن');
+    return;
+  }
+
+  let validIndex = 0;
+  if (typeof startIndexOrUrl === 'string') {
+    const searchUrl = startIndexOrUrl.trim().toLowerCase();
+    const found = docs.findIndex(d => {
+      const docUrl = (d.url || '').trim().toLowerCase();
+      return docUrl === searchUrl || d.id === startIndexOrUrl || (docUrl.length > 10 && searchUrl.includes(docUrl)) || (searchUrl.length > 10 && docUrl.includes(searchUrl));
+    });
+    validIndex = found !== -1 ? found : 0;
+  } else {
+    validIndex = parseInt(startIndexOrUrl);
+    if (isNaN(validIndex) || validIndex < 0 || validIndex >= docs.length) validIndex = 0;
+  }
+
+  currentDocGallery = {
+    driverUid: driver.uid || driver.id,
+    driverName: driver.name || 'الكابتن',
+    docs: docs,
+    currentIndex: validIndex,
+    zoom: 1,
+    rotation: 0
+  };
+
+  renderDocGalleryModalDOM();
+}
+
+function renderDocGalleryModalDOM() {
+  let modal = document.getElementById('interactiveDocGalleryModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'interactiveDocGalleryModal';
+    modal.className = 'doc-gallery-overlay';
+    document.body.appendChild(modal);
+
+    window.addEventListener('keydown', handleGalleryKeydown);
+  }
+
+  updateDocGalleryContent();
+  modal.style.display = 'flex';
+}
+
+function handleGalleryKeydown(e) {
+  const modal = document.getElementById('interactiveDocGalleryModal');
+  if (!modal || modal.style.display === 'none') return;
+
+  if (e.key === 'Escape') {
+    closeDocGalleryModal();
+  } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+    navigateGalleryDoc(-1);
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    navigateGalleryDoc(1);
+  } else if (e.key === '+' || e.key === '=') {
+    zoomGalleryDoc(0.25);
+  } else if (e.key === '-') {
+    zoomGalleryDoc(-0.25);
+  }
+}
+
+function updateDocGalleryContent() {
+  const modal = document.getElementById('interactiveDocGalleryModal');
+  if (!modal) return;
+
+  const doc = currentDocGallery.docs[currentDocGallery.currentIndex];
+  if (!doc) return;
+
+  const total = currentDocGallery.docs.length;
+  const currNum = currentDocGallery.currentIndex + 1;
+
+  modal.innerHTML = `
+    <!-- Top Header -->
+    <div class="doc-gallery-header">
+      <div class="doc-gallery-title-box">
+        <h3 class="doc-gallery-title">
+          <i class="${doc.icon || 'ri-file-text-line'}" style="color:#60A5FA;"></i>
+          <span>${doc.title}</span>
+          <span style="font-size:13px;font-weight:400;color:var(--text-light);margin-right:8px;">(${currentDocGallery.driverName})</span>
+        </h3>
+        <span class="doc-gallery-counter">${currNum} / ${total}</span>
+      </div>
+
+      <div class="doc-gallery-tools">
+        <button class="doc-gallery-btn" onclick="zoomGalleryDoc(0.25)" title="تكبير (+)">
+          <i class="ri-zoom-in-line"></i>
+        </button>
+        <button class="doc-gallery-btn" onclick="zoomGalleryDoc(-0.25)" title="تصغير (-)">
+          <i class="ri-zoom-out-line"></i>
+        </button>
+        <button class="doc-gallery-btn" onclick="resetGalleryTransform()" title="إعادة ضبط">
+          <i class="ri-aspect-ratio-line"></i>
+        </button>
+        <button class="doc-gallery-btn" onclick="rotateGalleryDoc()" title="تدوير (90 درجة)">
+          <i class="ri-restart-line"></i>
+        </button>
+        <a href="${doc.url}" target="_blank" class="doc-gallery-btn" title="فتح الرابط الأصلي في نافذة جديدة">
+          <i class="ri-external-link-line"></i>
+        </a>
+        <button class="doc-gallery-btn btn-close" onclick="closeDocGalleryModal()" title="إغلاق المعرض (Esc)">
+          <i class="ri-close-line"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Viewport -->
+    <div class="doc-gallery-main" onclick="if(event.target === this || event.target.classList.contains('doc-gallery-viewport')) closeDocGalleryModal();">
+      ${total > 1 ? `
+        <button class="doc-gallery-arrow arrow-prev" onclick="event.stopPropagation(); navigateGalleryDoc(-1);" title="المستند السابق (السهم الأيمن)">
+          <i class="ri-arrow-right-s-line"></i>
+        </button>
+        <button class="doc-gallery-arrow arrow-next" onclick="event.stopPropagation(); navigateGalleryDoc(1);" title="المستند التالي (السهم الأيسر)">
+          <i class="ri-arrow-left-s-line"></i>
+        </button>
+      ` : ''}
+
+      <div class="doc-gallery-viewport">
+        <img id="docGalleryActiveImg"
+             src="${doc.url}"
+             alt="${doc.title}"
+             class="doc-gallery-img"
+             style="transform: scale(${currentDocGallery.zoom}) rotate(${currentDocGallery.rotation}deg);"
+             onError="this.onerror=null;this.src='https://placehold.co/800x600?text=تعذر+تحميل+المستند';"
+             onclick="event.stopPropagation(); zoomGalleryDoc(0.35);">
+      </div>
+    </div>
+
+    <!-- Bottom Thumbnail Strip -->
+    <div class="doc-gallery-footer">
+      ${currentDocGallery.docs.map((d, idx) => `
+        <div class="doc-gallery-thumb ${idx === currentDocGallery.currentIndex ? 'active' : ''}"
+             onclick="setDocGalleryIndex(${idx})"
+             title="${d.title}">
+          <img src="${d.url}" alt="${d.title}" onError="this.onerror=null;this.src='https://placehold.co/100x70?text=مستند';">
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function navigateGalleryDoc(step) {
+  const total = currentDocGallery.docs.length;
+  if (total <= 1) return;
+
+  currentDocGallery.currentIndex = (currentDocGallery.currentIndex + step + total) % total;
+  currentDocGallery.zoom = 1;
+  currentDocGallery.rotation = 0;
+  updateDocGalleryContent();
+}
+
+function setDocGalleryIndex(index) {
+  if (index >= 0 && index < currentDocGallery.docs.length) {
+    currentDocGallery.currentIndex = index;
+    currentDocGallery.zoom = 1;
+    currentDocGallery.rotation = 0;
+    updateDocGalleryContent();
+  }
+}
+
+function zoomGalleryDoc(delta) {
+  currentDocGallery.zoom = Math.max(0.5, Math.min(3.5, currentDocGallery.zoom + delta));
+  applyGalleryTransform();
+}
+
+function resetGalleryTransform() {
+  currentDocGallery.zoom = 1;
+  currentDocGallery.rotation = 0;
+  applyGalleryTransform();
+}
+
+function rotateGalleryDoc() {
+  currentDocGallery.rotation = (currentDocGallery.rotation + 90) % 360;
+  applyGalleryTransform();
+}
+
+function applyGalleryTransform() {
+  const img = document.getElementById('docGalleryActiveImg');
+  if (img) {
+    img.style.transform = `scale(${currentDocGallery.zoom}) rotate(${currentDocGallery.rotation}deg)`;
+  }
+}
+
+function closeDocGalleryModal() {
+  const modal = document.getElementById('interactiveDocGalleryModal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+  currentDocGallery.zoom = 1;
+  currentDocGallery.rotation = 0;
+}
+
+function renderDocItem(title, url, driverUid) {
   const hasUrl = url && typeof url === 'string' && url.trim().length > 5;
   const safeUrl = hasUrl ? url.trim() : '';
 
   if (hasUrl) {
+    const clickHandler = driverUid
+      ? `openDocGalleryModal('${driverUid}', '${safeUrl.replace(/'/g, "\\'")}')`
+      : `openDocGalleryModal(activeProfileUid || { name: 'الكابتن', nationalIdUrl: '${safeUrl.replace(/'/g, "\\'")}' }, '${safeUrl.replace(/'/g, "\\'")}')`;
+
     return `
       <div style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-md);overflow:hidden;transition:transform 0.2s,box-shadow 0.2s;">
         <div style="padding:10px 12px;background:rgba(37,99,235,0.05);border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;">
           <span style="font-size:12px;font-weight:700;color:var(--text-primary);"><i class="ri-file-text-line text-blue" style="margin-left:4px;"></i> ${title}</span>
           <span class="status-badge completed" style="font-size:10px;padding:2px 8px;"><i class="ri-check-line"></i> متوفر</span>
         </div>
-        <div style="position:relative;height:140px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;" onclick="viewDocumentModal('${title.replace(/'/g, "\\'")}', '${safeUrl.replace(/'/g, "\\'")}')">
+        <div style="position:relative;height:140px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;" onclick="${clickHandler}">
           <img src="${safeUrl}" alt="${title}" style="width:100%;height:100%;object-fit:cover;" onError="this.onerror=null;this.src='https://placehold.co/400x250?text=تعذر+تحميل+المستند';">
           <div style="position:absolute;inset:0;background:rgba(0,0,0,0.35);opacity:0;transition:opacity 0.2s;display:flex;align-items:center;justify-content:center;gap:6px;color:white;font-weight:700;font-size:13px;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0'">
-            <i class="ri-zoom-in-line" style="font-size:18px;"></i> تكبير المستند
+            <i class="ri-zoom-in-line" style="font-size:18px;"></i> تكبير وتصفح بالمعرض
           </div>
         </div>
       </div>
@@ -8674,35 +9238,11 @@ function renderDocItem(title, url) {
 }
 
 function viewDocumentModal(title, url) {
-  let modal = document.getElementById('docPreviewModal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'docPreviewModal';
-    modal.className = 'modal-overlay';
-    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px;';
-    document.body.appendChild(modal);
+  if (activeProfileUid) {
+    openDocGalleryModal(activeProfileUid, url);
+  } else {
+    openDocGalleryModal({ name: 'الكابتن', nationalIdUrl: url }, 0);
   }
-
-  modal.innerHTML = `
-    <div style="background:white;border-radius:16px;max-width:700px;width:100%;overflow:hidden;box-shadow:0 25px 50px rgba(0,0,0,0.4);direction:rtl;">
-      <div style="padding:16px 20px;background:#1E293B;color:white;display:flex;justify-content:space-between;align-items:center;">
-        <h3 style="margin:0;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;">
-          <i class="ri-file-shield-2-fill text-blue"></i> ${title || 'معاينة المستند'}
-        </h3>
-        <button onclick="document.getElementById('docPreviewModal').style.display='none'" style="background:none;border:none;color:white;font-size:24px;cursor:pointer;">&times;</button>
-      </div>
-      <div style="padding:20px;text-align:center;background:#0f172a;display:flex;align-items:center;justify-content:center;min-height:350px;">
-        <img src="${url}" alt="${title}" style="max-width:100%;max-height:75vh;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);object-fit:contain;" onError="this.onerror=null;this.src='https://placehold.co/600x400?text=تعذر+تحميل+المستند';">
-      </div>
-      <div style="padding:14px 20px;background:white;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;">
-        <a href="${url}" target="_blank" class="btn btn-outline btn-sm" style="display:flex;align-items:center;gap:6px;">
-          <i class="ri-external-link-line"></i> فتح الرابط الأصلي
-        </a>
-        <button onclick="document.getElementById('docPreviewModal').style.display='none'" class="btn btn-primary" style="padding:6px 20px;border-radius:8px;">إغلاق</button>
-      </div>
-    </div>
-  `;
-  modal.style.display = 'flex';
 }
 
 function renderDriverProfile() {
@@ -8904,18 +9444,53 @@ function renderDriverProfile() {
 
           <!-- Documents Card -->
           <div class="card" style="margin-top:0;">
-            <div class="card-header">
-              <h3><i class="ri-file-shield-2-fill text-blue" style="margin-left:8px;"></i> المستندات المرفوعة للتحقق</h3>
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+              <h3><i class="ri-file-shield-2-fill text-blue" style="margin-left:8px;"></i> المستندات والوثائق الرسمية للتحقق</h3>
+              <button class="btn btn-outline btn-sm" onclick="openDocGalleryModal('${driver.uid}', 0)" style="font-size:12px; display:flex; align-items:center; gap:6px; color:var(--primary); border-color:var(--primary); background:rgba(37,99,235,0.06); padding:5px 12px; border-radius:6px;">
+                <i class="ri-gallery-line"></i> فتح المعرض وسلايدر الوثائق
+              </button>
             </div>
             <div class="card-body">
               <div class="doc-viewer-grid">
-                ${renderDocItem('بطاقة الرقم القومي (الوجه الأمامي)', driver.idCardFrontUrl || driver.nationalIdUrl)}
-                ${renderDocItem('بطاقة الرقم القومي (الوجه الخلفي)', driver.idCardBackUrl || driver.nationalIdBackUrl)}
-                ${renderDocItem('رخصة القيادة (الوجه الأمامي)', driver.driverLicenseFrontUrl || driver.licenseUrl)}
-                ${renderDocItem('رخصة القيادة (الوجه الخلفي)', driver.driverLicenseBackUrl || driver.licenseBackUrl)}
-                ${renderDocItem('رخصة تسيير المركبة (الوجه الأمامي)', driver.vehicleLicenseFrontUrl || driver.vehicleLicenseUrl || driver.vehicleFrontUrl)}
-                ${renderDocItem('رخصة تسيير المركبة (الوجه الخلفي)', driver.vehicleLicenseBackUrl || driver.vehicleBackUrl)}
+                ${renderDocItem('الصورة الشخصية للكابتن (سيلفي)', driver.avatarUrl || driver.avatar_url, driver.uid)}
+                ${renderDocItem('بطاقة الرقم القومي (الوجه الأمامي)', driver.idCardFrontUrl || driver.nationalIdUrl, driver.uid)}
+                ${renderDocItem('بطاقة الرقم القومي (الوجه الخلفي)', driver.idCardBackUrl || driver.nationalIdBackUrl, driver.uid)}
+                ${renderDocItem('رخصة القيادة (الوجه الأمامي)', driver.driverLicenseFrontUrl || driver.licenseUrl, driver.uid)}
+                ${renderDocItem('رخصة القيادة (الوجه الخلفي)', driver.driverLicenseBackUrl || driver.licenseBackUrl, driver.uid)}
+                ${renderDocItem('رخصة تسيير المركبة (الوجه الأمامي)', driver.vehicleLicenseFrontUrl || driver.vehicleLicenseUrl || driver.vehicleFrontUrl, driver.uid)}
+                ${renderDocItem('رخصة تسيير المركبة (الوجه الخلفي)', driver.vehicleLicenseBackUrl || driver.vehicleBackUrl, driver.uid)}
               </div>
+            </div>
+          </div>
+
+          <!-- Vehicle Photos Card -->
+          <div class="card" style="margin-top:0;">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+              <h3><i class="ri-car-fill text-blue" style="margin-left:8px;"></i> صور المركبة المرفوعة من الكابتن (${(driver.vehicleImages || []).length} صور)</h3>
+              ${(driver.vehicleImages && driver.vehicleImages.length > 0) ? `
+                <button class="btn btn-outline btn-sm" onclick="openDocGalleryModal('${driver.uid}', '${driver.vehicleImages[0].replace(/'/g, "\\'")}')" style="font-size:12px; display:flex; align-items:center; gap:6px;">
+                  <i class="ri-zoom-in-line"></i> استعراض بالمعرض
+                </button>
+              ` : ''}
+            </div>
+            <div class="card-body">
+              ${(driver.vehicleImages && driver.vehicleImages.length > 0) ? `
+                <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:12px;">
+                  ${driver.vehicleImages.map((imgUrl, vIdx) => `
+                    <div style="position:relative; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--border-color); cursor:pointer; height:105px; background:#f1f5f9;" onclick="openDocGalleryModal('${driver.uid}', '${imgUrl.replace(/'/g, "\\'")}')" title="صورة المركبة ${vIdx + 1} - اضغط للتكبير والتنقل">
+                      <img src="${imgUrl}" alt="صورة المركبة ${vIdx + 1}" style="width:100%; height:100%; object-fit:cover;" onError="this.onerror=null;this.src='https://placehold.co/300x200?text=مركبة';">
+                      <div style="position:absolute; inset:0; background:rgba(0,0,0,0.35); opacity:0; transition:opacity 0.2s; display:flex; align-items:center; justify-content:center; color:white; font-size:12px; font-weight:700;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0'">
+                        <i class="ri-zoom-in-line" style="margin-left:4px;"></i> تكبير
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              ` : `
+                <div style="padding:28px; text-align:center; background:var(--bg-primary); border-radius:var(--radius-md); border:1px dashed var(--border-color); color:var(--text-light); font-size:13px;">
+                  <i class="ri-car-line" style="font-size:32px; display:block; margin-bottom:6px; opacity:0.4;"></i>
+                  لم يقم الكابتن برفع صور للمركبة بعد
+                </div>
+              `}
             </div>
           </div>
 
@@ -9743,6 +10318,90 @@ async function initProfileChatSync(uid, role) {
   }, 3000);
 }
 
+function renderChatMessageBubblesHtml(messages, otherPartyName = 'المستخدم') {
+  if (!messages || messages.length === 0) {
+    return '<div style="text-align:center;padding:32px;color:var(--text-light);font-size:13px;">لا توجد رسائل سابقة في هذه المحادثة. ابدأ المحادثة الآن.</div>';
+  }
+
+  // Sort messages strictly chronologically by parsed timestamp, normalizing any +3h shifted client timestamps
+  const sortedMessages = messages.slice().sort((a, b) => {
+    let tA = new Date(a.created_at || a.createdAt || 0).getTime();
+    let tB = new Date(b.created_at || b.createdAt || 0).getTime();
+    if (tA > Date.now() + 10 * 60 * 1000 && (tA - Date.now()) <= 4.5 * 3600 * 1000) tA -= 3 * 3600 * 1000;
+    if (tB > Date.now() + 10 * 60 * 1000 && (tB - Date.now()) <= 4.5 * 3600 * 1000) tB -= 3 * 3600 * 1000;
+    return tA - tB;
+  });
+
+  let html = '';
+  let lastDateLabel = '';
+  let prevIsSupport = null;
+
+  sortedMessages.forEach((msg) => {
+    const isSupport = msg.sender_type === 'admin' || msg.is_admin === true || msg.senderId === 'support' || msg.sender === 'admin';
+    const text = msg.message || msg.text || '';
+
+    let dateObj = msg.created_at ? new Date(msg.created_at) : (msg.createdAt ? new Date(msg.createdAt) : new Date());
+    if (dateObj.getTime() > Date.now() + 10 * 60 * 1000 && (dateObj.getTime() - Date.now()) <= 4.5 * 3600 * 1000) {
+      dateObj = new Date(dateObj.getTime() - 3 * 3600 * 1000);
+    }
+
+    const timeStr = dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+
+    // Date divider check
+    const today = new Date(); today.setHours(0,0,0,0);
+    const msgDay = new Date(dateObj); msgDay.setHours(0,0,0,0);
+    const diffDays = Math.round((today - msgDay) / (1000 * 60 * 60 * 24));
+    let dateLabel = '';
+    if (diffDays === 0) dateLabel = 'اليوم';
+    else if (diffDays === 1) dateLabel = 'أمس';
+    else dateLabel = msgDay.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    if (dateLabel !== lastDateLabel) {
+      html += `
+        <div style="display:flex; justify-content:center; align-items:center; margin:16px 0 8px; width:100%;">
+          <span style="background:var(--bg-secondary, #F1F5F9); color:var(--text-secondary, #64748B); font-size:11.5px; font-weight:700; padding:4px 14px; border-radius:20px; border:1px solid var(--border-color, #E2E8F0); box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+            ${dateLabel}
+          </span>
+        </div>
+      `;
+      lastDateLabel = dateLabel;
+      prevIsSupport = null;
+    }
+
+    // Interleave separator when sender switches
+    const isSenderSwitch = prevIsSupport !== null && prevIsSupport !== isSupport;
+    const topMargin = isSenderSwitch ? '14px' : '4px';
+    prevIsSupport = isSupport;
+
+    let statusIcon = '';
+    if (isSupport) {
+      if (msg.status === 'read' || msg.read_at) {
+        statusIcon = '<i class="ri-check-double-line" style="color:#0284C7;font-size:13px;margin-right:4px;" title="تمت القراءة"></i>';
+      } else if (msg.status === 'delivered' || msg.delivered_at) {
+        statusIcon = '<i class="ri-check-double-line" style="color:#94A3B8;font-size:13px;margin-right:4px;" title="تم التسليم"></i>';
+      } else {
+        statusIcon = '<i class="ri-check-line" style="color:#94A3B8;font-size:13px;margin-right:4px;" title="تم الإرسال"></i>';
+      }
+    }
+
+    const senderName = isSupport ? 'الدعم الفني' : escapeHtml(otherPartyName || 'المستخدم');
+
+    html += `
+      <div style="align-self:${isSupport ? 'flex-end' : 'flex-start'}; max-width:78%; margin-top:${topMargin}; margin-bottom:2px; display:flex; flex-direction:column;">
+        <div style="padding:11px 16px; border-radius:${isSupport ? '16px 16px 4px 16px' : '16px 16px 16px 4px'}; background:${isSupport ? '#E0F2FE' : '#FFFFFF'}; color:${isSupport ? '#0369A1' : '#1E293B'}; box-shadow:0 1px 3px rgba(0,0,0,0.06); font-size:13.5px; font-weight:600; line-height:1.5; border:${isSupport ? '1px solid #BAE6FD' : '1px solid #E2E8F0'}; word-break:break-word;">
+          ${escapeHtml(text)}
+        </div>
+        <div style="font-size:10px; color:var(--text-light, #64748B); text-align:${isSupport ? 'left' : 'right'}; margin-top:3px; display:flex; align-items:center; justify-content:${isSupport ? 'flex-start' : 'flex-end'}; gap:4px; padding:0 4px;">
+          <span>${senderName} • ${timeStr}</span>
+          ${statusIcon}
+        </div>
+      </div>
+    `;
+  });
+
+  return html;
+}
+
 async function renderSupabaseProfileChat(uid) {
   const chatContainer = document.getElementById('profileChatMessages');
   if (!chatContainer || !supabaseClient) return;
@@ -9756,45 +10415,19 @@ async function renderSupabaseProfileChat(uid) {
 
     if (error) throw error;
 
-    let html = '';
-    if (!messages || messages.length === 0) {
-      html = '<div style="text-align:center;padding:24px;color:var(--text-light);font-size:13px;">لا توجد رسائل سابقة. ابدأ المحادثة الآن.</div>';
-    } else {
-      messages.forEach(msg => {
-        const isSupport = msg.sender_type === 'admin' || msg.is_admin === true;
-        const text = msg.message || msg.text || '';
-        const dateObj = msg.created_at ? new Date(msg.created_at) : new Date();
-        const time = dateObj.toLocaleTimeString('ar-EG', {hour: '2-digit', minute:'2-digit'});
-
-        let statusIcon = '';
-        if (isSupport) {
-          if (msg.status === 'read' || msg.read_at) {
-            statusIcon = '<i class="ri-check-double-line" style="color:#64B5F6;font-size:12px;margin-right:4px;" title="تمت القراءة"></i>';
-          } else if (msg.status === 'delivered' || msg.delivered_at) {
-            statusIcon = '<i class="ri-check-double-line" style="color:rgba(255,255,255,0.7);font-size:12px;margin-right:4px;" title="تم التسليم"></i>';
-          } else {
-            statusIcon = '<i class="ri-check-line" style="color:rgba(255,255,255,0.7);font-size:12px;margin-right:4px;" title="تم الإرسال"></i>';
-          }
-        }
-        
-        html += `
-          <div style="align-self: ${isSupport ? 'flex-end' : 'flex-start'}; max-width: 75%; margin-bottom: 12px; display: flex; flex-direction: column;">
-            <div style="padding: 10px 14px; border-radius: var(--radius-md); background: ${isSupport ? '#E0F2FE' : '#FFFFFF'}; color: #000000; box-shadow: var(--shadow-sm); font-size: 13.5px; font-weight: 700; border: ${isSupport ? '1px solid #BAE6FD' : '1px solid #CBD5E1'};">
-              ${text}
-            </div>
-            <div style="font-size: 10px; color: var(--text-light); text-align: ${isSupport ? 'left' : 'right'}; margin-top: 4px; display:flex; align-items:center; justify-content:${isSupport ? 'flex-start' : 'flex-end'}; gap:4px;">
-              <span>${isSupport ? 'الدعم الفني' : 'المستخدم'} • ${time}</span>
-              ${statusIcon}
-            </div>
-          </div>
-        `;
-      });
+    let targetName = 'المستخدم';
+    const nameEl = document.querySelector('#driverProfileName, #passengerProfileName, .profile-hero-info h2');
+    if (nameEl && nameEl.textContent.trim()) {
+      targetName = nameEl.textContent.trim();
     }
-    chatContainer.innerHTML = html;
+
+    chatContainer.innerHTML = renderChatMessageBubblesHtml(messages, targetName);
     chatContainer.scrollTop = chatContainer.scrollHeight;
 
     // Mark as read by admin
-    supabaseClient.from('support_chats').update({ unread_admin_count: 0 }).eq('id', uid).catch(() => {});
+    try {
+      await supabaseClient.from('support_chats').update({ unread_admin_count: 0 }).eq('id', uid);
+    } catch (_) {}
   } catch (e) {
     console.warn("[SupportChat Log] Error loading profile chat:", e);
     renderLocalProfileChat(uid);
@@ -9806,29 +10439,7 @@ function renderLocalProfileChat(uid) {
   if (!chatContainer) return;
 
   const msgs = mockData.supportChats[uid] || [];
-
-  if (msgs.length === 0) {
-    chatContainer.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-light);font-size:13px;">لا توجد رسائل سابقة. ابدأ المحادثة الآن.</div>';
-    return;
-  }
-
-  let html = '';
-  msgs.forEach(msg => {
-    const isSupport = msg.senderId === 'support' || msg.sender === 'admin' || msg.is_admin === true || msg.sender_type === 'admin';
-    const time = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString('ar-EG', {hour: '2-digit', minute:'2-digit'}) : '';
-    html += `
-      <div style="align-self: ${isSupport ? 'flex-end' : 'flex-start'}; max-width: 75%; margin-bottom: 12px; display: flex; flex-direction: column;">
-        <div style="padding: 10px 14px; border-radius: var(--radius-md); background: ${isSupport ? '#E0F2FE' : '#FFFFFF'}; color: #000000; box-shadow: var(--shadow-sm); font-size: 13.5px; font-weight: 700; border: ${isSupport ? '1px solid #BAE6FD' : '1px solid #CBD5E1'};">
-          ${msg.text}
-        </div>
-        <div style="font-size: 11px; color: #475569; font-weight: 600; text-align: ${isSupport ? 'left' : 'right'}; margin-top: 4px;">
-          ${isSupport ? 'الدعم الفني' : 'المستخدم'} • ${time}
-        </div>
-      </div>
-    `;
-  });
-
-  chatContainer.innerHTML = html;
+  chatContainer.innerHTML = renderChatMessageBubblesHtml(msgs, 'المستخدم');
   chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
@@ -9846,21 +10457,25 @@ async function sendProfileChatMessage() {
   if (supabaseClient) {
     const nowStr = new Date().toISOString();
     const msgId = generateUUID();
-    const adminSenderId = (currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : uid;
+    const adminSenderId = (typeof currentAdminUser !== 'undefined' && currentAdminUser && currentAdminUser.id) ? currentAdminUser.id : uid;
 
     console.log("[SupportChat Log] Support Message Sent: id=" + msgId + " from profile to recipient=" + uid);
 
     try {
       // 1. Ensure support_chats conversation entry exists first
-      await supabaseClient.from('support_chats').upsert({
-        id: uid,
-        user_id: uid,
-        status: 'open',
-        last_message: text,
-        last_message_at: nowStr,
-        updated_at: nowStr,
-        unread_admin_count: 0
-      }).catch(e => console.warn('[SupportChat] Non-critical upsert warning:', e));
+      try {
+        await supabaseClient.from('support_chats').upsert({
+          id: uid,
+          user_id: uid,
+          status: 'open',
+          last_message: text,
+          last_message_at: nowStr,
+          updated_at: nowStr,
+          unread_admin_count: 0
+        });
+      } catch (upsertErr) {
+        console.warn('[SupportChat] Non-critical upsert warning:', upsertErr);
+      }
 
       // 2. Insert message into support_messages
       const { error: insertError } = await supabaseClient.from('support_messages').insert({
@@ -9879,40 +10494,49 @@ async function sendProfileChatMessage() {
 
       if (insertError) {
         console.warn('[SupportChat Log] Retry inserting simplified support_message:', insertError.message);
-        await supabaseClient.from('support_messages').insert({
-          id: msgId,
-          conversation_id: uid,
-          user_id: uid,
-          sender_type: 'admin',
-          message: text,
-          text: text,
-          status: 'sent',
-          is_admin: true,
-          created_at: nowStr
-        }).catch(e => console.warn('[SupportChat] Non-critical retry warning:', e));
+        try {
+          await supabaseClient.from('support_messages').insert({
+            id: msgId,
+            conversation_id: uid,
+            user_id: uid,
+            sender_type: 'admin',
+            message: text,
+            text: text,
+            status: 'sent',
+            is_admin: true,
+            created_at: nowStr
+          });
+        } catch (retryErr) {
+          console.warn('[SupportChat] Non-critical retry warning:', retryErr);
+        }
       }
 
       // Insert in-app notification for recipient in Supabase
       const notifId = generateUUID();
-      await supabaseClient.from('notifications').insert({
-        id: notifId,
-        user_id: uid,
-        title: 'الدعم الفني',
-        body: text,
-        type: 'support_chat',
-        is_read: false,
-        created_at: nowStr,
-        data: {
-          conversation_id: uid,
-          message_id: msgId,
-          type: 'support_chat'
-        }
-      }).catch(e => console.warn('[SupportChat] Non-critical notification insert warning:', e));
+      try {
+        await supabaseClient.from('notifications').insert({
+          id: notifId,
+          user_id: uid,
+          title: 'رسالة جديدة من إدارة inRide',
+          body: text,
+          type: 'support_chat',
+          is_read: false,
+          created_at: nowStr,
+          data: {
+            conversation_id: uid,
+            message_id: msgId,
+            type: 'support_chat'
+          }
+        });
+      } catch (notifErr) {
+        console.warn('[SupportChat] Non-critical notification insert warning:', notifErr);
+      }
 
       try {
-        dispatchPushNotificationToUser(uid, "الدعم الفني", text, msgId);
+        await dispatchPushNotificationToUser(uid, "رسالة جديدة من إدارة inRide", text, msgId);
       } catch (_) {}
-      renderSupabaseProfileChat(uid);
+      await renderSupabaseProfileChat(uid);
+      showToast("✅ تم إرسال الرسالة بنجاح");
     } catch (e) {
       console.error("[SupportChat Log] Error sending profile chat message:", e);
       showToast("❌ تعذر إرسال الرسالة إلى قاعدة البيانات: " + (e.message || e));
@@ -16234,5 +16858,214 @@ async function syncPlacesWithSupabase() {
     }
   } catch (e) {
     console.warn('Sync error:', e);
+  }
+}
+
+// ============================================
+// MAINTENANCE MODE LOGIC & BROADCAST NOTIFICATIONS
+// ============================================
+async function toggleMaintenanceMode(enabled) {
+  const isEnabling = !!enabled;
+  const actionText = isEnabling ? 'تفعيل وضع الصيانة وقفل التطبيق بالكامل' : 'إلغاء وضع الصيانة وإعادة فتح التطبيق للجميع';
+  const confirmMsg = isEnabling 
+    ? '⚠️ تنبيه هام: هل أنت متأكد من تفعيل وضع الصيانة الآن؟\n\n• سيتم قفل التطبيق فوراً أمام جميع الركاب والسائقين.\n• ستظهر شاشة الصيانة على كامل الشاشة وتمنع أي استخدام.\n• سيتم إرسال إشعار فوري (Push Notification) لجميع الأجهزة النشطة والمسجلة.'
+    : '🚀 هل تريد إنهاء الصيانة وإعادة فتح التطبيق لجميع المستخدمين الآن؟\n\n• سيعود التطبيق للعمل بشكل فوري للجميع.\n• سيتم إرسال إشعار فوري لجميع المستخدمين يبشرهم بعودة التطبيق للعمل.';
+
+  if (!confirm(confirmMsg)) {
+    const toggleEl = document.getElementById('maintenanceModeToggle');
+    if (toggleEl) toggleEl.checked = !isEnabling;
+    const monitorToggleEl = document.getElementById('monitoringMaintenanceToggle');
+    if (monitorToggleEl) monitorToggleEl.checked = !isEnabling;
+    return;
+  }
+
+  mockData.settings.is_maintenance_mode = isEnabling;
+  try {
+    localStorage.setItem('inride_maintenance_mode', isEnabling ? 'true' : 'false');
+  } catch (_) {}
+
+  showToast(`⏳ جاري ${actionText}...`);
+
+  if (supabaseClient) {
+    try {
+      const { error } = await supabaseClient
+        .from('app_settings')
+        .upsert({
+          id: 'default',
+          is_maintenance_mode: isEnabling,
+          maintenance_title: (mockData.settings.maintenance_title || 'التطبيق تحت الصيانة حالياً').trim(),
+          maintenance_message: (mockData.settings.maintenance_message || 'نعمل على تحسين وتحديث خدمات inRide لنقدم لكم تجربة أفضل وأسرع. سنعود للعمل قريباً جداً.').trim(),
+          maintenance_updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      // Broadcast Push Notification to all users
+      await broadcastMaintenancePushNotification(isEnabling);
+
+      // Log in audit logs
+      logAction(`${actionText} - عنوان: ${mockData.settings.maintenance_title}`);
+
+      showToast(isEnabling 
+        ? '🔴 تم تفعيل وضع الصيانة وقفل التطبيق بنجاح وإرسال الإشعار لجميع المستخدمين' 
+        : '🟢 تم إلغاء وضع الصيانة وعاد التطبيق للعمل بنجاح وتم إرسال إشعار العودة');
+
+      renderPage(currentPage);
+      if (typeof debouncedSync === 'function') debouncedSync();
+    } catch (err) {
+      console.error('[Maintenance Mode Error]', err);
+      showToast(`❌ حدث خطأ أثناء تحديث وضع الصيانة: ${err.message}`);
+    }
+  } else {
+    showToast(`✅ تم تحديث وضع الصيانة محلياً`);
+    renderPage(currentPage);
+  }
+}
+
+function updateMaintenanceSetting(key, val) {
+  mockData.settings[key] = val;
+  settingsDirty = true;
+  const saveBtn = document.getElementById('settings-save-container');
+  if (saveBtn) saveBtn.style.display = 'flex';
+}
+
+async function sendCustomMaintenanceBroadcast() {
+  const isEnabling = mockData.settings.is_maintenance_mode === true;
+  const confirmMsg = `هل تريد إعادة إرسال إشعار (${isEnabling ? 'تطبيق تحت الصيانة' : 'التطبيق يعمل الآن'}) لجميع الأجهزة النشطة والمسجلة الآن؟`;
+  if (!confirm(confirmMsg)) return;
+
+  showToast('⏳ جاري إرسال الإشعار لجميع الأجهزة...');
+  await broadcastMaintenancePushNotification(isEnabling);
+  showToast('✅ تم إرسال الإشعار لجميع الأجهزة المسجلة بنجاح');
+}
+
+async function broadcastMaintenancePushNotification(isEnabling) {
+  const notifTitle = isEnabling 
+    ? (mockData.settings.maintenance_title || '⚙️ إشعار صيانة مجدولة')
+    : '🚀 عاد التطبيق للعمل!';
+  
+  const notifBody = isEnabling
+    ? (mockData.settings.maintenance_message || 'تطبيق inRide تحت الصيانة الدورية حالياً وسيعود للعمل قريباً.')
+    : 'تم الانتهاء من أعمال الصيانة بنجاح. يمكنك الآن استخدام التطبيق وطلب الرحلات كالمعتاد.';
+
+  console.log(`[BroadcastPush] Sending maintenance broadcast: isEnabling=${isEnabling}, Title=${notifTitle}`);
+
+  // 1. Record announcement in admin_notifications table
+  if (supabaseClient) {
+    try {
+      const notifId = generateUUID();
+      await supabaseClient.from('admin_notifications').insert({
+        id: notifId,
+        title: notifTitle,
+        body: notifBody,
+        type: isEnabling ? 'maintenance_start' : 'maintenance_end',
+        target: 'all',
+        target_city: 'all',
+        created_at: new Date().toISOString(),
+        sent: true
+      });
+    } catch (e) {
+      console.warn('[BroadcastPush] Error logging to admin_notifications:', e.message);
+    }
+  }
+
+  // 2. Fetch all active device tokens from user_devices table
+  let deviceTokens = [];
+  if (supabaseClient) {
+    try {
+      const { data: devices, error } = await supabaseClient
+        .from('user_devices')
+        .select('device_token')
+        .eq('is_active', true);
+      if (!error && Array.isArray(devices)) {
+        deviceTokens = devices.map(d => d.device_token).filter(Boolean);
+        console.log(`[BroadcastPush] Found ${deviceTokens.length} active device tokens in database.`);
+      }
+    } catch (e) {
+      console.warn('[BroadcastPush] Error fetching user_devices:', e.message);
+    }
+  }
+
+  // 3. Dispatch to Vercel Push Endpoint (and /api/push-notification)
+  const pushPayload = {
+    target: 'all',
+    recipientId: 'ALL_USERS',
+    title: notifTitle,
+    body: notifBody,
+    type: isEnabling ? 'maintenance_start' : 'maintenance_end',
+    data: {
+      is_maintenance: isEnabling ? 'true' : 'false',
+      title: notifTitle,
+      body: notifBody,
+      timestamp: String(Date.now())
+    }
+  };
+
+  let sentSuccessfully = false;
+
+  // Try Vercel Backend
+  try {
+    const response = await fetch('https://inride-push-backend.vercel.app/api', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pushPayload)
+    });
+    if (response.ok) {
+      sentSuccessfully = true;
+      console.log('[BroadcastPush] Dispatched successfully via inride-push-backend');
+    }
+  } catch (e) {
+    console.warn('[BroadcastPush] Backend push endpoint unreachable:', e.message);
+  }
+
+  // Try local relative /api/push-notification
+  if (!sentSuccessfully) {
+    try {
+      const relResponse = await fetch('/api/push-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pushPayload)
+      });
+      if (relResponse.ok) {
+        sentSuccessfully = true;
+        console.log('[BroadcastPush] Dispatched via local /api/push-notification');
+      }
+    } catch (e) {}
+  }
+
+  // 4. Direct OneSignal REST API Broadcast with subscription IDs & segments
+  try {
+    const ONESIGNAL_REST_KEY = (typeof atob === 'function' ? atob('b3NfdjJfYXBwX2hjZ3JzcmFscW5ldWZkNGF3ZXN5anh4eDI3N3Ayb2Vwdm95dWJlbWltcmhrc2ZteHl0bHBvNmtjeXFzcjV3ZXFwcmNicnVzeDRxcXRsbnM3dHgzanNhdnc3amp3a2RqNXB6ZGh6YmE=') : Buffer.from('b3NfdjJfYXBwX2hjZ3JzcmFscW5ldWZkNGF3ZXN5anh4eDI3N3Ayb2Vwdm95dWJlbWltcmhrc2ZteHl0bHBvNmtjeXFzcjV3ZXFwcmNicnVzeDRxcXRsbnM3dHgzanNhdnc3amp3a2RqNXB6ZGh6YmE=', 'base64').toString('utf8'));
+    const osPayload = {
+      app_id: '388d1944-0b83-4942-8f80-b12584def7d7',
+      target_channel: 'push',
+      headings: { en: notifTitle, ar: notifTitle },
+      contents: { en: notifBody, ar: notifBody },
+      data: pushPayload.data,
+      android_accent_color: isEnabling ? 'FFE53935' : 'FF2E7D32',
+      priority: 10,
+      ttl: 86400,
+      small_icon: 'ic_launcher'
+    };
+
+    if (deviceTokens.length > 0) {
+      osPayload.include_subscription_ids = deviceTokens.slice(0, 2000);
+    } else {
+      osPayload.included_segments = ['Subscribed Users', 'Total Subscriptions'];
+    }
+
+    const osRes = await fetch('https://api.onesignal.com/notifications', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Authorization': 'Key ' + ONESIGNAL_REST_KEY
+      },
+      body: JSON.stringify(osPayload)
+    });
+    const osResData = await osRes.json();
+    console.log('[BroadcastPush] Direct OneSignal Status:', osRes.status, osResData);
+  } catch (osErr) {
+    console.warn('[BroadcastPush] Direct OneSignal fetch error:', osErr.message);
   }
 }

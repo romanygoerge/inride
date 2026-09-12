@@ -11,6 +11,7 @@ import '../utils/map_coordinates_helper.dart';
 import '../utils/vehicle_helper.dart';
 import '../utils/uuid_generator.dart';
 import '../utils/app_logger.dart';
+import '../state/global_state.dart';
 
 class RideRepository {
   static final RideRepository instance = RideRepository._internal();
@@ -22,6 +23,7 @@ class RideRepository {
   /// Creates a new ride request in Supabase Database with a valid v4 UUID
   Future<String> createRideRequest({
     required String passengerId,
+    String? passengerPhone,
     required double pickupLat,
     required double pickupLng,
     required String pickupAddress,
@@ -59,9 +61,12 @@ class RideRepository {
       }
     }
 
+    final resolvedPhone = passengerPhone ?? GlobalState.instance.phoneNumber;
+
     final newRequest = RideRequestModel(
       requestId: requestId,
       passengerId: passengerId,
+      passengerPhone: resolvedPhone,
       pickupLatitude: pickupLat,
       pickupLongitude: pickupLng,
       pickupAddress: finalPickupAddress,

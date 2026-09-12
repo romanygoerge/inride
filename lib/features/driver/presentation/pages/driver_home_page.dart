@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
@@ -47,6 +48,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
   bool _isPanelCollapsed = false;
   bool _isNavigatingToActivePage = false;
   bool _isAcceptingRide = false;
+  DateTime? _lastBackPressTime;
 
   void _measurePanelHeight() {
     if (!mounted) return;
@@ -447,11 +449,42 @@ class _DriverHomePageState extends State<DriverHomePage> {
     final displayRequests = _activeRequests
         .where((req) => !_dismissedRequestIds.contains(req.requestId))
         .toList();
+    final canDirectlyExit = state.canExitApplication();
     return PopScope(
-      canPop: state.canExitApplication(),
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
+        if (didPop) return;
+
+        // 1. Close drawer if open
+        if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+          _scaffoldKey.currentState?.closeDrawer();
+          return;
+        }
+
+        // 2. If there's an active trip, show prevention alert
+        if (!canDirectlyExit) {
           showExitPreventionAlert(context);
+          return;
+        }
+
+        // 3. Double tap to exit gracefully
+        final now = DateTime.now();
+        if (_lastBackPressTime == null ||
+            now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+          _lastBackPressTime = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'اضغط مرة أخرى للخروج من التطبيق',
+                style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+              ),
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+        } else {
+          SystemNavigator.pop();
         }
       },
       child: Scaffold(

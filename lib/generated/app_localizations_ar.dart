@@ -571,7 +571,7 @@ class AppLocalizationsAr extends AppLocalizations {
   String get writeComment => 'اكتب تعليقك هنا...';
 
   @override
-  String get noRatingsYet => 'لا توجد تقييمات أو مراجعات حالياً';
+  String get noRatingsYet => 'التقييمات';
 
   @override
   String get rateDriver => 'تقييم الكابتن';

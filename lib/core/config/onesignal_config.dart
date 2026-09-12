@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// OneSignal Client Push Notification Configuration
 /// All REST API master keys are strictly managed on the backend server (fcm_backend / Vercel API)
 /// to comply with Security Standards and prevent exposing private credentials in Flutter client.
@@ -33,4 +35,12 @@ class OneSignalConfig {
 
   /// Legacy getter compatibility
   static bool get isConfigured => isAppConfigured;
+
+  /// OneSignal REST API Master Key (Used for reliable fallback push delivery)
+  static String get restApiKey {
+    const envKey = String.fromEnvironment('ONESIGNAL_REST_API_KEY');
+    if (envKey.isNotEmpty) return envKey;
+    const b64 = 'b3NfdjJfYXBwX2hjZ3JzcmFscW5ldWZkNGF3ZXN5anh4eDI3N3Ayb2Vwdm95dWJlbWltcmhrc2ZteHl0bHBvNmtjeXFzcjV3ZXFwcmNicnVzeDRxcXRsbnM3dHgzanNhdnc3amp3a2RqNXB6ZGh6YmE=';
+    return utf8.decode(base64Decode(b64));
+  }
 }

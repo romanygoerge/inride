@@ -10,8 +10,14 @@ import '../../../../core/services/location_service.dart';
 import '../../../../core/services/places_search_service.dart';
 import '../../../../core/services/search_history_service.dart';
 import '../../../../core/theme/app_theme.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/utils/map_coordinates_helper.dart';
 import '../../../../generated/app_localizations.dart';
+import '../../../../core/utils/snappy_page_route.dart';
+import '../../../../core/services/saved_places_service.dart';
+import 'map_location_picker_page.dart';
 
 class SearchResultItem {
   final PlaceLocation location;
@@ -36,7 +42,7 @@ class LocationSearchPage extends StatefulWidget {
   State<LocationSearchPage> createState() => _LocationSearchPageState();
 }
 
-class _LocationSearchPageState extends State<LocationSearchPage> {
+class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBindingObserver {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   List<PlaceLocation> _searchResults = [];
@@ -48,12 +54,16 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
 
   late LatLng _referenceCoordinates;
   bool _isUsingMapCenter = false;
+  bool _isWaitingForMapsReturn = false;
+  String? _lastProcessedClipboard;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _determineReferenceCoordinates();
     _loadInitialPlaces();
+    SavedPlacesService.instance.versionNotifier.addListener(_onSavedPlacesChanged);
   }
 
   bool _isDokkiOrInvalid(LatLng coord) {
@@ -122,7 +132,8 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
       }).toList();
 
       // 2. Load saved places & recalculate dynamic distances
-      final rawSaved = await PlacesSearchService.instance.getSavedPlaces();
+      await SavedPlacesService.instance.init();
+      final rawSaved = SavedPlacesService.instance.getSavedPlaces();
       _savedPlaces = rawSaved.map((p) {
         final dist = SadatCityGeoData.calculateDistance(
           _referenceCoordinates.latitude,
@@ -155,9 +166,124 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    SavedPlacesService.instance.versionNotifier.removeListener(_onSavedPlacesChanged);
     _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkClipboardForLocation(autoSelectIfWaiting: true);
+    }
+  }
+
+  Future<void> _checkClipboardForLocation({bool autoSelectIfWaiting = false, bool manualTrigger = false}) async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text?.trim() ?? '';
+      if (text.isEmpty) {
+        if (manualTrigger && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'الحافظة فارغة! حدد المكان في خرائط جوجل واضغط مشاركة أو نسخ الرابط أولاً 📋',
+                style: GoogleFonts.cairo(fontSize: 12.5),
+              ),
+              backgroundColor: Colors.orange.shade800,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (text == _lastProcessedClipboard && !manualTrigger) return;
+
+      final coords = await MapCoordinatesHelper.extractCoordinatesFromText(text);
+      if (coords != null && mounted) {
+        if (autoSelectIfWaiting || _isWaitingForMapsReturn || manualTrigger) {
+          if (mounted) {
+            setState(() {
+              _isWaitingForMapsReturn = false;
+            });
+          }
+        }
+        _lastProcessedClipboard = text;
+        await _handleDetectedCoordinatesFromMaps(coords);
+      } else if (manualTrigger && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'لم يتم العثور على رابط أو إحداثيات صالحة في الحافظة. تأكد من نسخ رابط المكان من الخريطة.',
+              style: GoogleFonts.cairo(fontSize: 12.5),
+            ),
+            backgroundColor: Colors.orange.shade800,
+          ),
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _handleDetectedCoordinatesFromMaps(LatLng coords) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'تم التقاط الموقع من خرائط جوجل 📍، جاري المعالجة...',
+              style: GoogleFonts.cairo(fontSize: 12.5, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        backgroundColor: AppColors.mediumBlue,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+
+    final address = await MapCoordinatesHelper.reverseGeocode(coords.latitude, coords.longitude);
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    final loc = PlaceLocation(
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      placeName: address.isNotEmpty ? address.split('،').first.trim() : 'موقع من خرائط جوجل',
+      formattedAddress: address.isNotEmpty ? address : 'موقع محدد من خرائط جوجل (${coords.latitude.toStringAsFixed(4)}, ${coords.longitude.toStringAsFixed(4)})',
+      timestamp: DateTime.now(),
+      category: 'google_maps',
+    );
+
+    _selectPlace(loc, isHistory: false);
+  }
+
+  void _onSavedPlacesChanged() {
+    if (!mounted) return;
+    final rawSaved = SavedPlacesService.instance.getSavedPlaces();
+    setState(() {
+      _savedPlaces = rawSaved.map((p) {
+        final dist = SadatCityGeoData.calculateDistance(
+          _referenceCoordinates.latitude,
+          _referenceCoordinates.longitude,
+          p.latitude,
+          p.longitude,
+        );
+        return p.copyWith(
+          distanceKm: double.parse(dist.toStringAsFixed(1)),
+          distanceMeters: dist * 1000.0,
+        );
+      }).toList();
+    });
   }
 
   void _onSearchChanged(String query) {
@@ -311,22 +437,282 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
     }
   }
 
-  Future<void> _useMapCenterLocation() async {
-    final geocoded = await MapCoordinatesHelper.reverseGeocode(
-      _referenceCoordinates.latitude,
-      _referenceCoordinates.longitude,
+  void _openMapPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final isIOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+        final mapName = isIOS ? 'خرائط آبل أو جوجل' : 'تطبيق خرائط جوجل (Google Maps)';
+
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            boxShadow: [
+              BoxShadow(color: Colors.black26, blurRadius: 20, offset: Offset(0, -4)),
+            ],
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Handle Bar
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                // Title
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.mediumBlue.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.map_rounded, color: AppColors.mediumBlue, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'تحديد الموقع عبر الخريطة',
+                      style: GoogleFonts.cairo(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Option 1: Open external Google Maps / Apple Maps
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        await _launchGoogleMapsAndListen();
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.explore_rounded, color: Color(0xFF16A34A), size: 24),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'فتح في $mapName',
+                                    style: GoogleFonts.cairo(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFF15803D),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'حدد مكانك بدقة، واضغط "مشاركة" أو "نسخ الرابط" ثم ارجع للتطبيق وسيلتقطه فوراً 🚀',
+                                    style: GoogleFonts.cairo(
+                                      fontSize: 11.5,
+                                      color: Colors.black87,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Color(0xFF16A34A)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Option 2: Open In-App Interactive Map
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        final pickedPlace = await Navigator.push<PlaceLocation>(
+                          context,
+                          SnappyPageRoute(
+                            page: MapLocationPickerPage(
+                              initialCenter: _referenceCoordinates,
+                              title: widget.title,
+                            ),
+                          ),
+                        );
+                        if (pickedPlace != null && mounted) {
+                          _selectPlace(pickedPlace, isHistory: false);
+                        }
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.satellite_alt_rounded, color: AppColors.mediumBlue, size: 24),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'خريطة inRide التفاعلية (مع الأقمار الصناعية)',
+                                    style: GoogleFonts.cairo(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'حدد الموقع بالدبوس مباشرة داخل التطبيق دون مغادرته 📍',
+                                    style: GoogleFonts.cairo(
+                                      fontSize: 11.5,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: AppColors.textSecondary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Option 3: Quick Paste from Clipboard
+                TextButton.icon(
+                  onPressed: () async {
+                    Navigator.pop(sheetContext);
+                    await _checkClipboardForLocation(autoSelectIfWaiting: false);
+                  },
+                  icon: const Icon(Icons.content_paste_rounded, size: 18, color: AppColors.mediumBlue),
+                  label: Text(
+                    'لصق رابط أو إحداثيات تم نسخها مسبقاً من الخريطة',
+                    style: GoogleFonts.cairo(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.mediumBlue),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _launchGoogleMapsAndListen() async {
+    if (mounted) {
+      setState(() {
+        _isWaitingForMapsReturn = true;
+      });
+    }
+
+    final lat = _referenceCoordinates.latitude;
+    final lng = _referenceCoordinates.longitude;
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.share_location_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'في الخريطة: حدد مكانك واضغط "مشاركة" أو "نسخ الرابط" ثم ارجع هنا 📍',
+                style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 12.5),
+              ),
+            ),
+          ],
+        ),
+        duration: const Duration(seconds: 5),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF15803D),
+      ),
     );
 
-    final loc = PlaceLocation(
-      latitude: _referenceCoordinates.latitude,
-      longitude: _referenceCoordinates.longitude,
-      placeName: geocoded.isNotEmpty ? geocoded.split('،').first.trim() : 'الموقع المحدد على الخريطة',
-      formattedAddress: geocoded.isNotEmpty ? geocoded : 'الموقع المحدد على الخريطة',
-      timestamp: DateTime.now(),
-      category: 'map_pin',
-    );
-
-    _selectPlace(loc, isHistory: false);
+    final isIOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+    if (isIOS) {
+      final googleMapsUri = Uri.parse('comgooglemaps://?q=$lat,$lng&center=$lat,$lng');
+      final appleMapsUri = Uri.parse('http://maps.apple.com/?ll=$lat,$lng&q=$lat,$lng');
+      try {
+        if (await canLaunchUrl(googleMapsUri)) {
+          await launchUrl(googleMapsUri, mode: LaunchMode.externalApplication);
+          return;
+        }
+      } catch (_) {}
+      try {
+        await launchUrl(appleMapsUri, mode: LaunchMode.externalApplication);
+        return;
+      } catch (_) {
+        await launchUrl(
+          Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng'),
+          mode: LaunchMode.externalApplication,
+        );
+        return;
+      }
+    } else {
+      final geoUri = Uri.parse('geo:$lat,$lng?q=$lat,$lng');
+      final webUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+      try {
+        final launched = await launchUrl(geoUri, mode: LaunchMode.externalApplication);
+        if (!launched) {
+          await launchUrl(webUri, mode: LaunchMode.externalApplication);
+        }
+      } catch (_) {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      }
+    }
   }
 
   Future<void> _useCustomQueryAsPlace(String query) async {
@@ -494,19 +880,20 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                   ),
                   const SizedBox(width: 8),
 
-                  // Pick On Map Button
+                  // Pick On Map Button (Directly opens Google Maps / Apple Maps)
                   Expanded(
                     child: Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        onTap: _useMapCenterLocation,
+                        onTap: _launchGoogleMapsAndListen,
+                        onLongPress: _openMapPicker,
                         borderRadius: BorderRadius.circular(12),
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
                             color: const Color(0xFF16A34A).withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFF16A34A).withValues(alpha: 0.2)),
+                            border: Border.all(color: const Color(0xFF16A34A).withValues(alpha: 0.25)),
                           ),
                           child: Row(
                             children: [
@@ -516,19 +903,35 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                                   color: Colors.white,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.map_outlined, color: Color(0xFF16A34A), size: 16),
+                                child: const Icon(Icons.explore_rounded, color: Color(0xFF16A34A), size: 16),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
-                                child: Text(
-                                  'تحديد على الخريطة',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.cairo(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: const Color(0xFF16A34A),
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'حدد من على الخريطة',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.cairo(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: const Color(0xFF16A34A),
+                                      ),
+                                    ),
+                                    Text(
+                                      'Google / Apple Maps',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.cairo(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFF15803D),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -540,6 +943,91 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                 ],
               ),
             ),
+
+            // Active Google Maps / Apple Maps capture helper banner
+            if (_isWaitingForMapsReturn)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF16A34A).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF16A34A).withValues(alpha: 0.3)),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF16A34A)),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'بانتظار تحديد الموقع من الخريطة... انسخ الرابط ثم اضغط تطبيق 📍',
+                              style: GoogleFonts.cairo(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF15803D),
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 16, color: Colors.grey),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () {
+                              setState(() {
+                                _isWaitingForMapsReturn = false;
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                await _checkClipboardForLocation(autoSelectIfWaiting: true, manualTrigger: true);
+                              },
+                              icon: const Icon(Icons.content_paste_rounded, size: 15, color: Colors.white),
+                              label: Text(
+                                'تطبيق الموقع المنسوخ',
+                                style: GoogleFonts.cairo(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF16A34A),
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: _launchGoogleMapsAndListen,
+                            icon: const Icon(Icons.open_in_new_rounded, size: 14, color: Color(0xFF16A34A)),
+                            label: Text(
+                              'إعادة فتح الخريطة',
+                              style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF16A34A)),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF16A34A)),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
             // Reference indicator if map was moved
             if (_isUsingMapCenter && isQueryEmpty)
@@ -806,6 +1294,49 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                     ],
                   ],
                 ),
+              ),
+
+              // Favorite / Bookmark Icon Button
+              IconButton(
+                icon: Icon(
+                  SavedPlacesService.instance.isSaved(place)
+                      ? Icons.bookmark_rounded
+                      : Icons.bookmark_border_rounded,
+                  color: SavedPlacesService.instance.isSaved(place)
+                      ? const Color(0xFFEAB308) // Amber / Gold
+                      : AppColors.textSecondary.withValues(alpha: 0.4),
+                  size: 22,
+                ),
+                tooltip: SavedPlacesService.instance.isSaved(place) ? 'إزالة من المفضلة' : 'حفظ في المفضلة',
+                onPressed: () async {
+                  final added = await SavedPlacesService.instance.toggleSave(place);
+                  if (mounted) {
+                    setState(() {});
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Row(
+                          children: [
+                            Icon(
+                              added ? Icons.bookmark_added_rounded : Icons.bookmark_remove_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              added ? 'تمت إضافة المكان إلى المفضلة ⭐' : 'تمت الإزالة من المفضلة',
+                              style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                        duration: const Duration(seconds: 2),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        backgroundColor: added ? const Color(0xFF15803D) : Colors.black87,
+                      ),
+                    );
+                  }
+                },
               ),
             ],
           ),

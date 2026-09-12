@@ -27,7 +27,35 @@ class AppSettingsModule {
     'demo_driver_name': 'كابتن تجريبي (Demo)',
     'demo_passenger_name': 'راكب تجريبي (Demo)',
     'otp_support_whatsapp': '01204062941',
+    'is_maintenance_mode': false,
+    'maintenance_title': 'التطبيق تحت الصيانة حالياً',
+    'maintenance_message': 'نعمل على تحسين وتحديث خدمات inRide لنقدم لكم تجربة أفضل وأسرع. سنعود للعمل قريباً جداً.',
   };
+
+  bool get isMaintenanceMode => appSettings['is_maintenance_mode'] == true;
+  String get maintenanceTitle =>
+      (appSettings['maintenance_title'] as String?)?.isNotEmpty == true
+          ? appSettings['maintenance_title'] as String
+          : 'التطبيق تحت الصيانة حالياً';
+  String get maintenanceMessage =>
+      (appSettings['maintenance_message'] as String?)?.isNotEmpty == true
+          ? appSettings['maintenance_message'] as String
+          : 'نعمل على تحسين وتحديث خدمات inRide لنقدم لكم تجربة أفضل وأسرع. سنعود للعمل قريباً جداً.';
+
+  Future<void> refreshSettings(VoidCallback onUpdate) async {
+    try {
+      final data = await _supabase.from('app_settings').select().maybeSingle();
+      if (data != null) {
+        appSettings.addAll(Map<String, dynamic>.from(data));
+        if (data['commission_rate'] != null) {
+          appSettings['commissionRate'] = (data['commission_rate'] as num).toDouble();
+        }
+        onUpdate();
+      }
+    } catch (e) {
+      debugPrint('[AppSettingsModule] Error refreshing settings: $e');
+    }
+  }
 
   void initSettingsListener(VoidCallback onUpdate) {
     try {

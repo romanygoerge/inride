@@ -131,8 +131,8 @@ class NotificationModel {
 
     return NotificationModel(
       id: docId ?? map['id']?.toString() ?? '',
-      title: (map['title'] ?? '').toString(),
-      body: (map['body'] ?? '').toString(),
+      title: (map['title'] ?? payloadData['title'] ?? '').toString(),
+      body: (map['body'] ?? payloadData['body'] ?? '').toString(),
       type: type,
       createdAt: dateObj,
       isRead: map['is_read'] == true || map['isRead'] == true,

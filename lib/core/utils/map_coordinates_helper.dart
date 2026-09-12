@@ -227,4 +227,146 @@ class MapCoordinatesHelper {
 
     return null;
   }
+
+  /// Extracts coordinates from arbitrary text (Google Maps link, Apple Maps link, coordinates, short URL)
+  static Future<LatLng?> extractCoordinatesFromText(String rawText) async {
+    final text = rawText.trim();
+    if (text.isEmpty) return null;
+
+    // Decode URL if encoded
+    String decoded = text;
+    try {
+      decoded = Uri.decodeFull(text);
+    } catch (_) {}
+
+    // 1. Direct Coordinates regex (e.g. "30.3852, 30.5123" or "30.3852 30.5123")
+    final coordMatch = RegExp(r'([-+]?[0-9]+\.[0-9]+)[,\s]+([-+]?[0-9]+\.[0-9]+)').firstMatch(decoded);
+    if (coordMatch != null) {
+      final lat = double.tryParse(coordMatch.group(1)!);
+      final lng = double.tryParse(coordMatch.group(2)!);
+      if (lat != null && lng != null && lat.abs() <= 90.0 && lng.abs() <= 180.0 && lat != 0.0 && lng != 0.0) {
+        return LatLng(lat, lng);
+      }
+    }
+
+    // 2. DMS notation (Degrees-Minutes-Seconds from Google Maps pin info)
+    // e.g. 30°23'06.7"N 30°30'44.3"E or 30°23'06.7" N, 30°30'44.3" E
+    final dmsRegex = RegExp(
+      r'''(\d+)[°\s]+(\d+)['\s]+([0-9.]+)["]?\s*([NSEWnsew])[,\s]+(\d+)[°\s]+(\d+)['\s]+([0-9.]+)["]?\s*([NSEWnsew])''',
+    );
+    final dmsMatch = dmsRegex.firstMatch(decoded);
+    if (dmsMatch != null) {
+      final deg1 = double.tryParse(dmsMatch.group(1)!) ?? 0;
+      final min1 = double.tryParse(dmsMatch.group(2)!) ?? 0;
+      final sec1 = double.tryParse(dmsMatch.group(3)!) ?? 0;
+      final dir1 = dmsMatch.group(4)!.toUpperCase();
+
+      final deg2 = double.tryParse(dmsMatch.group(5)!) ?? 0;
+      final min2 = double.tryParse(dmsMatch.group(6)!) ?? 0;
+      final sec2 = double.tryParse(dmsMatch.group(7)!) ?? 0;
+      final dir2 = dmsMatch.group(8)!.toUpperCase();
+
+      double latVal = deg1 + (min1 / 60.0) + (sec1 / 3600.0);
+      if (dir1 == 'S') latVal = -latVal;
+
+      double lngVal = deg2 + (min2 / 60.0) + (sec2 / 3600.0);
+      if (dir2 == 'W') lngVal = -lngVal;
+
+      if (dir1 == 'E' || dir1 == 'W') {
+        final temp = latVal;
+        latVal = lngVal;
+        lngVal = temp;
+      }
+
+      if (latVal.abs() <= 90.0 && lngVal.abs() <= 180.0 && latVal != 0.0 && lngVal != 0.0) {
+        return LatLng(latVal, lngVal);
+      }
+    }
+
+    // 3. Google Maps @lat,lng pattern (e.g. /@30.38521,30.51234,17z/)
+    final atMatch = RegExp(r'@([-+]?[0-9]+\.[0-9]+),([-+]?[0-9]+\.[0-9]+)').firstMatch(decoded);
+    if (atMatch != null) {
+      final lat = double.tryParse(atMatch.group(1)!);
+      final lng = double.tryParse(atMatch.group(2)!);
+      if (lat != null && lng != null && lat.abs() <= 90.0 && lng.abs() <= 180.0) {
+        return LatLng(lat, lng);
+      }
+    }
+
+    // 4. Google Maps Protobuf !3dlat!4dlng pattern (e.g. !3d30.38521!4d30.51234)
+    final protoMatch = RegExp(r'!3d([-+]?[0-9]+\.[0-9]+)!4d([-+]?[0-9]+\.[0-9]+)').firstMatch(decoded);
+    if (protoMatch != null) {
+      final lat = double.tryParse(protoMatch.group(1)!);
+      final lng = double.tryParse(protoMatch.group(2)!);
+      if (lat != null && lng != null && lat.abs() <= 90.0 && lng.abs() <= 180.0) {
+        return LatLng(lat, lng);
+      }
+    }
+
+    // 5. Query param q=lat,lng or ll=lat,lng or center=lat,lng (Google Maps & Apple Maps)
+    final qMatch = RegExp(
+      r'[?&](?:q|ll|query|destination|daddr|saddr|center)=([-+]?[0-9]+\.[0-9]+)[,%2C\s]+([-+]?[0-9]+\.[0-9]+)',
+      caseSensitive: false,
+    ).firstMatch(decoded);
+    if (qMatch != null) {
+      final lat = double.tryParse(qMatch.group(1)!);
+      final lng = double.tryParse(qMatch.group(2)!);
+      if (lat != null && lng != null && lat.abs() <= 90.0 && lng.abs() <= 180.0) {
+        return LatLng(lat, lng);
+      }
+    }
+
+    // 6. Short URL (maps.app.goo.gl or goo.gl/maps) -> resolve redirect with multi-hop support
+    if (decoded.contains('maps.app.goo.gl') || decoded.contains('goo.gl/maps')) {
+      try {
+        final urlMatch = RegExp(r'https?://[^\s]+').firstMatch(decoded);
+        if (urlMatch != null) {
+          final rawUrl = urlMatch.group(0)!;
+          // Step A: First try with followRedirects = false to capture the 302 Location header directly
+          final client = http.Client();
+          try {
+            var currentUri = Uri.parse(rawUrl);
+            for (int hop = 0; hop < 4; hop++) {
+              final req = http.Request('GET', currentUri)..followRedirects = false;
+              req.headers['User-Agent'] = 'Mozilla/5.0 (Mobile; Android; inRideApp)';
+              final streamed = await client.send(req).timeout(const Duration(seconds: 4));
+              final locHeader = streamed.headers['location'];
+              if (locHeader != null && locHeader.isNotEmpty) {
+                final resolvedCoords = await extractCoordinatesFromText(locHeader);
+                if (resolvedCoords != null) return resolvedCoords;
+                currentUri = Uri.parse(locHeader.startsWith('http') ? locHeader : currentUri.resolve(locHeader).toString());
+              } else {
+                // If final destination reached, check streamed body or response
+                final bodyBytes = await streamed.stream.toBytes();
+                final bodyString = utf8.decode(bodyBytes, allowMalformed: true);
+                final bodyCoords = await extractCoordinatesFromText(bodyString);
+                if (bodyCoords != null) return bodyCoords;
+                break;
+              }
+            }
+          } finally {
+            client.close();
+          }
+
+          // Step B: Fallback to full standard get
+          final fullResp = await http.get(Uri.parse(rawUrl), headers: {
+            'User-Agent': 'Mozilla/5.0 (Mobile; inRideApp)',
+          }).timeout(const Duration(seconds: 4));
+
+          final finalUrl = fullResp.request?.url.toString();
+          if (finalUrl != null && finalUrl.isNotEmpty && finalUrl != rawUrl) {
+            final fromFinalUrl = await extractCoordinatesFromText(finalUrl);
+            if (fromFinalUrl != null) return fromFinalUrl;
+          }
+
+          if (fullResp.body.isNotEmpty) {
+            final fromBody = await extractCoordinatesFromText(fullResp.body);
+            if (fromBody != null) return fromBody;
+          }
+        }
+      } catch (_) {}
+    }
+
+    return null;
+  }
 }

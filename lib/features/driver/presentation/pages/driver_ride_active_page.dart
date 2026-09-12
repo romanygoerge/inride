@@ -99,7 +99,42 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
 
   void _fetchPassengerDetails() async {
     final state = GlobalState.instance;
-    final pId = state.activePassengerId ?? state.currentRideRequest?.passengerId;
+
+    // 1. First check in-memory state values
+    String? foundPhone = state.activePassengerPhone ??
+        state.currentRideRequest?.passengerPhone ??
+        state.currentRideRequest?.recipientPhone;
+
+    String? pId = state.activePassengerId ?? state.currentRideRequest?.passengerId;
+
+    // 2. If passenger phone or ID is missing, query ride_requests by currentRequestId
+    if ((foundPhone == null || foundPhone.isEmpty || pId == null || pId.isEmpty) &&
+        state.currentRequestId != null &&
+        state.currentRequestId!.isNotEmpty) {
+      try {
+        final reqRes = await Supabase.instance.client
+            .from('ride_requests')
+            .select('passenger_id, passenger_phone, recipient_phone')
+            .eq('id', state.currentRequestId!)
+            .maybeSingle();
+
+        if (reqRes != null) {
+          final dbPid = reqRes['passenger_id']?.toString();
+          if (dbPid != null && dbPid.isNotEmpty) {
+            pId = dbPid;
+            state.activePassengerId = dbPid;
+          }
+          final pPhone = (reqRes['passenger_phone'] ?? reqRes['recipient_phone'])?.toString();
+          if (pPhone != null && pPhone.isNotEmpty) {
+            foundPhone ??= pPhone;
+          }
+        }
+      } catch (e) {
+        debugPrint('[DriverPage] Error querying ride_requests for passenger details: $e');
+      }
+    }
+
+    // 3. Query users table by pId
     if (pId != null && pId.isNotEmpty) {
       try {
         final uRes = await Supabase.instance.client
@@ -107,27 +142,55 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
             .select('name, phone_number, phone')
             .eq('id', pId)
             .maybeSingle();
-        if (uRes != null && mounted) {
-          setState(() {
-            _passengerName = (uRes['name'] ?? '').toString();
-            final phone = (uRes['phone_number'] ?? uRes['phone'] ?? '').toString();
-            if (phone.isNotEmpty) {
-              _passengerPhone = phone;
-            }
-          });
+
+        if (uRes != null) {
+          final name = (uRes['name'] ?? '').toString();
+          if (name.isNotEmpty) {
+            _passengerName = name;
+          }
+          final phone = (uRes['phone_number'] ?? uRes['phone'])?.toString();
+          if (phone != null && phone.isNotEmpty) {
+            foundPhone = phone;
+          }
         }
       } catch (e) {
-        debugPrint('[DriverPage] Error fetching passenger details: $e');
+        debugPrint('[DriverPage] Error fetching users details: $e');
+      }
+
+      // 4. Fallback: check passengers table if users didn't return phone
+      if (foundPhone == null || foundPhone.isEmpty) {
+        try {
+          final pRes = await Supabase.instance.client
+              .from('passengers')
+              .select('name, phone')
+              .eq('id', pId)
+              .maybeSingle();
+
+          if (pRes != null) {
+            final name = (pRes['name'] ?? '').toString();
+            if (name.isNotEmpty && (_passengerName == null || _passengerName!.isEmpty)) {
+              _passengerName = name;
+            }
+            final phone = (pRes['phone'])?.toString();
+            if (phone != null && phone.isNotEmpty) {
+              foundPhone = phone;
+            }
+          }
+        } catch (e) {
+          debugPrint('[DriverPage] Error fetching passengers table: $e');
+        }
       }
     }
-    
-    if ((_passengerPhone == null || _passengerPhone!.isEmpty) && state.currentRideRequest != null) {
-      final reqPhone = state.currentRideRequest?.recipientPhone;
-      if (reqPhone != null && reqPhone.isNotEmpty && mounted) {
+
+    if (foundPhone != null && foundPhone.isNotEmpty) {
+      state.activePassengerPhone = foundPhone;
+      if (mounted) {
         setState(() {
-          _passengerPhone = reqPhone;
+          _passengerPhone = foundPhone;
         });
       }
+    } else if (mounted) {
+      setState(() {});
     }
   }
 
@@ -577,8 +640,13 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                             const SizedBox(height: 4),
                                             GestureDetector(
                                               onTap: () async {
-                                                final Uri url = Uri(scheme: 'tel', path: _passengerPhone);
-                                                if (await canLaunchUrl(url)) {
+                                                if (_passengerPhone == null || _passengerPhone!.trim().isEmpty) return;
+                                                final cleanPhone = _passengerPhone!.trim().replaceAll(RegExp(r'[^\d+]'), '');
+                                                final Uri url = Uri.parse('tel:$cleanPhone');
+                                                try {
+                                                  final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+                                                  if (!launched) await launchUrl(url);
+                                                } catch (_) {
                                                   await launchUrl(url);
                                                 }
                                               },
@@ -620,21 +688,73 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                       icon: const Icon(Icons.call, color: AppColors.mediumBlue),
                                       onPressed: () async {
                                         final messenger = ScaffoldMessenger.of(context);
-                                        String? phone = state.activePassengerPhone ?? state.currentRideRequest?.recipientPhone;
+                                        String? phone = _passengerPhone ??
+                                            state.activePassengerPhone ??
+                                            state.currentRideRequest?.passengerPhone ??
+                                            state.currentRideRequest?.recipientPhone;
 
-                                        if (phone == null || phone.isEmpty) {
-                                          final pId = state.activePassengerId ?? state.currentRideRequest?.passengerId;
-                                          if (pId != null && pId.isNotEmpty) {
+                                        if (phone == null || phone.trim().isEmpty) {
+                                          // 1. Direct deep lookup from ride_requests
+                                          if (state.currentRequestId != null && state.currentRequestId!.isNotEmpty) {
                                             try {
-                                              final uRes = await Supabase.instance.client.from('users').select('phone_number, phone').eq('id', pId).maybeSingle();
-                                              phone = (uRes?['phone_number'] ?? uRes?['phone'] ?? '').toString();
+                                              final reqRes = await Supabase.instance.client
+                                                  .from('ride_requests')
+                                                  .select('passenger_id, passenger_phone, recipient_phone')
+                                                  .eq('id', state.currentRequestId!)
+                                                  .maybeSingle();
+                                              if (reqRes != null) {
+                                                phone = (reqRes['passenger_phone'] ?? reqRes['recipient_phone'])?.toString();
+                                                final pId = reqRes['passenger_id']?.toString() ?? state.activePassengerId;
+                                                if ((phone == null || phone.isEmpty) && pId != null) {
+                                                  final uRes = await Supabase.instance.client
+                                                      .from('users')
+                                                      .select('phone_number, phone')
+                                                      .eq('id', pId)
+                                                      .maybeSingle();
+                                                  phone = (uRes?['phone_number'] ?? uRes?['phone'])?.toString();
+                                                }
+                                              }
                                             } catch (_) {}
+                                          }
+
+                                          // 2. Direct lookup from users / passengers
+                                          if (phone == null || phone.trim().isEmpty) {
+                                            final pId = state.activePassengerId ?? state.currentRideRequest?.passengerId;
+                                            if (pId != null && pId.isNotEmpty) {
+                                              try {
+                                                final uRes = await Supabase.instance.client
+                                                    .from('users')
+                                                    .select('phone_number, phone')
+                                                    .eq('id', pId)
+                                                    .maybeSingle();
+                                                phone = (uRes?['phone_number'] ?? uRes?['phone'])?.toString();
+                                                if (phone == null || phone.isEmpty) {
+                                                  final pRes = await Supabase.instance.client
+                                                      .from('passengers')
+                                                      .select('phone')
+                                                      .eq('id', pId)
+                                                      .maybeSingle();
+                                                  phone = pRes?['phone']?.toString();
+                                                }
+                                              } catch (_) {}
+                                            }
                                           }
                                         }
 
-                                        if (phone != null && phone.isNotEmpty) {
-                                          final Uri url = Uri(scheme: 'tel', path: phone);
-                                          if (await canLaunchUrl(url)) {
+                                        if (phone != null && phone.trim().isNotEmpty) {
+                                          if (mounted) {
+                                            setState(() {
+                                              _passengerPhone = phone;
+                                            });
+                                          }
+                                          state.activePassengerPhone = phone;
+
+                                          final cleanPhone = phone.trim().replaceAll(RegExp(r'[^\d+]'), '');
+                                          final Uri url = Uri.parse('tel:$cleanPhone');
+                                          try {
+                                            final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+                                            if (!launched) await launchUrl(url);
+                                          } catch (_) {
                                             await launchUrl(url);
                                           }
                                         } else {
@@ -642,10 +762,10 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                             messenger.showSnackBar(
                                               SnackBar(
                                                 content: Text(
-                                                  LocaleController.instance.isArabic ? 'رقم العميل غير متوفر حالياً' : 'Customer phone unavailable',
-                                                  style: GoogleFonts.cairo(),
+                                                  LocaleController.instance.isArabic ? 'رقم هاتف الراكب غير متوفر حالياً' : 'Passenger phone unavailable',
+                                                  style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
                                                 ),
-                                                backgroundColor: Colors.orange,
+                                                backgroundColor: Colors.orange.shade800,
                                               ),
                                             );
                                           }

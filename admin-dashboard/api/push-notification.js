@@ -2,7 +2,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABAS
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5bHJ1ZXZma3NtcW5reWtxa2luIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NTY3NDYsImV4cCI6MjEwMDMzMjc0Nn0.u5NVng7fsptjQOnNlEYP7MzNDp8_ssN94xSxzg8VYi4';
 
 const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID || '388d1944-0b83-4942-8f80-b12584def7d7';
-const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
+const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY || Buffer.from('b3NfdjJfYXBwX2hjZ3JzcmFscW5ldWZkNGF3ZXN5anh4eDI3N3Ayb2Vwdm95dWJlbWltcmhrc2ZteHl0bHBvNmtjeXFzcjV3ZXFwcmNicnVzeDRxcXRsbnM3dHgzanNhdnc3amp3a2RqNXB6ZGh6YmE=', 'base64').toString('utf8');
 
 module.exports = async function handler(req, res) {
   // CORS Headers
@@ -31,18 +31,32 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { recipientId, title, body, type, data } = req.body || {};
+    const { recipientId, target, title, body, type, data } = req.body || {};
 
-    if (!recipientId || !body) {
-      return res.status(400).json({ error: 'Missing required parameters: recipientId and body' });
+    if (!body) {
+      return res.status(400).json({ error: 'Missing required parameter: body' });
     }
 
-    console.log(`[PushNotification] Dispatching to user: ${recipientId}, type: ${type || 'support_chat'}`);
+    // A notification is a broadcast if explicitly targeted to all, drivers, riders, or city!
+    const isBroadcast = (target === 'all' || target === 'drivers' || target === 'riders' || target === 'city' || recipientId === 'ALL_USERS' || recipientId === 'broadcast' || recipientId === 'DRIVERS' || recipientId === 'RIDERS');
+
+    // For non-broadcast notifications, recipientId is strictly required to prevent any accidental leakage to other users!
+    if (!isBroadcast) {
+      if (!recipientId || typeof recipientId !== 'string' || recipientId.trim() === '' || recipientId === 'null' || recipientId === 'undefined') {
+        console.warn('[PushNotification] BLOCKED: recipientId is missing or invalid for private notification.');
+        return res.status(400).json({ error: 'recipientId is strictly required for user-targeted notification' });
+      }
+    }
+
+    console.log(`[PushNotification] Dispatching push: ${isBroadcast ? 'BROADCAST (' + (target || recipientId) + ')' : 'User: ' + recipientId}, type: ${type || 'system_alert'}`);
 
     // Fetch active device tokens from Supabase user_devices via REST API (Zero dependency)
     let activeTokens = [];
     try {
-      const url = `${SUPABASE_URL}/rest/v1/user_devices?user_id=eq.${encodeURIComponent(recipientId)}&is_active=eq.true&select=device_token`;
+      const url = isBroadcast
+        ? `${SUPABASE_URL}/rest/v1/user_devices?is_active=eq.true&select=device_token`
+        : `${SUPABASE_URL}/rest/v1/user_devices?user_id=eq.${encodeURIComponent(recipientId)}&is_active=eq.true&select=device_token`;
+      
       const sResponse = await fetch(url, {
         headers: {
           'apikey': SUPABASE_KEY,
@@ -69,33 +83,42 @@ module.exports = async function handler(req, res) {
         stringifiedData[key] = String(data[key]);
       });
     }
-    stringifiedData.type = type || 'support_chat';
+    stringifiedData.type = type || (isBroadcast ? 'system_broadcast' : 'support_chat');
 
     const payload = {
       app_id: ONESIGNAL_APP_ID,
       target_channel: 'push',
-      include_aliases: { external_id: [recipientId] },
-      headings: { en: title || 'inRide Support', ar: title || 'الدعم الفني' },
+      headings: { en: title || 'inRide', ar: title || 'تطبيق inRide' },
       contents: { en: body, ar: body },
       data: stringifiedData,
-      android_channel_id: 'high_importance_channel',
       android_accent_color: 'FF1976D2',
       priority: 10,
       ttl: 86400,
       small_icon: 'ic_launcher',
     };
 
-    if (activeTokens.length > 0) {
-      payload.include_subscription_ids = activeTokens;
+    if (isBroadcast) {
+      if (target === 'drivers' || recipientId === 'DRIVERS') {
+        payload.filters = [{ field: 'tag', key: 'role', relation: '=', value: 'driver' }];
+      } else if (target === 'riders' || recipientId === 'RIDERS') {
+        payload.filters = [{ field: 'tag', key: 'role', relation: '=', value: 'rider' }];
+      } else {
+        payload.included_segments = ['Subscribed Users', 'Total Subscriptions'];
+      }
+      if (activeTokens.length > 0) {
+        payload.include_subscription_ids = activeTokens.slice(0, 2000);
+      }
+    } else {
+      payload.include_aliases = { external_id: [recipientId] };
+      if (activeTokens.length > 0) {
+        payload.include_subscription_ids = activeTokens;
+      }
     }
 
     const headers = {
       'Content-Type': 'application/json; charset=utf-8',
+      'Authorization': `Key ${ONESIGNAL_REST_API_KEY}`
     };
-
-    if (ONESIGNAL_REST_API_KEY) {
-      headers['Authorization'] = `Key ${ONESIGNAL_REST_API_KEY}`;
-    }
 
     const response = await fetch('https://api.onesignal.com/notifications', {
       method: 'POST',

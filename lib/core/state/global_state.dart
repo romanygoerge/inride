@@ -1212,6 +1212,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         {'id': '2', 'name': 'الإسكندرية (الساحل)', 'surcharge': 5, 'is_default': false}
       ],
       'otp_support_whatsapp': '01204062941',
+      'is_maintenance_mode': false,
+      'maintenance_title': 'التطبيق تحت الصيانة حالياً',
+      'maintenance_message': 'نعمل على تحسين وتحديث خدمات inRide لنقدم لكم تجربة أفضل وأسرع. سنعود للعمل قريباً جداً.',
     };
 
     try {
@@ -1643,22 +1646,44 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     required String bucketName,
     required String pathInBucket,
   }) async {
+    final file = File(localPath);
+    if (!await file.exists()) {
+      throw Exception("الملف غير موجود في المسار المحدد: $localPath");
+    }
+
     try {
-      final file = File(localPath);
-      if (!await file.exists()) {
-        throw Exception("الملف غير موجود في المسار المحدد: $localPath");
-      }
       final fileBytes = await file.readAsBytes();
       await _supabase.storage.from(bucketName).uploadBinary(
         pathInBucket,
         fileBytes,
-        fileOptions: const FileOptions(upsert: true, contentType: 'image/png'),
-      ).timeout(const Duration(seconds: 10));
+        fileOptions: const FileOptions(
+          upsert: true,
+          contentType: 'image/png',
+          cacheControl: '3600',
+        ),
+      ).timeout(const Duration(seconds: 45));
+
       final publicUrl = _supabase.storage.from(bucketName).getPublicUrl(pathInBucket);
       return publicUrl;
-    } catch (e) {
-      debugPrint("Error in _uploadToSupabaseStorage: $e");
-      rethrow;
+    } catch (firstErr) {
+      debugPrint('[SupabaseStorage] uploadBinary failed ($firstErr). Retrying with file upload...');
+      try {
+        await _supabase.storage.from(bucketName).upload(
+          pathInBucket,
+          file,
+          fileOptions: const FileOptions(
+            upsert: true,
+            contentType: 'image/png',
+            cacheControl: '3600',
+          ),
+        ).timeout(const Duration(seconds: 45));
+
+        final publicUrl = _supabase.storage.from(bucketName).getPublicUrl(pathInBucket);
+        return publicUrl;
+      } catch (fallbackErr) {
+        debugPrint("[SupabaseStorage] Error in _uploadToSupabaseStorage fallback: $fallbackErr");
+        rethrow;
+      }
     }
   }
 
@@ -2059,6 +2084,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
     currentRequestId = await RideRepository.instance.createRideRequest(
       passengerId: userUid!,
+      passengerPhone: phoneNumber,
       pickupLat: startLatLng.latitude,
       pickupLng: startLatLng.longitude,
       pickupAddress: finalPickupAddress,
@@ -2543,8 +2569,32 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       }
 
       try {
+        // Fetch other drivers who submitted bids on this request before updating status
+        final otherOffersRes = await _supabase
+            .from('ride_offers')
+            .select('driver_id')
+            .eq('request_id', currentRequestId!)
+            .neq('driver_id', offer.driverId);
+
         await _supabase.from('ride_offers').update({'status': 'accepted'}).eq('request_id', currentRequestId!).eq('driver_id', offer.driverId);
         await _supabase.from('ride_offers').update({'status': 'rejected'}).eq('request_id', currentRequestId!).neq('driver_id', offer.driverId);
+
+        // Send private rejection notice to each other driver individually
+        for (final item in otherOffersRes) {
+          final otherDriverId = item['driver_id']?.toString();
+          if (otherDriverId != null && otherDriverId.isNotEmpty) {
+            unawaited(NotificationService.instance.sendNotification(
+              recipientId: otherDriverId,
+              title: 'تم اختيار كابتن آخر 🚕',
+              body: 'شكراً لك، اختار الراكب كابتناً آخر لهذه الرحلة. نتمنى لك التوفيق في الرحلات القادمة!',
+              type: 'offer_rejected',
+              data: {
+                'requestId': currentRequestId!,
+                'tripId': currentRequestId!,
+              },
+            ));
+          }
+        }
       } catch (e) {
         debugPrint('[acceptDriverOffer] Error updating ride_offers status: $e');
       }
@@ -3379,6 +3429,12 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       
       final versionedUrl = '$downloadUrl?v=${DateTime.now().millisecondsSinceEpoch}';
       await _supabase.from('users').update({'avatar_url': versionedUrl}).eq('id', userUid!);
+      try {
+        await _supabase.from('passengers').update({'avatar_url': versionedUrl}).eq('id', userUid!);
+      } catch (_) {}
+      try {
+        await _supabase.from('drivers').update({'avatar_url': versionedUrl}).eq('id', userUid!);
+      } catch (_) {}
 
       userAvatarUrl = versionedUrl;
       notifyListeners();
@@ -3636,6 +3692,54 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       return val;
     }
     return '01204062941';
+  }
+
+  /// System Maintenance Mode Flag (configured from Admin Dashboard)
+  bool get isMaintenanceMode => appSettings['is_maintenance_mode'] == true;
+
+  /// System Maintenance Mode Title
+  String get maintenanceTitle {
+    final title = (appSettings['maintenance_title'] as String?)?.trim();
+    if (title != null && title.isNotEmpty) return title;
+    return 'التطبيق تحت الصيانة حالياً';
+  }
+
+  /// System Maintenance Mode Description Message
+  String get maintenanceMessage {
+    final msg = (appSettings['maintenance_message'] as String?)?.trim();
+    if (msg != null && msg.isNotEmpty) return msg;
+    return 'نعمل على تحسين وتحديث خدمات inRide لنقدم لكم تجربة أفضل وأسرع. سنعود للعمل قريباً جداً.';
+  }
+
+  /// Check if user has administrative access to bypass maintenance overlay if needed
+  bool get isAdmin {
+    final email = _supabase.auth.currentUser?.email?.toLowerCase();
+    return phoneNumber == '01204062941' ||
+        phoneNumber == '01000000000' ||
+        (email != null &&
+            (email.contains('admin') || email == 'romanygoerge48@gmail.com'));
+  }
+
+  /// Force-refresh app settings from Supabase
+  Future<void> refreshAppSettings() async {
+    try {
+      final res = await _supabase
+          .from('app_settings')
+          .select()
+          .eq('id', 'default')
+          .maybeSingle();
+      if (res != null) {
+        appSettings.addAll(res);
+        if (res['commission_rate'] != null) {
+          appSettings['commissionRate'] =
+              (res['commission_rate'] as num).toDouble();
+        }
+        notifyListeners();
+        debugPrint('[GlobalState] Refreshed app settings manually: $appSettings');
+      }
+    } catch (e) {
+      debugPrint('[GlobalState] Error refreshing app settings: $e');
+    }
   }
 
   /// Direct Instant Demo Login Method (bypasses OTP & admin approvals)

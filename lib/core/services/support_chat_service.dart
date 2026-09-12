@@ -72,9 +72,9 @@ class SupportChatMessage {
       'text': message,
       'status': status,
       'is_admin': isAdmin,
-      'created_at': createdAt.toIso8601String(),
-      if (deliveredAt != null) 'delivered_at': deliveredAt!.toIso8601String(),
-      if (readAt != null) 'read_at': readAt!.toIso8601String(),
+      'created_at': createdAt.toUtc().toIso8601String(),
+      if (deliveredAt != null) 'delivered_at': deliveredAt!.toUtc().toIso8601String(),
+      if (readAt != null) 'read_at': readAt!.toUtc().toIso8601String(),
     };
   }
 }
@@ -261,7 +261,8 @@ class SupportChatService {
     final userRole = GlobalState.instance.currentRole;
     final senderTypeStr = userRole == UserRole.driver ? 'driver' : 'rider';
     final msgId = _generateUuid();
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc();
+    final nowIso = now.toIso8601String();
 
     final newMessage = SupportChatMessage(
       id: msgId,
@@ -288,8 +289,8 @@ class SupportChatService {
         'user_type': senderTypeStr,
         'status': 'open',
         'last_message': text.trim(),
-        'last_message_at': now.toIso8601String(),
-        'updated_at': now.toIso8601String(),
+        'last_message_at': nowIso,
+        'updated_at': nowIso,
       }).catchError((err) {
         debugPrint('[SupportChat] Non-critical warning upserting support_chats: $err');
       });
@@ -306,7 +307,7 @@ class SupportChatService {
           'text': text.trim(),
           'status': 'sent',
           'is_admin': false,
-          'created_at': now.toIso8601String(),
+          'created_at': nowIso,
         });
       } catch (insertErr) {
         debugPrint('[SupportChat] Retry inserting simplified message object: $insertErr');
@@ -319,7 +320,7 @@ class SupportChatService {
           'text': text.trim(),
           'status': 'sent',
           'is_admin': false,
-          'created_at': now.toIso8601String(),
+          'created_at': nowIso,
         });
       }
 
@@ -332,7 +333,7 @@ class SupportChatService {
         'body': text.trim(),
         'type': 'support_chat',
         'is_read': false,
-        'created_at': now.toIso8601String(),
+        'created_at': nowIso,
       }).catchError((err) {
         debugPrint('[SupportChat] Non-critical warning inserting admin_notifications: $err');
       });
@@ -346,7 +347,7 @@ class SupportChatService {
 
   /// Mark single message delivered and read
   Future<void> _markMessageAsDeliveredAndRead(String msgId) async {
-    final nowStr = DateTime.now().toIso8601String();
+    final nowStr = DateTime.now().toUtc().toIso8601String();
     try {
       await _supabase.from('support_messages').update({
         'status': 'read',
@@ -370,7 +371,7 @@ class SupportChatService {
     final userId = _activeUserId;
     if (userId == null) return;
 
-    final nowStr = DateTime.now().toIso8601String();
+    final nowStr = DateTime.now().toUtc().toIso8601String();
     try {
       await _supabase.from('support_messages').update({
         'status': 'read',

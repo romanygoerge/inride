@@ -613,12 +613,16 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
                                           } catch (_) {}
                                         }
 
-                                        if (phone.isNotEmpty) {
-                                          final Uri url = Uri(scheme: 'tel', path: phone);
-                                          if (await canLaunchUrl(url)) {
-                                            await launchUrl(url);
-                                          }
-                                        } else {
+                                         if (phone.isNotEmpty) {
+                                           final cleanPhone = phone.trim().replaceAll(RegExp(r'[^\d+]'), '');
+                                           final Uri url = Uri.parse('tel:$cleanPhone');
+                                           try {
+                                             final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+                                             if (!launched) await launchUrl(url);
+                                           } catch (_) {
+                                             await launchUrl(url);
+                                           }
+                                         } else {
                                           if (mounted) {
                                             messenger.showSnackBar(
                                               SnackBar(

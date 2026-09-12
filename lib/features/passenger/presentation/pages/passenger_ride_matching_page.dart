@@ -23,6 +23,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
   // Guards to prevent double-navigation and repeated cancel presses
   bool _isCancelling = false;
   bool _isNavigating = false;
+  bool _isAcceptingOffer = false;
 
   @override
   void initState() {
@@ -830,6 +831,8 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                   flex: 3,
                   child: GestureDetector(
                     onTap: () {
+                      if (_isAcceptingOffer || _isNavigating) return;
+                      setState(() => _isAcceptingOffer = true);
                       GlobalState.instance.acceptDriverOffer(offer);
                     },
                     child: Container(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -41,6 +42,8 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
   
   PassengerMode _mode = PassengerMode.dashboard;
   bool _showVehicleSelection = false;
+  bool _isSubmittingRide = false;
+  DateTime? _lastBackPressTime;
 
   // Locations input
   String get _fromText => GlobalState.instance.fromAddress ?? '';
@@ -166,6 +169,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
       }
 
       setState(() {
+        _mode = PassengerMode.rideBooking;
         GlobalState.instance.fromAddress = loc.formattedAddress;
         GlobalState.instance.fromLat = loc.latitude;
         GlobalState.instance.fromLng = loc.longitude;
@@ -219,6 +223,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
       await GlobalState.instance.selectDestination(place, selectionSource: source);
 
       setState(() {
+        _mode = PassengerMode.rideBooking;
         if (GlobalState.instance.calculatedRouteFare != null) {
           _fareController.text = GlobalState.instance.calculatedRouteFare!.round().toString();
         } else {
@@ -231,65 +236,75 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
 
 
   void _requestRide() async {
-    final l10n = AppLocalizations.of(context)!;
-    final hasLocPermission = await LocationService.instance.checkPermission();
-    if (!mounted) return;
-    if (!hasLocPermission) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            l10n.locationPermissionRide,
-            style: GoogleFonts.cairo(),
+    if (_isSubmittingRide) return;
+    setState(() => _isSubmittingRide = true);
+
+    try {
+      final l10n = AppLocalizations.of(context)!;
+      final hasLocPermission = await LocationService.instance.checkPermission();
+      if (!mounted) return;
+      if (!hasLocPermission) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              l10n.locationPermissionRide,
+              style: GoogleFonts.cairo(),
+            ),
+            backgroundColor: AppColors.error,
           ),
-          backgroundColor: AppColors.error,
-        ),
-      );
-      return;
-    }
+        );
+        return;
+      }
 
-    if (_toText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            l10n.selectDestinationFirst,
-            style: GoogleFonts.cairo(),
+      if (_toText.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              l10n.selectDestinationFirst,
+              style: GoogleFonts.cairo(),
+            ),
+            backgroundColor: AppColors.error,
           ),
-          backgroundColor: AppColors.error,
-        ),
-      );
-      return;
-    }
+        );
+        return;
+      }
 
-    // Block Scooter requests with "will be available soon" message
-    if (_selectedVehicle == 'scooter') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            l10n.scooterComingSoon,
-            style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+      // Block Scooter requests with "will be available soon" message
+      if (_selectedVehicle == 'scooter') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              l10n.scooterComingSoon,
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: AppColors.warning,
           ),
-          backgroundColor: AppColors.warning,
-        ),
+        );
+        return;
+      }
+
+      final double fare = double.tryParse(_fareController.text) ?? 30.0;
+      
+      // Start searching in global state
+      GlobalState.instance.startSearchingForDrivers(
+        _fromText,
+        _toText,
+        fare,
+        _selectedVehicle,
+        passengerCount: _passengerCount,
       );
-      return;
+
+      // Open matching screen
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        SnappyPageRoute(page: const PassengerRideMatchingPage()),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmittingRide = false);
+      }
     }
-
-    final double fare = double.tryParse(_fareController.text) ?? 30.0;
-    
-    // Start searching in global state
-    GlobalState.instance.startSearchingForDrivers(
-      _fromText,
-      _toText,
-      fare,
-      _selectedVehicle,
-      passengerCount: _passengerCount,
-    );
-
-    // Open matching screen
-    Navigator.push(
-      context,
-      SnappyPageRoute(page: const PassengerRideMatchingPage()),
-    );
   }
 
   double get _dynamicBottomPadding {
@@ -304,11 +319,50 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final canDirectlyExit = GlobalState.instance.canExitApplication();
     return PopScope(
-      canPop: GlobalState.instance.canExitApplication(),
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
+        if (didPop) return;
+
+        // 1. Close drawer if open
+        if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+          _scaffoldKey.currentState?.closeDrawer();
+          return;
+        }
+
+        // 2. If there's an active trip, show prevention alert
+        if (!canDirectlyExit) {
           showExitPreventionAlert(context);
+          return;
+        }
+
+        // 3. If in rideBooking or deliveryBooking mode, back returns to dashboard first
+        if (_mode != PassengerMode.dashboard) {
+          setState(() {
+            _mode = PassengerMode.dashboard;
+          });
+          return;
+        }
+
+        // 4. Double tap to exit gracefully
+        final now = DateTime.now();
+        if (_lastBackPressTime == null ||
+            now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+          _lastBackPressTime = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'اضغط مرة أخرى للخروج من التطبيق',
+                style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+              ),
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+        } else {
+          SystemNavigator.pop();
         }
       },
       child: Scaffold(
@@ -948,7 +1002,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
 
                       // Confirm button (Gradient Blue)
                       ScaleButton(
-                        onTap: _requestRide,
+                        onTap: _isSubmittingRide ? null : _requestRide,
                         child: Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 16),
@@ -968,14 +1022,23 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                             ],
                           ),
                           alignment: Alignment.center,
-                          child: Text(
-                            AppLocalizations.of(context)!.requestRideNow,
-                            style: GoogleFonts.cairo(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
+                          child: _isSubmittingRide
+                              ? const SizedBox(
+                                  height: 24,
+                                  width: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  ),
+                                )
+                              : Text(
+                                  AppLocalizations.of(context)!.requestRideNow,
+                                  style: GoogleFonts.cairo(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
                         ),
                       ),
                     ],

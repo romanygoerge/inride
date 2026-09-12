@@ -1217,7 +1217,7 @@ abstract class AppLocalizations {
   /// No description provided for @noRatingsYet.
   ///
   /// In ar, this message translates to:
-  /// **'لا توجد تقييمات أو مراجعات حالياً'**
+  /// **'التقييمات'**
   String get noRatingsYet;
 
   /// No description provided for @rateDriver.

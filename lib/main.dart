@@ -26,6 +26,7 @@ import 'core/DI/injection_container.dart' as di;
 import 'core/services/deep_link_service.dart';
 import 'core/services/app_notification_service.dart';
 import 'core/utils/app_logger.dart';
+import 'features/common/maintenance_page.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -151,6 +152,18 @@ class InRideApp extends ConsumerWidget {
           routes: {
             '/': (context) => const AuthGate(),
           },
+          builder: (context, child) {
+            return ListenableBuilder(
+              listenable: GlobalState.instance,
+              builder: (context, _) {
+                final state = GlobalState.instance;
+                if (state.isMaintenanceMode && !state.isAdmin) {
+                  return const MaintenancePage();
+                }
+                return child ?? const SizedBox.shrink();
+              },
+            );
+          },
         );
       },
     );
@@ -200,6 +213,9 @@ class _AuthGateState extends State<AuthGate> {
       listenable: GlobalState.instance,
       builder: (context, _) {
         final state = GlobalState.instance;
+        if (state.isMaintenanceMode && !state.isAdmin) {
+          return const MaintenancePage();
+        }
         if (!_initialized || !state.isAuthResolved) {
           // Minimal loading indicator while initial state resolves
           return const Scaffold(

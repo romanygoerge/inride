@@ -278,43 +278,69 @@ class _NotificationsPageState extends State<NotificationsPage> {
             clickData['notification_id'] = notif.id;
 
             final type = notif.type.toLowerCase();
-            final title = notif.title.toLowerCase();
-            final body = notif.body.toLowerCase();
 
-            final bool isChatOrSupport = type.contains('message') ||
-                type.contains('chat') ||
-                type.contains('support') ||
-                type.contains('communication') ||
-                title.contains('رسالة') ||
-                title.contains('دعم') ||
-                title.contains('محادثة') ||
-                body.contains('رسالة') ||
-                body.contains('الدعم');
+            // 1. الإشعارات والرسائل الإدارية والتعميمات -> تفتح صفحة تفاصيل الإشعار الأصلية
+            final bool isAdminNotice = type == 'admin_notifications' ||
+                type == 'admin_announcement' ||
+                type == 'system_broadcast' ||
+                type == 'offers' ||
+                type == 'app_updates' ||
+                type == 'broadcast' ||
+                type == 'general' ||
+                clickData['adminNotificationId'] != null ||
+                clickData['admin_notification_id'] != null;
 
+            if (isAdminNotice) {
+              Navigator.push(
+                context,
+                SnappyPageRoute(page: NotificationDetailsPage(notification: notif)),
+              );
+              return;
+            }
+
+            // 2. محادثات الدعم الفني المباشرة الحقيقية فقط
+            final bool isRealSupportChat = (type == 'support_chat' || type == 'support_message' || type == 'ticket') &&
+                (clickData['conversation_id'] != null || clickData['ticket_id'] != null);
+
+            if (isRealSupportChat) {
+              NotificationService.instance.handleNotificationClick(clickData);
+              return;
+            }
+
+            // 3. رسائل الدردشة المباشرة داخل الرحلة
+            final bool isTripChat = (type == 'chat_message' || type == 'new_message') &&
+                (clickData['tripId'] != null || clickData['trip_id'] != null || clickData['requestId'] != null || clickData['request_id'] != null);
+
+            if (isTripChat) {
+              NotificationService.instance.handleNotificationClick(clickData);
+              return;
+            }
+
+            // 4. المحفظة والعمليات المالية
             final bool isWallet = type.contains('wallet') ||
                 type.contains('charge') ||
                 type.contains('payout') ||
                 type.contains('deposit') ||
-                type.contains('payment') ||
-                title.contains('محفظ') ||
-                title.contains('شحن') ||
-                title.contains('رصيد');
+                type.contains('payment');
 
-            final bool isRideOrTrip = type.contains('trip') ||
-                type.contains('ride') ||
-                type.contains('offer') ||
-                type.contains('driver') ||
-                clickData['tripId'] != null ||
+            // 5. أحداث الرحلات الحية
+            final bool isRideOrTrip = clickData['tripId'] != null ||
                 clickData['trip_id'] != null ||
                 clickData['requestId'] != null ||
                 clickData['request_id'] != null ||
-                title.contains('رحلة') ||
-                title.contains('مشوار') ||
-                title.contains('طلب');
+                type == 'accept_trip' ||
+                type == 'driver_arrived' ||
+                type == 'trip_started' ||
+                type == 'trip_finished' ||
+                type == 'cancel_trip' ||
+                type == 'ride_expired' ||
+                type == 'offer_rejected' ||
+                type == 'new_offer' ||
+                type == 'new_trip';
 
             final bool hasUrl = clickData['url'] != null || clickData['link'] != null;
 
-            if (isChatOrSupport || isWallet || isRideOrTrip || hasUrl) {
+            if (isWallet || isRideOrTrip || hasUrl) {
               NotificationService.instance.handleNotificationClick(clickData);
             } else {
               Navigator.push(

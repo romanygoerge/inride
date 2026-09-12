@@ -2323,5 +2323,207 @@ button:active,
   gap: 16px;
 }
 
+/* ============================================
+   Interactive Document Lightbox Gallery
+   ============================================ */
+.doc-gallery-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 15, 29, 0.94);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 100000;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+  animation: docGalleryFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  direction: rtl;
+  font-family: 'Cairo', sans-serif;
+}
+
+@keyframes docGalleryFadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.doc-gallery-header {
+  padding: 16px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.7);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  z-index: 10;
+}
+
+.doc-gallery-title-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.doc-gallery-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.doc-gallery-counter {
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(37, 99, 235, 0.3);
+  color: #60A5FA;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  font-family: 'Outfit', sans-serif;
+}
+
+.doc-gallery-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.doc-gallery-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #F8FAFC;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  transition: all 0.2s ease;
+}
+
+.doc-gallery-btn:hover {
+  background: rgba(37, 99, 235, 0.6);
+  border-color: #3B82F6;
+  color: #FFFFFF;
+  transform: translateY(-2px);
+}
+
+.doc-gallery-btn.btn-close:hover {
+  background: rgba(239, 68, 68, 0.7);
+  border-color: #EF4444;
+}
+
+.doc-gallery-main {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 20px;
+}
+
+.doc-gallery-viewport {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.doc-gallery-img {
+  max-width: 90%;
+  max-height: 72vh;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: center center;
+}
+
+.doc-gallery-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 26px;
+  z-index: 10;
+  transition: all 0.2s ease;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.doc-gallery-arrow:hover {
+  background: #2563EB;
+  border-color: #60A5FA;
+  transform: translateY(-50%) scale(1.1);
+  box-shadow: 0 0 20px rgba(37, 99, 235, 0.6);
+}
+
+.doc-gallery-arrow.arrow-prev {
+  right: 24px;
+}
+
+.doc-gallery-arrow.arrow-next {
+  left: 24px;
+}
+
+.doc-gallery-footer {
+  padding: 12px 20px;
+  background: rgba(15, 23, 42, 0.85);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  z-index: 10;
+}
+
+.doc-gallery-thumb {
+  width: 60px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  opacity: 0.5;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  background: #1e293b;
+}
+
+.doc-gallery-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.doc-gallery-thumb:hover {
+  opacity: 0.9;
+  transform: translateY(-2px);
+}
+
+.doc-gallery-thumb.active {
+  opacity: 1;
+  border-color: #3B82F6;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.7);
+  transform: scale(1.05);
+}
+
 
 

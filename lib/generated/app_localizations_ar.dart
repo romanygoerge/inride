@@ -1346,4 +1346,40 @@ class AppLocalizationsAr extends AppLocalizations {
   String authErrorPrefix(String error) {
     return 'حدث خطأ: $error';
   }
+
+  @override
+  String get inviteFriends => 'أدعي صديق';
+
+  @override
+  String get inviteFriendsSubtitle =>
+      'شارك تطبيق inRide مع أصدقائك ليستمتعوا بأفضل تجربة رحلات وتوصيل!';
+
+  @override
+  String get downloadAndroid => 'تحميل للأندرويد';
+
+  @override
+  String get downloadIos => 'تحميل للآيفون';
+
+  @override
+  String get googlePlay => 'Google Play';
+
+  @override
+  String get appStore => 'App Store';
+
+  @override
+  String get copyAndShare => 'نسخ ومشاركة';
+
+  @override
+  String get shareBothLinks => 'مشاركة الرابطين معاً';
+
+  @override
+  String get copiedGooglePlaySuccess =>
+      'تم نسخ رابط Google Play بنجاح! جاري فتح المشاركة...';
+
+  @override
+  String get copiedAppStoreSuccess =>
+      'تم نسخ رابط App Store بنجاح! جاري فتح المشاركة...';
+
+  @override
+  String get copiedBothSuccess => 'تم نسخ الروابط بنجاح! جاري فتح المشاركة...';
 }

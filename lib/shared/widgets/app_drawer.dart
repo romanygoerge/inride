@@ -20,6 +20,7 @@ import '../../generated/app_localizations.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/utils/snappy_page_route.dart';
 import 'exit_prevention_dialog.dart';
+import 'invite_friends_sheet.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -378,6 +379,15 @@ class AppDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const SupportPage()));
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.group_add_outlined,
+                  title: l10n.inviteFriends,
+                  onTap: () {
+                    Navigator.pop(context);
+                    InviteFriendsSheet.show(context);
                   },
                 ),
                 _buildDrawerItem(

@@ -2593,6 +2593,72 @@ abstract class AppLocalizations {
   /// In ar, this message translates to:
   /// **'حدث خطأ: {error}'**
   String authErrorPrefix(String error);
+
+  /// No description provided for @inviteFriends.
+  ///
+  /// In ar, this message translates to:
+  /// **'أدعي صديق'**
+  String get inviteFriends;
+
+  /// No description provided for @inviteFriendsSubtitle.
+  ///
+  /// In ar, this message translates to:
+  /// **'شارك تطبيق inRide مع أصدقائك ليستمتعوا بأفضل تجربة رحلات وتوصيل!'**
+  String get inviteFriendsSubtitle;
+
+  /// No description provided for @downloadAndroid.
+  ///
+  /// In ar, this message translates to:
+  /// **'تحميل للأندرويد'**
+  String get downloadAndroid;
+
+  /// No description provided for @downloadIos.
+  ///
+  /// In ar, this message translates to:
+  /// **'تحميل للآيفون'**
+  String get downloadIos;
+
+  /// No description provided for @googlePlay.
+  ///
+  /// In ar, this message translates to:
+  /// **'Google Play'**
+  String get googlePlay;
+
+  /// No description provided for @appStore.
+  ///
+  /// In ar, this message translates to:
+  /// **'App Store'**
+  String get appStore;
+
+  /// No description provided for @copyAndShare.
+  ///
+  /// In ar, this message translates to:
+  /// **'نسخ ومشاركة'**
+  String get copyAndShare;
+
+  /// No description provided for @shareBothLinks.
+  ///
+  /// In ar, this message translates to:
+  /// **'مشاركة الرابطين معاً'**
+  String get shareBothLinks;
+
+  /// No description provided for @copiedGooglePlaySuccess.
+  ///
+  /// In ar, this message translates to:
+  /// **'تم نسخ رابط Google Play بنجاح! جاري فتح المشاركة...'**
+  String get copiedGooglePlaySuccess;
+
+  /// No description provided for @copiedAppStoreSuccess.
+  ///
+  /// In ar, this message translates to:
+  /// **'تم نسخ رابط App Store بنجاح! جاري فتح المشاركة...'**
+  String get copiedAppStoreSuccess;
+
+  /// No description provided for @copiedBothSuccess.
+  ///
+  /// In ar, this message translates to:
+  /// **'تم نسخ الروابط بنجاح! جاري فتح المشاركة...'**
+  String get copiedBothSuccess;
 }
 
 class _AppLocalizationsDelegate

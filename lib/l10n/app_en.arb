@@ -569,5 +569,17 @@
     "placeholders": {
       "error": { "type": "String" }
     }
-  }
+  },
+
+  "inviteFriends": "Invite a Friend",
+  "inviteFriendsSubtitle": "Share inRide app with your friends to enjoy the best rides & delivery!",
+  "downloadAndroid": "Download for Android",
+  "downloadIos": "Download for iPhone",
+  "googlePlay": "Google Play",
+  "appStore": "App Store",
+  "copyAndShare": "Copy & Share",
+  "shareBothLinks": "Share Both Links",
+  "copiedGooglePlaySuccess": "Google Play link copied successfully! Opening share...",
+  "copiedAppStoreSuccess": "App Store link copied successfully! Opening share...",
+  "copiedBothSuccess": "Links copied successfully! Opening share..."
 }

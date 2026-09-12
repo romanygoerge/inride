@@ -5458,61 +5458,6 @@ function renderSettings() {
         </div>
       </div>
 
-      <!-- Maintenance Mode Control Section -->
-      <div class="card mt-20" style="border: 2px solid ${mockData.settings.is_maintenance_mode === true ? '#ef4444' : '#3b82f6'}; background: ${mockData.settings.is_maintenance_mode === true ? 'linear-gradient(180deg, #fef2f2 0%, #ffffff 100%)' : 'linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%)'}; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
-        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <h3><i class="ri-tools-fill ${mockData.settings.is_maintenance_mode === true ? 'text-danger' : 'text-primary'}" style="margin-left:8px; font-size:22px;"></i> وضع الصيانة الشامل للتطبيق (Maintenance Mode)</h3>
-            <span class="badge" style="${mockData.settings.is_maintenance_mode === true ? 'background:#ef4444; color:#fff;' : 'background:#16a34a; color:#fff;'} font-size:12px; padding:4px 10px; border-radius:20px;">
-              ${mockData.settings.is_maintenance_mode === true ? '🔴 وضع الصيانة مفعل (التطبيق مقفل أمام المستخدمين)' : '🟢 التطبيق يعمل بشكل طبيعي ومتاح للجميع'}
-            </span>
-          </div>
-          <div style="display:flex;align-items:center;gap:12px;">
-            <span style="font-size:13px;font-weight:700;color:var(--text-primary);">مفتاح وضع الصيانة:</span>
-            <label class="toggle-switch">
-              <input type="checkbox" id="maintenanceModeToggle" ${mockData.settings.is_maintenance_mode === true ? 'checked' : ''} onchange="toggleMaintenanceMode(this.checked)">
-              <span class="toggle-slider" style="${mockData.settings.is_maintenance_mode === true ? 'background-color:#ef4444;' : ''}"></span>
-            </label>
-          </div>
-        </div>
-        <div class="card-body">
-          <p style="font-size:13px; color:var(--text-secondary); margin-bottom:18px; line-height:1.7;">
-            ${mockData.settings.is_maintenance_mode === true 
-              ? '⚠️ <strong>وضع الصيانة قيد التشغيل:</strong> تطبيق الهاتف مقفل بالكامل الآن في كافة الشاشات والواجهات، وتظهر للمستخدمين شاشة الصيانة. تم إرسال إشعار فوري (Push Notification) لجميع الأجهزة النشطة. لإعادة فتح التطبيق وإرسال إشعار العودة للمستخدمين، قم بإيقاف المفتاح أعلاه.' 
-              : '✅ <strong>التطبيق متاح ونشط:</strong> المستخدمون يمكنهم تصفح التطبيق وطلب الرحلات والتسجيل بشكل طبيعي. عند تفعيل هذا الوضع، سيتم حجب التطبيق فوراً وعرض شاشة الصيانة وإرسال إشعار Push لجميع المستخدمين.'}
-          </p>
-
-          <div class="grid-2" style="gap:16px;">
-            <div class="form-group">
-              <label style="font-size:12.5px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:block;">عنوان لوحة الصيانة والإشعار:</label>
-              <input type="text" class="form-control" style="font-weight:700;" value="${escapeHtml(mockData.settings.maintenance_title || 'التطبيق تحت الصيانة حالياً')}" id="maintenanceTitleInput" onchange="updateMaintenanceSetting('maintenance_title', this.value)" placeholder="التطبيق تحت الصيانة حالياً">
-              <small style="color:var(--text-light); font-size:11px;">يظهر كعنوان رئيسي في لوحة التطبيق وعنوان لإشعار الهاتف الفوري.</small>
-            </div>
-            <div class="form-group">
-              <label style="font-size:12.5px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:block;">نص رسالة الصيانة للمستخدمين:</label>
-              <input type="text" class="form-control" value="${escapeHtml(mockData.settings.maintenance_message || 'نعمل على تحسين وتحديث خدمات inRide لنقدم لكم تجربة أفضل وأسرع. سنعود للعمل قريباً جداً.')}" id="maintenanceMessageInput" onchange="updateMaintenanceSetting('maintenance_message', this.value)" placeholder="نعمل على تحسين وتحديث خدمات inRide...">
-              <small style="color:var(--text-light); font-size:11px;">يظهر في بطاقة الصيانة بالتطبيق ومحتوى إشعار البوش نوتفكيشن.</small>
-            </div>
-          </div>
-
-          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; padding-top:14px; border-top:1px solid rgba(0,0,0,0.06); align-items:center; justify-content:space-between;">
-            <div style="font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">
-              <i class="ri-notification-badge-fill text-blue"></i>
-              <span>يتم إرسال إشعار Push فوري لكافة الأجهزة النشطة والمسجلة (325+ جهاز) فور تغيير الحالة.</span>
-            </div>
-            <div style="display:flex; gap:8px;">
-              <button class="btn btn-sm ${mockData.settings.is_maintenance_mode === true ? 'btn-success' : 'btn-danger'}" onclick="toggleMaintenanceMode(${mockData.settings.is_maintenance_mode !== true})">
-                <i class="${mockData.settings.is_maintenance_mode === true ? 'ri-play-circle-fill' : 'ri-stop-circle-fill'}"></i>
-                ${mockData.settings.is_maintenance_mode === true ? 'إنهاء الصيانة وإعادة تشغيل التطبيق فوراً' : 'تفعيل وضع الصيانة وقفل التطبيق الآن'}
-              </button>
-              <button class="btn btn-sm btn-outline" onclick="sendCustomMaintenanceBroadcast()">
-                <i class="ri-broadcast-fill"></i> إعادة إرسال إشعار الصيانة يدوياً
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- Demo Account & Quick Testing Section -->
       <div class="card mt-20" style="border: 1.5px solid ${mockData.settings.demo_mode_enabled === true ? '#22c55e' : '#ef4444'}; background: ${mockData.settings.demo_mode_enabled === true ? 'linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%)' : 'linear-gradient(180deg, #fef2f2 0%, #ffffff 100%)'};">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">

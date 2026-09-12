@@ -569,5 +569,17 @@
     "placeholders": {
       "error": { "type": "String" }
     }
-  }
+  },
+
+  "inviteFriends": "أدعي صديق",
+  "inviteFriendsSubtitle": "شارك تطبيق inRide مع أصدقائك ليستمتعوا بأفضل تجربة رحلات وتوصيل!",
+  "downloadAndroid": "تحميل للأندرويد",
+  "downloadIos": "تحميل للآيفون",
+  "googlePlay": "Google Play",
+  "appStore": "App Store",
+  "copyAndShare": "نسخ ومشاركة",
+  "shareBothLinks": "مشاركة الرابطين معاً",
+  "copiedGooglePlaySuccess": "تم نسخ رابط Google Play بنجاح! جاري فتح المشاركة...",
+  "copiedAppStoreSuccess": "تم نسخ رابط App Store بنجاح! جاري فتح المشاركة...",
+  "copiedBothSuccess": "تم نسخ الروابط بنجاح! جاري فتح المشاركة..."
 }

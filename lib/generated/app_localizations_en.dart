@@ -1352,4 +1352,40 @@ class AppLocalizationsEn extends AppLocalizations {
   String authErrorPrefix(String error) {
     return 'An error occurred: $error';
   }
+
+  @override
+  String get inviteFriends => 'Invite a Friend';
+
+  @override
+  String get inviteFriendsSubtitle =>
+      'Share inRide app with your friends to enjoy the best rides & delivery!';
+
+  @override
+  String get downloadAndroid => 'Download for Android';
+
+  @override
+  String get downloadIos => 'Download for iPhone';
+
+  @override
+  String get googlePlay => 'Google Play';
+
+  @override
+  String get appStore => 'App Store';
+
+  @override
+  String get copyAndShare => 'Copy & Share';
+
+  @override
+  String get shareBothLinks => 'Share Both Links';
+
+  @override
+  String get copiedGooglePlaySuccess =>
+      'Google Play link copied successfully! Opening share...';
+
+  @override
+  String get copiedAppStoreSuccess =>
+      'App Store link copied successfully! Opening share...';
+
+  @override
+  String get copiedBothSuccess => 'Links copied successfully! Opening share...';
 }

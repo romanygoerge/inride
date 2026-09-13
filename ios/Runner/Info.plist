@@ -66,14 +66,14 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>fbYOUR_FACEBOOK_APP_ID</string>
+				<string>fb2257620351655440</string>
 			</array>
 		</dict>
 	</array>
 	<key>FacebookAppID</key>
-	<string>YOUR_FACEBOOK_APP_ID</string>
+	<string>2257620351655440</string>
 	<key>FacebookClientToken</key>
-	<string>YOUR_FACEBOOK_CLIENT_TOKEN</string>
+	<string>6b4d59c741c1b5b5bd1016d26d75f003</string>
 	<key>FacebookDisplayName</key>
 	<string>inRide</string>
 	<key>FacebookAutoLogAppEventsEnabled</key>

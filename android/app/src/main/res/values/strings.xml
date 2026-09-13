@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Meta / Facebook SDK Configuration -->
-    <!-- Replace with your actual Facebook App ID from Meta App Dashboard -->
-    <string name="facebook_app_id">YOUR_FACEBOOK_APP_ID</string>
-    <!-- Replace with your actual Client Token from Meta App Dashboard -> Settings -> Advanced -->
-    <string name="facebook_client_token">YOUR_FACEBOOK_CLIENT_TOKEN</string>
-    <string name="fb_login_protocol_scheme">fbYOUR_FACEBOOK_APP_ID</string>
+    <string name="facebook_app_id">2257620351655440</string>
+    <string name="facebook_client_token">6b4d59c741c1b5b5bd1016d26d75f003</string>
+    <string name="fb_login_protocol_scheme">fb2257620351655440</string>
 </resources>

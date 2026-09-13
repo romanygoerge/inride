@@ -28,6 +28,7 @@ import '../../../chat/presentation/pages/messages_center_page.dart';
 import '../../../../core/services/support_chat_service.dart';
 import '../../../../generated/app_localizations.dart';
 import '../../../../core/localization/locale_controller.dart';
+import '../widgets/driver_daily_mission_card.dart';
 
 class DriverHomePage extends StatefulWidget {
   const DriverHomePage({super.key});
@@ -816,6 +817,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  const DriverDailyMissionCard(),
 
                   if (!_isOnline) ...[
                     // Offline screen placeholder

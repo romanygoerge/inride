@@ -739,7 +739,7 @@ function initDashboardAnimations() {
 // ============================================
 
 function navigateTo(page) {
-  const validPages = ['dashboard', 'trips', 'drivers', 'passengers', 'ratings', 'driver-profile', 'passenger-profile', 'wallet', 'pricing', 'places', 'banners', 'communication', 'messages', 'support', 'content', 'monitoring', 'logs', 'settings'];
+  const validPages = ['rewards', 'dashboard', 'trips', 'drivers', 'passengers', 'ratings', 'driver-profile', 'passenger-profile', 'wallet', 'pricing', 'places', 'banners', 'communication', 'messages', 'support', 'content', 'monitoring', 'logs', 'settings'];
   if (!validPages.includes(page)) {
     page = 'dashboard';
   }
@@ -785,6 +785,7 @@ function updateHeaderTitle(page) {
     pricing: { title: 'التسعير والمناطق', sub: 'إدارة تسعير الرحلات والعمولات ونسبة الـ Surge' },
     places: { title: 'أماكن ومحلات مدينة السادات', sub: 'دليل شامل وقابل للتوسع للمحلات والخدمات والمولات مقسمة إلى 25 تصنيفاً' },
     banners: { title: 'إعلانات وبانرات التطبيق اللحظية', sub: 'إدارة وتخصيص البانرات المتحركة في القائمة الجانبية للتطبيق مع محاكاة حية' },
+    rewards: { title: 'نظام المكافآت والإحالات', sub: 'التحكم الكامل في تشغيل وإيقاف الإحالات وبونص الكباتن وتعديل المعايير لحظياً' },
     communication: { title: 'مركز التواصل والمحادثات', sub: 'عرض وإدارة محادثات العملاء والكباتن والدعم الفني والتحكم بالتذاكر' },
     messages: { title: 'الإشعارات والرسائل', sub: 'إرسال الإشعارات الجماعية والمستهدفة وجدولة التنبيهات' },
     support: { title: 'الدعم الفني والشكاوى', sub: 'استقبال شكاوى المستخدمين والرد عليها وإغلاق التذاكر' },
@@ -864,6 +865,10 @@ function renderPage(page) {
         break;
       case 'places':
         container.innerHTML = renderPlaces();
+        break;
+      case 'rewards':
+        container.innerHTML = renderRewardsPage();
+        initRewardsPage();
         break;
       case 'banners':
         container.innerHTML = renderBannersPage();
@@ -16863,7 +16868,7 @@ async function toggleMaintenanceMode(enabled) {
   const isEnabling = !!enabled;
   const actionText = isEnabling ? 'تفعيل وضع الصيانة وقفل التطبيق بالكامل' : 'إلغاء وضع الصيانة وإعادة فتح التطبيق للجميع';
   const confirmMsg = isEnabling 
-    ? '⚠️ تنبيه هام: هل أنت متأكد من تفعيل وضع الصيانة الآن؟\n\n• سيتم قفل التطبيق فوراً أمام جميع الركاب والسائقين.\n• ستظهر شاشة الصيانة على كامل الشاشة وتمنع أي استخدام.\n• سيتم إرسال إشعار فوري (Push Notification) لجميع الأجهزة النشطة والمسجلة.'
+    ? '⚠️ تنبيه هام: هل أنت متأكد من تفعيل وضع الصيانة الآن؟• سيتم قفل التطبيق فوراً أمام جميع الركاب والسائقين.\n• ستظهر شاشة الصيانة على كامل الشاشة وتمنع أي استخدام.\n• سيتم إرسال إشعار فوري (Push Notification) لجميع الأجهزة النشطة والمسجلة.'
     : '🚀 هل تريد إنهاء الصيانة وإعادة فتح التطبيق لجميع المستخدمين الآن؟\n\n• سيعود التطبيق للعمل بشكل فوري للجميع.\n• سيتم إرسال إشعار فوري لجميع المستخدمين يبشرهم بعودة التطبيق للعمل.';
 
   if (!confirm(confirmMsg)) {
@@ -17242,6 +17247,9 @@ function renderBannersPage() {
                   <i class="ri-upload-cloud-2-line" style="color:var(--primary);"></i> اختيار صورة من جهازك
                   <input type="file" id="bannerImageFileInput" accept="image/*" style="display:none;" onchange="handleBannerImageUpload(event)">
                 </label>
+                <button type="button" class="btn btn-outline btn-sm" onclick="removeBannerImage()" style="color:#EF4444;border-color:#FCA5A5;padding:4px 8px;font-size:11px;" title="إزالة الصورة">
+                  <i class="ri-delete-bin-line"></i> إزالة الصورة
+                </button>
                 <span id="bannerUploadStatus" style="font-size:11px;color:var(--primary);font-weight:700;"></span>
               </div>
               <input type="text" id="bannerImageUrlInput" class="form-control" placeholder="أو الصق رابط الصورة المباشر هنا (https://...)" style="width:100%;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;font-size:12px;direction:ltr;" oninput="updateImagePreviewFromInput(this.value)">
@@ -17253,18 +17261,18 @@ function renderBannersPage() {
 
             <div class="form-group" style="margin-bottom:14px;">
               <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">العنوان الرئيسي للإعلان <span style="color:#EF4444;">*</span></label>
-              <input type="text" id="bannerTitleInput" class="form-control" placeholder="مثال: خصم 20% على أول مشوار" required style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;font-size:13px;">
+              <input type="text" id="bannerTitleInput" class="form-control" placeholder="مثال: خصم 20% على أول مشوار" required style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;font-size:13px;" oninput="updateModalBannerLivePreview()">
             </div>
 
             <div class="form-group" style="margin-bottom:14px;">
               <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">الوصف الفرعي أو التفاصيل</label>
-              <input type="text" id="bannerSubtitleInput" class="form-control" placeholder="مثال: استخدم كود INRIDE20 واستمتع بأوفر مشوار" style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;font-size:13px;">
+              <input type="text" id="bannerSubtitleInput" class="form-control" placeholder="مثال: استخدم كود INRIDE20 واستمتع بأوفر مشوار" style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;font-size:13px;" oninput="updateModalBannerLivePreview()">
             </div>
 
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
               <div class="form-group">
                 <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">شارة الإعلان (Badge Tag)</label>
-                <input type="text" id="bannerBadgeInput" class="form-control" placeholder="مثال: عرض خاص ⚡، مكافأة 🎁" style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;font-size:13px;">
+                <input type="text" id="bannerBadgeInput" class="form-control" placeholder="مثال: عرض خاص ⚡، مكافأة 🎁" style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;font-size:13px;" oninput="updateModalBannerLivePreview()">
               </div>
 
               <div class="form-group">
@@ -17299,7 +17307,7 @@ function renderBannersPage() {
 
                 <div class="form-group">
                   <label style="display:block;font-size:11px;font-weight:700;color:#64748B;margin-bottom:4px;">نص الزر التفاعلي</label>
-                  <input type="text" id="bannerBtnTextInput" class="form-control" placeholder="مثال: نسخ الكود، أدعي الآن" required style="width:100%;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;font-size:12px;">
+                  <input type="text" id="bannerBtnTextInput" class="form-control" placeholder="مثال: نسخ الكود، أدعي الآن" required style="width:100%;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;font-size:12px;" oninput="updateModalBannerLivePreview()">
                 </div>
               </div>
 
@@ -17323,19 +17331,19 @@ function renderBannersPage() {
               <div style="display:flex;gap:10px;align-items:center;">
                 <div style="flex:1;display:flex;align-items:center;gap:6px;">
                   <span style="font-size:11px;color:#64748B;">البداية:</span>
-                  <input type="color" id="bannerGradientStart" value="#8B5CF6" style="width:36px;height:30px;padding:0;border:none;border-radius:6px;cursor:pointer;">
-                  <input type="text" id="bannerGradientStartText" value="#8B5CF6" style="width:75px;font-size:11px;padding:4px 6px;border:1px solid #CBD5E1;border-radius:6px;direction:ltr;" oninput="document.getElementById('bannerGradientStart').value=this.value">
+                  <input type="color" id="bannerGradientStart" value="#8B5CF6" style="width:36px;height:30px;padding:0;border:none;border-radius:6px;cursor:pointer;" onchange="updateModalBannerLivePreview()">
+                  <input type="text" id="bannerGradientStartText" value="#8B5CF6" style="width:75px;font-size:11px;padding:4px 6px;border:1px solid #CBD5E1;border-radius:6px;direction:ltr;" oninput="document.getElementById('bannerGradientStart').value=this.value;updateModalBannerLivePreview();">
                 </div>
                 <div style="flex:1;display:flex;align-items:center;gap:6px;">
                   <span style="font-size:11px;color:#64748B;">النهاية:</span>
-                  <input type="color" id="bannerGradientEnd" value="#4F46E5" style="width:36px;height:30px;padding:0;border:none;border-radius:6px;cursor:pointer;">
-                  <input type="text" id="bannerGradientEndText" value="#4F46E5" style="width:75px;font-size:11px;padding:4px 6px;border:1px solid #CBD5E1;border-radius:6px;direction:ltr;" oninput="document.getElementById('bannerGradientEnd').value=this.value">
+                  <input type="color" id="bannerGradientEnd" value="#4F46E5" style="width:36px;height:30px;padding:0;border:none;border-radius:6px;cursor:pointer;" onchange="updateModalBannerLivePreview()">
+                  <input type="text" id="bannerGradientEndText" value="#4F46E5" style="width:75px;font-size:11px;padding:4px 6px;border:1px solid #CBD5E1;border-radius:6px;direction:ltr;" oninput="document.getElementById('bannerGradientEnd').value=this.value;updateModalBannerLivePreview();">
                 </div>
               </div>
             </div>
 
             <!-- Target Role & Active Status -->
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:#F1F5F9;border-radius:10px;margin-bottom:18px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:#F1F5F9;border-radius:10px;margin-bottom:16px;">
               <div style="display:flex;align-items:center;gap:8px;">
                 <label style="font-size:12px;font-weight:700;color:#334155;">الفئة المستهدفة:</label>
                 <select id="bannerTargetRole" style="padding:4px 8px;border-radius:6px;border:1px solid #CBD5E1;font-size:11px;">
@@ -17349,6 +17357,14 @@ function renderBannersPage() {
                 <input type="checkbox" id="bannerIsActive" checked style="width:18px;height:18px;accent-color:#10B981;cursor:pointer;">
                 تفعيل الإعلان فورياً
               </label>
+            </div>
+
+            <!-- Realtime Live Banner Preview Inside Modal -->
+            <div style="margin-bottom:18px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:12px;">
+              <div style="font-size:11px;font-weight:800;color:#475569;margin-bottom:8px;display:flex;align-items:center;gap:5px;">
+                <i class="ri-eye-line" style="color:var(--primary);"></i> معاينة شكل البانر الحية كما ستظهر في التطبيق:
+              </div>
+              <div id="modalBannerLiveCard"></div>
             </div>
 
             <!-- Action Buttons -->
@@ -17382,19 +17398,41 @@ function toggleBannerFormatUI(format) {
     if (imgSection) imgSection.style.display = 'none';
     if (gradSection) gradSection.style.display = 'block';
   }
+  updateModalBannerLivePreview();
 }
 
 function updateImagePreviewFromInput(url) {
   const container = document.getElementById('bannerImagePreviewContainer');
   const img = document.getElementById('bannerImagePreview');
+  const radioImg = document.getElementById('formatImage');
   if (!container || !img) return;
 
   if (url && url.trim().startsWith('http')) {
     img.src = url.trim();
     container.style.display = 'block';
+    if (radioImg) radioImg.checked = true;
+    toggleBannerFormatUI('image');
   } else {
     container.style.display = 'none';
   }
+  updateModalBannerLivePreview();
+}
+
+function removeBannerImage() {
+  const urlInput = document.getElementById('bannerImageUrlInput');
+  const container = document.getElementById('bannerImagePreviewContainer');
+  const img = document.getElementById('bannerImagePreview');
+  const statusEl = document.getElementById('bannerUploadStatus');
+  const fileInput = document.getElementById('bannerImageFileInput');
+  if (urlInput) urlInput.value = '';
+  if (img) img.src = '';
+  if (container) container.style.display = 'none';
+  if (statusEl) statusEl.textContent = '';
+  if (fileInput) fileInput.value = '';
+  const radioGrad = document.getElementById('formatGradient');
+  if (radioGrad) radioGrad.checked = true;
+  toggleBannerFormatUI('gradient');
+  updateModalBannerLivePreview();
 }
 
 async function handleBannerImageUpload(event) {
@@ -17405,6 +17443,7 @@ async function handleBannerImageUpload(event) {
   const urlInput = document.getElementById('bannerImageUrlInput');
   const container = document.getElementById('bannerImagePreviewContainer');
   const img = document.getElementById('bannerImagePreview');
+  const radioImg = document.getElementById('formatImage');
 
   if (statusEl) statusEl.textContent = 'جاري رفع الصورة إلى التخزين... ⏳';
 
@@ -17426,6 +17465,9 @@ async function handleBannerImageUpload(event) {
       if (urlInput) urlInput.value = publicData.publicUrl;
       if (img) img.src = publicData.publicUrl;
       if (container) container.style.display = 'block';
+      if (radioImg) radioImg.checked = true;
+      toggleBannerFormatUI('image');
+      updateModalBannerLivePreview();
       if (statusEl) statusEl.textContent = 'تم رفع الصورة بنجاح ✅';
       showToast('تم رفع صورة البانر بنجاح 🖼️');
     }
@@ -17433,6 +17475,57 @@ async function handleBannerImageUpload(event) {
     console.error('Banner upload error:', err);
     if (statusEl) statusEl.textContent = 'فشل الرفع: ' + err.message;
     showToast('تعذر رفع الصورة: ' + err.message);
+  }
+}
+
+function updateModalBannerLivePreview() {
+  const container = document.getElementById('modalBannerLiveCard');
+  if (!container) return;
+
+  const title = (document.getElementById('bannerTitleInput')?.value || '').trim() || 'عنوان الإعلان التجريبي';
+  const subtitle = (document.getElementById('bannerSubtitleInput')?.value || '').trim();
+  const badge = (document.getElementById('bannerBadgeInput')?.value || '').trim();
+  const btnText = (document.getElementById('bannerBtnTextInput')?.value || '').trim() || 'عرض';
+  const start = document.getElementById('bannerGradientStart')?.value || '#8B5CF6';
+  const end = document.getElementById('bannerGradientEnd')?.value || '#4F46E5';
+  
+  const format = document.querySelector('input[name="bannerFormat"]:checked')?.value || 'gradient';
+  const urlVal = (document.getElementById('bannerImageUrlInput')?.value || '').trim();
+  const hasImage = (format === 'image' || urlVal.startsWith('http')) && urlVal.length > 0;
+
+  if (hasImage) {
+    const cleanUrl = urlVal.replace(/'/g, "\\'");
+    container.innerHTML = `
+      <div style="height:86px;border-radius:12px;background:#0F172A url('${cleanUrl}') center/cover no-repeat;position:relative;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.18);">
+        <div style="position:absolute;inset:0;background:linear-gradient(to left, rgba(0,0,0,0.68), rgba(0,0,0,0.20));padding:10px 12px;display:flex;justify-content:space-between;align-items:center;color:#fff;">
+          <div style="flex:1;overflow:hidden;padding-left:6px;">
+            ${badge ? `<span style="background:rgba(255,255,255,0.25);color:#fff;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:bold;display:inline-block;margin-bottom:3px;">${escapeHtml(badge)}</span>` : ''}
+            <div style="font-size:12px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;">
+              ${escapeHtml(title)}
+            </div>
+            ${subtitle ? `<div style="font-size:10px;color:rgba(255,255,255,0.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">${escapeHtml(subtitle)}</div>` : ''}
+          </div>
+          <button type="button" style="background:rgba(255,255,255,0.28);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:10px;font-weight:bold;white-space:nowrap;pointer-events:none;">
+            ${escapeHtml(btnText)}
+          </button>
+        </div>
+      </div>
+    `;
+  } else {
+    container.innerHTML = `
+      <div style="height:86px;border-radius:12px;background:linear-gradient(135deg, ${start}, ${end});padding:10px 12px;color:#fff;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+        <div style="flex:1;overflow:hidden;padding-left:6px;">
+          ${badge ? `<span style="background:rgba(255,255,255,0.22);color:#fff;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:bold;display:inline-block;margin-bottom:3px;">${escapeHtml(badge)}</span>` : ''}
+          <div style="font-size:12px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;">
+            ${escapeHtml(title)}
+          </div>
+          ${subtitle ? `<div style="font-size:10px;color:rgba(255,255,255,0.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">${escapeHtml(subtitle)}</div>` : ''}
+        </div>
+        <button type="button" style="background:rgba(255,255,255,0.25);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:10px;font-weight:bold;white-space:nowrap;pointer-events:none;">
+          ${escapeHtml(btnText)}
+        </button>
+      </div>
+    `;
   }
 }
 
@@ -17618,9 +17711,10 @@ function renderMobileDrawerPreview() {
     const hasImage = b.image_url && b.image_url.trim().length > 0;
 
     if (hasImage) {
+      const cleanUrl = b.image_url.replace(/'/g, "\\'");
       cardHtml = `
-        <div style="height:88px;border-radius:14px;background-image:url('${escapeHtml(b.image_url)}');background-size:cover;background-position:center;position:relative;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.2);animation:fadeIn 0.3s ease;">
-          <div style="position:absolute;inset:0;background:linear-gradient(to left, rgba(0,0,0,0.8), rgba(0,0,0,0.3));padding:10px 12px;display:flex;justify-content:space-between;align-items:center;color:#fff;">
+        <div style="height:88px;border-radius:14px;background:#0F172A url('${cleanUrl}') center/cover no-repeat;position:relative;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.2);animation:fadeIn 0.3s ease;">
+          <div style="position:absolute;inset:0;background:linear-gradient(to left, rgba(0,0,0,0.68), rgba(0,0,0,0.20));padding:10px 12px;display:flex;justify-content:space-between;align-items:center;color:#fff;">
             <div style="flex:1;overflow:hidden;padding-left:6px;">
               ${b.badge_text ? `<span style="background:rgba(255,255,255,0.25);color:#fff;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:bold;display:inline-block;margin-bottom:3px;">${escapeHtml(b.badge_text)}</span>` : ''}
               <div style="font-size:12px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;">
@@ -17681,6 +17775,7 @@ function setGradientPreset(start, end) {
   if (gStartText) gStartText.value = start;
   if (gEnd) gEnd.value = end;
   if (gEndText) gEndText.value = end;
+  updateModalBannerLivePreview();
 }
 
 function updateActionPlaceholder() {
@@ -17773,6 +17868,7 @@ function openBannerModal(id = null) {
   }
 
   updateActionPlaceholder();
+  updateModalBannerLivePreview();
   modal.style.display = 'flex';
 }
 
@@ -17797,7 +17893,8 @@ async function saveBanner(event) {
   const targetRole = document.getElementById('bannerTargetRole').value;
   const isActive = document.getElementById('bannerIsActive').checked;
   const format = document.querySelector('input[name="bannerFormat"]:checked')?.value || 'gradient';
-  const imageUrl = format === 'image' ? document.getElementById('bannerImageUrlInput').value.trim() : null;
+  const urlVal = (document.getElementById('bannerImageUrlInput')?.value || '').trim();
+  const imageUrl = (format === 'image' || urlVal.startsWith('http')) && urlVal.length > 0 ? urlVal : null;
 
   if (!title) {
     showToast('يرجى إدخال عنوان الإعلان');
@@ -17906,5 +18003,660 @@ function setupBannersRealtimeSubscription() {
       .subscribe();
   } catch (e) {
     console.warn('Realtime subscription for app_banners error:', e);
+  }
+}
+
+
+// ============================================
+// REWARDS & REFERRALS SYSTEM
+// ============================================
+let rewardsSettings = null;
+let rewardsReferralsList = [];
+let rewardsMissionsList = [];
+let rewardsActiveTab = 'all';
+let rewardsSearchQuery = '';
+let rewardsRealtimeChannel = null;
+
+function renderRewardsPage() {
+  return `
+    <div class="rewards-container" style="display:flex; flex-direction:column; gap:24px; padding-bottom:40px;">
+      
+      <!-- Top Banner: Master Toggles -->
+      <div class="card" style="background:linear-gradient(135deg, #1E3A8A 0%, #1E88E5 100%); color:#fff; padding:24px; border-radius:var(--radius-xl); box-shadow:0 10px 30px rgba(30,136,229,0.25); position:relative; overflow:hidden;">
+        <div style="position:absolute; right:-20px; top:-20px; font-size:160px; color:rgba(255,255,255,0.05); pointer-events:none;">
+          <i class="ri-gift-2-fill"></i>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:20px; position:relative; z-index:1;">
+          <div>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+              <span style="background:rgba(255,255,255,0.2); padding:4px 12px; border-radius:20px; font-size:12px; font-weight:700;">🎯 تحكم النظام اللحظي</span>
+              <span id="rewardsSystemStatusBadge" style="background:#10B981; padding:4px 12px; border-radius:20px; font-size:12px; font-weight:700;">النظام يعمل بكفاءة</span>
+            </div>
+            <h2 style="font-size:24px; font-weight:800; margin:0 0 6px 0; color:#fff;">نظام الإحالات وبونص الكباتن الذكي</h2>
+            <p style="margin:0; font-size:14px; color:rgba(255,255,255,0.85); max-width:650px;">
+              تحكم كامل في تفعيل أو إيقاف مكافآت دعوة الأصدقاء وبونص المهام اليومية، وتعديل قيم الرحلات والمكافآت المالية بضغطة زر دون تعديل الكود.
+            </p>
+          </div>
+          
+          <!-- Master Switches Box -->
+          <div style="display:flex; flex-direction:column; gap:12px; background:rgba(0,0,0,0.25); padding:16px 20px; border-radius:var(--radius-lg); backdrop-filter:blur(10px); min-width:280px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <i class="ri-user-shared-line" style="font-size:18px;"></i>
+                <span style="font-size:13px; font-weight:700;">نظام الإحالات (Referrals)</span>
+              </div>
+              <label class="switch" style="position:relative; display:inline-block; width:48px; height:26px; margin:0;">
+                <input type="checkbox" id="toggleReferralsSwitch" onchange="handleToggleReferrals(this.checked)">
+                <span class="slider round" style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:#ccc; transition:.3s; border-radius:34px;"></span>
+              </label>
+            </div>
+            <div style="height:1px; background:rgba(255,255,255,0.15);"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <i class="ri-medal-line" style="font-size:18px;"></i>
+                <span style="font-size:13px; font-weight:700;">بونص تحدي الكباتن اليومي</span>
+              </div>
+              <label class="switch" style="position:relative; display:inline-block; width:48px; height:26px; margin:0;">
+                <input type="checkbox" id="toggleMissionsSwitch" onchange="handleToggleMissions(this.checked)">
+                <span class="slider round" style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:#ccc; transition:.3s; border-radius:34px;"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI Stat Cards -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px;">
+        <div class="card stat-card" style="padding:20px; display:flex; align-items:center; gap:16px;">
+          <div style="width:52px; height:52px; border-radius:14px; background:rgba(30,136,229,0.1); color:#1E88E5; display:flex; align-items:center; justify-content:center; font-size:26px;">
+            <i class="ri-user-add-line"></i>
+          </div>
+          <div>
+            <div style="font-size:12px; color:var(--text-secondary); font-weight:600;">إجمالي الإحالات</div>
+            <div id="kpiTotalReferrals" style="font-size:24px; font-weight:800; color:var(--text-primary);">--</div>
+            <div style="font-size:11px; color:#10B981; font-weight:600;">مسجلين برمز دعوة</div>
+          </div>
+        </div>
+
+        <div class="card stat-card" style="padding:20px; display:flex; align-items:center; gap:16px;">
+          <div style="width:52px; height:52px; border-radius:14px; background:rgba(16,185,129,0.1); color:#10B981; display:flex; align-items:center; justify-content:center; font-size:26px;">
+            <i class="ri-checkbox-circle-line"></i>
+          </div>
+          <div>
+            <div style="font-size:12px; color:var(--text-secondary); font-weight:600;">إحالات استوفت الشروط</div>
+            <div id="kpiCompletedReferrals" style="font-size:24px; font-weight:800; color:#10B981;">--</div>
+            <div style="font-size:11px; color:var(--text-light);">أتموا الرحلات المطلوبة</div>
+          </div>
+        </div>
+
+        <div class="card stat-card" style="padding:20px; display:flex; align-items:center; gap:16px;">
+          <div style="width:52px; height:52px; border-radius:14px; background:rgba(245,158,11,0.1); color:#F59E0B; display:flex; align-items:center; justify-content:center; font-size:26px;">
+            <i class="ri-wallet-3-line"></i>
+          </div>
+          <div>
+            <div style="font-size:12px; color:var(--text-secondary); font-weight:600;">مكافآت تم صرفها</div>
+            <div id="kpiTotalRewardsPaid" style="font-size:24px; font-weight:800; color:#F59E0B;">-- ج.م</div>
+            <div style="font-size:11px; color:var(--text-light);">أودعت بمحافظ المستخدمين</div>
+          </div>
+        </div>
+
+        <div class="card stat-card" style="padding:20px; display:flex; align-items:center; gap:16px;">
+          <div style="width:52px; height:52px; border-radius:14px; background:rgba(139,92,246,0.1); color:#8B5CF6; display:flex; align-items:center; justify-content:center; font-size:26px;">
+            <i class="ri-steering-2-line"></i>
+          </div>
+          <div>
+            <div style="font-size:12px; color:var(--text-secondary); font-weight:600;">تحديات اليوم المكتملة</div>
+            <div id="kpiTodayMissionsCompleted" style="font-size:24px; font-weight:800; color:#8B5CF6;">--</div>
+            <div style="font-size:11px; color:var(--text-light);">كباتن حققوا التارجت اليوم</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Settings Configuration Form Card -->
+      <div class="card" style="padding:24px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+          <div>
+            <h3 style="font-size:17px; font-weight:800; margin:0 0 4px 0; color:var(--text-primary); display:flex; align-items:center; gap:8px;">
+              <i class="ri-settings-3-fill" style="color:var(--medium-blue);"></i>
+              إعدادات ومعايير المكافآت والبونص
+            </h3>
+            <p style="margin:0; font-size:13px; color:var(--text-secondary);">يمكنك تخصيص مبالغ المكافآت وعدد الرحلات المطلوبة في أي وقت ويتم تطبيقها فوراً.</p>
+          </div>
+          <button class="btn btn-primary" id="btnSaveRewardSettings" onclick="saveRewardSettings()" style="display:flex; align-items:center; gap:6px;">
+            <i class="ri-save-3-line"></i>
+            <span>حفظ التعديلات</span>
+          </button>
+        </div>
+
+        <form id="rewardSettingsForm" onsubmit="event.preventDefault(); saveRewardSettings();">
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:24px;">
+            
+            <!-- Drivers Rules Box -->
+            <div style="background:var(--bg-primary); padding:20px; border-radius:var(--radius-lg); border:1px solid var(--border-color);">
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px; color:#1E88E5; font-weight:800; font-size:15px;">
+                <i class="ri-steering-2-fill" style="font-size:20px;"></i>
+                <span>قواعد وبونص الكباتن (Drivers Rules)</span>
+              </div>
+
+              <div class="form-group" style="margin-bottom:16px;">
+                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">مكافأة دعوة كابتن جديد (ج.م)</label>
+                <div class="input-wrapper">
+                  <i class="ri-money-dollar-circle-line"></i>
+                  <input type="number" id="inputDriverReferralBonus" min="0" step="5" placeholder="100.00" required>
+                </div>
+                <small style="color:var(--text-light); font-size:11px;">المبلغ الذي يحصل عليه الكابتن الداعي في محفظته فور إتمام الشروط.</small>
+              </div>
+
+              <div class="form-group" style="margin-bottom:16px;">
+                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">عدد الرحلات المطلوبة من الكابتن الجديد</label>
+                <div class="input-wrapper">
+                  <i class="ri-route-line"></i>
+                  <input type="number" id="inputDriverTargetTrips" min="1" step="1" placeholder="5" required>
+                </div>
+                <small style="color:var(--text-light); font-size:11px;">يجب على الكابتن الجديد إتمام هذا العدد من الرحلات لصرف المكافأة.</small>
+              </div>
+
+              <div class="form-group" style="margin-bottom:16px;">
+                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">بونص ترحيبي للكابتن الجديد (ج.م)</label>
+                <div class="input-wrapper">
+                  <i class="ri-gift-line"></i>
+                  <input type="number" id="inputDriverWelcomeBonus" min="0" step="5" placeholder="50.00">
+                </div>
+                <small style="color:var(--text-light); font-size:11px;">هدية ترحيبية تنزل في محفظة الكابتن الجديد بعد إتمام الرحلات المطلوبة (0 لتعطيلها).</small>
+              </div>
+
+              <div style="height:1px; background:var(--border-color); margin:16px 0;"></div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div class="form-group">
+                  <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">رحلات التحدي اليومي</label>
+                  <div class="input-wrapper">
+                    <i class="ri-flag-2-line"></i>
+                    <input type="number" id="inputDailyMissionTrips" min="1" step="1" placeholder="8" required>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">بونص التحدي اليومي (ج.م)</label>
+                  <div class="input-wrapper">
+                    <i class="ri-copper-coin-line"></i>
+                    <input type="number" id="inputDailyMissionReward" min="0" step="5" placeholder="80.00" required>
+                  </div>
+                </div>
+              </div>
+              <small style="color:var(--text-light); font-size:11px;">الكابتن الذي ينجز هذا التارجت خلال اليوم يحصل فوراً على البونص في محفظته.</small>
+            </div>
+
+            <!-- Riders Rules Box -->
+            <div style="background:var(--bg-primary); padding:20px; border-radius:var(--radius-lg); border:1px solid var(--border-color);">
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px; color:#10B981; font-weight:800; font-size:15px;">
+                <i class="ri-group-fill" style="font-size:20px;"></i>
+                <span>قواعد دعوة الركاب (Riders Rules)</span>
+              </div>
+
+              <div class="form-group" style="margin-bottom:16px;">
+                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">مكافأة دعوة راكب جديد (ج.م)</label>
+                <div class="input-wrapper">
+                  <i class="ri-money-dollar-circle-line"></i>
+                  <input type="number" id="inputRiderReferralBonus" min="0" step="5" placeholder="20.00" required>
+                </div>
+                <small style="color:var(--text-light); font-size:11px;">تضاف في رصيد محفظة الراكب الداعي لاستخدامها في رحلاته القادمة.</small>
+              </div>
+
+              <div class="form-group" style="margin-bottom:16px;">
+                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">عدد الرحلات المطلوبة من الراكب الجديد</label>
+                <div class="input-wrapper">
+                  <i class="ri-route-line"></i>
+                  <input type="number" id="inputRiderTargetTrips" min="1" step="1" placeholder="1" required>
+                </div>
+                <small style="color:var(--text-light); font-size:11px;">تُصرف المكافأة فور إتمام الصديق المدعو لرحلته الأولى.</small>
+              </div>
+
+              <!-- Information Callout -->
+              <div style="background:rgba(30,136,229,0.06); border:1px dashed #1E88E5; border-radius:var(--radius-md); padding:16px; margin-top:24px;">
+                <div style="display:flex; gap:10px;">
+                  <i class="ri-shield-check-fill" style="color:#1E88E5; font-size:20px;"></i>
+                  <div style="font-size:12px; color:var(--text-primary); line-height:1.6;">
+                    <strong>الحماية التلقائية من الاحتيال (Anti-Fraud):</strong><br>
+                    • منع الإحالة الذاتية (Self-referrals).<br>
+                    • منع استخدام أكثر من كود دعوة لنفس المستخدم.<br>
+                    • يتم صرف البونص فقط بعد تسجيل الرحلة كـ Completed رسمي في قاعدة البيانات.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </form>
+      </div>
+
+      <!-- Referrals History & Tracking Table Card -->
+      <div class="card" style="padding:24px;">
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:16px; margin-bottom:20px;">
+          <div>
+            <h3 style="font-size:17px; font-weight:800; margin:0 0 4px 0; color:var(--text-primary); display:flex; align-items:center; gap:8px;">
+              <i class="ri-file-list-3-fill" style="color:var(--medium-blue);"></i>
+              سجل الإحالات والعمليات الحية
+            </h3>
+            <p style="margin:0; font-size:13px; color:var(--text-secondary);">متابعة جميع الدعوات وتقدم الرحلات وحالات صرف المكافآت لحظياً.</p>
+          </div>
+
+          <div style="display:flex; gap:10px; align-items:center;">
+            <button class="btn btn-outline btn-sm" onclick="loadRewardsData(true)" style="display:flex; align-items:center; gap:6px;">
+              <i class="ri-refresh-line"></i>
+              <span>تحديث السجل</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter & Search Bar -->
+        <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:16px;">
+          <!-- Filter Tabs -->
+          <div style="display:flex; background:var(--bg-primary); padding:4px; border-radius:var(--radius-md); border:1px solid var(--border-color); gap:4px;">
+            <button class="filter-tab-btn active" id="tabAllRef" onclick="setRewardsTab('all')">الكل (<span id="countAllRef">0</span>)</button>
+            <button class="filter-tab-btn" id="tabDriversRef" onclick="setRewardsTab('driver')">كباتن (<span id="countDriversRef">0</span>)</button>
+            <button class="filter-tab-btn" id="tabRidersRef" onclick="setRewardsTab('rider')">ركاب (<span id="countRidersRef">0</span>)</button>
+            <button class="filter-tab-btn" id="tabPendingRef" onclick="setRewardsTab('pending')">قيد الإنجاز (<span id="countPendingRef">0</span>)</button>
+            <button class="filter-tab-btn" id="tabRewardedRef" onclick="setRewardsTab('rewarded')">تم الصرف (<span id="countRewardedRef">0</span>)</button>
+          </div>
+
+          <!-- Search Input -->
+          <div style="flex:1; min-width:240px; position:relative;">
+            <i class="ri-search-line" style="position:absolute; right:12px; top:50%; transform:translateY(-50%); color:var(--text-light);"></i>
+            <input type="text" id="inputSearchRewards" placeholder="بحث بالاسم، رقم الهاتف، أو كود الدعوة..." 
+                   oninput="handleRewardsSearch(this.value)" 
+                   style="width:100%; padding:9px 36px 9px 12px; border-radius:var(--radius-md); border:1px solid var(--border-color); font-family:inherit; font-size:13px; background:var(--bg-primary);">
+          </div>
+        </div>
+
+        <!-- Table Container -->
+        <div style="overflow-x:auto;">
+          <table class="data-table" id="referralsTable" style="width:100%; text-align:right;">
+            <thead>
+              <tr>
+                <th>الداعي (المُستفيد)</th>
+                <th>المدعو (الجديد)</th>
+                <th>النوع</th>
+                <th>كود الدعوة</th>
+                <th>الرحلات المنجزة</th>
+                <th>المكافأة المستحقة</th>
+                <th>حالة الصرف</th>
+                <th>تاريخ التسجيل</th>
+              </tr>
+            </thead>
+            <tbody id="referralsTableBody">
+              <tr>
+                <td colspan="8" style="text-align:center; padding:32px; color:var(--text-light);">
+                  <i class="ri-loader-4-line ri-spin" style="font-size:24px;"></i>
+                  <div style="margin-top:8px;">جاري تحميل سجل الإحالات...</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+async function initRewardsPage() {
+  setupRewardsRealtimeSubscription();
+  await loadRewardsData();
+}
+
+async function loadRewardsData(showToastFeedback = false) {
+  if (!supabaseClient) return;
+
+  try {
+    // 1. Load Settings
+    const { data: settingsData, error: sErr } = await supabaseClient
+      .from('rewards_settings')
+      .select('*')
+      .eq('id', 'default')
+      .maybeSingle();
+
+    if (settingsData) {
+      rewardsSettings = settingsData;
+      populateRewardSettingsForm(settingsData);
+    }
+
+    // 2. Load Referrals with joined user names
+    const { data: refData, error: rErr } = await supabaseClient
+      .from('referrals')
+      .select(`
+        *,
+        referrer:users!referrals_referrer_id_fkey(id, name, phone_number, phone, role),
+        referred:users!referrals_referred_id_fkey(id, name, phone_number, phone, role)
+      `)
+      .order('created_at', { ascending: false });
+
+    rewardsReferralsList = refData || [];
+
+    // 3. Load Today's Captain Missions for KPI
+    const todayStr = new Date().toISOString().split('T')[0];
+    const { data: missionData } = await supabaseClient
+      .from('driver_mission_progress')
+      .select('*')
+      .eq('mission_date', todayStr);
+
+    rewardsMissionsList = missionData || [];
+
+    // 4. Update KPIs
+    updateRewardsKPIs();
+
+    // 5. Render Table
+    renderReferralsTable();
+
+    if (showToastFeedback) {
+      showToast('تم تحديث بيانات المكافآت والإحالات بنجاح 🔄');
+    }
+  } catch (err) {
+    console.error('Error loading rewards data:', err);
+    showToast('خطأ في تحميل بيانات المكافآت: ' + err.message);
+  }
+}
+
+function populateRewardSettingsForm(s) {
+  const refSwitch = document.getElementById('toggleReferralsSwitch');
+  const misSwitch = document.getElementById('toggleMissionsSwitch');
+  const badge = document.getElementById('rewardsSystemStatusBadge');
+
+  if (refSwitch) refSwitch.checked = !!s.is_referral_active;
+  if (misSwitch) misSwitch.checked = !!s.is_missions_active;
+
+  if (badge) {
+    if (s.is_referral_active && s.is_missions_active) {
+      badge.textContent = 'النظام يعمل بالكامل 🟢';
+      badge.style.background = '#10B981';
+    } else if (s.is_referral_active || s.is_missions_active) {
+      badge.textContent = 'النظام يعمل جزئياً 🟡';
+      badge.style.background = '#F59E0B';
+    } else {
+      badge.textContent = 'النظام متوقف مؤقتاً ⏸️';
+      badge.style.background = '#EF4444';
+    }
+  }
+
+  // Inputs
+  const dBonus = document.getElementById('inputDriverReferralBonus');
+  const dTrips = document.getElementById('inputDriverTargetTrips');
+  const dWelc = document.getElementById('inputDriverWelcomeBonus');
+  const dMisTrips = document.getElementById('inputDailyMissionTrips');
+  const dMisRew = document.getElementById('inputDailyMissionReward');
+  const rBonus = document.getElementById('inputRiderReferralBonus');
+  const rTrips = document.getElementById('inputRiderTargetTrips');
+
+  if (dBonus) dBonus.value = s.driver_referral_bonus || 100;
+  if (dTrips) dTrips.value = s.driver_referral_target_trips || 5;
+  if (dWelc) dWelc.value = s.driver_welcome_bonus || 50;
+  if (dMisTrips) dMisTrips.value = s.daily_mission_trips || 8;
+  if (dMisRew) dMisRew.value = s.daily_mission_reward || 80;
+  if (rBonus) rBonus.value = s.rider_referral_bonus || 20;
+  if (rTrips) rTrips.value = s.rider_referral_target_trips || 1;
+}
+
+function updateRewardsKPIs() {
+  const totalEl = document.getElementById('kpiTotalReferrals');
+  const compEl = document.getElementById('kpiCompletedReferrals');
+  const paidEl = document.getElementById('kpiTotalRewardsPaid');
+  const missEl = document.getElementById('kpiTodayMissionsCompleted');
+
+  const totalCount = rewardsReferralsList.length;
+  const completedCount = rewardsReferralsList.filter(r => r.status === 'rewarded' || r.completed_trips >= r.target_trips).length;
+  
+  // Calculate total paid bonus
+  let totalBonus = 0;
+  rewardsReferralsList.forEach(r => {
+    if (r.status === 'rewarded') {
+      totalBonus += parseFloat(r.reward_amount || 0) + parseFloat(r.welcome_bonus_amount || 0);
+    }
+  });
+
+  const todayCompletedMissions = rewardsMissionsList.filter(m => m.is_completed || m.completed_trips >= m.target_trips).length;
+
+  if (totalEl) totalEl.textContent = totalCount;
+  if (compEl) compEl.textContent = completedCount;
+  if (paidEl) paidEl.textContent = totalBonus.toLocaleString('ar-EG', { maximumFractionDigits: 0 }) + ' ج.م';
+  if (missEl) missEl.textContent = todayCompletedMissions;
+
+  // Counts for tabs
+  const cAll = document.getElementById('countAllRef');
+  const cDrv = document.getElementById('countDriversRef');
+  const cRid = document.getElementById('countRidersRef');
+  const cPen = document.getElementById('countPendingRef');
+  const cRew = document.getElementById('countRewardedRef');
+
+  if (cAll) cAll.textContent = totalCount;
+  if (cDrv) cDrv.textContent = rewardsReferralsList.filter(r => r.user_type === 'driver').length;
+  if (cRid) cRid.textContent = rewardsReferralsList.filter(r => r.user_type === 'rider').length;
+  if (cPen) cPen.textContent = rewardsReferralsList.filter(r => r.status === 'pending').length;
+  if (cRew) cRew.textContent = rewardsReferralsList.filter(r => r.status === 'rewarded').length;
+}
+
+function renderReferralsTable() {
+  const tbody = document.getElementById('referralsTableBody');
+  if (!tbody) return;
+
+  let filtered = [...rewardsReferralsList];
+
+  // Tab filter
+  if (rewardsActiveTab === 'driver') {
+    filtered = filtered.filter(r => r.user_type === 'driver');
+  } else if (rewardsActiveTab === 'rider') {
+    filtered = filtered.filter(r => r.user_type === 'rider');
+  } else if (rewardsActiveTab === 'pending') {
+    filtered = filtered.filter(r => r.status === 'pending');
+  } else if (rewardsActiveTab === 'rewarded') {
+    filtered = filtered.filter(r => r.status === 'rewarded');
+  }
+
+  // Search filter
+  if (rewardsSearchQuery.trim()) {
+    const q = rewardsSearchQuery.toLowerCase().trim();
+    filtered = filtered.filter(r => {
+      const refName = (r.referrer?.name || '').toLowerCase();
+      const refPhone = (r.referrer?.phone_number || r.referrer?.phone || '').toLowerCase();
+      const redName = (r.referred?.name || '').toLowerCase();
+      const redPhone = (r.referred?.phone_number || r.referred?.phone || '').toLowerCase();
+      const code = (r.referral_code || '').toLowerCase();
+      return refName.includes(q) || refPhone.includes(q) || redName.includes(q) || redPhone.includes(q) || code.includes(q);
+    });
+  }
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8" style="text-align:center; padding:40px 20px; color:var(--text-light);">
+          <i class="ri-inbox-line" style="font-size:36px; display:block; margin-bottom:8px; opacity:0.5;"></i>
+          <div>لا توجد سجلات إحالة تطابق معايير البحث الحالية.</div>
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(item => {
+    const isDriver = item.user_type === 'driver';
+    const isRewarded = item.status === 'rewarded';
+    const isTargetMet = item.completed_trips >= item.target_trips;
+    const progressPct = Math.min(100, Math.round((item.completed_trips / Math.max(1, item.target_trips)) * 100));
+
+    const referrerName = item.referrer?.name || 'مستخدم غير معروف';
+    const referrerPhone = item.referrer?.phone_number || item.referrer?.phone || 'بدون هاتف';
+
+    const referredName = item.referred?.name || 'مستخدم جديد';
+    const referredPhone = item.referred?.phone_number || item.referred?.phone || 'بدون هاتف';
+
+    const dateStr = item.created_at ? new Date(item.created_at).toLocaleDateString('ar-EG', {
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    }) : '--';
+
+    return `
+      <tr>
+        <td>
+          <div style="font-weight:700; color:var(--text-primary);">${referrerName}</div>
+          <div style="font-size:11px; color:var(--text-light); direction:ltr; text-align:right;">${referrerPhone}</div>
+        </td>
+        <td>
+          <div style="font-weight:700; color:var(--text-primary);">${referredName}</div>
+          <div style="font-size:11px; color:var(--text-light); direction:ltr; text-align:right;">${referredPhone}</div>
+        </td>
+        <td>
+          ${isDriver 
+            ? '<span style="background:rgba(30,136,229,0.1); color:#1E88E5; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;"><i class="ri-steering-2-line"></i> كابتن</span>'
+            : '<span style="background:rgba(16,185,129,0.1); color:#10B981; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;"><i class="ri-user-3-line"></i> راكب</span>'
+          }
+        </td>
+        <td>
+          <code style="background:var(--bg-primary); border:1px solid var(--border-color); padding:3px 8px; border-radius:6px; font-family:monospace; font-weight:700; font-size:12px;">${item.referral_code}</code>
+        </td>
+        <td>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div style="width:70px; height:6px; background:var(--border-color); border-radius:3px; overflow:hidden;">
+              <div style="width:${progressPct}%; height:100%; background:${isTargetMet ? '#10B981' : '#1E88E5'};"></div>
+            </div>
+            <span style="font-size:12px; font-weight:700;">${item.completed_trips} / ${item.target_trips}</span>
+          </div>
+        </td>
+        <td>
+          <div style="font-weight:800; color:var(--text-primary);">${parseFloat(item.reward_amount || 0)} ج.م</div>
+          ${item.welcome_bonus_amount > 0 ? `<div style="font-size:10px; color:#10B981;">+ ${item.welcome_bonus_amount} ج.م ترحيبي</div>` : ''}
+        </td>
+        <td>
+          ${isRewarded 
+            ? '<span style="background:#10B981; color:#fff; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;"><i class="ri-check-double-line"></i> تم الصرف</span>'
+            : (isTargetMet 
+                ? '<span style="background:#F59E0B; color:#fff; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;"><i class="ri-time-line"></i> مؤهل للصرف</span>'
+                : '<span style="background:rgba(148,163,184,0.15); color:var(--text-secondary); padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;">⏳ قيد الإنجاز</span>')
+          }
+        </td>
+        <td style="font-size:12px; color:var(--text-secondary);">${dateStr}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function setRewardsTab(tab) {
+  rewardsActiveTab = tab;
+  document.querySelectorAll('.filter-tab-btn').forEach(b => b.classList.remove('active'));
+  const activeBtn = {
+    all: 'tabAllRef',
+    driver: 'tabDriversRef',
+    rider: 'tabRidersRef',
+    pending: 'tabPendingRef',
+    rewarded: 'tabRewardedRef'
+  }[tab];
+  if (activeBtn) {
+    const el = document.getElementById(activeBtn);
+    if (el) el.classList.add('active');
+  }
+  renderReferralsTable();
+}
+
+function handleRewardsSearch(val) {
+  rewardsSearchQuery = val || '';
+  renderReferralsTable();
+}
+
+async function handleToggleReferrals(enabled) {
+  try {
+    const { error } = await supabaseClient
+      .from('rewards_settings')
+      .update({ is_referral_active: enabled, updated_at: new Date().toISOString() })
+      .eq('id', 'default');
+
+    if (error) throw error;
+    showToast(enabled ? 'تم تفعيل نظام الإحالات للجميع 🟢' : 'تم إيقاف نظام الإحالات مؤقتاً ⏸️');
+    if (rewardsSettings) rewardsSettings.is_referral_active = enabled;
+    populateRewardSettingsForm(rewardsSettings);
+  } catch (err) {
+    console.error('Error updating referral setting:', err);
+    showToast('فشل في تعديل حالة نظام الإحالات: ' + err.message);
+  }
+}
+
+async function handleToggleMissions(enabled) {
+  try {
+    const { error } = await supabaseClient
+      .from('rewards_settings')
+      .update({ is_missions_active: enabled, updated_at: new Date().toISOString() })
+      .eq('id', 'default');
+
+    if (error) throw error;
+    showToast(enabled ? 'تم تفعيل بونص وتحديات الكباتن 🟢' : 'تم إيقاف بونص وتحديات الكباتن مؤقتاً ⏸️');
+    if (rewardsSettings) rewardsSettings.is_missions_active = enabled;
+    populateRewardSettingsForm(rewardsSettings);
+  } catch (err) {
+    console.error('Error updating missions setting:', err);
+    showToast('فشل في تعديل حالة بونص الكباتن: ' + err.message);
+  }
+}
+
+async function saveRewardSettings() {
+  const submitBtn = document.getElementById('btnSaveRewardSettings');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> جاري الحفظ...';
+  }
+
+  try {
+    const dBonus = parseFloat(document.getElementById('inputDriverReferralBonus')?.value || 100);
+    const dTrips = parseInt(document.getElementById('inputDriverTargetTrips')?.value || 5, 10);
+    const dWelc = parseFloat(document.getElementById('inputDriverWelcomeBonus')?.value || 50);
+    const dMisTrips = parseInt(document.getElementById('inputDailyMissionTrips')?.value || 8, 10);
+    const dMisRew = parseFloat(document.getElementById('inputDailyMissionReward')?.value || 80);
+    const rBonus = parseFloat(document.getElementById('inputRiderReferralBonus')?.value || 20);
+    const rTrips = parseInt(document.getElementById('inputRiderTargetTrips')?.value || 1, 10);
+
+    const updatePayload = {
+      driver_referral_bonus: dBonus,
+      driver_referral_target_trips: dTrips,
+      driver_welcome_bonus: dWelc,
+      daily_mission_trips: dMisTrips,
+      daily_mission_reward: dMisRew,
+      rider_referral_bonus: rBonus,
+      rider_referral_target_trips: rTrips,
+      updated_at: new Date().toISOString(),
+      updated_by: currentAdminUser?.email || 'admin'
+    };
+
+    const { error } = await supabaseClient
+      .from('rewards_settings')
+      .update(updatePayload)
+      .eq('id', 'default');
+
+    if (error) throw error;
+
+    showToast('تم حفظ وتطبيق معايير المكافآت بنجاح 🎉');
+    await loadRewardsData(false);
+  } catch (err) {
+    console.error('Error saving rewards settings:', err);
+    showToast('خطأ في حفظ الإعدادات: ' + err.message);
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="ri-save-3-line"></i> <span>حفظ التعديلات</span>';
+    }
+  }
+}
+
+function setupRewardsRealtimeSubscription() {
+  if (rewardsRealtimeChannel || !supabaseClient) return;
+  try {
+    rewardsRealtimeChannel = supabaseClient
+      .channel('public:rewards_dashboard_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rewards_settings' }, (payload) => {
+        if (payload.new) {
+          rewardsSettings = payload.new;
+          populateRewardSettingsForm(payload.new);
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
+        loadRewardsData(false);
+      })
+      .subscribe();
+  } catch (e) {
+    console.warn('Realtime subscription error for rewards:', e);
   }
 }

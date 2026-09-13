@@ -68,3 +68,4 @@ load_tests/bin/
 *.zip
 
 .vercel
+scratch/

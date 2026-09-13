@@ -9,7 +9,7 @@ ADD COLUMN IF NOT EXISTS driver_wallet_balance NUMERIC(10,2) DEFAULT 0.00;
 
 -- Optional: Add passenger_wallet_balance alias column if not exists (defaults to wallet_balance)
 ALTER TABLE public.users 
-ADD COLUMN IF NOT EXISTS passenger_wallet_balance NUMERIC(10,2) DEFAULT 250.00;
+ADD COLUMN IF NOT EXISTS passenger_wallet_balance NUMERIC(10,2) DEFAULT 0.00;
 
 -- Populate driver_wallet_balance with current wallet_balance if null for existing drivers
 UPDATE public.users 

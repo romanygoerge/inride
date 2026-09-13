@@ -367,28 +367,15 @@ class _AppDrawerBannerCarouselState extends State<AppDrawerBannerCarousel> {
   /// Ad Promotional Banner Card (Matching exact dimensions, radius, and style)
   Widget _buildAdBannerCard(BuildContext context, AppBanner banner) {
     final hasImage = banner.imageUrl != null && banner.imageUrl!.trim().isNotEmpty;
+    final cleanImageUrl = hasImage ? banner.imageUrl!.trim() : '';
 
     return InkWell(
       onTap: () => _handleBannerAction(context, banner),
       borderRadius: BorderRadius.circular(16),
       child: Container(
         height: 98,
-        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          gradient: hasImage
-              ? null
-              : LinearGradient(
-                  colors: [banner.gradientStart, banner.gradientEnd],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-          image: hasImage
-              ? DecorationImage(
-                  image: CachedNetworkImageProvider(banner.imageUrl!.trim()),
-                  fit: BoxFit.cover,
-                )
-              : null,
           boxShadow: [
             BoxShadow(
               color: (hasImage ? Colors.black : banner.gradientStart).withValues(alpha: 0.28),
@@ -397,100 +384,149 @@ class _AppDrawerBannerCarouselState extends State<AppDrawerBannerCarousel> {
             ),
           ],
         ),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: hasImage
-                ? LinearGradient(
-                    colors: [
-                      Colors.black.withValues(alpha: 0.78),
-                      Colors.black.withValues(alpha: 0.35),
-                    ],
-                    begin: Alignment.bottomRight,
-                    end: Alignment.topLeft,
-                  )
-                : null,
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Details Column
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (banner.badgeText != null && banner.badgeText!.isNotEmpty) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.22),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        banner.badgeText!,
-                        style: GoogleFonts.cairo(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 1. Base Gradient Layer (Always present as primary color & fallback)
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [banner.gradientStart, banner.gradientEnd],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+              ),
+
+              // 2. High-performance Network Image with caching & fade-in
+              if (hasImage)
+                CachedNetworkImage(
+                  imageUrl: cleanImageUrl,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                  fadeInDuration: const Duration(milliseconds: 250),
+                  placeholder: (context, url) => Container(
+                    color: Colors.black12,
+                    child: const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white70,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 3),
-                  ],
-                  Text(
-                    banner.title,
-                    style: GoogleFonts.cairo(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      height: 1.2,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                  if (banner.subtitle != null && banner.subtitle!.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      banner.subtitle!,
-                      style: GoogleFonts.cairo(
-                        fontSize: 11,
-                        color: Colors.white.withValues(alpha: 0.85),
-                        height: 1.1,
+                  errorWidget: (context, url, error) {
+                    debugPrint('inRide: Error loading banner image ($url): $error');
+                    return const SizedBox.shrink(); // Silently fallback to the base gradient
+                  },
+                ),
+
+              // 3. Directional Gradient Overlay (ensures text readability without completely darkening image)
+              if (hasImage)
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.black.withValues(alpha: 0.68),
+                        Colors.black.withValues(alpha: 0.20),
+                      ],
+                      begin: Alignment.centerRight,
+                      end: Alignment.centerLeft,
+                    ),
+                  ),
+                ),
+
+              // 4. Foreground Content: Text Details & Call-to-Action Button
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Details Column
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (banner.badgeText != null && banner.badgeText!.isNotEmpty) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.22),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                banner.badgeText!,
+                                style: GoogleFonts.cairo(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                          ],
+                          Text(
+                            banner.title,
+                            style: GoogleFonts.cairo(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              height: 1.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (banner.subtitle != null && banner.subtitle!.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              banner.subtitle!,
+                              style: GoogleFonts.cairo(
+                                fontSize: 11,
+                                color: Colors.white.withValues(alpha: 0.85),
+                                height: 1.1,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ],
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    ),
+
+                    const SizedBox(width: 8),
+
+                    // Action Button
+                    ElevatedButton(
+                      onPressed: () => _handleBannerAction(context, banner),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white.withValues(alpha: 0.24),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: Text(
+                        banner.actionButtonText,
+                        style: GoogleFonts.cairo(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ],
-                ],
-              ),
-            ),
-
-            const SizedBox(width: 8),
-
-            // Action Button
-            ElevatedButton(
-              onPressed: () => _handleBannerAction(context, banner),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white.withValues(alpha: 0.24),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              child: Text(
-                banner.actionButtonText,
-                style: GoogleFonts.cairo(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 }

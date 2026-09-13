@@ -20,6 +20,7 @@ class _PassengerProfileSetupPageState extends State<PassengerProfileSetupPage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _referralCodeController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   String _selectedGender = 'ذكر';
   bool _isLoading = false;
@@ -198,6 +199,21 @@ class _PassengerProfileSetupPageState extends State<PassengerProfileSetupPage> {
               'updated_at': DateTime.now().toIso8601String(),
             });
           } catch (_) {}
+
+          // 4. Apply referral code if provided
+          final refCode = _referralCodeController.text.trim().toUpperCase();
+          if (refCode.isNotEmpty) {
+            try {
+              await Supabase.instance.client.rpc('apply_referral_code', params: {
+                'p_referred_id': uid,
+                'p_code': refCode,
+                'p_user_type': 'rider',
+              });
+              debugPrint('[ProfileSetup] ✓ Referral code applied: $refCode');
+            } catch (e) {
+              debugPrint('[ProfileSetup] Warning: Could not apply referral code: $e');
+            }
+          }
 
           // Update GlobalState
           state.passengerName = nameText;
@@ -563,7 +579,49 @@ class _PassengerProfileSetupPageState extends State<PassengerProfileSetupPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 48),
+                    const SizedBox(height: 24),
+
+                    // Referral Code (Optional)
+                    Text(
+                      'كود الدعوة (اختياري)',
+                      style: GoogleFonts.cairo(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _referralCodeController,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: InputDecoration(
+                        hintText: 'إذا كان لديك كود دعوة من صديق',
+                        hintStyle: GoogleFonts.cairo(fontSize: 13, color: AppColors.textLight),
+                        fillColor: AppColors.background,
+                        filled: true,
+                        prefixIcon: const Icon(Icons.card_giftcard_rounded, color: AppColors.mediumBlue),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(color: AppColors.border),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(color: AppColors.border),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(color: AppColors.mediumBlue, width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                      ),
+                      style: GoogleFonts.outfit(
+                        fontSize: 15,
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 36),
 
                     // Submit Button with Blue Gradient & Shadow
                     Container(

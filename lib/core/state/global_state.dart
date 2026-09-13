@@ -170,6 +170,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   String? passengerAddress;
   String? userName;
   String? userAvatarUrl;
+  String? referralCode;
   double userRating = 0.0;
   int userTotalRatingsCount = 0;
   int userCompletedTripsCount = 0;
@@ -899,6 +900,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
               }
               userName = data['name'];
               userAvatarUrl = data['avatar_url'] ?? data['avatarUrl'];
+              referralCode = data['referral_code']?.toString();
               final rawRat = data['rating'];
               userRating = (rawRat is num) ? rawRat.toDouble() : (double.tryParse(rawRat?.toString() ?? '0') ?? 0.0);
               if (phoneNumber == null || phoneNumber!.isEmpty) {

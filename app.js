@@ -739,7 +739,7 @@ function initDashboardAnimations() {
 // ============================================
 
 function navigateTo(page) {
-  const validPages = ['dashboard', 'trips', 'drivers', 'passengers', 'ratings', 'driver-profile', 'passenger-profile', 'wallet', 'pricing', 'places', 'communication', 'messages', 'support', 'content', 'monitoring', 'logs', 'settings'];
+  const validPages = ['dashboard', 'trips', 'drivers', 'passengers', 'ratings', 'driver-profile', 'passenger-profile', 'wallet', 'pricing', 'places', 'banners', 'communication', 'messages', 'support', 'content', 'monitoring', 'logs', 'settings'];
   if (!validPages.includes(page)) {
     page = 'dashboard';
   }
@@ -784,6 +784,7 @@ function updateHeaderTitle(page) {
     wallet: { title: 'المحفظة والمالية', sub: 'مراجعة عمليات الشحن والسحب وإدارة الرصيد المالي' },
     pricing: { title: 'التسعير والمناطق', sub: 'إدارة تسعير الرحلات والعمولات ونسبة الـ Surge' },
     places: { title: 'أماكن ومحلات مدينة السادات', sub: 'دليل شامل وقابل للتوسع للمحلات والخدمات والمولات مقسمة إلى 25 تصنيفاً' },
+    banners: { title: 'إعلانات وبانرات التطبيق اللحظية', sub: 'إدارة وتخصيص البانرات المتحركة في القائمة الجانبية للتطبيق مع محاكاة حية' },
     communication: { title: 'مركز التواصل والمحادثات', sub: 'عرض وإدارة محادثات العملاء والكباتن والدعم الفني والتحكم بالتذاكر' },
     messages: { title: 'الإشعارات والرسائل', sub: 'إرسال الإشعارات الجماعية والمستهدفة وجدولة التنبيهات' },
     support: { title: 'الدعم الفني والشكاوى', sub: 'استقبال شكاوى المستخدمين والرد عليها وإغلاق التذاكر' },
@@ -863,6 +864,10 @@ function renderPage(page) {
         break;
       case 'places':
         container.innerHTML = renderPlaces();
+        break;
+      case 'banners':
+        container.innerHTML = renderBannersPage();
+        initBannersPage();
         break;
       case 'communication':
       case 'support':
@@ -8508,10 +8513,14 @@ function initSupabaseSync() {
         if (typeof renderCommConversationsList === 'function' && document.getElementById('commConvListContainer')) {
           renderCommConversationsList();
         }
-      } else if (currentPage === 'driver-profile' || currentPage === 'passenger-profile') {
-        // Keep active profile view open without full DOM destructive rebuild
+      } else if (currentPage === 'driver-profile' || currentPage === 'passenger-profile' || currentPage === 'banners') {
+        // Keep active profile view and banners view open without full DOM destructive rebuild
       } else {
-        renderPage(currentPage);
+        const isModalOpen = document.querySelector('.modal[style*="display: flex"], .modal.open, .modal-backdrop, #bannerModal[style*="display: flex"]');
+        const isUserTyping = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'SELECT');
+        if (!isModalOpen && !isUserTyping) {
+          renderPage(currentPage);
+        }
       }
 
       console.log(`[InRide DataStore] Sync #${thisGeneration} Complete: ${fullDrivers.length} Drivers, ${fullPassengers.length} Passengers, ${fullTrips.length} Trips, Revenue: ${totalRevenue} EGP, Ratings: ${ratingsList.length}`);
@@ -17053,5 +17062,849 @@ async function broadcastMaintenancePushNotification(isEnabling) {
     console.log('[BroadcastPush] Direct OneSignal Status:', osRes.status, osResData);
   } catch (osErr) {
     console.warn('[BroadcastPush] Direct OneSignal fetch error:', osErr.message);
+  }
+}
+
+// ============================================
+// APP BANNERS & ADS MANAGEMENT (Realtime Supabase)
+// ============================================
+let appBannersList = [];
+let bannersRealtimeChannel = null;
+let currentPreviewSlideIndex = 0;
+let previewAutoTimer = null;
+
+function renderBannersPage() {
+  return `
+    <div class="page-section" style="max-width:1400px;margin:0 auto;padding-bottom:60px;">
+      <!-- Top Banner Header & Stats -->
+      <div style="background:linear-gradient(135deg, #1E293B, #0F172A);border-radius:var(--radius-xl);padding:24px 28px;color:#fff;margin-bottom:24px;box-shadow:var(--shadow-lg);border:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+            <div style="width:40px;height:40px;border-radius:10px;background:rgba(139,92,246,0.25);display:flex;align-items:center;justify-content:center;color:#A78BFA;font-size:22px;">
+              <i class="ri-advertisement-fill"></i>
+            </div>
+            <h2 style="margin:0;font-size:20px;font-weight:800;color:#fff;">إعلانات وبانرات القائمة الجانبية (App Drawer)</h2>
+          </div>
+          <p style="margin:0;font-size:13px;color:#94A3B8;">إدارة البانرات الترويجية (صور عادية أو بطاقات ملونة) بجانب بطاقة المحفظة. يتم تحديثها فورياً ولحظياً على هواتف المستخدمين عبر Supabase Realtime.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="display:flex;align-items:center;gap:8px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34D399;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;">
+            <span style="width:8px;height:8px;border-radius:50%;background:#10B981;box-shadow:0 0 8px #10B981;"></span>
+            اتصال لحظي نشط (Realtime)
+          </div>
+          <button class="btn btn-primary" onclick="openBannerModal()" style="display:flex;align-items:center;gap:8px;padding:10px 18px;font-weight:700;box-shadow:0 4px 15px rgba(37,99,235,0.35);">
+            <i class="ri-add-circle-fill" style="font-size:18px;"></i>
+            إضافة إعلان جديد
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Two Column Grid: Management on Right, Live Mobile Preview on Left -->
+      <div style="display:grid;grid-template-columns: 1fr 380px;gap:24px;align-items:start;">
+        
+        <!-- Left / Management Column -->
+        <div style="display:flex;flex-direction:column;gap:20px;">
+          
+          <!-- Information Card: Safe Wallet Guarantee -->
+          <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:var(--radius-lg);padding:14px 18px;display:flex;align-items:flex-start;gap:12px;">
+            <i class="ri-shield-check-fill" style="color:#2563EB;font-size:22px;margin-top:2px;"></i>
+            <div style="font-size:12px;color:#1E40AF;line-height:1.6;">
+              <strong>حماية المحفظة والدفع:</strong> بطاقة المحفظة في التطبيق ثابتة ومحمية برمجياً كعنصر رئيسي دائم. تعديل أو إيقاف أو حذف الإعلانات هنا <strong>لن يؤثر أبداً</strong> على ظهور أو شحن المحفظة. وفي حال إيقاف كل الإعلانات، تبقى المحفظة بمفردها بأمان تام.
+            </div>
+          </div>
+
+          <!-- Banners Table Card -->
+          <div class="card" style="box-shadow:var(--shadow-md);border-radius:var(--radius-lg);overflow:hidden;">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#fff;border-bottom:1px solid var(--border-color);">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <h3 style="margin:0;font-size:16px;font-weight:800;color:var(--text-primary);">قائمة البانرات الحالية</h3>
+                <span class="badge" id="bannersCountBadge" style="background:var(--primary);color:#fff;border-radius:12px;padding:2px 8px;font-size:11px;">0 إعلان</span>
+              </div>
+              <button class="btn btn-outline btn-sm" onclick="loadBannersData(true)" title="تحديث البيانات">
+                <i class="ri-refresh-line"></i> تحديث
+              </button>
+            </div>
+            
+            <div class="card-body" style="padding:0;" id="bannersTableContainer">
+              <div style="text-align:center;padding:40px;color:var(--text-secondary);">
+                <i class="ri-loader-4-line ri-spin" style="font-size:28px;color:var(--primary);display:block;margin-bottom:10px;"></i>
+                جاري تحميل البانرات من قاعدة البيانات...
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Live Mobile Preview Card -->
+        <div style="position:sticky;top:20px;">
+          <div class="card" style="box-shadow:var(--shadow-lg);border-radius:var(--radius-xl);overflow:hidden;border:1px solid var(--border-color);background:#fff;">
+            <div class="card-header" style="padding:14px 18px;background:#F8FAFC;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <i class="ri-smartphone-line" style="color:var(--primary);font-size:18px;"></i>
+                <h4 style="margin:0;font-size:13px;font-weight:800;color:var(--text-primary);">معاينة حية لشاشة التطبيق (Live Preview)</h4>
+              </div>
+              <span style="font-size:10px;background:#E2E8F0;color:#475569;padding:2px 8px;border-radius:10px;font-weight:700;">3 ثوانٍ للتقليب</span>
+            </div>
+            
+            <div class="card-body" style="padding:16px;background:#F1F5F9;display:flex;justify-content:center;">
+              <!-- Mobile Phone Mockup -->
+              <div style="width:320px;background:#fff;border-radius:24px;box-shadow:0 12px 36px rgba(0,0,0,0.12);border:8px solid #1E293B;overflow:hidden;direction:rtl;">
+                <!-- Phone Top Bar -->
+                <div style="background:#1E293B;height:18px;display:flex;justify-content:center;align-items:center;">
+                  <div style="width:40px;height:4px;background:#334155;border-radius:3px;"></div>
+                </div>
+
+                <!-- Drawer Content Mockup -->
+                <div style="padding:16px 14px 20px 14px;background:#fff;">
+                  <!-- Profile Header -->
+                  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #F1F5F9;">
+                    <div style="width:46px;height:46px;border-radius:50%;background:#E0F2FE;color:#0284C7;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;box-shadow:0 2px 6px rgba(2,132,199,0.2);">
+                      ر
+                    </div>
+                    <div style="flex:1;">
+                      <div style="font-size:14px;font-weight:800;color:#0F172A;line-height:1.2;">رورو جورج</div>
+                      <div style="font-size:11px;color:#64748B;display:flex;align-items:center;gap:4px;margin-top:2px;">
+                        <span style="color:#EAB308;">★</span> 5.0 (راكب • جديد ⭐)
+                      </div>
+                      <div style="margin-top:4px;">
+                        <span style="background:#FEF3C7;color:#92400E;font-size:9px;font-weight:800;padding:1px 6px;border-radius:4px;">⭐ كابتن & راكب</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- The Live Carousel Card Preview -->
+                  <div id="mobilePreviewCarouselContainer" style="margin-bottom:12px;">
+                    <!-- Dynamically rendered -->
+                  </div>
+
+                  <!-- Switch Role Mockup -->
+                  <div style="background:rgba(30,136,229,0.06);border:1px solid rgba(30,136,229,0.2);border-radius:12px;padding:9px 12px;display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+                    <i class="ri-steering-2-line" style="color:var(--medium-blue);font-size:16px;"></i>
+                    <span style="font-size:11px;font-weight:700;color:var(--medium-blue);">التبديل إلى وضع كابتن</span>
+                    <i class="ri-arrow-left-right-line" style="margin-right:auto;color:var(--medium-blue);font-size:12px;"></i>
+                  </div>
+
+                  <!-- Mock Menu Items -->
+                  <div style="display:flex;flex-direction:column;gap:8px;opacity:0.65;">
+                    <div style="display:flex;align-items:center;gap:10px;padding:6px 4px;font-size:12px;color:#334155;">
+                      <i class="ri-history-line"></i> سجل الرحلات
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;padding:6px 4px;font-size:12px;color:#334155;">
+                      <i class="ri-user-add-line"></i> أدعي صديق
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;padding:6px 4px;font-size:12px;color:#334155;">
+                      <i class="ri-global-line"></i> English Language
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Banner Add/Edit Modal -->
+      <div id="bannerModal" class="modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.65);z-index:99999;align-items:center;justify-content:center;backdrop-filter:blur(4px);padding:16px;">
+        <div class="modal-content" style="background:#fff;border-radius:20px;max-width:560px;width:100%;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);overflow:hidden;direction:rtl;border:1px solid var(--border-color);animation:fadeIn 0.2s ease;">
+          <div style="padding:18px 24px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;background:#F8FAFC;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:34px;height:34px;border-radius:8px;background:rgba(37,99,235,0.1);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:18px;">
+                <i class="ri-edit-2-fill"></i>
+              </div>
+              <h3 style="margin:0;font-size:16px;font-weight:800;color:var(--text-primary);" id="bannerModalTitle">إضافة إعلان جديد</h3>
+            </div>
+            <button onclick="closeBannerModal()" style="background:none;border:none;color:var(--text-light);font-size:20px;cursor:pointer;padding:4px;"><i class="ri-close-line"></i></button>
+          </div>
+
+          <form id="bannerForm" onsubmit="saveBanner(event)" style="padding:22px 24px;max-height:80vh;overflow-y:auto;">
+            <input type="hidden" id="bannerId" value="">
+
+            <!-- Banner Type Selector (Color Gradient vs Image Banner) -->
+            <div style="margin-bottom:16px;background:#F1F5F9;padding:12px 14px;border-radius:12px;">
+              <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;">اختر نوع مظهر البانر:</label>
+              <div style="display:flex;gap:20px;">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:700;color:#1E293B;">
+                  <input type="radio" name="bannerFormat" id="formatGradient" value="gradient" checked onchange="toggleBannerFormatUI('gradient')" style="accent-color:#2563eb;width:16px;height:16px;">
+                  بطاقة ملونة بتدرج لوني (Gradient)
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:700;color:#1E293B;">
+                  <input type="radio" name="bannerFormat" id="formatImage" value="image" onchange="toggleBannerFormatUI('image')" style="accent-color:#2563eb;width:16px;height:16px;">
+                  🖼️ بانر صورة إعلانية (Image Banner)
+                </label>
+              </div>
+            </div>
+
+            <!-- Image Upload & URL Section -->
+            <div id="bannerImageSection" style="display:none;background:#F8FAFC;border:1.5px dashed #94A3B8;border-radius:12px;padding:14px;margin-bottom:16px;">
+              <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">صورة البانر الإعلاني:</label>
+              <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+                <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;display:inline-flex;align-items:center;gap:6px;background:#fff;">
+                  <i class="ri-upload-cloud-2-line" style="color:var(--primary);"></i> اختيار صورة من جهازك
+                  <input type="file" id="bannerImageFileInput" accept="image/*" style="display:none;" onchange="handleBannerImageUpload(event)">
+                </label>
+                <span id="bannerUploadStatus" style="font-size:11px;color:var(--primary);font-weight:700;"></span>
+              </div>
+              <input type="text" id="bannerImageUrlInput" class="form-control" placeholder="أو الصق رابط الصورة المباشر هنا (https://...)" style="width:100%;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;font-size:12px;direction:ltr;" oninput="updateImagePreviewFromInput(this.value)">
+              <div id="bannerImagePreviewContainer" style="margin-top:10px;text-align:center;display:none;">
+                <img id="bannerImagePreview" src="" style="max-height:110px;max-width:100%;border-radius:10px;object-fit:cover;border:1px solid #CBD5E1;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+                <div style="font-size:10px;color:#10B981;font-weight:bold;margin-top:4px;">✓ تم تحميل ومعاينة الصورة بنجاح</div>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:14px;">
+              <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">العنوان الرئيسي للإعلان <span style="color:#EF4444;">*</span></label>
+              <input type="text" id="bannerTitleInput" class="form-control" placeholder="مثال: خصم 20% على أول مشوار" required style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;font-size:13px;">
+            </div>
+
+            <div class="form-group" style="margin-bottom:14px;">
+              <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">الوصف الفرعي أو التفاصيل</label>
+              <input type="text" id="bannerSubtitleInput" class="form-control" placeholder="مثال: استخدم كود INRIDE20 واستمتع بأوفر مشوار" style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;font-size:13px;">
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+              <div class="form-group">
+                <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">شارة الإعلان (Badge Tag)</label>
+                <input type="text" id="bannerBadgeInput" class="form-control" placeholder="مثال: عرض خاص ⚡، مكافأة 🎁" style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;font-size:13px;">
+              </div>
+
+              <div class="form-group">
+                <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:6px;">ترتيب الظهور بالسلايدر</label>
+                <select id="bannerOrderInput" class="form-control" style="width:100%;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;font-size:13px;">
+                  <option value="1">1 (الأول بعد المحفظة)</option>
+                  <option value="2">2 (الثاني بعد المحفظة)</option>
+                  <option value="3">3</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Action Configuration -->
+            <div style="background:#F8FAFC;border:1px solid var(--border-color);border-radius:12px;padding:14px;margin-bottom:16px;">
+              <div style="font-size:12px;font-weight:800;color:#1E293B;margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+                <i class="ri-cursor-line" style="color:var(--primary);"></i> إعداد الإجراء التفاعلي عند الضغط (Call to Action)
+              </div>
+              
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;">
+                <div class="form-group">
+                  <label style="display:block;font-size:11px;font-weight:700;color:#64748B;margin-bottom:4px;">نوع الإجراء</label>
+                  <select id="bannerActionTypeInput" class="form-control" onchange="updateActionPlaceholder()" style="width:100%;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;font-size:12px;">
+                    <option value="coupon">نسخ كود خصم (Coupon Code)</option>
+                    <option value="invite">فتح نافذة أدعي صديق (Invite Friends)</option>
+                    <option value="wallet">فتح صفحة المحفظة (Wallet)</option>
+                    <option value="url">فتح رابط موقع خارجي (URL)</option>
+                    <option value="whatsapp">محادثة واتساب مباشرة (WhatsApp)</option>
+                    <option value="trip">حجز رحلة جديدة (Book Trip)</option>
+                    <option value="none">بدون إجراء (معاينة فقط)</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label style="display:block;font-size:11px;font-weight:700;color:#64748B;margin-bottom:4px;">نص الزر التفاعلي</label>
+                  <input type="text" id="bannerBtnTextInput" class="form-control" placeholder="مثال: نسخ الكود، أدعي الآن" required style="width:100%;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;font-size:12px;">
+                </div>
+              </div>
+
+              <div class="form-group" id="actionValueGroup">
+                <label style="display:block;font-size:11px;font-weight:700;color:#64748B;margin-bottom:4px;" id="actionValueLabel">قيمة الإجراء (كود الخصم / الرابط)</label>
+                <input type="text" id="bannerActionValueInput" class="form-control" placeholder="مثال: INRIDE20" style="width:100%;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;font-size:12px;direction:ltr;text-align:right;">
+              </div>
+            </div>
+
+            <!-- Gradient Style Presets -->
+            <div class="form-group" id="bannerGradientSection" style="margin-bottom:16px;">
+              <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:8px;">نمط وألوان التدرج اللوني (Gradient Style)</label>
+              <div style="display:grid;grid-template-columns:repeat(5, 1fr);gap:8px;margin-bottom:10px;">
+                <button type="button" onclick="setGradientPreset('#8B5CF6','#4F46E5')" style="height:36px;border-radius:8px;border:2px solid transparent;background:linear-gradient(135deg, #8B5CF6, #4F46E5);cursor:pointer;color:#fff;font-size:10px;font-weight:bold;" title="بنفسجي أنيق">بنفسجي</button>
+                <button type="button" onclick="setGradientPreset('#059669','#0D9488')" style="height:36px;border-radius:8px;border:2px solid transparent;background:linear-gradient(135deg, #059669, #0D9488);cursor:pointer;color:#fff;font-size:10px;font-weight:bold;" title="زمردي احترافي">زمردي</button>
+                <button type="button" onclick="setGradientPreset('#EA580C','#D97706')" style="height:36px;border-radius:8px;border:2px solid transparent;background:linear-gradient(135deg, #EA580C, #D97706);cursor:pointer;color:#fff;font-size:10px;font-weight:bold;" title="برتقالي ناري">برتقالي</button>
+                <button type="button" onclick="setGradientPreset('#1E3A8A','#2563EB')" style="height:36px;border-radius:8px;border:2px solid transparent;background:linear-gradient(135deg, #1E3A8A, #2563EB);cursor:pointer;color:#fff;font-size:10px;font-weight:bold;" title="أزرق ملكي">ملكي</button>
+                <button type="button" onclick="setGradientPreset('#BE185D','#831843')" style="height:36px;border-radius:8px;border:2px solid transparent;background:linear-gradient(135deg, #BE185D, #831843);cursor:pointer;color:#fff;font-size:10px;font-weight:bold;" title="وردي فاخر">وردي</button>
+              </div>
+
+              <div style="display:flex;gap:10px;align-items:center;">
+                <div style="flex:1;display:flex;align-items:center;gap:6px;">
+                  <span style="font-size:11px;color:#64748B;">البداية:</span>
+                  <input type="color" id="bannerGradientStart" value="#8B5CF6" style="width:36px;height:30px;padding:0;border:none;border-radius:6px;cursor:pointer;">
+                  <input type="text" id="bannerGradientStartText" value="#8B5CF6" style="width:75px;font-size:11px;padding:4px 6px;border:1px solid #CBD5E1;border-radius:6px;direction:ltr;" oninput="document.getElementById('bannerGradientStart').value=this.value">
+                </div>
+                <div style="flex:1;display:flex;align-items:center;gap:6px;">
+                  <span style="font-size:11px;color:#64748B;">النهاية:</span>
+                  <input type="color" id="bannerGradientEnd" value="#4F46E5" style="width:36px;height:30px;padding:0;border:none;border-radius:6px;cursor:pointer;">
+                  <input type="text" id="bannerGradientEndText" value="#4F46E5" style="width:75px;font-size:11px;padding:4px 6px;border:1px solid #CBD5E1;border-radius:6px;direction:ltr;" oninput="document.getElementById('bannerGradientEnd').value=this.value">
+                </div>
+              </div>
+            </div>
+
+            <!-- Target Role & Active Status -->
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:#F1F5F9;border-radius:10px;margin-bottom:18px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <label style="font-size:12px;font-weight:700;color:#334155;">الفئة المستهدفة:</label>
+                <select id="bannerTargetRole" style="padding:4px 8px;border-radius:6px;border:1px solid #CBD5E1;font-size:11px;">
+                  <option value="all">الجميع (كباتن وركاب)</option>
+                  <option value="rider">الركاب فقط</option>
+                  <option value="driver">الكباتن فقط</option>
+                </select>
+              </div>
+
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:700;color:#0F172A;">
+                <input type="checkbox" id="bannerIsActive" checked style="width:18px;height:18px;accent-color:#10B981;cursor:pointer;">
+                تفعيل الإعلان فورياً
+              </label>
+            </div>
+
+            <!-- Action Buttons -->
+            <div style="display:flex;justify-content:flex-end;gap:10px;padding-top:10px;border-top:1px solid var(--border-color);">
+              <button type="button" class="btn btn-outline" onclick="closeBannerModal()" style="padding:9px 16px;">إلغاء</button>
+              <button type="submit" class="btn btn-primary" id="saveBannerSubmitBtn" style="padding:9px 22px;font-weight:700;">
+                <span id="saveBannerSubmitText">حفظ ونشر الإعلان</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+function initBannersPage() {
+  loadBannersData();
+  setupBannersRealtimeSubscription();
+  startPreviewAutoTimer();
+}
+
+function toggleBannerFormatUI(format) {
+  const imgSection = document.getElementById('bannerImageSection');
+  const gradSection = document.getElementById('bannerGradientSection');
+  if (format === 'image') {
+    if (imgSection) imgSection.style.display = 'block';
+    if (gradSection) gradSection.style.display = 'none';
+  } else {
+    if (imgSection) imgSection.style.display = 'none';
+    if (gradSection) gradSection.style.display = 'block';
+  }
+}
+
+function updateImagePreviewFromInput(url) {
+  const container = document.getElementById('bannerImagePreviewContainer');
+  const img = document.getElementById('bannerImagePreview');
+  if (!container || !img) return;
+
+  if (url && url.trim().startsWith('http')) {
+    img.src = url.trim();
+    container.style.display = 'block';
+  } else {
+    container.style.display = 'none';
+  }
+}
+
+async function handleBannerImageUpload(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  const statusEl = document.getElementById('bannerUploadStatus');
+  const urlInput = document.getElementById('bannerImageUrlInput');
+  const container = document.getElementById('bannerImagePreviewContainer');
+  const img = document.getElementById('bannerImagePreview');
+
+  if (statusEl) statusEl.textContent = 'جاري رفع الصورة إلى التخزين... ⏳';
+
+  try {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `banner_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+
+    const { error: uploadError } = await supabaseClient.storage
+      .from('banners')
+      .upload(fileName, file, { cacheControl: '3600', upsert: true });
+
+    if (uploadError) throw uploadError;
+
+    const { data: publicData } = supabaseClient.storage
+      .from('banners')
+      .getPublicUrl(fileName);
+
+    if (publicData && publicData.publicUrl) {
+      if (urlInput) urlInput.value = publicData.publicUrl;
+      if (img) img.src = publicData.publicUrl;
+      if (container) container.style.display = 'block';
+      if (statusEl) statusEl.textContent = 'تم رفع الصورة بنجاح ✅';
+      showToast('تم رفع صورة البانر بنجاح 🖼️');
+    }
+  } catch (err) {
+    console.error('Banner upload error:', err);
+    if (statusEl) statusEl.textContent = 'فشل الرفع: ' + err.message;
+    showToast('تعذر رفع الصورة: ' + err.message);
+  }
+}
+
+function startPreviewAutoTimer() {
+  if (previewAutoTimer) clearInterval(previewAutoTimer);
+  previewAutoTimer = setInterval(() => {
+    const totalSlides = 1 + (appBannersList ? appBannersList.filter(b => b.is_active).slice(0, 2).length : 0);
+    if (totalSlides > 1) {
+      currentPreviewSlideIndex = (currentPreviewSlideIndex + 1) % totalSlides;
+      renderMobileDrawerPreview();
+    }
+  }, 3000);
+}
+
+async function loadBannersData(force = false) {
+  const modal = document.getElementById('bannerModal');
+  if (!force && modal && modal.style.display === 'flex') {
+    // User is editing in modal, DO NOT interrupt!
+    return;
+  }
+
+  const container = document.getElementById('bannersTableContainer');
+  try {
+    if (!supabaseClient) {
+      if (container) container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--error);">Supabase Client غير متاح</div>';
+      return;
+    }
+
+    const { data, error } = await supabaseClient
+      .from('app_banners')
+      .select('*')
+      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    appBannersList = data || [];
+
+    const badgeEl = document.getElementById('bannersCountBadge');
+    if (badgeEl) badgeEl.textContent = `${appBannersList.length} إعلان`;
+
+    const sideBadge = document.getElementById('bannersBadge');
+    if (sideBadge) sideBadge.textContent = `${appBannersList.filter(b => b.is_active).length}`;
+
+    renderBannersTable();
+    renderMobileDrawerPreview();
+  } catch (err) {
+    console.error('Error loading banners:', err);
+    if (container) {
+      container.innerHTML = `
+        <div style="padding:30px;text-align:center;color:var(--error);">
+          <i class="ri-error-warning-line" style="font-size:24px;display:block;margin-bottom:8px;"></i>
+          فشل في تحميل البانرات: ${err.message}
+          <div style="margin-top:10px;">
+            <button class="btn btn-outline btn-sm" onclick="loadBannersData(true)">إعادة المحاولة</button>
+          </div>
+        </div>
+      `;
+    }
+  }
+}
+
+function renderBannersTable() {
+  const container = document.getElementById('bannersTableContainer');
+  if (!container) return;
+
+  if (!appBannersList || appBannersList.length === 0) {
+    container.innerHTML = `
+      <div style="padding:40px 20px;text-align:center;color:var(--text-secondary);">
+        <i class="ri-advertisement-line" style="font-size:40px;color:var(--text-light);display:block;margin-bottom:10px;"></i>
+        <h4 style="font-size:14px;font-weight:700;margin:0 0 6px 0;color:var(--text-primary);">لا توجد أي إعلانات مضافة حالياً</h4>
+        <p style="font-size:12px;margin:0 0 16px 0;color:var(--text-light);">بطاقة المحفظة والدفع تعمل بمفردها بأمان تام في القائمة الجانبية للتطبيق.</p>
+        <button class="btn btn-primary btn-sm" onclick="openBannerModal()"><i class="ri-add-line"></i> إضافة أول إعلان</button>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <table class="data-table" style="width:100%;">
+      <thead>
+        <tr>
+          <th style="width:55px;text-align:center;">المظهر</th>
+          <th>العنوان والتفاصيل</th>
+          <th style="width:110px;">الشارة</th>
+          <th style="width:130px;">الإجراء</th>
+          <th style="width:70px;text-align:center;">الترتيب</th>
+          <th style="width:90px;text-align:center;">الحالة</th>
+          <th style="width:120px;text-align:center;">خيارات</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${appBannersList.map(banner => {
+          const start = banner.gradient_start || '#4F46E5';
+          const end = banner.gradient_end || '#7C3AED';
+          const isActive = banner.is_active === true;
+          const hasImage = banner.image_url && banner.image_url.trim().length > 0;
+          return `
+            <tr style="transition:background 0.2s;">
+              <td style="text-align:center;">
+                ${hasImage 
+                  ? `<img src="${escapeHtml(banner.image_url)}" style="width:36px;height:26px;border-radius:6px;object-fit:cover;border:1px solid #CBD5E1;box-shadow:0 2px 4px rgba(0,0,0,0.1);" title="صورة إعلانية">`
+                  : `<div style="width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg, ${start}, ${end});margin:0 auto;box-shadow:0 2px 6px rgba(0,0,0,0.15);" title="${start} → ${end}"></div>`
+                }
+              </td>
+              <td>
+                <div style="font-weight:800;font-size:13px;color:var(--text-primary);">
+                  ${hasImage ? '<i class="ri-image-line" style="color:var(--primary);margin-left:4px;"></i>' : ''}
+                  ${escapeHtml(banner.title)}
+                </div>
+                ${banner.subtitle ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">${escapeHtml(banner.subtitle)}</div>` : ''}
+              </td>
+              <td>
+                ${banner.badge_text ? `<span style="background:rgba(139,92,246,0.12);color:#7C3AED;border:1px solid rgba(139,92,246,0.25);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;">${escapeHtml(banner.badge_text)}</span>` : '<span style="color:#94A3B8;font-size:11px;">-</span>'}
+              </td>
+              <td>
+                <div style="font-size:11px;font-weight:700;color:var(--text-primary);">${escapeHtml(banner.action_button_text || 'عرض')}</div>
+                <div style="font-size:10px;color:var(--text-light);font-family:monospace;">${escapeHtml(banner.action_type || 'none')}</div>
+              </td>
+              <td style="text-align:center;font-weight:700;font-size:12px;color:var(--medium-blue);">
+                #${banner.display_order || 1}
+              </td>
+              <td style="text-align:center;">
+                <button onclick="toggleBannerStatus('${banner.id}', ${isActive})" style="border:none;background:none;cursor:pointer;padding:4px;" title="اضغط للتبديل الفوري">
+                  <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;background:${isActive ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)'};color:${isActive ? '#10B981' : '#EF4444'};">
+                    <span style="width:6px;height:6px;border-radius:50%;background:${isActive ? '#10B981' : '#EF4444'};"></span>
+                    ${isActive ? 'نشط' : 'متوقف'}
+                  </span>
+                </button>
+              </td>
+              <td style="text-align:center;">
+                <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
+                  <button class="btn btn-outline btn-sm" onclick="openBannerModal('${banner.id}')" style="padding:4px 8px;font-size:12px;color:var(--primary);" title="تعديل">
+                    <i class="ri-edit-line"></i>
+                  </button>
+                  <button class="btn btn-outline btn-sm" onclick="deleteBanner('${banner.id}')" style="padding:4px 8px;font-size:12px;color:var(--error);border-color:rgba(239,68,68,0.3);" title="حذف">
+                    <i class="ri-delete-bin-line"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderMobileDrawerPreview() {
+  const container = document.getElementById('mobilePreviewCarouselContainer');
+  if (!container) return;
+
+  const activeBanners = (appBannersList || []).filter(b => b.is_active).slice(0, 2);
+  const totalSlides = 1 + activeBanners.length;
+
+  if (currentPreviewSlideIndex >= totalSlides) {
+    currentPreviewSlideIndex = 0;
+  }
+
+  let cardHtml = '';
+  if (currentPreviewSlideIndex === 0) {
+    // Primary Wallet Card
+    cardHtml = `
+      <div style="height:88px;border-radius:14px;background:linear-gradient(135deg, #2196F3, #1976D2, #0D47A1);padding:12px 14px;color:#fff;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 12px rgba(30,136,229,0.3);animation:fadeIn 0.3s ease;">
+        <div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.8);display:flex;align-items:center;gap:4px;">
+            <i class="ri-wallet-3-line"></i> المحفظة والدفع
+          </div>
+          <div style="font-size:17px;font-weight:900;color:#fff;margin-top:2px;font-family:'Outfit',sans-serif;">
+            0.00 <span style="font-size:11px;font-family:'Cairo',sans-serif;">ج.م</span>
+          </div>
+        </div>
+        <button style="background:rgba(255,255,255,0.22);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;">
+          <i class="ri-add-circle-line"></i> شحن المحفظة
+        </button>
+      </div>
+    `;
+  } else {
+    // Ad Banner
+    const b = activeBanners[currentPreviewSlideIndex - 1];
+    const start = b.gradient_start || '#8B5CF6';
+    const end = b.gradient_end || '#4F46E5';
+    const hasImage = b.image_url && b.image_url.trim().length > 0;
+
+    if (hasImage) {
+      cardHtml = `
+        <div style="height:88px;border-radius:14px;background-image:url('${escapeHtml(b.image_url)}');background-size:cover;background-position:center;position:relative;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.2);animation:fadeIn 0.3s ease;">
+          <div style="position:absolute;inset:0;background:linear-gradient(to left, rgba(0,0,0,0.8), rgba(0,0,0,0.3));padding:10px 12px;display:flex;justify-content:space-between;align-items:center;color:#fff;">
+            <div style="flex:1;overflow:hidden;padding-left:6px;">
+              ${b.badge_text ? `<span style="background:rgba(255,255,255,0.25);color:#fff;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:bold;display:inline-block;margin-bottom:3px;">${escapeHtml(b.badge_text)}</span>` : ''}
+              <div style="font-size:12px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;">
+                ${escapeHtml(b.title)}
+              </div>
+              ${b.subtitle ? `<div style="font-size:10px;color:rgba(255,255,255,0.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">${escapeHtml(b.subtitle)}</div>` : ''}
+            </div>
+            <button style="background:rgba(255,255,255,0.28);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;white-space:nowrap;">
+              ${escapeHtml(b.action_button_text || 'عرض')}
+            </button>
+          </div>
+        </div>
+      `;
+    } else {
+      cardHtml = `
+        <div style="height:88px;border-radius:14px;background:linear-gradient(135deg, ${start}, ${end});padding:10px 12px;color:#fff;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 12px rgba(0,0,0,0.15);animation:fadeIn 0.3s ease;">
+          <div style="flex:1;overflow:hidden;padding-left:6px;">
+            ${b.badge_text ? `<span style="background:rgba(255,255,255,0.22);color:#fff;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:bold;display:inline-block;margin-bottom:3px;">${escapeHtml(b.badge_text)}</span>` : ''}
+            <div style="font-size:12px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;">
+              ${escapeHtml(b.title)}
+            </div>
+            ${b.subtitle ? `<div style="font-size:10px;color:rgba(255,255,255,0.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">${escapeHtml(b.subtitle)}</div>` : ''}
+          </div>
+          <button style="background:rgba(255,255,255,0.25);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;white-space:nowrap;">
+            ${escapeHtml(b.action_button_text || 'عرض')}
+          </button>
+        </div>
+      `;
+    }
+  }
+
+  // Dots
+  let dotsHtml = '';
+  if (totalSlides > 1) {
+    dotsHtml = `
+      <div style="display:flex;justify-content:center;gap:4px;margin-top:8px;">
+        ${Array.from({ length: totalSlides }).map((_, i) => `
+          <div onclick="setPreviewSlide(${i})" style="width:${i === currentPreviewSlideIndex ? '16px' : '6px'};height:5px;border-radius:3px;background:${i === currentPreviewSlideIndex ? 'var(--medium-blue)' : '#CBD5E1'};cursor:pointer;transition:all 0.3s ease;"></div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  container.innerHTML = cardHtml + dotsHtml;
+}
+
+function setPreviewSlide(index) {
+  currentPreviewSlideIndex = index;
+  renderMobileDrawerPreview();
+}
+
+function setGradientPreset(start, end) {
+  const gStart = document.getElementById('bannerGradientStart');
+  const gStartText = document.getElementById('bannerGradientStartText');
+  const gEnd = document.getElementById('bannerGradientEnd');
+  const gEndText = document.getElementById('bannerGradientEndText');
+  if (gStart) gStart.value = start;
+  if (gStartText) gStartText.value = start;
+  if (gEnd) gEnd.value = end;
+  if (gEndText) gEndText.value = end;
+}
+
+function updateActionPlaceholder() {
+  const type = document.getElementById('bannerActionTypeInput').value;
+  const valGroup = document.getElementById('actionValueGroup');
+  const valInput = document.getElementById('bannerActionValueInput');
+  const valLabel = document.getElementById('actionValueLabel');
+  const btnInput = document.getElementById('bannerBtnTextInput');
+
+  if (type === 'coupon') {
+    valGroup.style.display = 'block';
+    valLabel.textContent = 'كود الخصم المراد نسخه للمستخدم';
+    valInput.placeholder = 'مثال: INRIDE20';
+    if (!btnInput.value || btnInput.value === 'عرض التفاصيل') btnInput.value = 'نسخ الكود';
+  } else if (type === 'invite') {
+    valGroup.style.display = 'none';
+    if (!btnInput.value || btnInput.value === 'عرض التفاصيل') btnInput.value = 'أدعي صديق';
+  } else if (type === 'wallet') {
+    valGroup.style.display = 'none';
+    if (!btnInput.value || btnInput.value === 'عرض التفاصيل') btnInput.value = 'شحن المحفظة';
+  } else if (type === 'url') {
+    valGroup.style.display = 'block';
+    valLabel.textContent = 'رابط الموقع الخارجي (https://...)';
+    valInput.placeholder = 'https://example.com/promo';
+    if (!btnInput.value || btnInput.value === 'عرض التفاصيل') btnInput.value = 'فتح الرابط';
+  } else if (type === 'whatsapp') {
+    valGroup.style.display = 'block';
+    valLabel.textContent = 'رقم واتساب الدعم الفني';
+    valInput.placeholder = '01204062941';
+    if (!btnInput.value || btnInput.value === 'عرض التفاصيل') btnInput.value = 'تواصل واتساب';
+  } else if (type === 'trip') {
+    valGroup.style.display = 'none';
+    if (!btnInput.value || btnInput.value === 'عرض التفاصيل') btnInput.value = 'احجز الآن';
+  } else {
+    valGroup.style.display = 'none';
+  }
+}
+
+function openBannerModal(id = null) {
+  const modal = document.getElementById('bannerModal');
+  const modalTitle = document.getElementById('bannerModalTitle');
+  const form = document.getElementById('bannerForm');
+  if (!modal) return;
+
+  form.reset();
+  document.getElementById('bannerId').value = '';
+  document.getElementById('bannerImageUrlInput').value = '';
+  document.getElementById('bannerImagePreviewContainer').style.display = 'none';
+  document.getElementById('bannerUploadStatus').textContent = '';
+
+  if (id) {
+    const banner = (appBannersList || []).find(b => b.id === id);
+    if (banner) {
+      modalTitle.textContent = 'تعديل الإعلان';
+      document.getElementById('bannerId').value = banner.id;
+      document.getElementById('bannerTitleInput').value = banner.title || '';
+      document.getElementById('bannerSubtitleInput').value = banner.subtitle || '';
+      document.getElementById('bannerBadgeInput').value = banner.badge_text || '';
+      document.getElementById('bannerOrderInput').value = banner.display_order || 1;
+      document.getElementById('bannerActionTypeInput').value = banner.action_type || 'none';
+      document.getElementById('bannerActionValueInput').value = banner.action_value || '';
+      document.getElementById('bannerBtnTextInput').value = banner.action_button_text || 'عرض';
+      document.getElementById('bannerTargetRole').value = banner.target_role || 'all';
+      document.getElementById('bannerIsActive').checked = banner.is_active !== false;
+
+      const hasImg = banner.image_url && banner.image_url.trim().length > 0;
+      if (hasImg) {
+        document.getElementById('formatImage').checked = true;
+        document.getElementById('bannerImageUrlInput').value = banner.image_url.trim();
+        updateImagePreviewFromInput(banner.image_url.trim());
+        toggleBannerFormatUI('image');
+      } else {
+        document.getElementById('formatGradient').checked = true;
+        toggleBannerFormatUI('gradient');
+      }
+
+      const start = banner.gradient_start || '#8B5CF6';
+      const end = banner.gradient_end || '#4F46E5';
+      setGradientPreset(start, end);
+    }
+  } else {
+    modalTitle.textContent = 'إضافة إعلان جديد';
+    document.getElementById('bannerBtnTextInput').value = 'نسخ الكود';
+    document.getElementById('bannerActionTypeInput').value = 'coupon';
+    document.getElementById('bannerActionValueInput').value = 'INRIDE20';
+    document.getElementById('formatGradient').checked = true;
+    toggleBannerFormatUI('gradient');
+    setGradientPreset('#8B5CF6', '#4F46E5');
+    document.getElementById('bannerIsActive').checked = true;
+  }
+
+  updateActionPlaceholder();
+  modal.style.display = 'flex';
+}
+
+function closeBannerModal() {
+  const modal = document.getElementById('bannerModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function saveBanner(event) {
+  if (event) event.preventDefault();
+
+  const id = document.getElementById('bannerId').value.trim();
+  const title = document.getElementById('bannerTitleInput').value.trim();
+  const subtitle = document.getElementById('bannerSubtitleInput').value.trim();
+  const badgeText = document.getElementById('bannerBadgeInput').value.trim();
+  const displayOrder = parseInt(document.getElementById('bannerOrderInput').value, 10) || 1;
+  const actionType = document.getElementById('bannerActionTypeInput').value;
+  const actionValue = document.getElementById('bannerActionValueInput').value.trim();
+  const actionBtnText = document.getElementById('bannerBtnTextInput').value.trim();
+  const gradientStart = document.getElementById('bannerGradientStart').value;
+  const gradientEnd = document.getElementById('bannerGradientEnd').value;
+  const targetRole = document.getElementById('bannerTargetRole').value;
+  const isActive = document.getElementById('bannerIsActive').checked;
+  const format = document.querySelector('input[name="bannerFormat"]:checked')?.value || 'gradient';
+  const imageUrl = format === 'image' ? document.getElementById('bannerImageUrlInput').value.trim() : null;
+
+  if (!title) {
+    showToast('يرجى إدخال عنوان الإعلان');
+    return;
+  }
+
+  const submitBtn = document.getElementById('saveBannerSubmitBtn');
+  const submitText = document.getElementById('saveBannerSubmitText');
+  if (submitBtn) submitBtn.disabled = true;
+  if (submitText) submitText.textContent = 'جاري الحفظ والتعميم...';
+
+  try {
+    const payload = {
+      title,
+      subtitle: subtitle || null,
+      badge_text: badgeText || null,
+      image_url: imageUrl || null,
+      display_order: displayOrder,
+      action_type: actionType,
+      action_value: actionValue || null,
+      action_button_text: actionBtnText || 'عرض التفاصيل',
+      gradient_start: gradientStart,
+      gradient_end: gradientEnd,
+      target_role: targetRole,
+      is_active: isActive,
+      updated_at: new Date().toISOString()
+    };
+
+    if (id) {
+      payload.id = id;
+      const { error } = await supabaseClient
+        .from('app_banners')
+        .update(payload)
+        .eq('id', id);
+      if (error) throw error;
+      showToast('تم تحديث الإعلان ونشره لحظياً ✅');
+    } else {
+      const { error } = await supabaseClient
+        .from('app_banners')
+        .insert(payload);
+      if (error) throw error;
+      showToast('تمت إضافة الإعلان ونشره لحظياً ✅');
+    }
+
+    closeBannerModal();
+    await loadBannersData(true);
+  } catch (err) {
+    console.error('Error saving banner:', err);
+    showToast('حدث خطأ أثناء حفظ الإعلان: ' + err.message);
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+    if (submitText) submitText.textContent = 'حفظ ونشر الإعلان';
+  }
+}
+
+async function toggleBannerStatus(id, currentStatus) {
+  try {
+    const nextStatus = !currentStatus;
+    const { error } = await supabaseClient
+      .from('app_banners')
+      .update({ is_active: nextStatus, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+    showToast(nextStatus ? 'تم تفعيل الإعلان لحظياً 🟢' : 'تم إيقاف الإعلان لحظياً ⏸️');
+    await loadBannersData(true);
+  } catch (err) {
+    console.error('Error toggling banner status:', err);
+    showToast('فشل في تعديل حالة الإعلان: ' + err.message);
+  }
+}
+
+async function deleteBanner(id) {
+  const banner = (appBannersList || []).find(b => b.id === id);
+  const title = banner ? banner.title : 'هذا الإعلان';
+  if (!confirm(`هل أنت متأكد من حذف "${title}"؟\nملاحظة: بطاقة المحفظة الأساسية لن تتأثر إطلاقاً.`)) {
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from('app_banners')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    showToast('تم حذف الإعلان بنجاح 🗑️');
+    await loadBannersData(true);
+  } catch (err) {
+    console.error('Error deleting banner:', err);
+    showToast('فشل في حذف الإعلان: ' + err.message);
+  }
+}
+
+function setupBannersRealtimeSubscription() {
+  if (bannersRealtimeChannel || !supabaseClient) return;
+  try {
+    bannersRealtimeChannel = supabaseClient
+      .channel('public:app_banners_dashboard')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_banners' }, () => {
+        const modal = document.getElementById('bannerModal');
+        if (!modal || modal.style.display !== 'flex') {
+          loadBannersData(true);
+        }
+      })
+      .subscribe();
+  } catch (e) {
+    console.warn('Realtime subscription for app_banners error:', e);
   }
 }

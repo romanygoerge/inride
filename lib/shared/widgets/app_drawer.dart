@@ -3,7 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
-import '../../features/common/wallet_page.dart';
 import '../../features/common/history_page.dart';
 import '../../features/common/profile_page.dart';
 import '../../features/driver_registration/presentation/pages/doc_upload_page.dart';
@@ -18,6 +17,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/utils/snappy_page_route.dart';
 import 'exit_prevention_dialog.dart';
 import 'invite_friends_sheet.dart';
+import 'app_drawer_banner_carousel.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -199,79 +199,10 @@ class AppDrawer extends StatelessWidget {
             ),
           ),
 
-          // Wallet Balance Card
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: InkWell(
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(context, SnappyPageRoute(page: const WalletPage()));
-              },
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  gradient: const LinearGradient(
-                    colors: AppColors.blueGradient,
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.mediumBlue.withValues(alpha: 0.2),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          l10n.wallet,
-                          style: GoogleFonts.cairo(
-                            fontSize: 12,
-                            color: Colors.white70,
-                          ),
-                        ),
-                        Text(
-                          '${state.walletBalance.toStringAsFixed(2)} ${l10n.egp}',
-                          style: GoogleFonts.outfit(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, SnappyPageRoute(page: const WalletPage()));
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white.withValues(alpha: 0.2),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      child: Text(
-                        l10n.addFunds,
-                        style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          // Wallet Balance & Promotional Banners Carousel (Live Realtime Sync)
+          const AppDrawerBannerCarousel(),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
           // Switch Role Tile (Vibrant Blue Background to highlight)
           Padding(

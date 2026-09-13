@@ -39,6 +39,7 @@ import '../services/driver_location_service.dart';
 import '../controllers/notification_controller.dart';
 import '../services/phone_auth_service.dart';
 import '../services/meta_analytics_service.dart';
+import '../services/support_chat_service.dart';
 
 enum UserRole { rider, driver }
 
@@ -277,7 +278,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         ? now.difference(_lastHeartbeatTime!).inSeconds 
         : 40;
     _lastHeartbeatTime = now;
-    final nowIso = now.toIso8601String();
+    final nowIso = now.toUtc().toIso8601String();
 
     try {
       await _supabase.rpc('record_user_app_heartbeat', params: {
@@ -297,6 +298,25 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         debugPrint('[Presence] _sendPresenceHeartbeat fallback error: $e');
       }
     }
+
+    // Keep driver online status fresh if currently in driver mode and online
+    if (isDriverOnline && currentRole == UserRole.driver) {
+      try {
+        final driverHeartbeat = <String, dynamic>{
+          'id': uid,
+          'is_online': true,
+          'is_available': rideStatus == RideStatus.idle || rideStatus == RideStatus.driverBidding,
+          'updated_at': nowIso,
+        };
+        if (driverLatitude != null && driverLongitude != null) {
+          driverHeartbeat['current_latitude'] = driverLatitude;
+          driverHeartbeat['current_longitude'] = driverLongitude;
+        }
+        await _supabase.from('drivers').upsert(driverHeartbeat);
+      } catch (e) {
+        debugPrint('[Presence] driver heartbeat error: $e');
+      }
+    }
   }
 
   Future<void> _recordAppClose() async {
@@ -307,7 +327,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         ? now.difference(_lastHeartbeatTime!).inSeconds 
         : 0;
     _lastHeartbeatTime = now;
-    final nowIso = now.toIso8601String();
+    final nowIso = now.toUtc().toIso8601String();
 
     try {
       await _supabase.rpc('record_user_app_close', params: {
@@ -779,6 +799,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
               // حفظ OneSignal Player ID الحقيقي (بدلاً من 'default_token' السابق)
               sl<AppNotificationService>().savePlayerIdForUser(user.id);
               sl<NotificationController>().init(user.id);
+              unawaited(SupportChatService.instance.initializeForUser(user.id));
             } catch (e) {
               debugPrint("Notification initialization failed on auth changes: $e");
             }
@@ -1815,7 +1836,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         'vehicle_back_url': vehicleLicenseBackUrl,
         'is_online': false,
         'is_available': false,
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
       if (vehicleId != null) {
         driverData['vehicle_id'] = vehicleId;
@@ -1835,7 +1856,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
             'license_url': driverLicenseFrontUrl,
             'is_online': false,
             'is_available': false,
-            'updated_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
           };
           if (driverAddress != null && driverAddress!.isNotEmpty) {
             fallbackData['address'] = driverAddress;
@@ -1935,7 +1956,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'id': userUid!,
           'is_online': true,
           'is_available': rideStatus == RideStatus.idle || rideStatus == RideStatus.driverBidding,
-          'updated_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
         };
         if (initLat != null && initLng != null) {
           updateMap['current_latitude'] = initLat;
@@ -1975,7 +1996,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
             'is_available': rideStatus == RideStatus.idle || rideStatus == RideStatus.driverBidding,
             'current_latitude': position.latitude,
             'current_longitude': position.longitude,
-            'updated_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
           });
           debugPrint('[DriverStatus] GlobalState updated driver location: lat=${position.latitude}, lng=${position.longitude}');
         }
@@ -1994,7 +2015,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         await _supabase.from('drivers').update({
           'is_online': false,
           'is_available': false,
-          'updated_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
         }).eq('id', userUid!);
 
         unawaited(NotificationService.instance.sendNotification(
@@ -3822,6 +3843,10 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     isAuthResolved = true;
     phoneNumber = activeUser.phone ?? targetPhone;
     userName = displayName;
+    try {
+      sl<NotificationController>().init(activeUser.id);
+      unawaited(SupportChatService.instance.initializeForUser(activeUser.id));
+    } catch (_) {}
 
     if (isDriver) {
       _currentRole = UserRole.driver;

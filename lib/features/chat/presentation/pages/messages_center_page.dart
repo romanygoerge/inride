@@ -10,6 +10,42 @@ import 'chat_page.dart';
 import '../../../../generated/app_localizations.dart';
 import '../../../../core/localization/locale_controller.dart';
 import '../../../../core/services/support_chat_service.dart';
+import '../../../../core/controllers/notification_controller.dart';
+import '../../../../core/services/notification_service.dart';
+
+enum ConversationType {
+  support,
+  tripChat,
+  notificationAlert,
+}
+
+class UnifiedConversationItem {
+  final String id;
+  final ConversationType type;
+  final String title;
+  final String? subtitle;
+  final String lastMessage;
+  final DateTime timestamp;
+  final int unreadCount;
+  final String? avatarUrl;
+  final String? statusLabel;
+  final Color? statusColor;
+  final VoidCallback onTap;
+
+  UnifiedConversationItem({
+    required this.id,
+    required this.type,
+    required this.title,
+    this.subtitle,
+    required this.lastMessage,
+    required this.timestamp,
+    required this.unreadCount,
+    this.avatarUrl,
+    this.statusLabel,
+    this.statusColor,
+    required this.onTap,
+  });
+}
 
 class MessagesCenterPage extends StatefulWidget {
   const MessagesCenterPage({super.key});
@@ -20,12 +56,18 @@ class MessagesCenterPage extends StatefulWidget {
 
 class _MessagesCenterPageState extends State<MessagesCenterPage> {
   final ChatRepository _chatRepository = sl<ChatRepository>();
+  final NotificationController _notifController = sl<NotificationController>();
+  final SupportChatService _supportChatService = SupportChatService.instance;
   late final String _myId;
 
   @override
   void initState() {
     super.initState();
     _myId = GlobalState.instance.userUid ?? '';
+    if (_myId.isNotEmpty) {
+      _supportChatService.initializeForUser(_myId);
+      _supportChatService.syncMessages();
+    }
   }
 
   void _openSupportChat() {
@@ -47,9 +89,30 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
     );
   }
 
+  void _markAllAsRead() async {
+    await _notifController.markAllMessagesAsRead();
+    await _supportChatService.markAllMessagesAsRead();
+    if (mounted) {
+      final isArabic = LocaleController.instance.isArabic;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isArabic ? 'تم تحديد جميع الرسائل كمقروءة' : 'All messages marked as read',
+            style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+          ),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final isArabic = LocaleController.instance.isArabic;
+
     if (_myId.isEmpty) {
       return Scaffold(
         appBar: AppBar(
@@ -65,168 +128,118 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: Colors.white,
+        elevation: 0,
         title: Text(
           l10n.messagesCenter,
-          style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.textPrimary),
+          style: GoogleFonts.cairo(
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            color: AppColors.textPrimary,
+          ),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.textPrimary, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          ListenableBuilder(
+            listenable: Listenable.merge([
+              _notifController,
+              _supportChatService.unreadCountNotifier,
+            ]),
+            builder: (context, _) {
+              final totalUnread = _notifController.unreadMessagesCount + _supportChatService.unreadCount;
+              if (totalUnread <= 0) return const SizedBox.shrink();
+
+              return IconButton(
+                icon: const Icon(Icons.done_all_rounded, color: AppColors.mediumBlue, size: 22),
+                tooltip: isArabic ? 'تحديد الكل كمقروء' : 'Mark all as read',
+                onPressed: _markAllAsRead,
+              );
+            },
+          ),
+        ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            // Support Card Quick Access
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: GestureDetector(
-                onTap: _openSupportChat,
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.border),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.02),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.mediumBlue.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-
-                        child: const Icon(Icons.support_agent, color: AppColors.mediumBlue, size: 28),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              l10n.supportChat,
-                              style: GoogleFonts.cairo(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              LocaleController.instance.isArabic ? 'تواصل مع خدمة العملاء لحل مشكلتك 24/7' : 'Contact customer support 24/7',
-                              style: GoogleFonts.cairo(
-                                fontSize: 11,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      ValueListenableBuilder<int>(
-                        valueListenable: SupportChatService.instance.unreadCountNotifier,
-                        builder: (context, count, _) {
-                          if (count <= 0) return const Icon(Icons.arrow_forward_ios, color: AppColors.textLight, size: 16);
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.error,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '$count جديد',
-                              style: GoogleFonts.cairo(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            // Section Header
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Align(
-                alignment: LocaleController.instance.isArabic ? Alignment.centerRight : Alignment.centerLeft,
-                child: Text(
-                  LocaleController.instance.isArabic ? 'محادثات الرحلات النشطة والسابقة' : 'Active & Past Trip Chats',
-                  style: GoogleFonts.cairo(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ),
-            ),
-
-            // Chat Rooms List
-            Expanded(
-              child: StreamBuilder<List<ChatRoom>>(
-                stream: _chatRepository.getChatRoomsStream(_myId),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
+        child: RefreshIndicator(
+          color: AppColors.mediumBlue,
+          onRefresh: () async {
+            await _supportChatService.syncMessages();
+            setState(() {});
+          },
+          child: StreamBuilder<List<ChatRoom>>(
+            stream: _chatRepository.getChatRoomsStream(_myId),
+            builder: (context, snapshot) {
+              return ListenableBuilder(
+                listenable: Listenable.merge([
+                  _notifController,
+                  _supportChatService.unreadCountNotifier,
+                ]),
+                builder: (context, _) {
+                  if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                     return const Center(
                       child: CircularProgressIndicator(color: AppColors.mediumBlue),
                     );
                   }
 
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Text(
-                        '${LocaleController.instance.isArabic ? "خطأ في تحميل المحادثات:" : "Error loading chats:"} ${snapshot.error}',
-                        style: GoogleFonts.cairo(color: AppColors.error),
-                      ),
-                    );
-                  }
-
-                  // Filter out support type from rooms because it is shown as the Support Card above
                   final rooms = (snapshot.data ?? [])
                       .where((r) => r.type == 'trip')
                       .toList();
 
-                  if (rooms.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32.0),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.chat_bubble_outline, size: 48, color: AppColors.textLight),
-                            const SizedBox(height: 12),
-                            Text(
-                              LocaleController.instance.isArabic ? 'لا توجد محادثات رحلات بعد' : 'No trip chats yet',
-                              style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }
+                  // 1. Build Support Item
+                  final supportMsgs = _supportChatService.currentMessages;
+                  final hasSupportMsgs = supportMsgs.isNotEmpty;
+                  final lastSupportMsg = hasSupportMsgs
+                      ? supportMsgs.first.message
+                      : (isArabic ? 'تواصل مع فريق الدعم الفني لحل استفسارك 24/7' : 'Contact customer support 24/7');
+                  final supportTime = hasSupportMsgs ? supportMsgs.first.createdAt : DateTime.now().subtract(const Duration(days: 365));
+                  final supportUnread = _supportChatService.unreadCount;
 
-                  return ListView.builder(
-                    itemCount: rooms.length,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    itemBuilder: (context, index) {
-                      final room = rooms[index];
-                      final partnerName = room.getRoomTitle(_myId);
-                      final partnerId = _myId == room.passengerId ? room.driverId : room.passengerId;
-                      final isArabic = LocaleController.instance.isArabic;
-                      final tripStatusStr = _getTripStatusLocalized(room.tripStatus, isArabic);
+                  final supportItem = UnifiedConversationItem(
+                    id: 'support_channel',
+                    type: ConversationType.support,
+                    title: isArabic ? 'الدعم الفني inRide' : 'inRide Support',
+                    subtitle: isArabic ? 'فريق الدعم والمساعدة' : 'Customer Support Team',
+                    lastMessage: lastSupportMsg,
+                    timestamp: supportTime,
+                    unreadCount: supportUnread,
+                    statusLabel: isArabic ? 'خدمة 24/7' : '24/7 Support',
+                    statusColor: AppColors.mediumBlue,
+                    onTap: _openSupportChat,
+                  );
 
-                      return ListTile(
-                        contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                        onTap: () {
+                  // 2. Build Trip Chat Items
+                  final tripChatItems = rooms.map((room) {
+                    final partnerName = room.getRoomTitle(_myId);
+                    final partnerId = _myId == room.passengerId ? room.driverId : room.passengerId;
+                    final tripStatusStr = _getTripStatusLocalized(room.tripStatus, isArabic);
+                    final tripStatusColor = _getTripStatusColor(room.tripStatus);
+
+                    // Unread count for this specific room
+                    final roomUnreadNotifs = _notifController.messageNotifications.where((n) {
+                      if (n.isRead) return false;
+                      final rId = n.data['roomId']?.toString() ?? n.data['room_id']?.toString();
+                      return rId == room.id;
+                    }).length;
+
+                    final totalRoomUnread = roomUnreadNotifs > 0 ? roomUnreadNotifs : room.unreadCount;
+
+                    return UnifiedConversationItem(
+                      id: room.id,
+                      type: ConversationType.tripChat,
+                      title: partnerName,
+                      subtitle: '${isArabic ? "الرحلة" : "Trip"}: $tripStatusStr',
+                      lastMessage: room.lastMessage.isNotEmpty
+                          ? room.lastMessage
+                          : (isArabic ? 'تم بدء المحادثة للرحلة' : 'Trip chat started'),
+                      timestamp: room.updatedAt,
+                      unreadCount: totalRoomUnread,
+                      avatarUrl: room.getRoomAvatar(_myId),
+                      statusLabel: tripStatusStr,
+                      statusColor: tripStatusColor,
+                      onTap: () async {
+                        await _notifController.markMessagesForRoomAsRead(room.id);
+                        if (context.mounted) {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -240,104 +253,350 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                               ),
                             ),
                           );
-                        },
-                        leading: CircleAvatar(
-                          radius: 26,
-                          backgroundColor: AppColors.background,
-                          backgroundImage: room.getRoomAvatar(_myId).isNotEmpty
-                              ? NetworkImage(room.getRoomAvatar(_myId))
-                              : null,
-                          child: room.getRoomAvatar(_myId).isEmpty
-                              ? Text(
-                                  partnerName.isNotEmpty ? partnerName.substring(0, 1) : 'U',
-                                  style: GoogleFonts.cairo(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                )
-                              : null,
-                        ),
-                        title: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                partnerName,
-                                style: GoogleFonts.cairo(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  color: AppColors.textPrimary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            Text(
-                              _formatTime(room.updatedAt),
-                              style: GoogleFonts.outfit(
-                                fontSize: 10,
-                                color: AppColors.textLight,
-                              ),
-                            ),
-                          ],
-                        ),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 4.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                room.lastMessage.isNotEmpty
-                                    ? room.lastMessage
-                                    : (isArabic ? 'تم بدء المحادثة للرحلة' : 'Trip chat started'),
-                                style: GoogleFonts.cairo(
-                                  fontSize: 12,
-                                  color: room.unreadCount > 0 ? AppColors.textPrimary : AppColors.textSecondary,
-                                  fontWeight: room.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: _getTripStatusColor(room.tripStatus).withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  '${isArabic ? "الرحلة" : "Trip"}: $tripStatusStr',
-                                  style: GoogleFonts.cairo(
-                                    fontSize: 9,
-                                    color: _getTripStatusColor(room.tripStatus),
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        trailing: room.unreadCount > 0
-                            ? Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: const BoxDecoration(
-                                  color: AppColors.mediumBlue,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Text(
-                                  '${room.unreadCount}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              )
-                            : null,
-                      );
+                        }
+                      },
+                    );
+                  }).toList();
+
+                  // 3. Build Standalone Message Notifications (if not already mapped to a room)
+                  final roomIds = rooms.map((r) => r.id).toSet();
+                  final standaloneNotifItems = _notifController.messageNotifications.where((n) {
+                    final rId = n.data['roomId']?.toString() ?? n.data['room_id']?.toString();
+                    if (rId != null && roomIds.contains(rId)) return false;
+                    if (n.type.toLowerCase().contains('support')) return false;
+                    return true;
+                  }).map((notif) {
+                    return UnifiedConversationItem(
+                      id: notif.id,
+                      type: ConversationType.notificationAlert,
+                      title: notif.title,
+                      subtitle: isArabic ? 'تنبيه رسالة' : 'Message Alert',
+                      lastMessage: notif.body,
+                      timestamp: notif.createdAt,
+                      unreadCount: notif.isRead ? 0 : 1,
+                      statusLabel: isArabic ? 'إشعار' : 'Alert',
+                      statusColor: AppColors.mediumBlue,
+                      onTap: () {
+                        _notifController.markAsRead(notif.id);
+                        NotificationService.instance.handleNotificationClick(notif.data);
+                      },
+                    );
+                  }).toList();
+
+                  // 4. Combine and sort strictly from NEWEST to OLDEST
+                  final allItems = <UnifiedConversationItem>[
+                    supportItem,
+                    ...tripChatItems,
+                    ...standaloneNotifItems,
+                  ];
+
+                  allItems.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+                  if (allItems.isEmpty) {
+                    return _buildEmptyState(isArabic);
+                  }
+
+                  return ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    itemCount: allItems.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final item = allItems[index];
+                      return _buildConversationCard(item, isArabic);
                     },
                   );
                 },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConversationCard(UnifiedConversationItem item, bool isArabic) {
+    final hasUnread = item.unreadCount > 0;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: hasUnread
+              ? AppColors.mediumBlue.withValues(alpha: 0.35)
+              : AppColors.border.withValues(alpha: 0.7),
+          width: hasUnread ? 1.5 : 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: hasUnread
+                ? AppColors.mediumBlue.withValues(alpha: 0.06)
+                : Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: item.onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Avatar with Badge
+                _buildAvatar(item),
+                const SizedBox(width: 14),
+
+                // Main Content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header Row: Title & Time
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    item.title,
+                                    style: GoogleFonts.cairo(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (item.type == ConversationType.support) ...[
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.verified, color: AppColors.mediumBlue, size: 15),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _formatRelativeTime(item.timestamp, isArabic),
+                            style: GoogleFonts.outfit(
+                              fontSize: 11,
+                              color: hasUnread ? AppColors.mediumBlue : AppColors.textLight,
+                              fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+
+                      // Status Chip (Trip status or support badge)
+                      if (item.statusLabel != null)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: (item.statusColor ?? AppColors.mediumBlue).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            item.statusLabel!,
+                            style: GoogleFonts.cairo(
+                              fontSize: 9.5,
+                              color: item.statusColor ?? AppColors.mediumBlue,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+
+                      // Last Message Snippet + Unread Counter
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              item.lastMessage,
+                              style: GoogleFonts.cairo(
+                                fontSize: 12,
+                                color: hasUnread ? AppColors.textPrimary : AppColors.textSecondary,
+                                fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (hasUnread) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.error,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                              child: Center(
+                                child: Text(
+                                  item.unreadCount > 99 ? '99+' : '${item.unreadCount}',
+                                  style: GoogleFonts.outfit(
+                                    color: Colors.white,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold,
+                                    height: 1.0,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatar(UnifiedConversationItem item) {
+    if (item.type == ConversationType.support) {
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1E88E5), Color(0xFF1565C0)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.mediumBlue.withValues(alpha: 0.25),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: const Center(
+              child: Icon(Icons.support_agent, color: Colors.white, size: 26),
+            ),
+          ),
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(
+                color: AppColors.success,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final avatar = item.avatarUrl ?? '';
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        CircleAvatar(
+          radius: 24,
+          backgroundColor: AppColors.background,
+          backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
+          child: avatar.isEmpty
+              ? Text(
+                  item.title.isNotEmpty ? item.title.substring(0, 1) : 'U',
+                  style: GoogleFonts.cairo(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: AppColors.textPrimary,
+                  ),
+                )
+              : null,
+        ),
+        Positioned(
+          bottom: -2,
+          right: -2,
+          child: Container(
+            padding: const EdgeInsets.all(3),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              item.type == ConversationType.tripChat ? Icons.directions_car : Icons.chat_bubble_outline,
+              size: 11,
+              color: AppColors.mediumBlue,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyState(bool isArabic) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.mediumBlue.withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.forum_outlined, size: 48, color: AppColors.mediumBlue),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isArabic ? 'لا توجد محادثات بعد' : 'No messages yet',
+              style: GoogleFonts.cairo(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              isArabic
+                  ? 'ستظهر هنا جميع رسائل الرحلات والدعم الفني مرتبة من الأحدث إلى الأقدم'
+                  : 'All trip messages and customer support chats will appear here ordered from newest to oldest',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.cairo(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: _openSupportChat,
+              icon: const Icon(Icons.support_agent, size: 18),
+              label: Text(
+                isArabic ? 'محادثة مع الدعم الفني' : 'Chat with Support',
+                style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.mediumBlue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               ),
             ),
           ],
@@ -346,12 +605,32 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
     );
   }
 
-  String _formatTime(DateTime time) {
+  String _formatRelativeTime(DateTime time, bool isArabic) {
     final now = DateTime.now();
-    if (time.year == now.year && time.month == now.month && time.day == now.day) {
-      return '${time.hour}:${time.minute.toString().padLeft(2, '0')}';
+    final diff = now.difference(time);
+
+    if (diff.inSeconds < 60 && diff.inSeconds >= 0) {
+      return isArabic ? 'الآن' : 'Just now';
+    } else if (diff.inMinutes < 60 && diff.inMinutes > 0) {
+      return isArabic ? 'منذ ${diff.inMinutes} د' : '${diff.inMinutes}m ago';
+    } else if (diff.inHours < 24 && now.day == time.day && now.month == time.month && now.year == time.year) {
+      final hour = time.hour > 12 ? time.hour - 12 : (time.hour == 0 ? 12 : time.hour);
+      final period = isArabic ? (time.hour >= 12 ? 'م' : 'ص') : (time.hour >= 12 ? 'PM' : 'AM');
+      final minute = time.minute.toString().padLeft(2, '0');
+      return '$hour:$minute $period';
+    } else if (diff.inDays < 2 && now.day - time.day == 1) {
+      return isArabic ? 'أمس' : 'Yesterday';
+    } else if (diff.inDays < 7) {
+      if (isArabic) {
+        const days = ['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'];
+        return days[time.weekday - 1];
+      } else {
+        const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        return days[time.weekday - 1];
+      }
+    } else {
+      return '${time.day}/${time.month}/${time.year}';
     }
-    return '${time.day}/${time.month}/${time.year}';
   }
 
   String _getTripStatusLocalized(String? status, bool isArabic) {

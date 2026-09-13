@@ -10,6 +10,7 @@ import '../../../../core/state/global_state.dart';
 import '../../../../core/localization/locale_controller.dart';
 import '../../../../core/models/ride_request_model.dart';
 import '../../../../core/utils/map_coordinates_helper.dart';
+import '../../../../core/data/sadat_city_geo_data.dart';
 
 enum ConfirmPageState { loading, intro, mapPicker, success, error }
 
@@ -212,13 +213,13 @@ class _RecipientLocationConfirmPageState extends State<RecipientLocationConfirmP
       _state = ConfirmPageState.loading;
     });
 
-    // Try to pre-center the map around the user's current coordinates if available
-    ll.LatLng initialLoc = const ll.LatLng(30.0444, 31.2357); // Cairo Center
+    // Try to pre-center the map around the user's current coordinates if available and in Sadat City
+    ll.LatLng initialLoc = SadatCityGeoData.cityCenter;
     try {
       final permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
         final pos = await Geolocator.getLastKnownPosition();
-        if (pos != null) {
+        if (pos != null && SadatCityGeoData.isInSadatCity(pos.latitude, pos.longitude)) {
           initialLoc = ll.LatLng(pos.latitude, pos.longitude);
         }
       }
@@ -474,7 +475,7 @@ class _RecipientLocationConfirmPageState extends State<RecipientLocationConfirmP
           child: fm.FlutterMap(
             mapController: _mapController,
             options: fm.MapOptions(
-              initialCenter: _selectedLatLng ?? const ll.LatLng(30.0444, 31.2357),
+              initialCenter: _selectedLatLng ?? SadatCityGeoData.cityCenter,
               initialZoom: 15.0,
               minZoom: 6,
               maxZoom: 18,

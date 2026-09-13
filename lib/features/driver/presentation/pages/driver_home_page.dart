@@ -16,6 +16,7 @@ import '../../../../shared/widgets/exit_prevention_dialog.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/utils/map_coordinates_helper.dart';
+import '../../../../core/data/sadat_city_geo_data.dart';
 import '../../../../core/utils/snappy_page_route.dart';
 import '../../../../core/DI/injection_container.dart' show sl;
 import '../../../../core/controllers/notification_controller.dart';
@@ -23,6 +24,8 @@ import '../../../../core/services/ride_sound_service.dart';
 import 'driver_ride_active_page.dart';
 import '../../../common/wallet_page.dart';
 import '../../../common/notifications_page.dart';
+import '../../../chat/presentation/pages/messages_center_page.dart';
+import '../../../../core/services/support_chat_service.dart';
 import '../../../../generated/app_localizations.dart';
 import '../../../../core/localization/locale_controller.dart';
 
@@ -587,71 +590,152 @@ class _DriverHomePageState extends State<DriverHomePage> {
                   ),
                 ),
 
-                // Notifications Button
-                GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      SnappyPageRoute(page: const NotificationsPage()),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ListenableBuilder(
-                      listenable: sl<NotificationController>(),
-                      builder: (context, _) {
-                        final unreadCount = sl<NotificationController>().unreadCount;
-                        return Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            const Icon(
-                              Icons.notifications_none_outlined,
-                              color: AppColors.mediumBlue,
-                            ),
-                            if (unreadCount > 0)
-                              Positioned(
-                                top: -6,
-                                right: -6,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.error,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  constraints: const BoxConstraints(
-                                    minWidth: 16,
-                                    minHeight: 16,
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      '$unreadCount',
-                                      style: GoogleFonts.outfit(
-                                        color: Colors.white,
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
-                                        height: 1.0,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
+                // Action Buttons: Messages Center & Notifications
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Messages Center Button
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          SnappyPageRoute(page: const MessagesCenterPage()),
                         );
                       },
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ListenableBuilder(
+                          listenable: Listenable.merge([
+                            sl<NotificationController>(),
+                            SupportChatService.instance.unreadCountNotifier,
+                          ]),
+                          builder: (context, _) {
+                            final notifMsgCount = sl<NotificationController>().unreadMessagesCount;
+                            final supportCount = SupportChatService.instance.unreadCount;
+                            final totalUnreadMessages = notifMsgCount + supportCount;
+
+                            return Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                const Icon(
+                                  Icons.forum_outlined,
+                                  color: AppColors.mediumBlue,
+                                ),
+                                if (totalUnreadMessages > 0)
+                                  Positioned(
+                                    top: -6,
+                                    right: -6,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.error,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      constraints: const BoxConstraints(
+                                        minWidth: 18,
+                                        minHeight: 18,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          totalUnreadMessages > 99 ? '99+' : '$totalUnreadMessages',
+                                          style: GoogleFonts.outfit(
+                                            color: Colors.white,
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.bold,
+                                            height: 1.0,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
                     ),
-                  ),
+
+                    const SizedBox(width: 8),
+
+                    // Notifications Button
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          SnappyPageRoute(page: const NotificationsPage()),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ListenableBuilder(
+                          listenable: sl<NotificationController>(),
+                          builder: (context, _) {
+                            final unreadCount = sl<NotificationController>().unreadCount;
+                            return Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                const Icon(
+                                  Icons.notifications_none_outlined,
+                                  color: AppColors.mediumBlue,
+                                ),
+                                if (unreadCount > 0)
+                                  Positioned(
+                                    top: -6,
+                                    right: -6,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.error,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      constraints: const BoxConstraints(
+                                        minWidth: 18,
+                                        minHeight: 18,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          unreadCount > 99 ? '99+' : '$unreadCount',
+                                          style: GoogleFonts.outfit(
+                                            color: Colors.white,
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.bold,
+                                            height: 1.0,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1277,10 +1361,10 @@ class _RequestCardWidgetState extends State<RequestCardWidget> {
                       req.pickupLongitude,
                     );
                   } else {
-                    // Cairo default fallback
+                    // Sadat City center default fallback
                     driverToCustomerDistance = LocationService.instance.calculateDistance(
-                      30.0444,
-                      31.2357,
+                      SadatCityGeoData.cityCenter.latitude,
+                      SadatCityGeoData.cityCenter.longitude,
                       req.pickupLatitude,
                       req.pickupLongitude,
                     );

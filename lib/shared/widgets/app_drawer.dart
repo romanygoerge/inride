@@ -10,11 +10,8 @@ import '../../features/driver_registration/presentation/pages/doc_upload_page.da
 import '../../features/driver_registration/presentation/pages/review_pending_page.dart';
 import '../../features/driver/presentation/pages/driver_home_page.dart';
 import '../../features/passenger/presentation/pages/passenger_home_page.dart';
-import '../../features/common/support_page.dart';
 import '../../features/common/legal_pages.dart';
-import '../../features/chat/presentation/pages/messages_center_page.dart';
 import '../../core/localization/locale_controller.dart';
-import '../../core/services/support_chat_service.dart';
 import '../../generated/app_localizations.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -327,58 +324,6 @@ class AppDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const HistoryPage()));
-                  },
-                ),
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.forum_outlined,
-                  title: l10n.messagesCenter,
-                  trailing: ValueListenableBuilder<int>(
-                    valueListenable: SupportChatService.instance.unreadCountNotifier,
-                    builder: (context, count, _) {
-                      if (count <= 0) return const SizedBox.shrink();
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.error,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '$count',
-                          style: GoogleFonts.cairo(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                        ),
-                      );
-                    },
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, SnappyPageRoute(page: const MessagesCenterPage()));
-                  },
-                ),
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.help_outline_outlined,
-                  title: l10n.supportTitle,
-                  trailing: ValueListenableBuilder<int>(
-                    valueListenable: SupportChatService.instance.unreadCountNotifier,
-                    builder: (context, count, _) {
-                      if (count <= 0) return const SizedBox.shrink();
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.error,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '$count',
-                          style: GoogleFonts.cairo(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                        ),
-                      );
-                    },
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, SnappyPageRoute(page: const SupportPage()));
                   },
                 ),
                 _buildDrawerItem(

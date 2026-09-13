@@ -1,0 +1,787 @@
+{
+  "city": "مدينة السادات - Sadat City",
+  "country": "مصر - Egypt",
+  "governorate": "المنوفية - Menoufia",
+  "total_main_categories": 25,
+  "categories": [
+    {
+      "id": "supermarket",
+      "name_ar": "سوبر ماركت وبقالات",
+      "name_en": "Supermarkets & Groceries",
+      "icon": "ri-shopping-cart-2-fill",
+      "color": "#16a34a",
+      "sub_categories": [
+        "hypermarket",
+        "supermarket",
+        "grocery",
+        "greengrocer",
+        "dairy_ice_cream",
+        "discount_store"
+      ],
+      "keywords_ar": [
+        "سوبر ماركت",
+        "سوبرماركت",
+        "ماركت",
+        "بقالة",
+        "بقال",
+        "هايبر",
+        "هايبر ماركت",
+        "محل بقالة",
+        "مواد غذائية",
+        "خضار وفاكهة",
+        "ميني ماركت",
+        "تموين",
+        "سوبر ماركتات"
+      ],
+      "keywords_en": [
+        "supermarket",
+        "grocery",
+        "market",
+        "hypermarket",
+        "mini market"
+      ]
+    },
+    {
+      "id": "restaurant",
+      "name_ar": "مطاعم",
+      "name_en": "Restaurants & Food",
+      "icon": "ri-restaurant-2-fill",
+      "color": "#ea580c",
+      "sub_categories": [
+        "fast_food",
+        "grill",
+        "pizza",
+        "crepe_waffle",
+        "koshary",
+        "burger",
+        "hawawshi",
+        "seafood",
+        "syrian",
+        "oriental",
+        "oriental_mandi",
+        "oriental_fast_food"
+      ],
+      "keywords_ar": [
+        "مطعم",
+        "مطاعم",
+        "اكل",
+        "وجبات",
+        "مشويات",
+        "مشاوي",
+        "بيتزا",
+        "كريب",
+        "شاورما",
+        "اسماك",
+        "سمك",
+        "فطائر",
+        "كشري",
+        "مطاعم سريعة",
+        "برجر",
+        "فراخ مشوية",
+        "طعام",
+        "ساندوتشات",
+        "حواوشي"
+      ],
+      "keywords_en": [
+        "restaurant",
+        "food",
+        "grill",
+        "pizza",
+        "fast food"
+      ]
+    },
+    {
+      "id": "cafe",
+      "name_ar": "كافيهات ومقاهي",
+      "name_en": "Cafes & Coffee Shops",
+      "icon": "ri-cup-fill",
+      "color": "#854d0e",
+      "sub_categories": [
+        "coffee_shop",
+        "traditional_cafe",
+        "family_cafe",
+        "lounge",
+        "juice_bar",
+        "bakery_cafe"
+      ],
+      "keywords_ar": [
+        "كافيه",
+        "كافيهات",
+        "قهوة",
+        "مقهى",
+        "كوفي شوب",
+        "شاي",
+        "لاونج",
+        "عصائر",
+        "مشروبات",
+        "حلويات وكافيه",
+        "قعدة"
+      ],
+      "keywords_en": [
+        "cafe",
+        "coffee",
+        "lounge",
+        "coffee shop"
+      ]
+    },
+    {
+      "id": "pharmacy",
+      "name_ar": "صيدليات ومستلزمات طبية",
+      "name_en": "Pharmacies & Drugstores",
+      "icon": "ri-capsule-fill",
+      "color": "#0284c7",
+      "sub_categories": [
+        "community_pharmacy",
+        "community_pharmacy_24h",
+        "chain_pharmacy"
+      ],
+      "keywords_ar": [
+        "صيدلية",
+        "صيدليات",
+        "دواء",
+        "علاج",
+        "ادوية",
+        "صيدلية 24 ساعة",
+        "فيتامينات",
+        "روشتة",
+        "مستلزمات طبية"
+      ],
+      "keywords_en": [
+        "pharmacy",
+        "chemist",
+        "drugstore"
+      ]
+    },
+    {
+      "id": "clothing",
+      "name_ar": "ملابس وأزياء",
+      "name_en": "Clothing & Fashion",
+      "icon": "ri-t-shirt-fill",
+      "color": "#9333ea",
+      "sub_categories": [
+        "menswear",
+        "womenswear",
+        "sportswear",
+        "shoes",
+        "fashion",
+        "department_store"
+      ],
+      "keywords_ar": [
+        "ملابس",
+        "محل ملابس",
+        "ازياء",
+        "بدل",
+        "فساتين",
+        "احذية",
+        "جزم",
+        "شنط",
+        "اطفال",
+        "ملابس رجالي",
+        "ملابس حريمي",
+        "ملابس اطفال",
+        "ملابس رياضية",
+        "اكسسوارات",
+        "بوتيك"
+      ],
+      "keywords_en": [
+        "clothes",
+        "clothing",
+        "fashion",
+        "shoes",
+        "boutique"
+      ]
+    },
+    {
+      "id": "electronics",
+      "name_ar": "موبايلات وإلكترونيات",
+      "name_en": "Electronics & Mobiles",
+      "icon": "ri-smartphone-fill",
+      "color": "#4f46e5",
+      "sub_categories": [
+        "mobile_phones",
+        "telecom",
+        "home_appliances",
+        "electrical_supplies"
+      ],
+      "keywords_ar": [
+        "موبايل",
+        "موبايلات",
+        "هواتف",
+        "تليفونات",
+        "صيانة موبايل",
+        "اكسسوارات موبايل",
+        "كمبيوتر",
+        "لابتوب",
+        "الكترونيات",
+        "اجهزة كهربائية",
+        "شاشات",
+        "كاميرات",
+        "شبكات"
+      ],
+      "keywords_en": [
+        "electronics",
+        "mobile",
+        "computer",
+        "phones",
+        "laptop"
+      ]
+    },
+    {
+      "id": "butcher",
+      "name_ar": "جزارات ولحوم ودواجن",
+      "name_en": "Butchers & Poultry",
+      "icon": "ri-knife-line",
+      "color": "#dc2626",
+      "sub_categories": [
+        "butcher",
+        "poultry"
+      ],
+      "keywords_ar": [
+        "جزار",
+        "جزارة",
+        "جزارات",
+        "لحوم",
+        "لحمة",
+        "لحم طازج",
+        "دواجن",
+        "فراخ",
+        "محل فراخ",
+        "طيور",
+        "اسماك طازجة",
+        "كندوز",
+        "ضاني"
+      ],
+      "keywords_en": [
+        "butcher",
+        "meat",
+        "poultry"
+      ]
+    },
+    {
+      "id": "bakery",
+      "name_ar": "مخابز وحلوانيات",
+      "name_en": "Bakeries & Pastries",
+      "icon": "ri-cake-3-fill",
+      "color": "#d97706",
+      "sub_categories": [
+        "bakery",
+        "pastry_shop",
+        "baladi_bread"
+      ],
+      "keywords_ar": [
+        "مخبز",
+        "مخابز",
+        "فرن",
+        "عيش",
+        "حلواني",
+        "حلويات",
+        "كيك",
+        "تورته",
+        "مخبوزات",
+        "مخبوزات افرنجي",
+        "فينو",
+        "باتيه",
+        "كرواسون",
+        "بسبوسة"
+      ],
+      "keywords_en": [
+        "bakery",
+        "pastry",
+        "sweets"
+      ]
+    },
+    {
+      "id": "general_retail",
+      "name_ar": "محلات عامة ومكتبات وهدايا",
+      "name_en": "General Retail & Stationery",
+      "icon": "ri-store-2-fill",
+      "color": "#0d9488",
+      "sub_categories": [
+        "stationery",
+        "houseware",
+        "toys_gifts",
+        "hardware_tools"
+      ],
+      "keywords_ar": [
+        "ادوات منزلية",
+        "مكتبة",
+        "مكتبات",
+        "هدايا",
+        "العاب",
+        "العاب اطفال",
+        "اثاث",
+        "مفروشات",
+        "مستلزمات منزلية",
+        "خردوات",
+        "بلايستيشن"
+      ],
+      "keywords_en": [
+        "retail",
+        "stationery",
+        "gifts"
+      ]
+    },
+    {
+      "id": "maintenance",
+      "name_ar": "الصيانة والخدمات الفنية",
+      "name_en": "Maintenance & Crafts",
+      "icon": "ri-tools-fill",
+      "color": "#ca8a04",
+      "sub_categories": [
+        "plumbing",
+        "appliance_repair"
+      ],
+      "keywords_ar": [
+        "صيانة",
+        "سباك",
+        "سباكة",
+        "كهربائي",
+        "نجار",
+        "نجارة",
+        "تكييف",
+        "الوميتال",
+        "زجاج",
+        "ورش",
+        "ورشة",
+        "خدمات منزلية",
+        "تصليح"
+      ],
+      "keywords_en": [
+        "maintenance",
+        "repair",
+        "plumber"
+      ]
+    },
+    {
+      "id": "automotive",
+      "name_ar": "السيارات وقطع الغيار",
+      "name_en": "Automotive & Car Services",
+      "icon": "ri-car-fill",
+      "color": "#e11d48",
+      "sub_categories": [
+        "car_service",
+        "tires_alignment",
+        "car_wash",
+        "car_dealership"
+      ],
+      "keywords_ar": [
+        "قطع غيار",
+        "قطع غيار سيارات",
+        "ميكانيكي",
+        "عفشة",
+        "كاوتش",
+        "اطارات",
+        "بطاريات",
+        "زيوت",
+        "غيار زيت",
+        "مغسلة",
+        "مغسلة سيارات",
+        "صيانة سيارات",
+        "كهربائي سيارات"
+      ],
+      "keywords_en": [
+        "car repair",
+        "car parts",
+        "mechanic",
+        "car wash",
+        "tires"
+      ]
+    },
+    {
+      "id": "gas_station",
+      "name_ar": "محطات الوقود والغاز",
+      "name_en": "Gas & Fuel Stations",
+      "icon": "ri-gas-station-fill",
+      "color": "#b91c1c",
+      "sub_categories": [
+        "gas_station",
+        "cng_station"
+      ],
+      "keywords_ar": [
+        "بنزين",
+        "بنزينة",
+        "محطة بنزين",
+        "محطة وقود",
+        "سولار",
+        "غاز طبيعي",
+        "شحن كهرباء"
+      ],
+      "keywords_en": [
+        "gas station",
+        "petrol",
+        "fuel"
+      ]
+    },
+    {
+      "id": "medical",
+      "name_ar": "الخدمات الطبية والمستشفيات",
+      "name_en": "Medical & Healthcare",
+      "icon": "ri-hospital-fill",
+      "color": "#059669",
+      "sub_categories": [
+        "general_hospital",
+        "specialized_hospital",
+        "clinic",
+        "laboratory",
+        "radiology_lab"
+      ],
+      "keywords_ar": [
+        "مستشفى",
+        "مستشفيات",
+        "عيادة",
+        "عيادات",
+        "دكتور",
+        "طبيب",
+        "معمل",
+        "تحاليل",
+        "اشعة",
+        "اسنان",
+        "مركز طبي",
+        "علاج طبيعي"
+      ],
+      "keywords_en": [
+        "hospital",
+        "clinic",
+        "medical",
+        "doctor"
+      ]
+    },
+    {
+      "id": "education",
+      "name_ar": "التعليم والمدارس والمعاهد",
+      "name_en": "Education & Schools",
+      "icon": "ri-graduation-cap-fill",
+      "color": "#2563eb",
+      "sub_categories": [
+        "school",
+        "college",
+        "institute",
+        "university_hq"
+      ],
+      "keywords_ar": [
+        "مدرسة",
+        "مدارس",
+        "جامعة",
+        "جامعات",
+        "كلية",
+        "كليات",
+        "معهد",
+        "حضانة",
+        "سنتر",
+        "دروس",
+        "مركز تعليمي",
+        "اكاديمية"
+      ],
+      "keywords_en": [
+        "school",
+        "university",
+        "college",
+        "academy"
+      ]
+    },
+    {
+      "id": "mall",
+      "name_ar": "المولات والمراكز التجارية",
+      "name_en": "Malls & Shopping Centers",
+      "icon": "ri-shopping-bag-3-fill",
+      "color": "#7c3aed",
+      "sub_categories": [
+        "shopping_mall",
+        "commercial_center"
+      ],
+      "keywords_ar": [
+        "مول",
+        "مولات",
+        "سيتي مول",
+        "مركز تجاري",
+        "سوق",
+        "اسواق",
+        "مجمع تجاري"
+      ],
+      "keywords_en": [
+        "mall",
+        "shopping mall",
+        "market center"
+      ]
+    },
+    {
+      "id": "finance",
+      "name_ar": "البنوك والخدمات المالية والـ ATM",
+      "name_en": "Banks & Financial Services",
+      "icon": "ri-bank-fill",
+      "color": "#15803d",
+      "sub_categories": [
+        "bank"
+      ],
+      "keywords_ar": [
+        "بنك",
+        "بنوك",
+        "atm",
+        "صراف الي",
+        "صرافة",
+        "تحويل اموال",
+        "فودافون كاش",
+        "فوري",
+        "وي باي",
+        "امان"
+      ],
+      "keywords_en": [
+        "bank",
+        "atm",
+        "finance"
+      ]
+    },
+    {
+      "id": "shipping",
+      "name_ar": "الشحن والتوصيل والبريد",
+      "name_en": "Shipping & Logistics",
+      "icon": "ri-truck-fill",
+      "color": "#c2410c",
+      "sub_categories": [
+        "courier"
+      ],
+      "keywords_ar": [
+        "شحن",
+        "توصيل",
+        "شركة شحن",
+        "مكتب شحن",
+        "ارامكس",
+        "بوسطة",
+        "شحنات",
+        "طرود"
+      ],
+      "keywords_en": [
+        "courier",
+        "shipping",
+        "delivery"
+      ]
+    },
+    {
+      "id": "hotel",
+      "name_ar": "الفنادق والإقامة",
+      "name_en": "Hotels & Accommodation",
+      "icon": "ri-hotel-bed-fill",
+      "color": "#0891b2",
+      "sub_categories": [
+        "hotel",
+        "resort_hotel"
+      ],
+      "keywords_ar": [
+        "فندق",
+        "فنادق",
+        "شقق فندقية",
+        "اقامة",
+        "سكن فندقي"
+      ],
+      "keywords_en": [
+        "hotel",
+        "motel"
+      ]
+    },
+    {
+      "id": "events",
+      "name_ar": "القاعات والمناسبات والأفراح",
+      "name_en": "Event & Wedding Halls",
+      "icon": "ri-vip-diamond-fill",
+      "color": "#db2777",
+      "sub_categories": [
+        "wedding_hall",
+        "banquet_hall"
+      ],
+      "keywords_ar": [
+        "قاعة",
+        "قاعات",
+        "قاعة افراح",
+        "مناسبات",
+        "افراح",
+        "حفلات",
+        "سيشن"
+      ],
+      "keywords_en": [
+        "event hall",
+        "wedding"
+      ]
+    },
+    {
+      "id": "sports",
+      "name_ar": "الرياضة والنوادي والجيم",
+      "name_en": "Sports, Fitness & Gyms",
+      "icon": "ri-football-fill",
+      "color": "#16a34a",
+      "sub_categories": [
+        "gym",
+        "sports_club"
+      ],
+      "keywords_ar": [
+        "جيم",
+        "نادي",
+        "نوادي",
+        "ملعب",
+        "ملاعب",
+        "مركز شباب",
+        "كرة قدم",
+        "سباحة"
+      ],
+      "keywords_en": [
+        "gym",
+        "sports club"
+      ]
+    },
+    {
+      "id": "corporate",
+      "name_ar": "الشركات والمكاتب والاستشارات",
+      "name_en": "Corporate & Real Estate Offices",
+      "icon": "ri-building-4-fill",
+      "color": "#475569",
+      "sub_categories": [
+        "business_services",
+        "business_association"
+      ],
+      "keywords_ar": [
+        "شركة",
+        "شركات",
+        "مكتب",
+        "عقارات",
+        "تسويق عقاري",
+        "استشارات"
+      ],
+      "keywords_en": [
+        "office",
+        "company",
+        "real estate"
+      ]
+    },
+    {
+      "id": "factory",
+      "name_ar": "المصانع والمنشآت الصناعية",
+      "name_en": "Factories & Industrial Plants",
+      "icon": "ri-building-line",
+      "color": "#334155",
+      "sub_categories": [
+        "ceramics_industry",
+        "cables_industry",
+        "heavy_industry",
+        "food_industry",
+        "pharma_industry"
+      ],
+      "keywords_ar": [
+        "مصنع",
+        "مصانع",
+        "شركة صناعية",
+        "منطقة صناعية",
+        "صناعة",
+        "مطورين"
+      ],
+      "keywords_en": [
+        "factory",
+        "industrial"
+      ]
+    },
+    {
+      "id": "religious",
+      "name_ar": "المساجد والكنائس ودور العبادة",
+      "name_en": "Mosques & Churches",
+      "icon": "ri-ancient-gate-fill",
+      "color": "#047857",
+      "sub_categories": [
+        "mosque",
+        "church"
+      ],
+      "keywords_ar": [
+        "مسجد",
+        "مساجد",
+        "جامع",
+        "جوامع",
+        "كنيسة",
+        "كنائس",
+        "دار عبادة"
+      ],
+      "keywords_en": [
+        "mosque",
+        "church"
+      ]
+    },
+    {
+      "id": "government",
+      "name_ar": "الخدمات والهيئات الحكومية",
+      "name_en": "Government & Civic Services",
+      "icon": "ri-government-fill",
+      "color": "#1e3a8a",
+      "sub_categories": [
+        "city_hall",
+        "police",
+        "traffic_unit",
+        "passport_office",
+        "post_office",
+        "government_complex"
+      ],
+      "keywords_ar": [
+        "مجلس المدينة",
+        "جهاز المدينة",
+        "سجل مدني",
+        "مرور",
+        "قسم شرطة",
+        "بريد",
+        "مكتب بريد",
+        "شهر عقاري",
+        "محكمة",
+        "حكومي",
+        "تضامن"
+      ],
+      "keywords_en": [
+        "government",
+        "police",
+        "post office"
+      ]
+    },
+    {
+      "id": "transport",
+      "name_ar": "المواصلات والمواقف ومحطات الحافلات",
+      "name_en": "Transportation & Bus Terminals",
+      "icon": "ri-bus-fill",
+      "color": "#b45309",
+      "sub_categories": [
+        "bus_terminal",
+        "microbus_stand",
+        "intercity_bus"
+      ],
+      "keywords_ar": [
+        "موقف",
+        "مواقف",
+        "موقف السادات",
+        "ميكروباص",
+        "محطة اتوبيس",
+        "موقف العاشر",
+        "موقف السابعة",
+        "سوبرجيت",
+        "اتوبيس غرب الدلتا",
+        "مواصلات",
+        "محطة نقل"
+      ],
+      "keywords_en": [
+        "bus stop",
+        "transport"
+      ]
+    }
+  ],
+  "urban_zones": [
+    {
+      "id": "residential",
+      "name_ar": "المناطق والأحياء السكنية",
+      "name_en": "Residential Zones",
+      "scope": "المناطق المرقمة من 1 إلى 36، الأحياء السكنية، إسكان المستقبل، دار مصر، سكن مصر، المجاورات"
+    },
+    {
+      "id": "industrial",
+      "name_ar": "المناطق الصناعية ومجمع المطورين",
+      "name_en": "Industrial Zones",
+      "scope": "المناطق الصناعية من 1 إلى 8، مجمع مطوري السادات، منطقة الصناعات الثقيلة والمتوسطة"
+    },
+    {
+      "id": "university",
+      "name_ar": "المجمعات الجامعية والكليات",
+      "name_en": "University Campuses",
+      "scope": "جامعة مدينة السادات، مجمع كليات الحي السادس، المعاهد الأكاديمية والبحثية"
+    }
+  ]
+}

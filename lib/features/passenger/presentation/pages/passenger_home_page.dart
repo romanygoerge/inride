@@ -22,6 +22,8 @@ import 'passenger_delivery_booking_page.dart';
 import 'location_search_page.dart';
 import '../../../common/notifications_page.dart';
 import '../../../common/wallet_page.dart';
+import '../../../chat/presentation/pages/messages_center_page.dart';
+import '../../../../core/services/support_chat_service.dart';
 import '../../../../generated/app_localizations.dart';
 import '../../../../core/localization/locale_controller.dart';
 
@@ -137,7 +139,21 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
 
   void _openSearchPickup() async {
     final l10n = AppLocalizations.of(context)!;
-    final mapCenter = MapCoordinatesHelper.deviceLocation ?? sl<MapController>().currentMapCenter ?? SadatCityGeoData.cityCenter;
+    final validDeviceLoc = (MapCoordinatesHelper.deviceLocation != null &&
+            SadatCityGeoData.isInSadatCity(
+                MapCoordinatesHelper.deviceLocation!.latitude,
+                MapCoordinatesHelper.deviceLocation!.longitude))
+        ? MapCoordinatesHelper.deviceLocation
+        : null;
+    final mapCenter = validDeviceLoc ??
+        (sl<MapController>().currentMapCenter != null &&
+                SadatCityGeoData.isInSadatCity(
+                    sl<MapController>().currentMapCenter!.latitude,
+                    sl<MapController>().currentMapCenter!.longitude)
+            ? sl<MapController>().currentMapCenter
+            : null) ??
+        SadatCityGeoData.cityCenter;
+
     final result = await Navigator.push(
       context,
       SnappyPageRoute(
@@ -168,12 +184,17 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
         return;
       }
 
+      final pickupName = (loc.placeName.isNotEmpty && loc.placeName != 'موقعي الحالي')
+          ? loc.placeName
+          : loc.formattedAddress;
+
       setState(() {
         _mode = PassengerMode.rideBooking;
-        GlobalState.instance.fromAddress = loc.formattedAddress;
+        GlobalState.instance.fromAddress = pickupName;
         GlobalState.instance.fromLat = loc.latitude;
         GlobalState.instance.fromLng = loc.longitude;
       });
+      MapCoordinatesHelper.registerCoordinate(pickupName, LatLng(loc.latitude, loc.longitude));
       MapCoordinatesHelper.registerCoordinate(loc.formattedAddress, LatLng(loc.latitude, loc.longitude));
 
       if (GlobalState.instance.selectedDestinationLocation != null) {
@@ -186,14 +207,36 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
 
   void _openSearchDestination() async {
     final l10n = AppLocalizations.of(context)!;
-    final mapCenter = MapCoordinatesHelper.deviceLocation ?? sl<MapController>().currentMapCenter ?? SadatCityGeoData.cityCenter;
+    LatLng? destinationReference;
+    if (GlobalState.instance.fromLat != null &&
+        GlobalState.instance.fromLng != null &&
+        SadatCityGeoData.isInSadatCity(
+            GlobalState.instance.fromLat!, GlobalState.instance.fromLng!)) {
+      destinationReference = LatLng(GlobalState.instance.fromLat!, GlobalState.instance.fromLng!);
+    } else {
+      final validDeviceLoc = (MapCoordinatesHelper.deviceLocation != null &&
+              SadatCityGeoData.isInSadatCity(
+                  MapCoordinatesHelper.deviceLocation!.latitude,
+                  MapCoordinatesHelper.deviceLocation!.longitude))
+          ? MapCoordinatesHelper.deviceLocation
+          : null;
+      destinationReference = validDeviceLoc ??
+          (sl<MapController>().currentMapCenter != null &&
+                  SadatCityGeoData.isInSadatCity(
+                      sl<MapController>().currentMapCenter!.latitude,
+                      sl<MapController>().currentMapCenter!.longitude)
+              ? sl<MapController>().currentMapCenter
+              : null) ??
+          SadatCityGeoData.cityCenter;
+    }
+
     final result = await Navigator.push(
       context,
       SnappyPageRoute(
         page: LocationSearchPage(
           title: l10n.whereTo,
           hintText: l10n.searchDestinationHint,
-          initialCoordinates: mapCenter,
+          initialCoordinates: destinationReference,
         ),
       ),
     );
@@ -427,71 +470,152 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                 ),
 
 
-                // Notifications Button
-                GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      SnappyPageRoute(page: const NotificationsPage()),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ListenableBuilder(
-                      listenable: sl<NotificationController>(),
-                      builder: (context, _) {
-                        final unreadCount = sl<NotificationController>().unreadCount;
-                        return Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            const Icon(
-                              Icons.notifications_none_outlined,
-                              color: AppColors.mediumBlue,
-                            ),
-                            if (unreadCount > 0)
-                              Positioned(
-                                top: -6,
-                                right: -6,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.error,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  constraints: const BoxConstraints(
-                                    minWidth: 16,
-                                    minHeight: 16,
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      '$unreadCount',
-                                      style: GoogleFonts.outfit(
-                                        color: Colors.white,
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
-                                        height: 1.0,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
+                // Action Buttons: Messages Center & Notifications
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Messages Center Button
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          SnappyPageRoute(page: const MessagesCenterPage()),
                         );
                       },
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ListenableBuilder(
+                          listenable: Listenable.merge([
+                            sl<NotificationController>(),
+                            SupportChatService.instance.unreadCountNotifier,
+                          ]),
+                          builder: (context, _) {
+                            final notifMsgCount = sl<NotificationController>().unreadMessagesCount;
+                            final supportCount = SupportChatService.instance.unreadCount;
+                            final totalUnreadMessages = notifMsgCount + supportCount;
+
+                            return Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                const Icon(
+                                  Icons.forum_outlined,
+                                  color: AppColors.mediumBlue,
+                                ),
+                                if (totalUnreadMessages > 0)
+                                  Positioned(
+                                    top: -6,
+                                    right: -6,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.error,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      constraints: const BoxConstraints(
+                                        minWidth: 18,
+                                        minHeight: 18,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          totalUnreadMessages > 99 ? '99+' : '$totalUnreadMessages',
+                                          style: GoogleFonts.outfit(
+                                            color: Colors.white,
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.bold,
+                                            height: 1.0,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
                     ),
-                  ),
+
+                    const SizedBox(width: 10),
+
+                    // Notifications Button
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          SnappyPageRoute(page: const NotificationsPage()),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ListenableBuilder(
+                          listenable: sl<NotificationController>(),
+                          builder: (context, _) {
+                            final unreadCount = sl<NotificationController>().unreadCount;
+                            return Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                const Icon(
+                                  Icons.notifications_none_outlined,
+                                  color: AppColors.mediumBlue,
+                                ),
+                                if (unreadCount > 0)
+                                  Positioned(
+                                    top: -6,
+                                    right: -6,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.error,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      constraints: const BoxConstraints(
+                                        minWidth: 18,
+                                        minHeight: 18,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          unreadCount > 99 ? '99+' : '$unreadCount',
+                                          style: GoogleFonts.outfit(
+                                            color: Colors.white,
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.bold,
+                                            height: 1.0,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

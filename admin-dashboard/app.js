@@ -11565,7 +11565,10 @@ const SADAT_CATEGORIES = [
   { id: 'factory', name: 'المصانع والشركات الصناعية', icon: 'ri-building-line', color: '#334155' },
   { id: 'religious', name: 'المساجد والكنائس', icon: 'ri-ancient-gate-fill', color: '#047857' },
   { id: 'government', name: 'الخدمات الحكومية', icon: 'ri-government-fill', color: '#1e3a8a' },
-  { id: 'transport', name: 'المواصلات والمواقف', icon: 'ri-bus-fill', color: '#b45309' }
+  { id: 'transport', name: 'المواصلات والمواقف', icon: 'ri-bus-fill', color: '#b45309' },
+  { id: 'residential', name: 'المناطق السكنية والأحياء', icon: 'ri-community-fill', color: '#0284c7' },
+  { id: 'industrial', name: 'المناطق الصناعية ومجمع المطورين', icon: 'ri-factory-fill', color: '#475569' },
+  { id: 'university', name: 'المجمعات الجامعية والبحثية', icon: 'ri-graduation-cap-fill', color: '#7c3aed' }
 ];
 
 const initialSadatPlaces = [

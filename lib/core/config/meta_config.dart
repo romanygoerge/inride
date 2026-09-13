@@ -6,14 +6,14 @@ class MetaConfig {
   /// Pass via `--dart-define=META_APP_ID=...` or update in strings.xml / Info.plist
   static String get appId => _appIdOverride ?? const String.fromEnvironment(
     'META_APP_ID',
-    defaultValue: 'YOUR_FACEBOOK_APP_ID',
+    defaultValue: '2257620351655440',
   );
 
   /// Meta Client Token (public client token from App Settings -> Advanced)
   /// Pass via `--dart-define=META_CLIENT_TOKEN=...` or update in strings.xml / Info.plist
   static String get clientToken => _clientTokenOverride ?? const String.fromEnvironment(
     'META_CLIENT_TOKEN',
-    defaultValue: 'YOUR_FACEBOOK_CLIENT_TOKEN',
+    defaultValue: '6b4d59c741c1b5b5bd1016d26d75f003',
   );
 
   /// App Display Name

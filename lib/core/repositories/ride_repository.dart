@@ -144,6 +144,19 @@ class RideRepository {
           continue;
         }
 
+        // Heartbeat / freshness check: ignore drivers inactive for > 5 minutes
+        final updatedAtRaw = driverMap['updated_at'];
+        if (updatedAtRaw != null) {
+          final updatedAt = DateTime.tryParse(updatedAtRaw.toString())?.toUtc();
+          if (updatedAt != null) {
+            final diffMinutes = DateTime.now().toUtc().difference(updatedAt).inMinutes.abs();
+            if (diffMinutes > 5) {
+              AppLogger.driverCheckLog(driverId.toString(), false, 'Driver heartbeat expired ($diffMinutes min ago)');
+              continue;
+            }
+          }
+        }
+
         double? driverLat = driverModel.currentLatitude ?? (driverMap['current_latitude'] as num?)?.toDouble();
         double? driverLng = driverModel.currentLongitude ?? (driverMap['current_longitude'] as num?)?.toDouble();
 
@@ -432,7 +445,7 @@ class RideRepository {
     final updateData = <String, dynamic>{
       'is_online': isOnline,
       'is_available': isAvailable,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
     if (lat != null) updateData['current_latitude'] = lat;
     if (lng != null) updateData['current_longitude'] = lng;
@@ -564,6 +577,18 @@ class RideRepository {
 
         final bool isAvailable = driver['is_available'] ?? driver['isAvailable'] ?? true;
         if (!isAvailable) return false;
+
+        // Freshness check: exclude drivers who haven't sent a location/heartbeat in > 5 minutes
+        final updatedAtRaw = driver['updated_at'];
+        if (updatedAtRaw != null) {
+          final updatedAt = DateTime.tryParse(updatedAtRaw.toString())?.toUtc();
+          if (updatedAt != null) {
+            final diffMinutes = DateTime.now().toUtc().difference(updatedAt).inMinutes.abs();
+            if (diffMinutes > 5) {
+              return false;
+            }
+          }
+        }
 
         double? dLat = ((driver['current_latitude'] ?? driver['currentLatitude']) as num?)?.toDouble();
         double? dLng = ((driver['current_longitude'] ?? driver['currentLongitude']) as num?)?.toDouble();

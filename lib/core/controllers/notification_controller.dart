@@ -16,14 +16,28 @@ class NotificationController extends ChangeNotifier {
   StreamSubscription<List<NotificationModel>>? _notificationsSubscription;
   StreamSubscription<int>? _unreadCountSubscription;
 
+  /// General notifications (excluding chat/message notifications) for the bell icon & notifications page
   List<NotificationModel> get notifications {
     final role = GlobalState.instance.currentRole;
-    return _notifications.where((n) => n.matchesRole(role)).toList();
+    return _notifications.where((n) => n.matchesRole(role) && !n.isMessageNotification).toList();
   }
 
+  /// Unread count for general notifications (bell badge)
   int get unreadCount {
     final role = GlobalState.instance.currentRole;
-    return _notifications.where((n) => !n.isRead && n.matchesRole(role)).length;
+    return _notifications.where((n) => !n.isRead && n.matchesRole(role) && !n.isMessageNotification).length;
+  }
+
+  /// Message and chat notifications exclusively for the Messages Center
+  List<NotificationModel> get messageNotifications {
+    final role = GlobalState.instance.currentRole;
+    return _notifications.where((n) => n.matchesRole(role) && n.isMessageNotification).toList();
+  }
+
+  /// Unread count for message and chat notifications (messages icon badge)
+  int get unreadMessagesCount {
+    final role = GlobalState.instance.currentRole;
+    return _notifications.where((n) => !n.isRead && n.matchesRole(role) && n.isMessageNotification).length;
   }
 
   bool get isLoading => _isLoading;
@@ -97,13 +111,53 @@ class NotificationController extends ChangeNotifier {
   Future<void> markAllAsRead() async {
     if (_userId == null) return;
     for (int i = 0; i < _notifications.length; i++) {
-      _notifications[i] = _notifications[i].copyWith(isRead: true);
+      if (!_notifications[i].isMessageNotification) {
+        _notifications[i] = _notifications[i].copyWith(isRead: true);
+      }
     }
     notifyListeners();
     try {
       await _repository.markAllAsRead(_userId!);
     } catch (e) {
       debugPrint("Error marking all read: $e");
+    }
+  }
+
+  /// Marks all chat and message notifications as read
+  Future<void> markAllMessagesAsRead() async {
+    if (_userId == null) return;
+    bool hasUnread = false;
+    for (int i = 0; i < _notifications.length; i++) {
+      if (_notifications[i].isMessageNotification && !_notifications[i].isRead) {
+        _notifications[i] = _notifications[i].copyWith(isRead: true);
+        unawaited(_repository.markAsRead(_userId!, _notifications[i].id));
+        hasUnread = true;
+      }
+    }
+    if (hasUnread) {
+      notifyListeners();
+    }
+  }
+
+  /// Marks message notifications for a specific room or conversation as read
+  Future<void> markMessagesForRoomAsRead(String roomId) async {
+    if (_userId == null || roomId.isEmpty) return;
+    bool hasUnread = false;
+    for (int i = 0; i < _notifications.length; i++) {
+      if (_notifications[i].isMessageNotification && !_notifications[i].isRead) {
+        final rId = _notifications[i].data['roomId']?.toString() ??
+            _notifications[i].data['room_id']?.toString() ??
+            _notifications[i].data['trip_id']?.toString() ??
+            _notifications[i].data['conversation_id']?.toString();
+        if (rId == roomId) {
+          _notifications[i] = _notifications[i].copyWith(isRead: true);
+          unawaited(_repository.markAsRead(_userId!, _notifications[i].id));
+          hasUnread = true;
+        }
+      }
+    }
+    if (hasUnread) {
+      notifyListeners();
     }
   }
 

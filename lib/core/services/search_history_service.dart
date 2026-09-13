@@ -67,17 +67,22 @@ class SearchHistoryService {
       }
     }
 
+    final placeToSave = place.copyWith(
+      distanceKm: null,
+      distanceMeters: null,
+    );
+
     if (existingIndex != -1) {
       // Update existing record with updated coordinates and fresh timestamp
       final old = _cachedHistory[existingIndex];
-      _cachedHistory[existingIndex] = place.copyWith(
+      _cachedHistory[existingIndex] = placeToSave.copyWith(
         latitude: place.latitude != 0.0 ? place.latitude : old.latitude,
         longitude: place.longitude != 0.0 ? place.longitude : old.longitude,
         timestamp: DateTime.now(),
       );
     } else {
       // Insert new record at top
-      _cachedHistory.insert(0, place);
+      _cachedHistory.insert(0, placeToSave);
     }
 
     // Limit to top 20 items

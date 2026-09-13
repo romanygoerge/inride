@@ -7,6 +7,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/models/place_location.dart';
 import '../../../../core/utils/map_coordinates_helper.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/services/places_search_service.dart';
 import '../../../../core/data/sadat_city_geo_data.dart';
 import '../../../../core/services/saved_places_service.dart';
 
@@ -41,6 +42,7 @@ class _MapLocationPickerPageState extends State<MapLocationPickerPage>
   String _resolvedPlaceName = 'جاري فحص الموقع...';
   String _resolvedAddress = 'حرك الخريطة لاختيار النقطة المحددة بدقة';
   Timer? _debounceTimer;
+  Timer? _searchDebounceTimer;
 
   // Inline search
   final TextEditingController _searchController = TextEditingController();
@@ -63,6 +65,7 @@ class _MapLocationPickerPageState extends State<MapLocationPickerPage>
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _searchDebounceTimer?.cancel();
     _searchController.dispose();
     _mapController.dispose();
     super.dispose();
@@ -149,31 +152,90 @@ class _MapLocationPickerPageState extends State<MapLocationPickerPage>
   }
 
   void _onSearchQueryChanged(String query) {
+    _searchDebounceTimer?.cancel();
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
       setState(() {
         _searchedPlaces = [];
         _showSearchResults = false;
+        _isSearching = false;
       });
       return;
     }
 
-    setState(() {
-      _isSearching = true;
-      _showSearchResults = true;
-    });
-
+    // 1. Instant local Sadat index results (0ms)
     final localResults = SadatCityGeoData.searchLocal(
       query: trimmed,
       userLat: _currentCenter.latitude,
       userLng: _currentCenter.longitude,
-      limit: 5,
+      limit: 6,
     );
 
     setState(() {
+      _isSearching = true;
+      _showSearchResults = true;
       _searchedPlaces = localResults;
-      _isSearching = false;
     });
+
+    // 2. Debounced multi-tier online search across all places, clinics, shops, and streets in Egypt
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 350), () async {
+      try {
+        final onlineResults = await PlacesSearchService.instance.searchPlaces(
+          query: trimmed,
+          latitude: _currentCenter.latitude,
+          longitude: _currentCenter.longitude,
+          radiusKm: 100.0,
+          limit: 15,
+        );
+
+        if (!mounted) return;
+        setState(() {
+          final combined = <PlaceLocation>[...localResults];
+          for (final r in onlineResults) {
+            if (!combined.any((item) => item.isDuplicateOf(r))) {
+              combined.add(r);
+            }
+          }
+          _searchedPlaces = combined.take(12).toList();
+          _isSearching = false;
+        });
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _isSearching = false;
+          });
+        }
+      }
+    });
+  }
+
+  void _selectAndReturn(PlaceLocation place) {
+    FocusScope.of(context).unfocus();
+    final dist = place.distanceKm ?? LocationService.instance.calculateDistance(
+      widget.initialCenter?.latitude ?? _currentCenter.latitude,
+      widget.initialCenter?.longitude ?? _currentCenter.longitude,
+      place.latitude,
+      place.longitude,
+    );
+
+    final confirmedPlace = place.copyWith(
+      distanceKm: dist,
+      distanceMeters: dist * 1000.0,
+      timestamp: DateTime.now(),
+    );
+
+    MapCoordinatesHelper.registerCoordinate(
+      confirmedPlace.formattedAddress,
+      ll.LatLng(confirmedPlace.latitude, confirmedPlace.longitude),
+    );
+    if (confirmedPlace.placeName.isNotEmpty) {
+      MapCoordinatesHelper.registerCoordinate(
+        confirmedPlace.placeName,
+        ll.LatLng(confirmedPlace.latitude, confirmedPlace.longitude),
+      );
+    }
+
+    Navigator.pop(context, confirmedPlace);
   }
 
   void _jumpToPlace(PlaceLocation place) {
@@ -189,6 +251,13 @@ class _MapLocationPickerPageState extends State<MapLocationPickerPage>
   }
 
   void _confirmSelection() {
+    final dist = LocationService.instance.calculateDistance(
+      widget.initialCenter?.latitude ?? _currentCenter.latitude,
+      widget.initialCenter?.longitude ?? _currentCenter.longitude,
+      _currentCenter.latitude,
+      _currentCenter.longitude,
+    );
+
     final place = PlaceLocation(
       latitude: _currentCenter.latitude,
       longitude: _currentCenter.longitude,
@@ -196,7 +265,14 @@ class _MapLocationPickerPageState extends State<MapLocationPickerPage>
       formattedAddress: _resolvedAddress,
       timestamp: DateTime.now(),
       category: 'map_pin',
+      distanceKm: dist,
+      distanceMeters: dist * 1000.0,
     );
+
+    MapCoordinatesHelper.registerCoordinate(_resolvedAddress, _currentCenter);
+    if (_resolvedPlaceName.isNotEmpty) {
+      MapCoordinatesHelper.registerCoordinate(_resolvedPlaceName, _currentCenter);
+    }
 
     Navigator.pop(context, place);
   }
@@ -366,9 +442,23 @@ class _MapLocationPickerPageState extends State<MapLocationPickerPage>
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final p = _searchedPlaces[index];
+                        final dist = p.distanceKm ?? LocationService.instance.calculateDistance(
+                          _currentCenter.latitude,
+                          _currentCenter.longitude,
+                          p.latitude,
+                          p.longitude,
+                        );
+
                         return ListTile(
                           dense: true,
-                          leading: const Icon(Icons.location_on_outlined, color: AppColors.mediumBlue, size: 20),
+                          leading: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: AppColors.mediumBlue.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.location_on_rounded, color: AppColors.mediumBlue, size: 18),
+                          ),
                           title: Text(
                             p.placeName,
                             style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13),
@@ -379,7 +469,30 @@ class _MapLocationPickerPageState extends State<MapLocationPickerPage>
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textSecondary),
                           ),
-                          onTap: () => _jumpToPlace(p),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (dist > 0)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade100,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '${dist.toStringAsFixed(1)} كم',
+                                    style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                                  ),
+                                ),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                icon: const Icon(Icons.center_focus_strong_rounded, size: 18, color: AppColors.mediumBlue),
+                                tooltip: 'معاينة بالدبوس على الخريطة',
+                                onPressed: () => _jumpToPlace(p),
+                              ),
+                            ],
+                          ),
+                          onTap: () => _selectAndReturn(p),
                         );
                       },
                     ),

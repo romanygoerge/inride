@@ -24,23 +24,34 @@ class OtpPage extends StatefulWidget {
   State<OtpPage> createState() => _OtpPageState();
 }
 
-class _OtpPageState extends State<OtpPage> {
+class _OtpPageState extends State<OtpPage> with WidgetsBindingObserver {
   final TextEditingController _otpController = TextEditingController();
   String _otp = '';
   int _secondsRemaining = 45;
   Timer? _timer;
+  String? _lastProcessedClipboard;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _startTimer();
+    _autoFillFromClipboard();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _otpController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _autoFillFromClipboard();
+    }
   }
 
   void _startTimer() {
@@ -430,7 +441,7 @@ class _OtpPageState extends State<OtpPage> {
     );
   }
 
-  /// Helpful message & paste button under the OTP input boxes
+  /// Helpful message under the OTP input boxes
   Widget _buildPasteTipWidget() {
     return Container(
       margin: const EdgeInsets.only(top: 14),
@@ -450,39 +461,11 @@ class _OtpPageState extends State<OtpPage> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'لو الرمز اللي بدخله خاطئ جرب تنسخ الرمز وتلصقه في هنا',
+              'لو الرمز اللي بتدخله خاطئ، تأكد من كتابة رمز التحقق المكون من 6 أرقام كما وصلك',
               style: GoogleFonts.cairo(
                 fontSize: 12,
                 color: AppColors.textSecondary,
                 height: 1.4,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          InkWell(
-            onTap: _pasteFromClipboard,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppColors.mediumBlue.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.mediumBlue.withValues(alpha: 0.2)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.content_paste_rounded, size: 14, color: AppColors.mediumBlue),
-                  const SizedBox(width: 4),
-                  Text(
-                    'لصق',
-                    style: GoogleFonts.cairo(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.mediumBlue,
-                    ),
-                  ),
-                ],
               ),
             ),
           ),
@@ -491,30 +474,88 @@ class _OtpPageState extends State<OtpPage> {
     );
   }
 
-  /// Extracts digits from clipboard and populates OTP input
-  Future<void> _pasteFromClipboard() async {
+  /// Smartly extracts a 6-digit OTP code from any copied WhatsApp message,
+  /// ignoring timestamps (12:30), dates (2026), phone numbers (010xxxxxxxx), and Arabic text.
+  static String? extractOtpCode(String text) {
+    if (text.trim().isEmpty) return null;
+
+    // 1. Normalize Eastern Arabic (Hindi) numerals (٠-٩) to standard English digits (0-9)
+    String normalized = text;
+    const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    for (int i = 0; i < 10; i++) {
+      normalized = normalized.replaceAll(arabicDigits[i], '$i');
+    }
+
+    // 2. High-priority contextual pattern: 6 digits directly following keywords
+    // E.g. "رمز التحقق الخاص بك في تطبيق inRide هو: 582914" or "code: 582914"
+    final contextualRegex = RegExp(
+      r'(?:رمز|كود|تحقق|تأكيد|هو|code|otp|inride)[\s:=-]*(\d{6})(?!\d)',
+      caseSensitive: false,
+    );
+    final contextualMatch = contextualRegex.firstMatch(normalized);
+    if (contextualMatch != null && contextualMatch.groupCount >= 1) {
+      return contextualMatch.group(1);
+    }
+
+    // 3. Strict standalone 6-digit pattern: exactly 6 digits not surrounded by other digits
+    // - Filters out 11-digit phone numbers (e.g. 01012345678)
+    // - Filters out 4-digit years (e.g. 2026)
+    // - Filters out 1-2 digit minutes/hours (e.g. 12:30, 5 دقائق)
+    final standaloneRegex = RegExp(r'(?<!\d)(\d{6})(?!\d)');
+    final matches = standaloneRegex.allMatches(normalized).map((m) => m.group(1)!).toList();
+    if (matches.isNotEmpty) {
+      return matches.first;
+    }
+
+    // 4. Raw digits fallback: if clipboard has only 6 digits
+    final onlyDigits = normalized.replaceAll(RegExp(r'[^\d]'), '');
+    if (onlyDigits.length == 6) {
+      return onlyDigits;
+    }
+
+    return null;
+  }
+
+  /// Automatically checks clipboard for 6-digit OTP when returning from WhatsApp or notification
+  Future<void> _autoFillFromClipboard() async {
+    if (_otp.length == 6) return;
+
     try {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
-      final text = data?.text ?? '';
-      final digits = text.replaceAll(RegExp(r'[^\d]'), '');
-      if (digits.isNotEmpty) {
-        final code = digits.length >= 6 ? digits.substring(0, 6) : digits;
+      final text = data?.text?.trim() ?? '';
+      if (text.isEmpty || text == _lastProcessedClipboard) return;
+
+      final code = extractOtpCode(text);
+
+      if (code != null && code.length == 6 && mounted) {
+        _lastProcessedClipboard = text;
         setState(() {
           _otpController.text = code;
           _otp = code;
         });
-        if (code.length == 6) {
-          _onConfirmPressed();
-        }
-      } else {
-        if (!mounted) return;
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('الحافظة لا تحتوي على أرقام لنسخها', style: GoogleFonts.cairo()),
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'تم التعرف على رمز التحقق تلقائياً ($code)',
+                    style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF16A34A),
             duration: const Duration(seconds: 2),
-            backgroundColor: AppColors.mediumBlue,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
+
+        _onConfirmPressed();
       }
     } catch (_) {}
   }

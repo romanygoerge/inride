@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/google_maps_config.dart';
 import '../data/sadat_city_geo_data.dart';
 import '../models/place_location.dart';
 import '../services/location_service.dart';
@@ -56,7 +57,7 @@ class PlacesSearchService {
 
     void addResult(PlaceLocation loc) {
       if (!loc.isValid) return;
-      // Key based on normalized name and rounded coordinates
+
       final normName = SadatCityGeoData.normalizeArabic(loc.placeName);
       final key = '${normName}_${loc.latitude.toStringAsFixed(3)}_${loc.longitude.toStringAsFixed(3)}';
       if (!seenKeys.contains(key) && !combinedResults.any((r) => r.isDuplicateOf(loc))) {
@@ -74,14 +75,14 @@ class PlacesSearchService {
     if (coordMatch != null) {
       final lat = double.tryParse(coordMatch.group(1)!);
       final lng = double.tryParse(coordMatch.group(2)!);
-      if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+      if (lat != null && lng != null) {
         final dist = LocationService.instance.calculateDistance(latitude, longitude, lat, lng);
         final loc = PlaceLocation(
           placeId: 'coord_${lat}_$lng',
           latitude: lat,
           longitude: lng,
           placeName: 'إحداثيات محددة ($lat, $lng)',
-          formattedAddress: 'الموقع المباشر بالإحداثيات',
+          formattedAddress: 'موقع محدد',
           timestamp: DateTime.now(),
           category: 'gps',
           distanceKm: dist,
@@ -92,7 +93,7 @@ class PlacesSearchService {
       }
     }
 
-    // 1. Instant Layer: High-speed local search in Sadat City Geo-Index
+    // 1. FIRST PRIORITY: Registered local database of Sadat City (Over 6,000 places)
     final sadatMatches = SadatCityGeoData.searchLocal(
       query: trimmedQuery,
       userLat: latitude,
@@ -103,37 +104,36 @@ class PlacesSearchService {
       addResult(loc);
     }
 
-    // 2. Search local general Egyptian directory as fallback
-    final localGeneralMatches = _searchLocalDirectory(trimmedQuery, latitude, longitude);
-    for (final loc in localGeneralMatches) {
-      addResult(loc);
-    }
+    // 2. Search Supabase registered Sadat City places table
+    try {
+      final supabaseResults = await _searchSupabase(trimmedQuery, latitude, longitude, limit: limit);
+      for (final loc in supabaseResults) {
+        addResult(loc);
+      }
+    } catch (_) {}
 
-    // 3. Parallel fetch from External APIs (Nominatim, Photon, Supabase)
-    // Only execute external network calls if local results are below threshold
-    final photonFuture = _searchPhoton(trimmedQuery, latitude, longitude);
-    final nominatimFuture = _searchNominatim(trimmedQuery, latitude, longitude);
-    final supabaseFuture = _searchSupabase(trimmedQuery, latitude, longitude, limit: limit);
+    // 3. SECOND PRIORITY (Fallback): Geographic search across Egypt if local database has few matches
+    // Queries Google Places, Photon, & OpenStreetMap Nominatim
+    if (combinedResults.length < 5) {
+      final googleFuture = _searchGooglePlaces(trimmedQuery, latitude, longitude);
+      final photonFuture = _searchPhoton(trimmedQuery, latitude, longitude);
+      final nominatimFuture = _searchNominatim(trimmedQuery, latitude, longitude);
 
-    final resultsList = await Future.wait([
-      nominatimFuture.catchError((_) => <PlaceLocation>[]),
-      photonFuture.catchError((_) => <PlaceLocation>[]),
-      supabaseFuture.catchError((_) => <PlaceLocation>[]),
-    ]);
+      final resultsList = await Future.wait([
+        googleFuture.catchError((_) => <PlaceLocation>[]),
+        nominatimFuture.catchError((_) => <PlaceLocation>[]),
+        photonFuture.catchError((_) => <PlaceLocation>[]),
+      ]);
 
-    // Add Nominatim results (restricted to Egypt & prioritized for Sadat City)
-    for (final loc in resultsList[0]) {
-      addResult(loc);
-    }
-
-    // Add Photon results (verified Egypt only)
-    for (final loc in resultsList[1]) {
-      addResult(loc);
-    }
-
-    // Add Supabase DB & Saved Places results
-    for (final loc in resultsList[2]) {
-      addResult(loc);
+      for (final loc in resultsList[0]) {
+        addResult(loc);
+      }
+      for (final loc in resultsList[1]) {
+        addResult(loc);
+      }
+      for (final loc in resultsList[2]) {
+        addResult(loc);
+      }
     }
 
     // 4. Smart Multi-Factor Ranking & Strict Relevance Filtering
@@ -180,6 +180,41 @@ class PlacesSearchService {
     final phoneticName = SadatCityGeoData.phoneticNormalize(loc.placeName);
     final phoneticQuery = SadatCityGeoData.phoneticNormalize(cleanQuery);
 
+    const genericTypeWords = {
+      'مطعم', 'مطاعم', 'محل', 'محلات', 'كافيه', 'كافيهات', 'مقهى', 'قهوة',
+      'صيدلية', 'صيدليات', 'دكتور', 'عيادة', 'عيادات', 'مستشفى', 'مستشفي',
+      'سوبر', 'ماركت', 'سوبرماركت', 'هايبر', 'بقال', 'بقالة',
+      'شركة', 'مكتب', 'سنتر', 'مركز', 'مدرسة', 'جامعة', 'كلية', 'معهد',
+      'مسجد', 'جامع', 'شارع', 'طريق', 'ميدان', 'حي', 'منطقة', 'المنطقة',
+      'فندق', 'بنك', 'بنزينة', 'محطة'
+    };
+
+    final List<String> coreTokens = queryTokens.where((t) => !genericTypeWords.contains(t)).toList();
+
+    // If query contains specific identifying tokens (e.g. 'الشامي' in 'مطعم الشامي'),
+    // this place MUST match the core token!
+    if (coreTokens.isNotEmpty) {
+      final hasCoreMatch = coreTokens.any((ct) {
+        final ctStem = ct.length > 3 && (ct.endsWith('ي') || ct.endsWith('ه') || ct.endsWith('ة') || ct.endsWith('ا'))
+            ? ct.substring(0, ct.length - 1)
+            : ct;
+        return nameNorm.contains(ct) ||
+            nameNorm.contains(ctStem) ||
+            phoneticName.contains(ct) ||
+            phoneticName.contains(ctStem) ||
+            loc.aliases.any((a) {
+              final aNorm = SadatCityGeoData.normalizeArabic(a);
+              return aNorm.contains(ct) || aNorm.contains(ctStem);
+            }) ||
+            addrNorm.contains(ct) ||
+            addrNorm.contains(ctStem) ||
+            SadatCityGeoData.computeTokenScore(queryTokens: [ct], targetTokens: nameNorm.split(' ')) >= 50.0;
+      });
+      if (!hasCoreMatch) {
+        return -1.0; // REJECT: irrelevant place!
+      }
+    }
+
     double textScore = 0.0;
     if (loc.finalScore != null && loc.finalScore! > 0) {
       textScore = loc.finalScore!;
@@ -195,18 +230,18 @@ class PlacesSearchService {
       textScore = 70.0;
     } else if (loc.mallName != null && SadatCityGeoData.normalizeArabic(loc.mallName!).contains(cleanQuery)) {
       textScore = 75.0;
-    } else if (queryTokens.isNotEmpty && queryTokens.every((t) => nameNorm.contains(t) || addrNorm.contains(t) || phoneticName.contains(t))) {
+    } else if (coreTokens.isNotEmpty && coreTokens.every((t) => nameNorm.contains(t) || addrNorm.contains(t) || phoneticName.contains(t))) {
       textScore = 65.0;
-    } else if (queryTokens.isNotEmpty && queryTokens.any((t) => nameNorm.contains(t) || phoneticName.contains(t))) {
-      textScore = 45.0;
+    } else if (coreTokens.isNotEmpty && coreTokens.any((t) => nameNorm.contains(t) || phoneticName.contains(t))) {
+      textScore = 50.0;
     } else if (addrNorm.contains(cleanQuery)) {
       textScore = 35.0;
-    } else {
-      // Check category intent dictionary
+    } else if (coreTokens.isEmpty) {
+      // Check category intent dictionary ONLY if query has no core tokens
       for (final entry in SadatCityGeoData.categoryIntentKeywords.entries) {
         for (final kw in entry.value) {
           final normKw = SadatCityGeoData.normalizeArabic(kw);
-          if (cleanQuery == normKw || cleanQuery.startsWith(normKw) || normKw.startsWith(cleanQuery)) {
+          if (cleanQuery == normKw) {
             if (loc.category == entry.key || loc.subCategory == entry.key) {
               textScore = 80.0;
               break;
@@ -214,24 +249,6 @@ class PlacesSearchService {
           }
         }
         if (textScore > 0) break;
-      }
-
-      if (textScore == 0.0) {
-        // Fuzzy token similarity check for misspelled queries
-        final targetTokens = [
-          ...nameNorm.split(' '),
-          ...phoneticName.split(' '),
-          ...addrNorm.split(' '),
-          ...loc.aliases.expand((a) => SadatCityGeoData.normalizeArabic(a).split(' ')),
-        ].where((t) => t.length > 1).toList();
-
-        final fScore = SadatCityGeoData.computeTokenScore(
-          queryTokens: queryTokens,
-          targetTokens: targetTokens,
-        );
-        if (fScore >= 35.0) {
-          textScore = fScore;
-        }
       }
     }
 
@@ -242,28 +259,11 @@ class PlacesSearchService {
 
     // Proximity score: places closer to user's current GPS position get a progressive bonus
     final distKm = loc.distanceKm ?? LocationService.instance.calculateDistance(userLat, userLng, loc.latitude, loc.longitude);
+    final double proxScore = (distKm <= 35.0) ? (20.0 * (1.0 - (distKm / 35.0))) : 0.0;
 
-    // Geographic Fence: When user is in/near Sadat City, discard external places (> 45km away)
-    // unless query explicitly targets that city/governorate.
-    final isUserInSadat = SadatCityGeoData.isInSadatCity(userLat, userLng) ||
-                          LocationService.instance.calculateDistance(userLat, userLng, SadatCityGeoData.cityCenter.latitude, SadatCityGeoData.cityCenter.longitude) < 35.0;
-    if (isUserInSadat && distKm > 45.0) {
-      final isExplicitExternal = cleanQuery.contains('قاهرة') ||
-                                 cleanQuery.contains('جيزة') ||
-                                 cleanQuery.contains('اسكندرية') ||
-                                 cleanQuery.contains('طنطا') ||
-                                 cleanQuery.contains('اكتوبر') ||
-                                 cleanQuery.contains('زايد');
-      if (!isExplicitExternal) {
-        return -1.0;
-      }
-    }
-
-    final double proxScore = (distKm <= 35.0) ? (25.0 * (1.0 - (distKm / 35.0))) : 0.0;
-
-    // Sadat City Metropolitan Priority Bonus (+30 points)
+    // Sadat City Metropolitan Priority Bonus (+40 points for local Sadat places)
     final bool inSadat = SadatCityGeoData.isInSadatCity(loc.latitude, loc.longitude);
-    final double cityBonus = inSadat ? 30.0 : -10.0;
+    final double cityBonus = inSadat ? 40.0 : 0.0;
 
     // User saved/history boost
     final double historyBonus = (loc.isSaved ? 10.0 : 0.0) + (loc.isHistory ? 5.0 : 0.0);
@@ -271,15 +271,72 @@ class PlacesSearchService {
     return textScore + proxScore + cityBonus + historyBonus;
   }
 
-  /// High-speed Photon (Komoot) Search Engine with location bias and Egypt-only filter
+  /// Google Places Search across Egypt with proximity bias
+  Future<List<PlaceLocation>> _searchGooglePlaces(String query, double userLat, double userLng) async {
+    final List<PlaceLocation> list = [];
+    final apiKey = GoogleMapsConfig.apiKey;
+    if (apiKey.isEmpty) return list;
+
+    try {
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/place/textsearch/json'
+        '?query=${Uri.encodeComponent(query)}'
+        '&location=$userLat,$userLng'
+        '&radius=50000'
+        '&language=ar'
+        '&region=eg'
+        '&key=$apiKey',
+      );
+
+      final response = await http.get(url).timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        final data = json.decode(utf8.decode(response.bodyBytes));
+        final status = data['status'] as String?;
+        if (status == 'OK') {
+          final results = data['results'] as List?;
+          if (results != null) {
+            for (final item in results) {
+              final geom = item['geometry']?['location'];
+              if (geom != null) {
+                final lat = (geom['lat'] as num?)?.toDouble();
+                final lng = (geom['lng'] as num?)?.toDouble();
+                if (lat != null && lng != null) {
+                  final name = item['name'] as String? ?? query;
+                  final address = item['formatted_address'] as String? ?? name;
+                  final placeId = item['place_id'] as String?;
+                  final distKm = LocationService.instance.calculateDistance(userLat, userLng, lat, lng);
+
+                  list.add(PlaceLocation(
+                    placeId: placeId != null ? 'google_$placeId' : null,
+                    latitude: lat,
+                    longitude: lng,
+                    placeName: name,
+                    formattedAddress: address,
+                    timestamp: DateTime.now(),
+                    category: 'landmark',
+                    distanceKm: distKm,
+                    distanceMeters: distKm * 1000,
+                  ));
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return list;
+  }
+
+  /// High-speed Photon (Komoot) Search Engine across Egypt
   Future<List<PlaceLocation>> _searchPhoton(String query, double userLat, double userLng) async {
     final List<PlaceLocation> list = [];
     try {
       final url = Uri.parse(
-        'https://photon.komoot.io/api/?q=${Uri.encodeComponent(query)}&lat=$userLat&lon=$userLng&limit=12',
+        'https://photon.komoot.io/api/?q=${Uri.encodeComponent(query)}&lat=$userLat&lon=$userLng&limit=10',
       );
       final response = await http.get(url, headers: {
-        'User-Agent': 'inRideApp/2.0 (contact: support@inride.app)'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) inRideApp/2.0',
+        'Accept': 'application/json',
       }).timeout(const Duration(seconds: 4));
 
       if (response.statusCode == 200) {
@@ -290,12 +347,9 @@ class PlacesSearchService {
             final geom = f['geometry'] as Map<String, dynamic>?;
             final props = f['properties'] as Map<String, dynamic>?;
             if (geom != null && props != null) {
-              // Strictly ensure result is from Egypt
-              final countryCode = props['countrycode']?.toString().toUpperCase() ?? '';
-              final countryName = props['country']?.toString() ?? '';
-              final isEgypt = countryCode == 'EG' || countryName.contains('مصر') || countryName.toLowerCase() == 'egypt';
-              if (!isEgypt && countryCode.isNotEmpty) {
-                continue;
+              final countryCode = (props['countrycode'] as String?)?.toLowerCase();
+              if (countryCode != null && countryCode != 'eg') {
+                continue; // Only places in Egypt
               }
 
               final coords = geom['coordinates'] as List?;
@@ -343,13 +397,12 @@ class PlacesSearchService {
     return list;
   }
 
-  /// OpenStreetMap Nominatim Search Engine restricted to Egypt and bounded for Sadat City
+  /// OpenStreetMap Nominatim Search Engine across Egypt
   Future<List<PlaceLocation>> _searchNominatim(String query, double userLat, double userLng) async {
     final List<PlaceLocation> list = [];
     try {
-      // Bounding box prioritizing Sadat City metropolitan area: [minLon, maxLat, maxLon, minLat]
       final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&format=jsonv2&addressdetails=1&accept-language=ar,en&countrycodes=eg&viewbox=30.3200,30.5500,30.7200,30.2200&bounded=0&limit=10',
+        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&format=jsonv2&addressdetails=1&accept-language=ar,en&countrycodes=eg&limit=10',
       );
       final response = await http.get(url, headers: {
         'User-Agent': 'inRideApp/2.0 (contact: support@inride.app)'
@@ -364,15 +417,12 @@ class PlacesSearchService {
           final placeId = item['place_id']?.toString();
           final type = item['type']?.toString();
 
-          final addressObj = item['address'] as Map<String, dynamic>?;
-          final countryCode = addressObj?['country_code']?.toString().toLowerCase() ?? '';
-          if (countryCode.isNotEmpty && countryCode != 'eg') {
-            continue;
-          }
-
-          if (lat != null && lon != null && lat != 0.0 && lon != 0.0) {
+          if (lat != null && lon != null) {
             final parts = displayName.split(',');
             final title = parts.first.trim();
+            final formatted = parts.length > 3
+                ? '${parts[0].trim()}، ${parts[1].trim()}، ${parts[2].trim()}'
+                : displayName;
             final distKm = LocationService.instance.calculateDistance(userLat, userLng, lat, lon);
 
             final loc = PlaceLocation(
@@ -380,7 +430,7 @@ class PlacesSearchService {
               latitude: lat,
               longitude: lon,
               placeName: title,
-              formattedAddress: displayName,
+              formattedAddress: formatted,
               timestamp: DateTime.now(),
               category: _mapOsmValueToCategory(type),
               distanceKm: distKm,
@@ -416,7 +466,7 @@ class PlacesSearchService {
           for (final item in sadatRpcResp) {
             if (item is Map) {
               final loc = PlaceLocation.fromJson(Map<String, dynamic>.from(item));
-              if (loc.isValid) {
+              if (loc.isValid && SadatCityGeoData.isInSadatCity(loc.latitude, loc.longitude)) {
                 list.add(loc);
               }
             }
@@ -428,12 +478,12 @@ class PlacesSearchService {
         try {
           String orFilter = 'name_ar.ilike.%$query%,normalized_name.ilike.%$query%,address.ilike.%$query%';
 
-          // Check if query matches a known category
+          // Check if query is an EXACT category intent (e.g. user typed literally "مطعم")
           final normQ = SadatCityGeoData.normalizeArabic(query);
           for (final entry in SadatCityGeoData.categoryIntentKeywords.entries) {
             for (final kw in entry.value) {
               final normKw = SadatCityGeoData.normalizeArabic(kw);
-              if (normQ == normKw || normQ.startsWith(normKw)) {
+              if (normQ == normKw) {
                 orFilter += ',category.eq.${entry.key}';
                 break;
               }
@@ -452,7 +502,7 @@ class PlacesSearchService {
           if (tableResp.isNotEmpty) {
             for (final item in tableResp) {
               final loc = PlaceLocation.fromJson(Map<String, dynamic>.from(item));
-              if (loc.isValid) {
+              if (loc.isValid && SadatCityGeoData.isInSadatCity(loc.latitude, loc.longitude)) {
                 list.add(loc);
               }
             }
@@ -469,7 +519,7 @@ class PlacesSearchService {
           'p_query': query,
           'p_lat': userLat,
           'p_lng': userLng,
-          'p_radius_km': 50.0,
+          'p_radius_km': 100.0,
           'p_limit': limit,
           'p_user_id': currentUserId,
         },
@@ -489,39 +539,8 @@ class PlacesSearchService {
     return list;
   }
 
-  /// Local comprehensive Egyptian geographic database for zero-latency instant matching
-  List<PlaceLocation> _searchLocalDirectory(String query, double userLat, double userLng) {
-    final List<PlaceLocation> matches = [];
-    final normQuery = _normalizeArabic(query);
-    if (normQuery.length < 2) return matches;
 
-    for (final entry in _egyptianHubs) {
-      final nameNorm = _normalizeArabic(entry['name'] as String);
-      final addressNorm = _normalizeArabic(entry['address'] as String);
-      final aliases = (entry['aliases'] as List<String>? ?? []).map(_normalizeArabic);
-
-      if (nameNorm.contains(normQuery) || addressNorm.contains(normQuery) || aliases.any((a) => a.contains(normQuery))) {
-        final lat = entry['lat'] as double;
-        final lng = entry['lng'] as double;
-        final dist = LocationService.instance.calculateDistance(userLat, userLng, lat, lng);
-
-        matches.add(PlaceLocation(
-          placeId: 'local_${entry['id']}',
-          latitude: lat,
-          longitude: lng,
-          placeName: entry['name'] as String,
-          formattedAddress: entry['address'] as String,
-          category: entry['category'] as String? ?? 'landmark',
-          timestamp: DateTime.now(),
-          distanceKm: dist,
-          distanceMeters: dist * 1000,
-        ));
-      }
-    }
-    return matches;
-  }
-
-  /// Retrieves nearby & popular reference landmarks when query is empty
+  /// Retrieves nearby & popular reference landmarks in Sadat City when query is empty
   Future<List<PlaceLocation>> getNearbyAndPopularPlaces({
     required double latitude,
     required double longitude,
@@ -530,48 +549,15 @@ class PlacesSearchService {
     final List<PlaceLocation> results = [];
     final Set<String> seen = {};
 
-    // 1. Prioritize Sadat City places sorted by proximity to user
+    // Prioritize Sadat City places sorted by proximity to user
     final sadatTop = SadatCityGeoData.getTopNearbyPlaces(
       userLat: latitude,
       userLng: longitude,
       limit: limit,
     );
     for (final loc in sadatTop) {
-      if (seen.add(loc.placeName)) {
+      if (SadatCityGeoData.isInSadatCity(loc.latitude, loc.longitude) && seen.add(loc.placeName)) {
         results.add(loc);
-      }
-    }
-
-    // 2. Add local directory reference hubs if needed
-    if (results.length < limit) {
-      final localCopy = List<Map<String, dynamic>>.from(_egyptianHubs);
-      localCopy.sort((a, b) {
-        final distA = LocationService.instance.calculateDistance(latitude, longitude, a['lat'] as double, a['lng'] as double);
-        final distB = LocationService.instance.calculateDistance(latitude, longitude, b['lat'] as double, b['lng'] as double);
-        return distA.compareTo(distB);
-      });
-
-      for (final entry in localCopy) {
-        final name = entry['name'] as String;
-        if (!seen.contains(name)) {
-          final lat = entry['lat'] as double;
-          final lng = entry['lng'] as double;
-          final dist = LocationService.instance.calculateDistance(latitude, longitude, lat, lng);
-          final loc = PlaceLocation(
-            placeId: 'hub_${entry['id']}',
-            latitude: lat,
-            longitude: lng,
-            placeName: name,
-            formattedAddress: entry['address'] as String,
-            category: entry['category'] as String? ?? 'landmark',
-            timestamp: DateTime.now(),
-            distanceKm: dist,
-            distanceMeters: dist * 1000,
-          );
-          seen.add(name);
-          results.add(loc);
-          if (results.length >= limit) break;
-        }
       }
     }
 
@@ -747,75 +733,5 @@ class PlacesSearchService {
         return 'landmark';
     }
   }
-
-  String _normalizeArabic(String text) => SadatCityGeoData.normalizeArabic(text);
-
-  // Comprehensive Egyptian Directory of major hubs, cities, landmarks, and zones
-  static final List<Map<String, dynamic>> _egyptianHubs = [
-    // Sadat City & Menoufia Hubs
-    {'id': 'sadat_1', 'name': 'جامعة مدينة السادات', 'address': 'المنطقة الإدارية، مدينة السادات، المنوفية', 'lat': 30.3789, 'lng': 30.5182, 'category': 'university', 'aliases': ['جامعة السادات', 'sadat university']},
-    {'id': 'sadat_2', 'name': 'المنطقة المركزية الأولى', 'address': 'المحور المركزي، مدينة السادات، المنوفية', 'lat': 30.3745, 'lng': 30.5050, 'category': 'residential', 'aliases': ['المنطقة الاولى', 'وسط البلد السادات']},
-    {'id': 'sadat_3', 'name': 'المنطقة الصناعية - السادات', 'address': 'طريق مصر الإسكندرية الصحراوي، السادات', 'lat': 30.3450, 'lng': 30.5500, 'category': 'landmark', 'aliases': ['صناعية السادات', 'المصانع']},
-    {'id': 'sadat_4', 'name': 'مستشفى السادات المركزي', 'address': 'الشارع العام، مدينة السادات، المنوفية', 'lat': 30.3700, 'lng': 30.5120, 'category': 'hospital', 'aliases': ['مستشفى السادات']},
-    {'id': 'sadat_5', 'name': 'المجاورة الرابعة - السادات', 'address': 'الحي الثاني، مدينة السادات، المنوفية', 'lat': 30.3800, 'lng': 30.4950, 'category': 'residential', 'aliases': ['المجاورة 4', 'الحي الثاني']},
-    {'id': 'sadat_6', 'name': 'المجاورة الحادية عشر - السادات', 'address': 'مدينة السادات، المنوفية', 'lat': 30.3860, 'lng': 30.5250, 'category': 'residential', 'aliases': ['المجاورة 11']},
-    {'id': 'sadat_7', 'name': 'قرية كفر داود', 'address': 'مركز السادات، محافظة المنوفية', 'lat': 30.4630, 'lng': 30.6010, 'category': 'residential', 'aliases': ['كفر داود']},
-    {'id': 'sadat_8', 'name': 'قرية الخطاطبة', 'address': 'مركز السادات، المنوفية', 'lat': 30.3010, 'lng': 30.6850, 'category': 'residential', 'aliases': ['الخطاطبة']},
-    {'id': 'sadat_9', 'name': 'شبين الكوم', 'address': 'عاصمة محافظة المنوفية', 'lat': 30.5596, 'lng': 31.0094, 'category': 'residential', 'aliases': ['شبين', 'shebin el kom']},
-    {'id': 'sadat_10', 'name': 'جامعة المنوفية', 'address': 'شارع جمال عبد الناصر، شبين الكوم، المنوفية', 'lat': 30.5620, 'lng': 31.0110, 'category': 'university', 'aliases': ['menoufia university']},
-
-    // 6th of October & Sheikh Zayed Hubs
-    {'id': 'oct_1', 'name': 'ميدان الحصري', 'address': 'الحي السابع، مدينة 6 أكتوبر، الجيزة', 'lat': 29.9754, 'lng': 30.9472, 'category': 'landmark', 'aliases': ['جامع الحصري', 'hosary square']},
-    {'id': 'oct_2', 'name': 'مول مصر (Mall of Egypt)', 'address': 'طريق الواحات، 6 أكتوبر، الجيزة', 'lat': 29.9722, 'lng': 31.0152, 'category': 'mall', 'aliases': ['مول مصر', 'mall of egypt']},
-    {'id': 'oct_3', 'name': 'مول العرب (Mall of Arabia)', 'address': 'ميدان جهينة، محور 26 يوليو، 6 أكتوبر', 'lat': 30.0075, 'lng': 30.9735, 'category': 'mall', 'aliases': ['مول العرب', 'mall of arabia']},
-    {'id': 'oct_4', 'name': 'ميدان جهينة', 'address': 'محور 26 يوليو، 6 أكتوبر، الجيزة', 'lat': 30.0110, 'lng': 30.9680, 'category': 'landmark', 'aliases': ['جهينة']},
-    {'id': 'oct_5', 'name': 'هايبر وان - الشيخ زايد', 'address': 'مدخل الشيخ زايد 1، طريق مصر الإسكندرية الصحراوي', 'lat': 30.0380, 'lng': 31.0180, 'category': 'mall', 'aliases': ['هايبر وان', 'hyper one']},
-    {'id': 'oct_6', 'name': 'أركان بلازا (Arkan Plaza)', 'address': 'شارع البستان، الشيخ زايد، الجيزة', 'lat': 30.0210, 'lng': 30.9990, 'category': 'mall', 'aliases': ['اركان', 'arkan']},
-    {'id': 'oct_7', 'name': 'جامعة 6 أكتوبر', 'address': 'المحور المركزي، 6 أكتوبر، الجيزة', 'lat': 29.9780, 'lng': 30.9430, 'category': 'university', 'aliases': ['o6u']},
-    {'id': 'oct_8', 'name': 'جامعة MSA (أكتوبر للعلوم الحديثة)', 'address': 'طريق الواحات، 6 أكتوبر، الجيزة', 'lat': 29.9570, 'lng': 30.9850, 'category': 'university', 'aliases': ['msa university']},
-
-    // Greater Cairo & Giza Hubs
-    {'id': 'cai_1', 'name': 'ميدان التحرير', 'address': 'وسط البلد، محافظة القاهرة', 'lat': 30.0444, 'lng': 31.2357, 'category': 'landmark', 'aliases': ['التحرير', 'tahrir square']},
-    {'id': 'cai_2', 'name': 'مطار القاهرة الدولي', 'address': 'طريق المطار، النزهة، القاهرة', 'lat': 30.1219, 'lng': 31.4056, 'category': 'airport', 'aliases': ['مطار القاهرة', 'cairo airport']},
-    {'id': 'cai_3', 'name': 'جامعة القاهرة', 'address': 'شارع ثروت، بين السرايات، الجيزة', 'lat': 30.0276, 'lng': 31.2101, 'category': 'university', 'aliases': ['cairo university']},
-    {'id': 'cai_4', 'name': 'شارع جامعة الدول العربية', 'address': 'المهندسين، الجيزة', 'lat': 30.0526, 'lng': 31.2014, 'category': 'landmark', 'aliases': ['جامعة الدول', 'المهندسين']},
-    {'id': 'cai_5', 'name': 'شارع شهاب - المهندسين', 'address': 'المهندسين، الجيزة', 'lat': 30.0550, 'lng': 31.1954, 'category': 'landmark', 'aliases': ['شارع شهاب']},
-    {'id': 'cai_6', 'name': 'شارع مصدق - الدقي', 'address': 'حي الدقي، الجيزة', 'lat': 30.0410, 'lng': 31.2040, 'category': 'landmark', 'aliases': ['شارع مصدق', 'الدقي']},
-    {'id': 'cai_7', 'name': 'شارع عباس العقاد', 'address': 'مدينة نصر، القاهرة', 'lat': 30.0580, 'lng': 31.3420, 'category': 'landmark', 'aliases': ['عباس العقاد', 'مدينة نصر']},
-    {'id': 'cai_8', 'name': 'سيتي ستارز مول (Citystars)', 'address': 'شارع عمر بن الخطاب، مدينة نصر، القاهرة', 'lat': 30.0730, 'lng': 31.3460, 'category': 'mall', 'aliases': ['سيتي ستارز', 'city stars']},
-    {'id': 'cai_9', 'name': 'كايرو فيستيفال سيتي مول (CFC)', 'address': 'الطريق الدائري، التجمع الخامس، القاهرة الجديدة', 'lat': 30.0310, 'lng': 31.4070, 'category': 'mall', 'aliases': ['كايرو فيستيفال', 'cfc mall']},
-    {'id': 'cai_10', 'name': 'شارع التسعين الجنوبي', 'address': 'التجمع الخامس، القاهرة الجديدة', 'lat': 30.0240, 'lng': 31.4650, 'category': 'landmark', 'aliases': ['شارع التسعين', 'التسعين الجنوبي']},
-    {'id': 'cai_11', 'name': 'الجامعة الأمريكية بالقاهرة (AUC)', 'address': 'شارع الجامعة الأمريكية، القاهرة الجديدة', 'lat': 30.0263, 'lng': 31.4913, 'category': 'university', 'aliases': ['auc']},
-    {'id': 'cai_12', 'name': 'محطة مصر - رمسيس', 'address': 'ميدان رمسيس، القاهرة', 'lat': 30.0626, 'lng': 31.2497, 'category': 'station', 'aliases': ['محطة رمسيس', 'قطار رمسيس']},
-    {'id': 'cai_13', 'name': 'المعادي - شارع 9', 'address': 'المعادي، القاهرة', 'lat': 29.9600, 'lng': 31.2780, 'category': 'landmark', 'aliases': ['شارع 9 المعادي', 'maadi street 9']},
-    {'id': 'cai_14', 'name': 'الزمالك - شارع 26 يوليو', 'address': 'حي الزمالك، القاهرة', 'lat': 30.0600, 'lng': 31.2210, 'category': 'landmark', 'aliases': ['الزمالك', 'zamalek']},
-    {'id': 'cai_15', 'name': 'الأهرامات وأبو الهول', 'address': 'شارع الأهرام، نزلة السمان، الهرم، الجيزة', 'lat': 29.9792, 'lng': 31.1342, 'category': 'landmark', 'aliases': ['الهرم', 'pyramids of giza']},
-
-    // Alexandria Hubs
-    {'id': 'alex_1', 'name': 'محطة الرمل', 'address': 'وسط مدينة الإسكندرية', 'lat': 31.2001, 'lng': 29.8999, 'category': 'landmark', 'aliases': ['الرمل', 'raml station']},
-    {'id': 'alex_2', 'name': 'مكتبة الإسكندرية', 'address': 'طريق الجيش، الشاطبي، الإسكندرية', 'lat': 31.2089, 'lng': 29.9092, 'category': 'university', 'aliases': ['مكتبة اسكندرية']},
-    {'id': 'alex_3', 'name': 'ميدان سيدي جابر', 'address': 'سيدي جابر، الإسكندرية', 'lat': 31.2180, 'lng': 29.9430, 'category': 'station', 'aliases': ['محطة سيدي جابر']},
-    {'id': 'alex_4', 'name': 'سان ستيفانو مول', 'address': 'طريق الجيش، سان ستيفانو، الإسكندرية', 'lat': 31.2430, 'lng': 29.9680, 'category': 'mall', 'aliases': ['سان ستيفانو', 'san stefano']},
-
-    // Delta & Egyptian Governorates
-    {'id': 'delta_1', 'name': 'طنطا - ميدان المحطة', 'address': 'عاصمة محافظة الغربية', 'lat': 30.7865, 'lng': 31.0004, 'category': 'landmark', 'aliases': ['طنطا', 'tanta']},
-    {'id': 'delta_2', 'name': 'المنصورة - ميدان المحافظة', 'address': 'عاصمة محافظة الدقهلية', 'lat': 31.0409, 'lng': 31.3785, 'category': 'landmark', 'aliases': ['المنصورة', 'mansoura']},
-    {'id': 'delta_3', 'name': 'الزقازيق', 'address': 'عاصمة محافظة الشرقية', 'lat': 30.5877, 'lng': 31.5020, 'category': 'landmark', 'aliases': ['الزقازيق', 'zagazig']},
-    {'id': 'delta_4', 'name': 'دمنهور', 'address': 'عاصمة محافظة البحيرة', 'lat': 31.0364, 'lng': 30.4687, 'category': 'landmark', 'aliases': ['دمنهور', 'damanhur']},
-    {'id': 'delta_5', 'name': 'بنها', 'address': 'عاصمة محافظة القليوبية', 'lat': 30.4660, 'lng': 31.1850, 'category': 'landmark', 'aliases': ['بنها', 'banha']},
-    {'id': 'delta_6', 'name': 'الإسماعيلية', 'address': 'محافظة الإسماعيلية', 'lat': 30.5965, 'lng': 32.2715, 'category': 'landmark', 'aliases': ['الاسماعيلية', 'ismailia']},
-    {'id': 'delta_7', 'name': 'السويس', 'address': 'محافظة السويس', 'lat': 29.9668, 'lng': 32.5498, 'category': 'landmark', 'aliases': ['السويس', 'suez']},
-    {'id': 'delta_8', 'name': 'بورسعيد', 'address': 'محافظة بورسعيد', 'lat': 31.2653, 'lng': 32.3019, 'category': 'landmark', 'aliases': ['بورسعيد', 'port said']},
-    {'id': 'delta_9', 'name': 'الفيوم', 'address': 'محافظة الفيوم', 'lat': 29.3084, 'lng': 30.8428, 'category': 'landmark', 'aliases': ['الفيوم', 'fayoum']},
-    {'id': 'delta_10', 'name': 'بني سويف', 'address': 'محافظة بني سويف', 'lat': 29.0661, 'lng': 31.0994, 'category': 'landmark', 'aliases': ['بني سويف']},
-    {'id': 'delta_11', 'name': 'المنيا', 'address': 'محافظة المنيا', 'lat': 28.0871, 'lng': 30.7618, 'category': 'landmark', 'aliases': ['المنيا', 'minya']},
-    {'id': 'delta_12', 'name': 'أسيوط', 'address': 'محافظة أسيوط', 'lat': 27.1783, 'lng': 31.1859, 'category': 'landmark', 'aliases': ['اسيوط', 'asyut']},
-    {'id': 'delta_13', 'name': 'سوهاج', 'address': 'محافظة سوهاج', 'lat': 26.5569, 'lng': 31.6948, 'category': 'landmark', 'aliases': ['سوهاج', 'sohag']},
-    {'id': 'delta_14', 'name': 'قنا', 'address': 'محافظة قنا', 'lat': 26.1551, 'lng': 32.7160, 'category': 'landmark', 'aliases': ['قنا', 'qena']},
-    {'id': 'delta_15', 'name': 'الأقصر', 'address': 'محافظة الأقصر', 'lat': 25.6872, 'lng': 32.6396, 'category': 'landmark', 'aliases': ['الاقصر', 'luxor']},
-    {'id': 'delta_16', 'name': 'أسوان', 'address': 'محافظة أسوان', 'lat': 24.0889, 'lng': 32.8998, 'category': 'landmark', 'aliases': ['اسوان', 'aswan']},
-    {'id': 'delta_17', 'name': 'الغردقة', 'address': 'محافظة البحر الأحمر', 'lat': 27.2579, 'lng': 33.8116, 'category': 'landmark', 'aliases': ['الغردقة', 'hurghada']},
-    {'id': 'delta_18', 'name': 'شرم الشيخ', 'address': 'محافظة جنوب سيناء', 'lat': 27.9158, 'lng': 34.3299, 'category': 'landmark', 'aliases': ['شرم الشيخ', 'sharm el sheikh']},
-    {'id': 'delta_19', 'name': 'مرسى مطروح', 'address': 'محافظة مطروح', 'lat': 31.3543, 'lng': 27.2373, 'category': 'landmark', 'aliases': ['مطروح', 'marsa matrouh']},
-  ];
 }
+

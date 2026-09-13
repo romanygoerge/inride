@@ -97,6 +97,9 @@ class _OsmMapWidgetState extends State<OsmMapWidget> with TickerProviderStateMix
   void _onStateChange() {
     if (!mounted || _isDisposed) return;
     final state = GlobalState.instance;
+    if (state.isOffline && _nearbyDriversList.isNotEmpty) {
+      _nearbyDriversList = [];
+    }
     if (state.rideStatus != RideStatus.idle && state.rideStatus != RideStatus.completed) {
       if (_isAutoFollow && state.driverLatitude != null && state.driverLongitude != null) {
         final driverLatLng = ll.LatLng(state.driverLatitude!, state.driverLongitude!);
@@ -346,7 +349,7 @@ class _OsmMapWidgetState extends State<OsmMapWidget> with TickerProviderStateMix
   void _listenToNearbyDrivers() {
     _driversSubscription?.cancel();
     final state = GlobalState.instance;
-    if (state.currentRole == UserRole.driver) {
+    if (state.isOffline || state.currentRole == UserRole.driver) {
       if (_nearbyDriversList.isNotEmpty) {
         setState(() {
           _nearbyDriversList = [];
@@ -364,6 +367,14 @@ class _OsmMapWidgetState extends State<OsmMapWidget> with TickerProviderStateMix
         )
         .listen((documents) {
       if (!mounted || _isDisposed) return;
+      if (GlobalState.instance.isOffline) {
+        if (_nearbyDriversList.isNotEmpty) {
+          setState(() {
+            _nearbyDriversList = [];
+          });
+        }
+        return;
+      }
       final List<NearbyDriverInfo> newList = [];
       try {
         for (final data in documents) {
@@ -475,8 +486,8 @@ class _OsmMapWidgetState extends State<OsmMapWidget> with TickerProviderStateMix
                       ),
                     ),
                     
-                  // Show nearby drivers only when idle and current role is passenger (rider)
-                  if (state.rideStatus == RideStatus.idle && state.currentRole == UserRole.rider)
+                  // Show nearby drivers only when connected, idle, and current role is passenger (rider)
+                  if (!state.isOffline && state.rideStatus == RideStatus.idle && state.currentRole == UserRole.rider)
                     for (final driverData in _nearbyDriversList)
                       fm.Marker(
                         point: ll.LatLng(driverData.lat, driverData.lng),

@@ -45,7 +45,7 @@ class DriverLocationService {
       await _supabase.from('drivers').update({
         'is_online': false,
         'is_available': false,
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', driverId);
       AppLogger.rideLog('DriverLocation', 'Stopped location updates and set driver $driverId offline');
     } catch (e, stack) {
@@ -73,7 +73,7 @@ class DriverLocationService {
       final updateData = <String, dynamic>{
         'id': driverId,
         'is_online': true,
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 
       if (latitude != null && longitude != null) {

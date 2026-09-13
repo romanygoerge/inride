@@ -11,13 +11,12 @@ import '../../../../core/services/places_search_service.dart';
 import '../../../../core/services/search_history_service.dart';
 import '../../../../core/services/meta_analytics_service.dart';
 import '../../../../core/theme/app_theme.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/utils/map_coordinates_helper.dart';
 import '../../../../generated/app_localizations.dart';
 import '../../../../core/utils/snappy_page_route.dart';
 import '../../../../core/services/saved_places_service.dart';
+import '../../../../core/state/global_state.dart';
 import 'map_location_picker_page.dart';
 
 class SearchResultItem {
@@ -47,15 +46,12 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   List<PlaceLocation> _searchResults = [];
-  List<PlaceLocation> _nearbyPlaces = [];
   List<PlaceLocation> _savedPlaces = [];
   List<PlaceLocation> _recentHistory = [];
   bool _isLoading = false;
   Timer? _debounceTimer;
 
   late LatLng _referenceCoordinates;
-  bool _isUsingMapCenter = false;
-  bool _isWaitingForMapsReturn = false;
   String? _lastProcessedClipboard;
 
   @override
@@ -72,42 +68,60 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
   }
 
   void _determineReferenceCoordinates() {
-    // 1. If GPS device location is available and valid, prioritize it for accurate distances to user
-    final deviceLoc = MapCoordinatesHelper.deviceLocation;
-    if (deviceLoc != null &&
-        deviceLoc.latitude != 0.0 &&
-        deviceLoc.longitude != 0.0 &&
-        !_isDokkiOrInvalid(deviceLoc)) {
-      _referenceCoordinates = deviceLoc;
-      _isUsingMapCenter = false;
-      return;
+    // 1. If searching for Destination ("إلى أين؟") and we already have a pickup location in Sadat City:
+    // Measuring the distance from the pickup location is what the passenger needs to see (actual ride trip distance)!
+    final isSearchingDestination = widget.title.contains('إلى') ||
+        widget.title.contains('To') ||
+        widget.title.contains('وجهت') ||
+        widget.title.contains('الوصول');
+    if (isSearchingDestination) {
+      final fromLat = GlobalState.instance.fromLat;
+      final fromLng = GlobalState.instance.fromLng;
+      if (fromLat != null &&
+          fromLng != null &&
+          fromLat != 0.0 &&
+          fromLng != 0.0 &&
+          SadatCityGeoData.isInSadatCity(fromLat, fromLng)) {
+        _referenceCoordinates = LatLng(fromLat, fromLng);
+        return;
+      }
     }
 
-    // 2. Initial coordinates passed from parent (if user moved the map)
+    // 2. Initial coordinates passed from parent (e.g. current map camera pin in Sadat City)
     final initial = widget.initialCoordinates;
     if (initial != null &&
         initial.latitude != 0.0 &&
         initial.longitude != 0.0 &&
-        !_isDokkiOrInvalid(initial)) {
+        !_isDokkiOrInvalid(initial) &&
+        SadatCityGeoData.isInSadatCity(initial.latitude, initial.longitude)) {
       _referenceCoordinates = initial;
-      _isUsingMapCenter = true;
       return;
     }
 
-    // 3. Current map camera center if valid and not Dokki fallback
+    // 3. Device GPS location ONLY IF physically inside Sadat City (prevents 80 km Cairo offset when testing)
+    final deviceLoc = MapCoordinatesHelper.deviceLocation;
+    if (deviceLoc != null &&
+        deviceLoc.latitude != 0.0 &&
+        deviceLoc.longitude != 0.0 &&
+        !_isDokkiOrInvalid(deviceLoc) &&
+        SadatCityGeoData.isInSadatCity(deviceLoc.latitude, deviceLoc.longitude)) {
+      _referenceCoordinates = deviceLoc;
+      return;
+    }
+
+    // 4. Current map camera center if valid and in Sadat City
     final mapCenter = sl<MapController>().currentMapCenter;
     if (mapCenter != null &&
         mapCenter.latitude != 0.0 &&
         mapCenter.longitude != 0.0 &&
-        !_isDokkiOrInvalid(mapCenter)) {
+        !_isDokkiOrInvalid(mapCenter) &&
+        SadatCityGeoData.isInSadatCity(mapCenter.latitude, mapCenter.longitude)) {
       _referenceCoordinates = mapCenter;
-      _isUsingMapCenter = true;
       return;
     }
 
-    // 4. Default to Sadat City Center
+    // 5. Default fallback to Sadat City Center (prevents impossible ~80 km distances)
     _referenceCoordinates = SadatCityGeoData.cityCenter;
-    _isUsingMapCenter = false;
   }
 
   Future<void> _loadInitialPlaces() async {
@@ -119,7 +133,9 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
       // 1. Load local search history & recalculate dynamic distances from reference coordinate
       await SearchHistoryService.instance.init();
       final rawHistory = SearchHistoryService.instance.getHistory();
-      _recentHistory = rawHistory.map((p) {
+      _recentHistory = rawHistory
+          .where((p) => SadatCityGeoData.isInSadatCity(p.latitude, p.longitude))
+          .map((p) {
         final dist = SadatCityGeoData.calculateDistance(
           _referenceCoordinates.latitude,
           _referenceCoordinates.longitude,
@@ -135,7 +151,9 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
       // 2. Load saved places & recalculate dynamic distances
       await SavedPlacesService.instance.init();
       final rawSaved = SavedPlacesService.instance.getSavedPlaces();
-      _savedPlaces = rawSaved.map((p) {
+      _savedPlaces = rawSaved
+          .where((p) => SadatCityGeoData.isInSadatCity(p.latitude, p.longitude))
+          .map((p) {
         final dist = SadatCityGeoData.calculateDistance(
           _referenceCoordinates.latitude,
           _referenceCoordinates.longitude,
@@ -147,13 +165,6 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
           distanceMeters: dist * 1000.0,
         );
       }).toList();
-
-      // 3. Load nearby reference places in Sadat City
-      _nearbyPlaces = await PlacesSearchService.instance.getNearbyAndPopularPlaces(
-        latitude: _referenceCoordinates.latitude,
-        longitude: _referenceCoordinates.longitude,
-        limit: 15,
-      );
     } catch (e) {
       debugPrint('[LocationSearchPage] Error loading initial places: $e');
     } finally {
@@ -177,92 +188,71 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _checkClipboardForLocation(autoSelectIfWaiting: true);
+      _checkClipboardForLocation();
     }
   }
 
-  Future<void> _checkClipboardForLocation({bool autoSelectIfWaiting = false, bool manualTrigger = false}) async {
+  Future<void> _checkClipboardForLocation() async {
     try {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
       final text = data?.text?.trim() ?? '';
-      if (text.isEmpty) {
-        if (manualTrigger && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'الحافظة فارغة! حدد المكان في خرائط جوجل واضغط مشاركة أو نسخ الرابط أولاً 📋',
-                style: GoogleFonts.cairo(fontSize: 12.5),
-              ),
-              backgroundColor: Colors.orange.shade800,
-            ),
-          );
-        }
-        return;
-      }
+      if (text.isEmpty || text == _lastProcessedClipboard) return;
 
-      if (text == _lastProcessedClipboard && !manualTrigger) return;
-
-      final coords = await MapCoordinatesHelper.extractCoordinatesFromText(text);
-      if (coords != null && mounted) {
-        if (autoSelectIfWaiting || _isWaitingForMapsReturn || manualTrigger) {
-          if (mounted) {
-            setState(() {
-              _isWaitingForMapsReturn = false;
-            });
-          }
-        }
+      final placeInfo = await MapCoordinatesHelper.extractPlaceFromTextOrUrl(text);
+      if (placeInfo != null && mounted) {
         _lastProcessedClipboard = text;
-        await _handleDetectedCoordinatesFromMaps(coords);
-      } else if (manualTrigger && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'لم يتم العثور على رابط أو إحداثيات صالحة في الحافظة. تأكد من نسخ رابط المكان من الخريطة.',
-              style: GoogleFonts.cairo(fontSize: 12.5),
-            ),
-            backgroundColor: Colors.orange.shade800,
-          ),
-        );
+        await _handleDetectedPlaceInfo(placeInfo);
       }
     } catch (_) {}
   }
 
-  Future<void> _handleDetectedCoordinatesFromMaps(LatLng coords) async {
+  Future<void> _handleDetectedPlaceInfo(ExtractedPlaceInfo placeInfo) async {
     if (!mounted) return;
+    final coords = placeInfo.coordinates;
+
+    // Reject places outside Sadat City
+    if (!SadatCityGeoData.isInSadatCity(coords.latitude, coords.longitude)) {
+      return;
+    }
+
+    final dist = SadatCityGeoData.calculateDistance(
+      _referenceCoordinates.latitude,
+      _referenceCoordinates.longitude,
+      coords.latitude,
+      coords.longitude,
+    );
+
+    final loc = PlaceLocation(
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      placeName: placeInfo.placeName,
+      formattedAddress: placeInfo.formattedAddress,
+      timestamp: DateTime.now(),
+      category: 'landmark',
+      distanceKm: double.parse(dist.toStringAsFixed(1)),
+      distanceMeters: dist * 1000.0,
+    );
+
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              'تم التقاط الموقع من خرائط جوجل 📍، جاري المعالجة...',
-              style: GoogleFonts.cairo(fontSize: 12.5, fontWeight: FontWeight.bold),
+            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'تم تحديد: ${placeInfo.placeName}',
+                style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
             ),
           ],
         ),
-        backgroundColor: AppColors.mediumBlue,
+        backgroundColor: const Color(0xFF16A34A),
         duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
-    );
-
-    final address = await MapCoordinatesHelper.reverseGeocode(coords.latitude, coords.longitude);
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
-    final loc = PlaceLocation(
-      latitude: coords.latitude,
-      longitude: coords.longitude,
-      placeName: address.isNotEmpty ? address.split('،').first.trim() : 'موقع من خرائط جوجل',
-      formattedAddress: address.isNotEmpty ? address : 'موقع محدد من خرائط جوجل (${coords.latitude.toStringAsFixed(4)}, ${coords.longitude.toStringAsFixed(4)})',
-      timestamp: DateTime.now(),
-      category: 'google_maps',
     );
 
     _selectPlace(loc, isHistory: false);
@@ -272,7 +262,9 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
     if (!mounted) return;
     final rawSaved = SavedPlacesService.instance.getSavedPlaces();
     setState(() {
-      _savedPlaces = rawSaved.map((p) {
+      _savedPlaces = rawSaved
+          .where((p) => SadatCityGeoData.isInSadatCity(p.latitude, p.longitude))
+          .map((p) {
         final dist = SadatCityGeoData.calculateDistance(
           _referenceCoordinates.latitude,
           _referenceCoordinates.longitude,
@@ -328,7 +320,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
           latitude: _referenceCoordinates.latitude,
           longitude: _referenceCoordinates.longitude,
           radiusKm: 100.0,
-          limit: 20,
+          limit: 25,
         );
 
         unawaited(MetaAnalyticsService.instance.logSearch(
@@ -397,18 +389,48 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
       if (pos != null) {
-        MapCoordinatesHelper.deviceLocation = LatLng(pos.latitude, pos.longitude);
-        final geocodedName = await MapCoordinatesHelper.reverseGeocode(pos.latitude, pos.longitude);
+        final isInsideSadat = SadatCityGeoData.isInSadatCity(pos.latitude, pos.longitude);
+        final effectiveLat = isInsideSadat ? pos.latitude : SadatCityGeoData.cityCenter.latitude;
+        final effectiveLng = isInsideSadat ? pos.longitude : SadatCityGeoData.cityCenter.longitude;
+
+        if (isInsideSadat) {
+          MapCoordinatesHelper.deviceLocation = LatLng(pos.latitude, pos.longitude);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'أنت خارج نطاق مدينة السادات. تم تعيين الموقع الافتراضي داخل السادات.',
+                      style: GoogleFonts.cairo(fontSize: 12.5),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFFE65100),
+              duration: const Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+        }
+
+        final geocodedName = isInsideSadat
+            ? await MapCoordinatesHelper.reverseGeocode(pos.latitude, pos.longitude)
+            : 'مدينة السادات - وسط المدينة';
         if (!mounted) return;
 
         final addressString = geocodedName.isNotEmpty
             ? geocodedName
-            : '${l10n?.myCurrentLocation ?? "موقعي الحالي"} (${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)})';
+            : '${l10n?.myCurrentLocation ?? "موقعي الحالي"} (${effectiveLat.toStringAsFixed(4)}, ${effectiveLng.toStringAsFixed(4)})';
 
         final loc = PlaceLocation(
-          latitude: pos.latitude,
-          longitude: pos.longitude,
-          placeName: l10n?.myCurrentLocation ?? 'موقعي الحالي',
+          latitude: effectiveLat,
+          longitude: effectiveLng,
+          placeName: isInsideSadat ? (l10n?.myCurrentLocation ?? 'موقعي الحالي') : 'مدينة السادات - وسط المدينة',
           formattedAddress: addressString,
           timestamp: DateTime.now(),
           category: 'gps',
@@ -416,12 +438,17 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
 
         _selectPlace(loc, isHistory: false);
       } else {
-        final fallback = MapCoordinatesHelper.deviceLocation ?? _referenceCoordinates;
+        final fallback = (MapCoordinatesHelper.deviceLocation != null &&
+                SadatCityGeoData.isInSadatCity(
+                    MapCoordinatesHelper.deviceLocation!.latitude,
+                    MapCoordinatesHelper.deviceLocation!.longitude))
+            ? MapCoordinatesHelper.deviceLocation!
+            : _referenceCoordinates;
         final loc = PlaceLocation(
           latitude: fallback.latitude,
           longitude: fallback.longitude,
           placeName: 'موقعي الحالي',
-          formattedAddress: 'الموقع الحالي',
+          formattedAddress: 'الموقع الحالي (مدينة السادات)',
           timestamp: DateTime.now(),
           category: 'gps',
         );
@@ -430,12 +457,17 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        final fallback = MapCoordinatesHelper.deviceLocation ?? _referenceCoordinates;
+        final fallback = (MapCoordinatesHelper.deviceLocation != null &&
+                SadatCityGeoData.isInSadatCity(
+                    MapCoordinatesHelper.deviceLocation!.latitude,
+                    MapCoordinatesHelper.deviceLocation!.longitude))
+            ? MapCoordinatesHelper.deviceLocation!
+            : _referenceCoordinates;
         final loc = PlaceLocation(
           latitude: fallback.latitude,
           longitude: fallback.longitude,
           placeName: 'موقعي الحالي',
-          formattedAddress: 'الموقع الحالي',
+          formattedAddress: 'الموقع الحالي (مدينة السادات)',
           timestamp: DateTime.now(),
           category: 'gps',
         );
@@ -444,281 +476,18 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
     }
   }
 
-  void _openMapPicker() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        final isIOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
-        final mapName = isIOS ? 'خرائط آبل أو جوجل' : 'تطبيق خرائط جوجل (Google Maps)';
-
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            boxShadow: [
-              BoxShadow(color: Colors.black26, blurRadius: 20, offset: Offset(0, -4)),
-            ],
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Handle Bar
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-
-                // Title
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.mediumBlue.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.map_rounded, color: AppColors.mediumBlue, size: 22),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'تحديد الموقع عبر الخريطة',
-                      style: GoogleFonts.cairo(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Option 1: Open external Google Maps / Apple Maps
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.green.shade200),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () async {
-                        Navigator.pop(sheetContext);
-                        await _launchGoogleMapsAndListen();
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.explore_rounded, color: Color(0xFF16A34A), size: 24),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'فتح في $mapName',
-                                    style: GoogleFonts.cairo(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: const Color(0xFF15803D),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'حدد مكانك بدقة، واضغط "مشاركة" أو "نسخ الرابط" ثم ارجع للتطبيق وسيلتقطه فوراً 🚀',
-                                    style: GoogleFonts.cairo(
-                                      fontSize: 11.5,
-                                      color: Colors.black87,
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Color(0xFF16A34A)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Option 2: Open In-App Interactive Map
-                Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.background,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () async {
-                        Navigator.pop(sheetContext);
-                        final pickedPlace = await Navigator.push<PlaceLocation>(
-                          context,
-                          SnappyPageRoute(
-                            page: MapLocationPickerPage(
-                              initialCenter: _referenceCoordinates,
-                              title: widget.title,
-                            ),
-                          ),
-                        );
-                        if (pickedPlace != null && mounted) {
-                          _selectPlace(pickedPlace, isHistory: false);
-                        }
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.satellite_alt_rounded, color: AppColors.mediumBlue, size: 24),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'خريطة inRide التفاعلية (مع الأقمار الصناعية)',
-                                    style: GoogleFonts.cairo(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'حدد الموقع بالدبوس مباشرة داخل التطبيق دون مغادرته 📍',
-                                    style: GoogleFonts.cairo(
-                                      fontSize: 11.5,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: AppColors.textSecondary),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Option 3: Quick Paste from Clipboard
-                TextButton.icon(
-                  onPressed: () async {
-                    Navigator.pop(sheetContext);
-                    await _checkClipboardForLocation(autoSelectIfWaiting: false);
-                  },
-                  icon: const Icon(Icons.content_paste_rounded, size: 18, color: AppColors.mediumBlue),
-                  label: Text(
-                    'لصق رابط أو إحداثيات تم نسخها مسبقاً من الخريطة',
-                    style: GoogleFonts.cairo(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.mediumBlue),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _launchGoogleMapsAndListen() async {
-    if (mounted) {
-      setState(() {
-        _isWaitingForMapsReturn = true;
-      });
-    }
-
-    final lat = _referenceCoordinates.latitude;
-    final lng = _referenceCoordinates.longitude;
-
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.share_location_rounded, color: Colors.white, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'في الخريطة: حدد مكانك واضغط "مشاركة" أو "نسخ الرابط" ثم ارجع هنا 📍',
-                style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 12.5),
-              ),
-            ),
-          ],
+  Future<void> _openMapPicker() async {
+    final pickedPlace = await Navigator.push<PlaceLocation>(
+      context,
+      SnappyPageRoute(
+        page: MapLocationPickerPage(
+          initialCenter: _referenceCoordinates,
+          title: widget.title,
         ),
-        duration: const Duration(seconds: 5),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: const Color(0xFF15803D),
       ),
     );
-
-    final isIOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
-    if (isIOS) {
-      final googleMapsUri = Uri.parse('comgooglemaps://?q=$lat,$lng&center=$lat,$lng');
-      final appleMapsUri = Uri.parse('http://maps.apple.com/?ll=$lat,$lng&q=$lat,$lng');
-      try {
-        if (await canLaunchUrl(googleMapsUri)) {
-          await launchUrl(googleMapsUri, mode: LaunchMode.externalApplication);
-          return;
-        }
-      } catch (_) {}
-      try {
-        await launchUrl(appleMapsUri, mode: LaunchMode.externalApplication);
-        return;
-      } catch (_) {
-        await launchUrl(
-          Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng'),
-          mode: LaunchMode.externalApplication,
-        );
-        return;
-      }
-    } else {
-      final geoUri = Uri.parse('geo:$lat,$lng?q=$lat,$lng');
-      final webUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
-      try {
-        final launched = await launchUrl(geoUri, mode: LaunchMode.externalApplication);
-        if (!launched) {
-          await launchUrl(webUri, mode: LaunchMode.externalApplication);
-        }
-      } catch (_) {
-        await launchUrl(webUri, mode: LaunchMode.externalApplication);
-      }
+    if (pickedPlace != null && mounted) {
+      _selectPlace(pickedPlace, isHistory: false);
     }
   }
 
@@ -726,22 +495,30 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
     final trimmed = query.trim();
     if (trimmed.isEmpty) return;
 
-    // Try high-speed geocoding first
-    final geocoded = await MapCoordinatesHelper.geocodeAddress(
-      trimmed,
+    // 1. Try geocoding biased to Sadat City first
+    var geocoded = await MapCoordinatesHelper.geocodeAddress(
+      '$trimmed، مدينة السادات',
       biasLat: _referenceCoordinates.latitude,
       biasLng: _referenceCoordinates.longitude,
     );
 
-    final lat = geocoded?.latitude ?? _referenceCoordinates.latitude;
-    final lon = geocoded?.longitude ?? _referenceCoordinates.longitude;
-    final dist = LocationService.instance.calculateDistance(_referenceCoordinates.latitude, _referenceCoordinates.longitude, lat, lon);
+    // 2. If not found in Sadat City, geocode generally across Egypt
+    geocoded ??= await MapCoordinatesHelper.geocodeAddress(
+      '$trimmed، مصر',
+      biasLat: _referenceCoordinates.latitude,
+      biasLng: _referenceCoordinates.longitude,
+    );
+
+    final rawLat = geocoded?.latitude ?? _referenceCoordinates.latitude;
+    final rawLon = geocoded?.longitude ?? _referenceCoordinates.longitude;
+    final isInSadat = SadatCityGeoData.isInSadatCity(rawLat, rawLon);
+    final dist = LocationService.instance.calculateDistance(_referenceCoordinates.latitude, _referenceCoordinates.longitude, rawLat, rawLon);
 
     final loc = PlaceLocation(
-      latitude: lat,
-      longitude: lon,
+      latitude: rawLat,
+      longitude: rawLon,
       placeName: trimmed,
-      formattedAddress: trimmed,
+      formattedAddress: isInSadat && (geocoded != null) ? 'مدينة السادات - $trimmed' : trimmed,
       timestamp: DateTime.now(),
       category: 'landmark',
       distanceKm: dist,
@@ -837,7 +614,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
               ),
             ),
 
-            // Top Fast Action Buttons (My GPS Location & Pick On Map)
+            // Top Fast Action Buttons (My GPS Location & Pin on Map)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Row(
@@ -887,20 +664,19 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
                   ),
                   const SizedBox(width: 8),
 
-                  // Pick On Map Button (Directly opens Google Maps / Apple Maps)
+                  // Pick On In-App Map Button (Interactive Map with Pin)
                   Expanded(
                     child: Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        onTap: _launchGoogleMapsAndListen,
-                        onLongPress: _openMapPicker,
+                        onTap: _openMapPicker,
                         borderRadius: BorderRadius.circular(12),
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF16A34A).withValues(alpha: 0.08),
+                            color: AppColors.primary.withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFF16A34A).withValues(alpha: 0.25)),
+                            border: Border.all(color: AppColors.primary.withValues(alpha: 0.18)),
                           ),
                           child: Row(
                             children: [
@@ -910,35 +686,19 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
                                   color: Colors.white,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.explore_rounded, color: Color(0xFF16A34A), size: 16),
+                                child: const Icon(Icons.map_outlined, color: AppColors.primary, size: 16),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      'حدد من على الخريطة',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.cairo(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: const Color(0xFF16A34A),
-                                      ),
-                                    ),
-                                    Text(
-                                      'Google / Apple Maps',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.cairo(
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: const Color(0xFF15803D),
-                                      ),
-                                    ),
-                                  ],
+                                child: Text(
+                                  'تحديد على الخريطة',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.cairo(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primary,
+                                  ),
                                 ),
                               ),
                             ],
@@ -950,112 +710,6 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
                 ],
               ),
             ),
-
-            // Active Google Maps / Apple Maps capture helper banner
-            if (_isWaitingForMapsReturn)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF16A34A).withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF16A34A).withValues(alpha: 0.3)),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF16A34A)),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'بانتظار تحديد الموقع من الخريطة... انسخ الرابط ثم اضغط تطبيق 📍',
-                              style: GoogleFonts.cairo(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.bold,
-                                color: const Color(0xFF15803D),
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close, size: 16, color: Colors.grey),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            onPressed: () {
-                              setState(() {
-                                _isWaitingForMapsReturn = false;
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () async {
-                                await _checkClipboardForLocation(autoSelectIfWaiting: true, manualTrigger: true);
-                              },
-                              icon: const Icon(Icons.content_paste_rounded, size: 15, color: Colors.white),
-                              label: Text(
-                                'تطبيق الموقع المنسوخ',
-                                style: GoogleFonts.cairo(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.white),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF16A34A),
-                                padding: const EdgeInsets.symmetric(vertical: 6),
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: _launchGoogleMapsAndListen,
-                            icon: const Icon(Icons.open_in_new_rounded, size: 14, color: Color(0xFF16A34A)),
-                            label: Text(
-                              'إعادة فتح الخريطة',
-                              style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF16A34A)),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFF16A34A)),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-            // Reference indicator if map was moved
-            if (_isUsingMapCenter && isQueryEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                child: Row(
-                  children: [
-                    const Icon(Icons.center_focus_strong_rounded, size: 13, color: AppColors.textSecondary),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'عرض الأماكن القريبة من المركز المحدد على الخريطة',
-                        style: GoogleFonts.cairo(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
 
             // Content List
             Expanded(
@@ -1161,12 +815,54 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
   }
 
   Widget _buildEmptyQueryContent() {
+    final hasSavedOrHistory = _savedPlaces.isNotEmpty || _recentHistory.isNotEmpty;
+    if (!hasSavedOrHistory) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  color: AppColors.mediumBlue.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.search_rounded, size: 34, color: AppColors.mediumBlue),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'ابحث عن أي وجهة تريدها',
+                style: GoogleFonts.cairo(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'اكتب اسم المكان أو الشارع أعلاه، أو حدد موقعك بدقة بالدبوس على الخريطة',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.cairo(
+                  fontSize: 12.5,
+                  color: AppColors.textSecondary,
+                  height: 1.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       children: [
-        // 1. Saved Places (Home, Work, etc.)
+        // 1. Saved Places (Home, Work, Favorites)
         if (_savedPlaces.isNotEmpty) ...[
-          _buildSectionHeader('الأماكن المحفوظة', Icons.bookmark_outline_rounded),
+          _buildSectionHeader('الأماكن المحفوظة', Icons.bookmark_rounded),
           ..._savedPlaces.map((p) => _buildPlaceListTile(p, isSaved: true)),
           const SizedBox(height: 12),
         ],
@@ -1175,16 +871,6 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
         if (_recentHistory.isNotEmpty) ...[
           _buildSectionHeader('عمليات البحث الأخيرة', Icons.history_rounded),
           ..._recentHistory.take(5).map((p) => _buildPlaceListTile(p, isHistory: true)),
-          const SizedBox(height: 12),
-        ],
-
-        // 3. Nearby Reference Places
-        if (_nearbyPlaces.isNotEmpty) ...[
-          _buildSectionHeader(
-            _isUsingMapCenter ? 'أماكن قريبة من مركز الخريطة' : 'أماكن مقترحة قريبة منك',
-            Icons.near_me_outlined,
-          ),
-          ..._nearbyPlaces.map((p) => _buildPlaceListTile(p)),
         ],
       ],
     );
@@ -1217,7 +903,24 @@ class _LocationSearchPageState extends State<LocationSearchPage> with WidgetsBin
       isHistory: isHistory || place.isHistory,
     );
 
-    final distanceStr = place.localizedDistance;
+    // Ensure distance is always calculated dynamically from the valid reference coordinate in Sadat City
+    String distanceStr;
+    if (place.latitude != 0.0 && place.longitude != 0.0) {
+      final double realDistKm = SadatCityGeoData.calculateDistance(
+        _referenceCoordinates.latitude,
+        _referenceCoordinates.longitude,
+        place.latitude,
+        place.longitude,
+      );
+      if (realDistKm < 1.0) {
+        final meters = (realDistKm * 1000).round();
+        distanceStr = '$meters م';
+      } else {
+        distanceStr = '${realDistKm.toStringAsFixed(1)} كم';
+      }
+    } else {
+      distanceStr = place.localizedDistance;
+    }
 
     return Material(
       color: Colors.transparent,

@@ -70,6 +70,19 @@ class NotificationModel {
     return true;
   }
 
+  /// Returns true if this notification represents a chat or support message
+  bool get isMessageNotification {
+    final t = type.trim().toLowerCase();
+    return t == 'chat_message' ||
+        t == 'new_message' ||
+        t == 'chat' ||
+        t == 'support_chat' ||
+        t == 'support_message' ||
+        t == 'ticket' ||
+        t.contains('chat') ||
+        t.contains('message');
+  }
+
   NotificationModel copyWith({
     String? id,
     String? title,

@@ -16,9 +16,9 @@ import '../../generated/app_localizations.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/utils/snappy_page_route.dart';
 import 'exit_prevention_dialog.dart';
-import 'invite_friends_sheet.dart';
 import 'app_drawer_banner_carousel.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../../features/rewards/presentation/pages/earn_more_money_page.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -259,11 +259,46 @@ class AppDrawer extends StatelessWidget {
                 ),
                 _buildDrawerItem(
                   context,
-                  icon: Icons.group_add_outlined,
-                  title: l10n.inviteFriends,
+                  icon: Icons.monetization_on_rounded,
+                  iconColor: const Color(0xFFF59E0B),
+                  title: LocaleController.instance.isArabic ? 'اكسب فلوس أكتر' : 'Earn More Money',
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF10B981), Color(0xFF059669)],
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.3),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.flash_on_rounded, color: Colors.white, size: 12),
+                        const SizedBox(width: 3),
+                        Text(
+                          'بونص 🎁',
+                          style: GoogleFonts.cairo(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   onTap: () {
                     Navigator.pop(context);
-                    InviteFriendsSheet.show(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const EarnMoreMoneyPage()),
+                    );
                   },
                 ),
                 _buildDrawerItem(

@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/state/global_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../generated/app_localizations.dart';
+import '../../features/rewards/presentation/pages/earn_more_money_page.dart';
 
 class InviteFriendsSheet extends StatefulWidget {
   const InviteFriendsSheet({super.key});
@@ -17,11 +18,9 @@ class InviteFriendsSheet extends StatefulWidget {
       'https://apps.apple.com/eg/app/inride/id6806885855';
 
   static void show(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const InviteFriendsSheet(),
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const EarnMoreMoneyPage()),
     );
   }
 

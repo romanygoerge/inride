@@ -486,62 +486,9 @@ class NotificationService {
       });
     }
 
-    // 4. Guaranteed Direct OneSignal REST API Fallback
+    // 4. Secure logging if delivery failed
     if (lastError != null) {
-      try {
-        debugPrint('[Notification] Attempting direct OneSignal REST API fallback...');
-        final Map<String, String> stringifiedData = {};
-        if (data != null) {
-          data.forEach((k, v) => stringifiedData[k] = v.toString());
-        }
-        stringifiedData['type'] = type;
-        stringifiedData['recipientId'] = cleanRecipient;
-
-        final Map<String, dynamic> osPayload = {
-          'app_id': OneSignalConfig.appId,
-          'target_channel': 'push',
-          'headings': {'en': title, 'ar': title},
-          'contents': {'en': body, 'ar': body},
-          'data': stringifiedData,
-          'android_accent_color': 'FF1976D2',
-          'priority': 10,
-          'ttl': 86400,
-          'include_aliases': {
-            'external_id': [cleanRecipient]
-          },
-        };
-
-        if (tokens.isNotEmpty) {
-          osPayload['include_subscription_ids'] = tokens;
-        }
-
-        final osResponse = await http.post(
-          Uri.parse('https://api.onesignal.com/notifications'),
-          headers: {
-            'Content-Type': 'application/json; charset=utf-8',
-            'Authorization': 'Key ${OneSignalConfig.restApiKey}',
-          },
-          body: jsonEncode(osPayload),
-        ).timeout(const Duration(seconds: 6));
-
-        if (osResponse.statusCode == 200 || osResponse.statusCode == 201) {
-          debugPrint('[Notification] ✅ Push notification delivered successfully via OneSignal direct fallback');
-          lastError = null;
-          lastPushSent = osPayload;
-          _addLog({
-            'timestamp': DateTime.now().toIso8601String().substring(11, 19),
-            'type': type,
-            'recipientId': recipientId,
-            'tokensCount': tokens.length,
-            'via': 'onesignal_direct',
-            'success': true,
-          });
-        } else {
-          debugPrint('[Notification] ⚠️ OneSignal direct error (HTTP ${osResponse.statusCode}): ${osResponse.body}');
-        }
-      } catch (osEx) {
-        debugPrint('[Notification] ⚠️ OneSignal direct fallback exception: $osEx');
-      }
+      debugPrint('[Notification] ⚠️ Push notification delivery failed: $lastError');
     }
   }
 }

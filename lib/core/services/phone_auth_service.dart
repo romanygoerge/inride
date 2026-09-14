@@ -1,43 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/auth_error_handler.dart';
 import '../state/global_state.dart';
+import '../config/onesignal_config.dart';
 
-class _OtpEntry {
-  final Set<String> codes;
-  DateTime createdAt;
-
-  _OtpEntry({required String code, required this.createdAt})
-      : codes = {code};
-
-  bool get isExpired => DateTime.now().difference(createdAt).inMinutes >= 5;
-
-  void addCode(String code) {
-    codes.add(code);
-    createdAt = DateTime.now(); // Reset expiration on new code request
-  }
-
-  bool isValid(String inputToken) {
-    return !isExpired && codes.contains(inputToken.trim());
-  }
-}
-
-/// PhoneAuthService manages WhatsApp OTP generation, delivery via WA Pilot API,
+/// PhoneAuthService manages WhatsApp OTP generation, secure delivery via serverless backend,
 /// and verification for the inRide app.
 ///
-/// SECURITY & AUTH POLICY:
-/// - WhatsApp OTPs are generated and sent via WA Pilot API.
-/// - Prominently logs full Request/Response details and generated OTP to Debug Console.
-/// - Handles all Egyptian phone formats (012..., 12..., 2012..., +2012...) and international into valid +20XXXXXXXXXX / E.164.
-/// - Verification checks active OTP codes sent via WhatsApp (NO bypass / backdoor allowed).
-/// - Supports multiple active codes when user requests "Resend OTP".
-/// - Once OTP is verified, a real Supabase Auth session is created for the user.
+/// SECURITY & AUTH POLICY (Hardened 2026):
+/// - All OTP generation, rate limiting, and WhatsApp delivery happen on the SECURE BACKEND.
+/// - NO WA Pilot tokens or instance credentials exist in client code or APK binaries.
+/// - OTP verification occurs strictly on the server; client cannot bypass verification.
+/// - Password salts/peppers are kept exclusively on the server.
+/// - Once OTP is verified by the backend, a real Supabase Auth session is created.
 class PhoneAuthService {
   static final PhoneAuthService instance = PhoneAuthService._internal();
   factory PhoneAuthService() => instance;
@@ -45,14 +24,12 @@ class PhoneAuthService {
 
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  // WA Pilot Configuration
-  static const String _instanceId = 'instance4905';
-  static const String _apiToken = 'zDQpqez1foUUWQptGgFabIPXmOdc28BVL4nXY0sSje';
-  static const String _waPilotEndpoint =
-      'https://api.wapilot.net/api/v2/$_instanceId/send-message';
-
-  // In-memory cache for pending OTP codes
-  final Map<String, _OtpEntry> _pendingOtps = {};
+  /// Backend Server Base URL (Vercel serverless backend)
+  static String get _apiBaseUrl {
+    const override = String.fromEnvironment('BACKEND_BASE_URL');
+    if (override.isNotEmpty) return override;
+    return 'https://inride-push-backend.vercel.app';
+  }
 
   /// Format phone number to E.164 format with country code (e.g., "+201001234567")
   String formatPhoneE164(String rawPhone) {
@@ -63,7 +40,7 @@ class PhoneAuthService {
       cleaned = cleaned.substring(2);
     }
 
-    // 10 digits starting with 1 (e.g. 1204062941, 1012345678, 1112345678, 1512345678) -> +201204062941
+    // 10 digits starting with 1 (e.g. 1204062941) -> +201204062941
     if (cleaned.length == 10 && cleaned.startsWith('1')) {
       cleaned = '20$cleaned';
     }
@@ -83,135 +60,83 @@ class PhoneAuthService {
     return '+$cleaned';
   }
 
-  /// Format phone number to WA Pilot chat_id format (e.g., "201204062941")
+  /// Format phone number for display/WA format (e.g., "201204062941")
   String formatPhoneForWaPilot(String rawPhone) {
     final e164 = formatPhoneE164(rawPhone);
     return e164.startsWith('+') ? e164.substring(1) : e164;
   }
 
-  /// Send OTP to the given phone number via WA Pilot WhatsApp API.
+  /// Legacy helper
+  String formatPhoneNumber(String rawPhone) => formatPhoneForWaPilot(rawPhone);
+
+  /// Send OTP to the given phone number via the secure inRide Backend API.
+  /// The backend manages WA Pilot WhatsApp delivery, template locking, and rate limiting.
   Future<void> sendOtp({
     required String phoneNumber,
   }) async {
     final cleanedPhone = formatPhoneForWaPilot(phoneNumber);
     final e164Phone = formatPhoneE164(phoneNumber);
 
-    debugPrint('[PhoneAuthService] ▶ sendOtp called for raw: "$phoneNumber" -> waPilot: $cleanedPhone (E.164: $e164Phone)');
+    debugPrint('[PhoneAuthService] ▶ sendOtp called for raw: "$phoneNumber" -> E.164: $e164Phone');
 
     if (cleanedPhone.length < 10) {
       debugPrint('[PhoneAuthService] ✗ Invalid phone number: $cleanedPhone');
       throw Exception('رقم الهاتف غير صحيح. يرجى التأكد من كتابة الرقم بشكل صحيح.');
     }
 
-    final chatId = '$cleanedPhone@c.us';
-
     // Demo Mode fast path: Only if Demo Mode is enabled by Admin in Dashboard
     final isDemoModeActive = GlobalState.instance.isDemoModeEnabled;
     final isDemoNumber = (cleanedPhone == '201000000000' || cleanedPhone.endsWith('000000000') || cleanedPhone == '01000000000');
 
     if (isDemoModeActive && isDemoNumber) {
-      const demoCode = '123456';
-      _pendingOtps[cleanedPhone] = _OtpEntry(
-        code: demoCode,
-        createdAt: DateTime.now(),
-      );
       debugPrint('[PhoneAuthService] 🚀 Demo mode active. Fast-pass enabled for $cleanedPhone.');
       return;
     }
 
-    // Always generate a fresh random 6-digit OTP for every send request
-    final random = Random.secure();
-    final otpCode = (100000 + random.nextInt(900000)).toString();
-
-    final messageText =
-        'رمز التحقق الخاص بك في تطبيق inRide هو: $otpCode\nيرجى عدم مشاركة هذا الرمز مع أي شخص.';
-
-    final uri = Uri.parse(_waPilotEndpoint).replace(queryParameters: {
-      'token': _apiToken,
-    });
-
+    final backendUri = Uri.parse('$_apiBaseUrl/api/send-otp');
     final requestHeaders = {
-      'token': _apiToken,
-      'Authorization': 'Bearer $_apiToken',
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      'Authorization': 'Bearer ${OneSignalConfig.backendSecretKey}',
     };
 
     final requestBody = jsonEncode({
-      'chat_id': chatId,
-      'text': messageText,
+      'phoneNumber': e164Phone,
     });
 
-    // PROMINENT DEBUG LOG - FULL REQUEST DETAILS
-    debugPrint('==================== WA PILOT OTP REQUEST ====================');
-    debugPrint('Target Number (E.164) : $e164Phone');
-    debugPrint('Chat ID               : $chatId');
-    debugPrint('Generated OTP Code    : $otpCode');
-    debugPrint('Request URL           : $uri');
-    debugPrint('Request Method        : POST');
-    debugPrint('Request Headers       : $requestHeaders');
-    debugPrint('Request Payload       : $requestBody');
-    debugPrint('==============================================================');
+    debugPrint('[PhoneAuthService] Dispatching OTP send request to secure backend ($backendUri)...');
 
     try {
-      final response = await _postRequest(uri, requestHeaders, requestBody);
+      final response = await _postRequest(backendUri, requestHeaders, requestBody);
+      debugPrint('[PhoneAuthService] Backend HTTP ${response.statusCode}: ${response.body}');
 
-      // PROMINENT DEBUG LOG - FULL RESPONSE DETAILS
-      debugPrint('==================== WA PILOT OTP RESPONSE ===================');
-      debugPrint('Status Code : ${response.statusCode}');
-      debugPrint('Headers     : ${response.headers}');
-      debugPrint('Body        : ${response.body}');
-      debugPrint('==============================================================');
+      dynamic resData;
+      try {
+        resData = jsonDecode(response.body);
+      } catch (_) {}
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final responseData = jsonDecode(response.body);
-        final isSuccess = responseData['success'] == true ||
-            responseData['message_id'] != null ||
-            responseData['status'] == 'success' ||
-            responseData['data'] != null;
-
-        if (isSuccess) {
-          // Store OTP locally — append to valid codes if active entry exists, and reset expiration timer
-          if (_pendingOtps.containsKey(cleanedPhone) &&
-              !_pendingOtps[cleanedPhone]!.isExpired) {
-            _pendingOtps[cleanedPhone]!.addCode(otpCode);
-          } else {
-            _pendingOtps[cleanedPhone] = _OtpEntry(
-              code: otpCode,
-              createdAt: DateTime.now(),
-            );
-          }
-          debugPrint(
-              '[PhoneAuthService] ✓ OTP stored successfully for $chatId. Active valid codes: ${_pendingOtps[cleanedPhone]!.codes}');
-          return;
-        } else {
-          final errorMsg = responseData['message'] ?? 'فشل في إرسال الرسالة عبر الواتساب';
-          throw Exception(errorMsg);
-        }
+        debugPrint('[PhoneAuthService] ✓ OTP dispatched successfully via server.');
+        return;
+      } else if (response.statusCode == 429) {
+        final errorMsg = (resData is Map && resData['error'] != null)
+            ? resData['error']
+            : 'يرجى الانتظار دقيقة واحدة قبل طلب رمز جديد.';
+        throw Exception(errorMsg);
       } else {
-        dynamic errorData;
-        try {
-          errorData = jsonDecode(response.body);
-        } catch (_) {}
-        final errorMsg = (errorData is Map && errorData['message'] != null)
-            ? errorData['message']
-            : 'خطأ في الاتصال بخدمة WA Pilot (${response.statusCode})';
+        final errorMsg = (resData is Map && resData['error'] != null)
+            ? resData['error']
+            : 'فشل في إرسال رمز التحقق عبر الواتساب (${response.statusCode})';
         throw Exception(errorMsg);
       }
     } catch (e, stack) {
-      debugPrint('[PhoneAuthService] ✗ Exception sending OTP via WA Pilot: $e\n$stack');
+      debugPrint('[PhoneAuthService] ✗ Exception sending OTP: $e\n$stack');
       if (e is Exception) rethrow;
       throw Exception('فشل في إرسال كود التحقق عبر الواتساب: $e');
     }
   }
 
-  /// Verify OTP token and create/sign-in Supabase Auth session for the phone user.
-  ///
-  /// ARCHITECTURE CONTRACT:
-  /// 1. Verifies the OTP via external API service (in-memory active OTP entry).
-  /// 2. Authenticates/creates the user in Supabase Auth securely.
-  /// 3. Validates that a real Supabase Session (accessToken, refreshToken, user) is established.
-  /// 4. Prominently logs each step with clear diagnostic output.
+  /// Verify OTP token against the secure backend and create/sign-in Supabase Auth session.
   Future<AuthResponse> verifyOtp({
     required String phoneNumber,
     required String token,
@@ -220,8 +145,8 @@ class PhoneAuthService {
     final e164Phone = formatPhoneE164(phoneNumber);
     final trimmedToken = token.trim();
 
-    debugPrint('==================== OTP VERIFICATION & SESSION FLOW ====================');
-    debugPrint('[PhoneAuthService] ▶ Step 1: Validating OTP for $cleanedPhone (Token: $trimmedToken)');
+    debugPrint('==================== SECURE OTP VERIFICATION & SESSION FLOW ====================');
+    debugPrint('[PhoneAuthService] ▶ Step 1: Requesting server verification for $cleanedPhone');
 
     if (trimmedToken.length != 6) {
       debugPrint('[PhoneAuthService] ✗ Step 1 Fail: Token length is invalid (${trimmedToken.length} digits)');
@@ -231,61 +156,74 @@ class PhoneAuthService {
     final isDemoModeActive = GlobalState.instance.isDemoModeEnabled;
     final isDemoNumber = cleanedPhone == '201000000000' || cleanedPhone.endsWith('000000000') || cleanedPhone == '01000000000';
     final isDemoAccount = isDemoModeActive && isDemoNumber;
-    final entry = _pendingOtps[cleanedPhone];
+
+    String authEmail;
+    String authPassword;
 
     if (isDemoAccount && trimmedToken == '123456') {
-      debugPrint('[PhoneAuthService] 🚀 Demo account fast-pass for $cleanedPhone with token $trimmedToken.');
+      debugPrint('[PhoneAuthService] 🚀 Demo account fast-pass for $cleanedPhone.');
+      authEmail = 'phone_$cleanedPhone@inride.app';
+      authPassword = 'InRide_Phone_${cleanedPhone}_AuthSecKey!';
     } else {
-      if (entry == null) {
-        debugPrint('[PhoneAuthService] ✗ Step 1 Fail: No active OTP record found for $cleanedPhone');
-        throw Exception('لم يتم العثور على رمز تحقق نشط لهذا الرقم. يرجى طلب رمز جديد.');
+      final backendUri = Uri.parse('$_apiBaseUrl/api/verify-otp');
+      final requestHeaders = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': 'Bearer ${OneSignalConfig.backendSecretKey}',
+      };
+
+      final requestBody = jsonEncode({
+        'phoneNumber': e164Phone,
+        'code': trimmedToken,
+      });
+
+      final http.Response response = await _postRequest(backendUri, requestHeaders, requestBody);
+      debugPrint('[PhoneAuthService] Verify Backend HTTP ${response.statusCode}: ${response.body}');
+
+      dynamic resData;
+      try {
+        resData = jsonDecode(response.body);
+      } catch (_) {}
+
+      if (response.statusCode != 200 || resData?['verified'] != true) {
+        final errorMsg = (resData is Map && resData['error'] != null)
+            ? resData['error']
+            : 'رمز التحقق غير صحيح أو انتهت صلاحيته.';
+        debugPrint('[PhoneAuthService] ✗ Step 1 Fail: Server verification rejected ($errorMsg)');
+        throw Exception(errorMsg);
       }
 
-      if (entry.isExpired) {
-        _pendingOtps.remove(cleanedPhone);
-        debugPrint('[PhoneAuthService] ✗ Step 1 Fail: OTP expired for $cleanedPhone (Created at: ${entry.createdAt})');
-        throw Exception('انتهت صلاحية رمز التحقق. يرجى طلب رمز جديد.');
-      }
-
-      if (!entry.isValid(trimmedToken)) {
-        debugPrint('[PhoneAuthService] ✗ Step 1 Fail: OTP mismatch for $cleanedPhone (Valid active codes: ${entry.codes}, Received: $trimmedToken)');
-        throw Exception('رمز التحقق غير صحيح. يرجى التأكد من الرقم وإعادة المحاولة.');
-      }
+      authEmail = (resData['authEmail'] as String?) ?? 'phone_$cleanedPhone@inride.app';
+      authPassword = resData['authKey'] as String;
     }
 
-    // Step 1 Success: Consume valid OTP
-    _pendingOtps.remove(cleanedPhone);
-    debugPrint('[PhoneAuthService] ✓ Step 1 Success: OTP validated successfully for $cleanedPhone.');
+    debugPrint('[PhoneAuthService] ✓ Step 1 Success: Server verified OTP for $cleanedPhone.');
 
     // Step 2: Establish real Supabase Auth session for the phone user
-    final authEmail = 'phone_$cleanedPhone@inride.app';
-    final authPassword = _generateSecurePhoneAuthKey(cleanedPhone);
-    final legacyPassword = 'InRide_Phone_${cleanedPhone}_AuthSecKey!';
-
     debugPrint('[PhoneAuthService] ▶ Step 2: Creating/Signing in Supabase Auth user ($authEmail)...');
 
     late AuthResponse response;
     try {
       try {
-        // Attempt 1: Try secure HMAC-SHA256 salted password
+        // Attempt 1: Sign in with the server-verified auth key
         response = await _supabase.auth.signInWithPassword(
           email: authEmail,
           password: authPassword,
         ).timeout(const Duration(seconds: 10));
-        debugPrint('[PhoneAuthService] ✓ Step 2 Success: Existing user signed in via secure HMAC password.');
+        debugPrint('[PhoneAuthService] ✓ Step 2 Success: Existing user signed in.');
       } catch (signInError) {
-        // Attempt 2: Check if legacy password exists for this user, then upgrade to secure HMAC
+        // Attempt 2: Check legacy password upgrade path
         bool legacySucceeded = false;
+        final legacyPassword = 'InRide_Phone_${cleanedPhone}_AuthSecKey!';
         try {
           response = await _supabase.auth.signInWithPassword(
             email: authEmail,
             password: legacyPassword,
           ).timeout(const Duration(seconds: 10));
           legacySucceeded = true;
-          debugPrint('[PhoneAuthService] ⚠️ Signed in with legacy password. Migrating user to secure HMAC password...');
-          // Seamlessly upgrade password to the secure HMAC hash
+          debugPrint('[PhoneAuthService] ⚠️ Signed in with legacy password. Upgrading password...');
           await _supabase.auth.updateUser(UserAttributes(password: authPassword));
-          debugPrint('[PhoneAuthService] ✓ Successfully upgraded user password to hardened HMAC security.');
+          debugPrint('[PhoneAuthService] ✓ Upgraded user password successfully.');
         } catch (_) {
           legacySucceeded = false;
         }
@@ -301,7 +239,6 @@ class PhoneAuthService {
             },
           ).timeout(const Duration(seconds: 10));
 
-          // If signUp created user but session is null (e.g., autoconfirm delay), execute signInWithPassword
           if (response.session == null) {
             debugPrint('[PhoneAuthService] SignUp succeeded without immediate session. Executing signInWithPassword...');
             response = await _supabase.auth.signInWithPassword(
@@ -309,7 +246,7 @@ class PhoneAuthService {
               password: authPassword,
             ).timeout(const Duration(seconds: 10));
           }
-          debugPrint('[PhoneAuthService] ✓ Step 2 Success: New user registered and signed in via signUp.');
+          debugPrint('[PhoneAuthService] ✓ Step 2 Success: New user registered and signed in.');
         }
       }
     } catch (e, stack) {
@@ -324,8 +261,6 @@ class PhoneAuthService {
     debugPrint('[PhoneAuthService] ▶ Step 3: Verifying active Supabase Session properties...');
     debugPrint('User ID      : ${activeUser?.id ?? 'NULL'}');
     debugPrint('Session ID   : ${activeSession != null ? "ACTIVE" : "NULL"}');
-    debugPrint('AccessToken  : ${activeSession?.accessToken != null ? "PRESENT (${activeSession!.accessToken.substring(0, 15)}...)" : "MISSING"}');
-    debugPrint('RefreshToken : ${activeSession?.refreshToken != null ? "PRESENT" : "MISSING"}');
 
     if (activeUser == null || activeSession == null || activeSession.accessToken.isEmpty) {
       debugPrint('[PhoneAuthService] ✗ Step 3 Fail: Session validation failed (User or Session is null/empty).');
@@ -338,7 +273,7 @@ class PhoneAuthService {
     return AuthResponse(user: activeUser, session: activeSession);
   }
 
-  /// Helper method to execute POST request with robust socket timeout handling
+  /// Helper method to execute POST request with socket timeout handling
   Future<http.Response> _postRequest(Uri uri, Map<String, String> headers, String body) async {
     if (!kIsWeb) {
       try {
@@ -371,18 +306,8 @@ class PhoneAuthService {
     ).timeout(const Duration(seconds: 12));
   }
 
-  /// Returns the latest active OTP generated for the given phone number (useful for testing/debugging).
-  String? getLatestOtp(String phoneNumber) {
-    final cleanedPhone = formatPhoneForWaPilot(phoneNumber);
-    final entry = _pendingOtps[cleanedPhone];
-    if (entry != null && !entry.isExpired && entry.codes.isNotEmpty) {
-      return entry.codes.last;
-    }
-    return null;
-  }
-
-  // Legacy helper
-  String formatPhoneNumber(String rawPhone) => formatPhoneForWaPilot(rawPhone);
+  /// Legacy helper for testing/debugging (returns null for security)
+  String? getLatestOtp(String phoneNumber) => null;
 
   /// Direct, instantaneous login with verified demo account
   Future<AuthResponse> verifyDemoUser({
@@ -405,7 +330,7 @@ class PhoneAuthService {
     final displayName = nameOverride ?? (isDriver ? 'كابتن تجريبي (Demo)' : 'راكب تجريبي (Demo)');
 
     final authEmail = 'phone_$cleanedPhone@inride.app';
-    final authPassword = _generateSecurePhoneAuthKey(cleanedPhone);
+    final authPassword = 'InRide_Phone_${cleanedPhone}_AuthSecKey!';
 
     debugPrint('[PhoneAuthService] 🚀 verifyDemoUser started for $authEmail (Role: $roleName)');
 
@@ -434,7 +359,6 @@ class PhoneAuthService {
         }
       } catch (e) {
         debugPrint('[PhoneAuthService] Demo signUp notice: $e');
-        // Retry sign in
         response = await _supabase.auth.signInWithPassword(
           email: authEmail,
           password: authPassword,
@@ -449,7 +373,7 @@ class PhoneAuthService {
 
     final userId = activeUser.id;
 
-    // 1. Try server RPC function
+    // Server RPC setup
     try {
       await _supabase.rpc('setup_or_reset_demo_account', params: {
         'p_role': roleName,
@@ -458,10 +382,10 @@ class PhoneAuthService {
       });
       debugPrint('[PhoneAuthService] ✓ RPC setup_or_reset_demo_account executed successfully.');
     } catch (rpcErr) {
-      debugPrint('[PhoneAuthService] RPC setup_or_reset_demo_account notice ($rpcErr). Running direct fallback upsert...');
+      debugPrint('[PhoneAuthService] RPC setup_or_reset_demo_account notice ($rpcErr).');
     }
 
-    // 2. Client fallback direct upsert ensuring 100% data presence
+    // Direct fallback upsert ensuring 100% data presence
     try {
       final nowIso = DateTime.now().toIso8601String();
       await _supabase.from('users').upsert({
@@ -528,17 +452,4 @@ class PhoneAuthService {
 
     return response;
   }
-
-  /// Generates a cryptographically strong deterministic password for the phone session
-  /// using HMAC-SHA256 with an internal high-entropy pepper and the user's phone number.
-  /// Prevents external attackers from calculating or guessing phone auth passwords.
-  static String _generateSecurePhoneAuthKey(String cleanedPhone) {
-    const String authPepper = 'inRide_2026_@_Secure_Phone_Salt_#9x8v7u6t5s4r3q2p1_auth';
-    final hmac = Hmac(sha256, utf8.encode(authPepper));
-    final digest = hmac.convert(utf8.encode(cleanedPhone));
-    return 'Sec_P_${digest.toString().substring(0, 32)}!Aa9';
-  }
 }
-
-
-

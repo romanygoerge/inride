@@ -1,5 +1,5 @@
 {
-  "name": "inride-push-backend",
+  "name": "inride-backend",
   "version": "1.0.0",
   "description": "Supabase & OneSignal Push Notification Backend for inRide",
   "main": "api/index.js",

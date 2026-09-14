@@ -6554,7 +6554,7 @@ async function dispatchDashboardPushNotification({ target = 'all', recipientId =
 
   // 1. Try Vercel backend with Bearer secret
   try {
-    const response = await fetch('https://inride-push-backend.vercel.app/api', {
+    const response = await fetch('https://inride-dashboard.vercel.app/api/push-notification', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -6564,7 +6564,7 @@ async function dispatchDashboardPushNotification({ target = 'all', recipientId =
     });
     if (response.ok) {
       sentSuccessfully = true;
-      console.log('[DashboardPush] Dispatched successfully via inride-push-backend');
+      console.log('[DashboardPush] Dispatched successfully via inride-dashboard backend');
     }
   } catch (e) {
     console.warn('[DashboardPush] Backend push endpoint failed:', e.message);
@@ -17085,14 +17085,17 @@ async function broadcastMaintenancePushNotification(isEnabling) {
 
   // Try Vercel Backend
   try {
-    const response = await fetch('https://inride-push-backend.vercel.app/api', {
+    const response = await fetch('https://inride-dashboard.vercel.app/api/push-notification', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer inride_secure_push_secret_2026_prod'
+      },
       body: JSON.stringify(pushPayload)
     });
     if (response.ok) {
       sentSuccessfully = true;
-      console.log('[BroadcastPush] Dispatched successfully via inride-push-backend');
+      console.log('[BroadcastPush] Dispatched successfully via inride-dashboard backend');
     }
   } catch (e) {
     console.warn('[BroadcastPush] Backend push endpoint unreachable:', e.message);

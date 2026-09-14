@@ -18,7 +18,7 @@ class OneSignalConfig {
   /// Backend Push Server URL for dispatching push notifications securely
   static String get backendPushUrl => const String.fromEnvironment(
     'BACKEND_PUSH_URL',
-    defaultValue: 'https://inride-push-backend.vercel.app/api',
+    defaultValue: 'https://inride-dashboard.vercel.app/api/push-notification',
   );
 
   /// Secret Header Key used between Flutter client and Backend Push Server

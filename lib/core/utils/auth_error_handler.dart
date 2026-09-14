@@ -15,12 +15,20 @@ class AuthErrorHandler {
           : 'No internet connection. Please check your network and try again.';
     }
 
-    final errorStr = error.toString().toLowerCase();
+    final rawErrorStr = error.toString();
+    final errorStr = rawErrorStr.toLowerCase();
 
-    if (errorStr.contains('network') || errorStr.contains('socketexception') || errorStr.contains('failed to host lookup')) {
+    if (errorStr.contains('failed to fetch') ||
+        errorStr.contains('clientexception') ||
+        errorStr.contains('xmlhttprequest') ||
+        errorStr.contains('network') ||
+        errorStr.contains('socketexception') ||
+        errorStr.contains('failed to host lookup') ||
+        errorStr.contains('connection refused') ||
+        errorStr.contains('connection closed')) {
       return isAr
-          ? 'تعذر الاتصال بالسيرفر. يرجى التأكد من الاتصال بالإنترنت.'
-          : 'Unable to connect to server. Please check internet connection.';
+          ? 'تعذر الاتصال بالسيرفر. يرجى التأكد من الاتصال بالإنترنت والمحاولة مجدداً.'
+          : 'Unable to connect to server. Please check your internet connection.';
     }
 
     if (error is AuthException) {
@@ -61,6 +69,13 @@ class AuthErrorHandler {
       return isAr ? 'تم إلغاء العملية بواسطة المستخدم.' : 'Operation canceled by user.';
     }
 
-    return isAr ? 'حدث خطأ: ${error.toString()}' : 'An error occurred: ${error.toString()}';
+    // Clean user-friendly message if it starts with Exception:
+    String cleanMsg = rawErrorStr;
+    if (cleanMsg.startsWith('Exception: ')) {
+      cleanMsg = cleanMsg.substring(11).trim();
+      return cleanMsg;
+    }
+
+    return isAr ? 'حدث خطأ: $cleanMsg' : 'An error occurred: $cleanMsg';
   }
 }

@@ -28,7 +28,7 @@ class PhoneAuthService {
   static String get _apiBaseUrl {
     const override = String.fromEnvironment('BACKEND_BASE_URL');
     if (override.isNotEmpty) return override;
-    return 'https://inride-push-backend.vercel.app';
+    return 'https://inride-dashboard.vercel.app';
   }
 
   /// Format phone number to E.164 format with country code (e.g., "+201001234567")

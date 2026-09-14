@@ -14,12 +14,14 @@ const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fylruevfksmqnkykqkin.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5bHJ1ZXZma3NtcW5reWtxa2luIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NTY3NDYsImV4cCI6MjEwMDMzMjc0Nn0.u5NVng7fsptjQOnNlEYP7MzNDp8_ssN94xSxzg8VYi4';
+const SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
 const WAPILOT_INSTANCE_ID = process.env.WAPILOT_INSTANCE_ID || 'instance4905';
 const WAPILOT_API_TOKEN = process.env.WAPILOT_API_TOKEN || 'zDQpqez1foUUWQptGgFabIPXmOdc28BVL4nXY0sSje';
 
 let supabase = null;
-if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-  supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+if (SUPABASE_URL && SUPABASE_KEY) {
+  supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 }
 
 // In-memory rate limiting fallback cache
@@ -160,16 +162,20 @@ module.exports = async function handler(req, res) {
     const otpHash = hashOtp(cleanPhone, otpCode);
     const expiresAt = new Date(now + 5 * 60 * 1000).toISOString(); // 5 minutes expiration
 
-    // 5. Store OTP in Database
+    // 5. Store OTP in Database via secure RPC
     if (supabase) {
       try {
-        await supabase.from('otp_requests').insert({
-          phone_number: cleanPhone,
-          otp_hash: otpHash,
-          attempts: 0,
-          is_verified: false,
-          expires_at: expiresAt
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc('store_phone_otp', {
+          p_phone: cleanPhone,
+          p_otp_hash: otpHash,
+          p_expires_at: expiresAt
         });
+        if (rpcRes && rpcRes.rate_limited) {
+          return res.status(429).json({
+            success: false,
+            error: rpcRes.error || 'يرجى الانتظار دقيقة واحدة قبل طلب رمز جديد.'
+          });
+        }
       } catch (insErr) {
         console.warn('[SendOtp] DB insert notice:', insErr.message);
       }

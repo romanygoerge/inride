@@ -13,11 +13,13 @@ const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fylruevfksmqnkykqkin.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5bHJ1ZXZma3NtcW5reWtxa2luIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NTY3NDYsImV4cCI6MjEwMDMzMjc0Nn0.u5NVng7fsptjQOnNlEYP7MzNDp8_ssN94xSxzg8VYi4';
+const SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
 const SERVER_AUTH_PEPPER = process.env.SERVER_AUTH_PEPPER || 'inRide_2026_@_Secure_Phone_Salt_#9x8v7u6t5s4r3q2p1_auth';
 
 let supabase = null;
-if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-  supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+if (SUPABASE_URL && SUPABASE_KEY) {
+  supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 }
 
 function cleanEgyptianPhone(rawPhone) {
@@ -82,55 +84,31 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // 2. Database OTP Verification
+    // 2. Database OTP Verification via secure RPC
     if (supabase) {
-      const nowIso = new Date().toISOString();
-      const { data: records, error } = await supabase
-        .from('otp_requests')
-        .select('*')
-        .eq('phone_number', cleanPhone)
-        .eq('is_verified', false)
-        .gte('expires_at', nowIso)
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (error || !records || records.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'انتهت صلاحية رمز التحقق أو لم يتم العثور على طلب نشط. يرجى طلب رمز جديد.'
-        });
-      }
-
-      const activeRecord = records[0];
-
-      if (activeRecord.attempts >= 3) {
-        // Invalidate record due to brute force attempt
-        await supabase.from('otp_requests').update({ is_verified: true }).eq('id', activeRecord.id);
-        return res.status(400).json({
-          success: false,
-          error: 'تم تجاوز عدد المحاولات المسموح بها. يرجى طلب رمز جديد.'
-        });
-      }
-
-      const expectedHash = activeRecord.otp_hash;
       const inputHash = hashOtp(cleanPhone, trimmedCode);
+      const { data: verifyRes, error: rpcErr } = await supabase.rpc('verify_phone_otp_hash', {
+        p_phone: cleanPhone,
+        p_otp_hash: inputHash
+      });
 
-      if (expectedHash !== inputHash) {
-        // Increment attempts count
-        await supabase.from('otp_requests').update({
-          attempts: activeRecord.attempts + 1
-        }).eq('id', activeRecord.id);
-
-        return res.status(400).json({
+      if (rpcErr) {
+        console.error('[VerifyOtp] RPC error:', rpcErr);
+        return res.status(500).json({
           success: false,
-          error: 'رمز التحقق غير صحيح. يرجى التأكد وإعادة المحاولة.'
+          error: 'فشل التحقق من الرمز في قاعدة البيانات.'
         });
       }
 
-      // Mark OTP as consumed/verified
-      await supabase.from('otp_requests').update({
-        is_verified: true
-      }).eq('id', activeRecord.id);
+      if (!verifyRes || verifyRes.valid !== true) {
+        const errorMsg = (verifyRes && verifyRes.error)
+          ? verifyRes.error
+          : 'رمز التحقق غير صحيح أو انتهت صلاحيته.';
+        return res.status(400).json({
+          success: false,
+          error: errorMsg
+        });
+      }
     }
 
     console.log(`[VerifyOtp] OTP successfully verified for ${cleanPhone}`);

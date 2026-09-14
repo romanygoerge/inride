@@ -892,7 +892,6 @@ function renderPage(page) {
         initProfileChatSync(activeProfileUid, 'rider');
         loadProfileRatings(activeProfileUid, 'rider');
         loadProfileWalletTransactions(activeProfileUid, 'rider');
-        loadCaptainMissionCard(activeProfileUid, 'rider');
         break;
       case 'ratings':
         container.innerHTML = renderRatingsPage();
@@ -9713,9 +9712,6 @@ function renderPassengerProfile() {
 
         <!-- Right Side: Details -->
         <div style="display:flex;flex-direction:column;gap:24px;">
-          <!-- Captain Daily Mission / Bonus Progress Banner (Shown if user has driver activity/mode) -->
-          <div id="profileCaptainMissionCardContainer"></div>
-
           <!-- Personal Details -->
           <div class="card">
             <div class="card-header">
@@ -18470,6 +18466,7 @@ async function loadRewardsData(showToastFeedback = false) {
     rewardsReferralsList = refData || [];
 
     // 3. Load Captain Missions Progress with joined driver details (ordered newest to oldest)
+    // NOTE: Only fetch captains who have explicitly clicked "بدء التحدي" (is_started = true)
     try {
       const { data: missionData, error: mErr } = await supabaseClient
         .from('driver_mission_progress')
@@ -18477,6 +18474,7 @@ async function loadRewardsData(showToastFeedback = false) {
           *,
           driver:users!driver_mission_progress_driver_id_fkey(id, name, phone_number, phone, avatar_url, role)
         `)
+        .eq('is_started', true)
         .order('mission_date', { ascending: false })
         .order('updated_at', { ascending: false });
 
@@ -18485,10 +18483,11 @@ async function loadRewardsData(showToastFeedback = false) {
         const { data: fallbackMissions } = await supabaseClient
           .from('driver_mission_progress')
           .select('*')
+          .eq('is_started', true)
           .order('updated_at', { ascending: false });
-        rewardsMissionsList = fallbackMissions || [];
+        rewardsMissionsList = (fallbackMissions || []).filter(m => m.is_started === true);
       } else {
-        rewardsMissionsList = missionData || [];
+        rewardsMissionsList = (missionData || []).filter(m => m.is_started === true);
       }
     } catch (e) {
       console.warn('Error loading driver mission progress:', e);
@@ -18881,8 +18880,8 @@ function renderRewardsActiveMissionBanner() {
   const target = mission?.target_trips || rewardsSettings.daily_mission_trips || 10;
   const reward = mission?.reward_amount || rewardsSettings.daily_mission_reward || 50;
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todayMissions = rewardsMissionsList.filter(m => m.mission_date === todayStr);
+  const todayStr = getMissionDateHelper(0);
+  const todayMissions = rewardsMissionsList.filter(m => m.mission_date === todayStr && m.is_started === true);
   const todayProgressCount = todayMissions.length;
   const todayCompletedCount = todayMissions.filter(m => m.is_completed || m.completed_trips >= m.target_trips).length;
   const totalTripsCount = todayMissions.reduce((acc, m) => acc + (m.completed_trips || 0), 0);
@@ -19022,7 +19021,8 @@ function getFilteredRewardsMissions() {
   const yesterdayStr = getMissionDateHelper(-1);
   const weekAgoStr = getMissionDateHelper(-7);
 
-  let list = [...rewardsMissionsList];
+  // Strictly only show captains who clicked "بدء التحدي" (is_started = true)
+  let list = rewardsMissionsList.filter(m => m.is_started === true);
 
   // 1. Date Filter
   if (rewardsMissionsDateFilter === 'today') {
@@ -19080,15 +19080,16 @@ function getRewardsMissionCounts() {
   const yesterdayStr = getMissionDateHelper(-1);
   const weekAgoStr = getMissionDateHelper(-7);
 
-  const totalAll = rewardsMissionsList.length;
-  const countToday = rewardsMissionsList.filter(m => m.mission_date === todayStr).length;
-  const countYesterday = rewardsMissionsList.filter(m => m.mission_date === yesterdayStr).length;
-  const countWeek = rewardsMissionsList.filter(m => m.mission_date >= weekAgoStr).length;
+  const activeStartedList = rewardsMissionsList.filter(m => m.is_started === true);
+  const totalAll = activeStartedList.length;
+  const countToday = activeStartedList.filter(m => m.mission_date === todayStr).length;
+  const countYesterday = activeStartedList.filter(m => m.mission_date === yesterdayStr).length;
+  const countWeek = activeStartedList.filter(m => m.mission_date >= weekAgoStr).length;
 
-  const countCompleted = rewardsMissionsList.filter(m => m.is_completed || m.completed_trips >= m.target_trips).length;
-  const countPendingPayout = rewardsMissionsList.filter(m => (m.is_completed || m.completed_trips >= m.target_trips) && !m.is_rewarded).length;
-  const countInProgress = rewardsMissionsList.filter(m => (m.mission_date >= todayStr) && !(m.is_completed || m.completed_trips >= m.target_trips)).length;
-  const countIncomplete = rewardsMissionsList.filter(m => (m.mission_date < todayStr) && !(m.is_completed || m.completed_trips >= m.target_trips)).length;
+  const countCompleted = activeStartedList.filter(m => m.is_completed || m.completed_trips >= m.target_trips).length;
+  const countPendingPayout = activeStartedList.filter(m => (m.is_completed || m.completed_trips >= m.target_trips) && !m.is_rewarded).length;
+  const countInProgress = activeStartedList.filter(m => (m.mission_date >= todayStr) && !(m.is_completed || m.completed_trips >= m.target_trips)).length;
+  const countIncomplete = activeStartedList.filter(m => (m.mission_date < todayStr) && !(m.is_completed || m.completed_trips >= m.target_trips)).length;
 
   return { totalAll, countToday, countYesterday, countWeek, countCompleted, countPendingPayout, countInProgress, countIncomplete };
 }
@@ -20255,6 +20256,13 @@ async function handleDeleteShift(shiftId) {
 async function loadCaptainMissionCard(uid, role = 'driver') {
   const container = document.getElementById('profileCaptainMissionCardContainer');
   if (!container) return;
+
+  // Challenges and daily missions are strictly for drivers/captains, never riders/passengers
+  if (role !== 'driver') {
+    container.innerHTML = '';
+    container.style.display = 'none';
+    return;
+  }
 
   try {
     if (!supabaseClient) {

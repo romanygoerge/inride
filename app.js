@@ -18214,11 +18214,6 @@ function renderRewardsPage() {
         </div>
       </div>
 
-      <!-- Live Active Challenge & Bonus Monitor Banner -->
-      <div id="rewardsActiveMissionBannerContainer">
-        ${renderRewardsActiveMissionBanner()}
-      </div>
-
       <!-- Captain Daily Mission Progress Table Container -->
       <div id="rewardsMissionsTableContainer">
         ${renderRewardsMissionsTable()}
@@ -18230,19 +18225,31 @@ function renderRewardsPage() {
       </div>
 
       <!-- Settings Configuration Form Card -->
-      <div class="card" style="padding:28px; border-radius:var(--radius-xl);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; border-bottom:2px solid var(--border-light); padding-bottom:14px;">
+      <div class="card" style="padding:28px; border-radius:var(--radius-xl); box-shadow:var(--shadow-md);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; border-bottom:2px solid var(--border-light); padding-bottom:16px; flex-wrap:wrap; gap:14px;">
           <div>
-            <h3 style="font-size:17px; font-weight:800; margin:0 0 4px 0; color:var(--text-primary); display:flex; align-items:center; gap:8px;">
+            <h3 style="font-size:18px; font-weight:800; margin:0 0 4px 0; color:var(--text-primary); display:flex; align-items:center; gap:8px;">
               <i class="ri-settings-3-fill" style="color:var(--medium-blue);"></i>
-              إعدادات ومعايير المكافآت والبونص
+              إعدادات ومعايير المكافآت والتحديات اليومية ⚙️
             </h3>
-            <p style="margin:0; font-size:13px; color:var(--text-secondary);">يمكنك تخصيص مبالغ المكافآت وعدد الرحلات المطلوبة في أي وقت ويتم تطبيقها فوراً.</p>
+            <p style="margin:0; font-size:13px; color:var(--text-secondary);">
+              تحكم شامل واحترافي في مبالغ البونص، عدد الرحلات، ومكافآت الإحالات لجميع الكباتن والركاب مع تزامن فوري في التطبيق وقاعدة البيانات.
+            </p>
           </div>
-          <button class="btn btn-primary" id="btnSaveRewardSettings" onclick="saveRewardSettings()" style="display:flex; align-items:center; gap:6px; background:linear-gradient(135deg, #1565C0, #1E88E5); box-shadow:0 4px 12px rgba(30,136,229,0.3);">
-            <i class="ri-save-3-line"></i>
-            <span>حفظ التعديلات</span>
-          </button>
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <button class="btn btn-outline btn-sm" type="button" onclick="showEditDailyMissionModal()" style="display:inline-flex; align-items:center; gap:6px; font-weight:700;">
+              <i class="ri-edit-2-line"></i>
+              <span>تعديل التحدي العام ✏️</span>
+            </button>
+            <button class="btn btn-outline btn-sm" type="button" onclick="showAddShiftModal()" style="display:inline-flex; align-items:center; gap:6px; font-weight:700;">
+              <i class="ri-add-circle-line"></i>
+              <span>إضافة فترة بونص ➕</span>
+            </button>
+            <button class="btn btn-primary btn-sm" id="btnSaveRewardSettings" onclick="saveRewardSettings()" style="display:inline-flex; align-items:center; gap:6px; background:linear-gradient(135deg, #1565C0, #1E88E5); box-shadow:0 4px 12px rgba(30,136,229,0.3); font-weight:800; padding:8px 18px;">
+              <i class="ri-save-3-line"></i>
+              <span>حفظ التعديلات 💾</span>
+            </button>
+          </div>
         </div>
 
         <form id="rewardSettingsForm" onsubmit="event.preventDefault(); saveRewardSettings();">
@@ -18312,7 +18319,7 @@ function renderRewardsPage() {
                 </div>
                 <small style="color:#64748B; font-size:11px; display:block; margin-top:8px;">
                   <i class="ri-information-line" style="color:#F59E0B;"></i>
-                  الكابتن الذي ينجز التارجت خلال اليوم يحصل فوراً على البونص في محفظته. التحدي يتجدد كل يوم تلقائياً — لو الكابتن عمل 9 من 10 امبارح ومكملش، بكرا يبدأ من الصفر في تحدي جديد.
+                  يتم احتساب إنجاز التحدي تلقائياً فور إتمام الكابتن للرحلات، ويتم اعتماد وإرسال البونص إلى محفظته من قِبل الإدارة لضمان أقصى درجات التدقيق المالي. التحدي يتجدد يومياً من الصفر.
                 </small>
               </div>
             </div>
@@ -18512,13 +18519,7 @@ async function loadRewardsData(showToastFeedback = false) {
     // 6. Update KPIs
     updateRewardsKPIs();
 
-    // 7. Update Live Active Mission Banner Container
-    const bannerContainer = document.getElementById('rewardsActiveMissionBannerContainer');
-    if (bannerContainer) {
-      bannerContainer.innerHTML = renderRewardsActiveMissionBanner();
-    }
-
-    // 8. Update Captain Missions Progress Table Container
+    // 7. Update Captain Missions Progress Table Container
     const missionsContainer = document.getElementById('rewardsMissionsTableContainer');
     if (missionsContainer) {
       missionsContainer.innerHTML = renderRewardsMissionsTable();
@@ -19735,25 +19736,38 @@ window.sendAllPendingMissionBonuses = sendAllPendingMissionBonuses;
 function renderRewardsShiftsTable() {
   const shifts = rewardsShiftsList || [];
   return `
-    <div class="card" style="padding:24px;">
+    <div class="card" style="padding:24px; border-radius:var(--radius-xl); box-shadow:var(--shadow-md);">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
         <div>
           <h3 style="font-size:17px; font-weight:800; margin:0 0 4px 0; color:var(--text-primary); display:flex; align-items:center; gap:8px;">
-            <i class="ri-time-zone-fill" style="color:var(--medium-blue);"></i>
-            فترات ومواعيد البونص المخصصة (Time-Window Shifts)
+            <i class="ri-time-zone-fill" style="color:var(--medium-blue); font-size:20px;"></i>
+            <span>فترات ومواعيد التحديات اليومية (06:00 ص إلى 12:00 منتصف الليل) ⏰</span>
           </h3>
-          <p style="margin:0; font-size:13px; color:var(--text-secondary);">يمكنك تحديد فترات مخصصة (صباحية، مسائية، أوقات الذروة) بعدد رحلات وبونص مستقل، ويتم مزامنتها تلقائياً مع التطبيق.</p>
+          <p style="margin:0; font-size:13px; color:var(--text-secondary);">
+            مقسمة إلى ثلاث فترات تغطي اليوم كاملاً (فترة الصباح، فترة الظهيرة، فترة المساء). يمكن تعديل أوقاتها، رحلاتها، ومبالغ البونص فورياً دون الحاجة لتعديل كود.
+          </p>
         </div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
-          <button class="btn btn-outline btn-sm" onclick="showEditDailyMissionModal()" style="display:flex; align-items:center; gap:6px;">
+          <button class="btn btn-outline btn-sm" onclick="showEditDailyMissionModal()" style="display:flex; align-items:center; gap:6px; font-weight:700;">
             <i class="ri-edit-line"></i>
             <span>تعديل التحدي اليومي العام</span>
           </button>
-          <button class="btn btn-primary btn-sm" onclick="showAddShiftModal()" style="display:flex; align-items:center; gap:6px;">
+          <button class="btn btn-primary btn-sm" onclick="showAddShiftModal()" style="display:flex; align-items:center; gap:6px; font-weight:700; background:linear-gradient(135deg, #1565C0, #1E88E5);">
             <i class="ri-add-line"></i>
-            <span>إضافة فترة بونص جديدة</span>
+            <span>إضافة فترة بونص جديدة ➕</span>
           </button>
         </div>
+      </div>
+
+      <!-- Informative Notice Banner -->
+      <div style="background:linear-gradient(90deg, rgba(30,136,229,0.08) 0%, rgba(16,185,129,0.08) 100%); border:1px solid rgba(30,136,229,0.25); border-radius:var(--radius-md); padding:12px 16px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+        <div style="display:flex; align-items:center; gap:10px; font-size:13px; font-weight:700; color:var(--text-primary);">
+          <span style="font-size:18px;">💡</span>
+          <span>فترات اليوم الثلاث: <strong>فترة الصباح (06:00 ص - 12:00 ظ)</strong> • <strong>فترة الظهيرة (12:00 ظ - 06:00 م)</strong> • <strong>فترة المساء (06:00 م - 12:00 منتصف الليل)</strong>. تنتهي التحديات بانتهاء اليوم ويبدأ يوم جديد من الصفر.</span>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadRewardsData(true)" style="padding:4px 10px; font-size:11px; display:flex; align-items:center; gap:4px;">
+          <i class="ri-refresh-line"></i> تحديث الفترات
+        </button>
       </div>
 
       <div style="overflow-x:auto;">
@@ -19839,6 +19853,9 @@ function formatTimeSimple(timeStr) {
     const parts = timeStr.split(':');
     let hour = parseInt(parts[0], 10);
     const min = parts[1] || '00';
+    if (hour === 23 && parseInt(min, 10) >= 59) {
+      return '12:00 منتصف الليل';
+    }
     const ampm = hour >= 12 ? 'م' : 'ص';
     if (hour > 12) hour -= 12;
     if (hour === 0) hour = 12;

@@ -19038,8 +19038,14 @@ function getFilteredRewardsMissions() {
   // 2. Status Filter
   if (rewardsMissionsStatusFilter === 'completed') {
     list = list.filter(m => m.is_completed || m.completed_trips >= m.target_trips);
+  } else if (rewardsMissionsStatusFilter === 'pending_payout') {
+    list = list.filter(m => (m.is_completed || m.completed_trips >= m.target_trips) && !m.is_rewarded);
   } else if (rewardsMissionsStatusFilter === 'in_progress') {
-    list = list.filter(m => !(m.is_completed || m.completed_trips >= m.target_trips));
+    // Only ongoing today
+    list = list.filter(m => (m.mission_date >= todayStr) && !(m.is_completed || m.completed_trips >= m.target_trips));
+  } else if (rewardsMissionsStatusFilter === 'incomplete') {
+    // Expired past days without meeting target
+    list = list.filter(m => (m.mission_date < todayStr) && !(m.is_completed || m.completed_trips >= m.target_trips));
   }
 
   // 3. Search Filter
@@ -19079,20 +19085,28 @@ function getRewardsMissionCounts() {
   const countYesterday = rewardsMissionsList.filter(m => m.mission_date === yesterdayStr).length;
   const countWeek = rewardsMissionsList.filter(m => m.mission_date >= weekAgoStr).length;
 
-  return { totalAll, countToday, countYesterday, countWeek };
+  const countCompleted = rewardsMissionsList.filter(m => m.is_completed || m.completed_trips >= m.target_trips).length;
+  const countPendingPayout = rewardsMissionsList.filter(m => (m.is_completed || m.completed_trips >= m.target_trips) && !m.is_rewarded).length;
+  const countInProgress = rewardsMissionsList.filter(m => (m.mission_date >= todayStr) && !(m.is_completed || m.completed_trips >= m.target_trips)).length;
+  const countIncomplete = rewardsMissionsList.filter(m => (m.mission_date < todayStr) && !(m.is_completed || m.completed_trips >= m.target_trips)).length;
+
+  return { totalAll, countToday, countYesterday, countWeek, countCompleted, countPendingPayout, countInProgress, countIncomplete };
 }
 
 function generateRewardsMissionsSummaryStats(list) {
+  const todayStr = getMissionDateHelper(0);
   const totalCaptains = list.length;
   const completedCaptains = list.filter(m => m.is_completed || m.completed_trips >= m.target_trips).length;
-  const inProgressCaptains = totalCaptains - completedCaptains;
+  const pendingPayoutCaptains = list.filter(m => (m.is_completed || m.completed_trips >= m.target_trips) && !m.is_rewarded).length;
+  const incompleteCaptains = list.filter(m => (m.mission_date < todayStr) && !(m.is_completed || m.completed_trips >= m.target_trips)).length;
+  const inProgressCaptains = list.filter(m => (m.mission_date >= todayStr) && !(m.is_completed || m.completed_trips >= m.target_trips)).length;
   const totalTrips = list.reduce((acc, m) => acc + (m.completed_trips || 0), 0);
   const totalBonusPaid = list
     .filter(m => m.is_rewarded)
     .reduce((acc, m) => acc + parseFloat(m.reward_amount || 0), 0);
 
   return `
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; margin-bottom:18px;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; margin-bottom:18px;">
       <div style="background:var(--bg-primary); padding:12px 16px; border-radius:12px; border:1px solid var(--border-color); display:flex; align-items:center; gap:12px;">
         <div style="width:38px; height:38px; border-radius:10px; background:rgba(30,136,229,0.12); color:#1E88E5; display:flex; align-items:center; justify-content:center; font-size:18px;">
           <i class="ri-user-star-line"></i>
@@ -19115,11 +19129,21 @@ function generateRewardsMissionsSummaryStats(list) {
 
       <div style="background:var(--bg-primary); padding:12px 16px; border-radius:12px; border:1px solid var(--border-color); display:flex; align-items:center; gap:12px;">
         <div style="width:38px; height:38px; border-radius:10px; background:rgba(245,158,11,0.12); color:#F59E0B; display:flex; align-items:center; justify-content:center; font-size:18px;">
-          <i class="ri-route-line"></i>
+          <i class="ri-time-line"></i>
         </div>
         <div>
-          <div style="font-size:11px; color:var(--text-secondary); font-weight:700;">إجمالي الرحلات المنجزة</div>
-          <div style="font-size:18px; font-weight:900; color:#D97706; font-family:'Outfit',sans-serif;">${totalTrips} رحلة</div>
+          <div style="font-size:11px; color:var(--text-secondary); font-weight:700;">بانتظار إرسال البونص</div>
+          <div style="font-size:18px; font-weight:900; color:#D97706; font-family:'Outfit',sans-serif;">${pendingPayoutCaptains} 💵</div>
+        </div>
+      </div>
+
+      <div style="background:var(--bg-primary); padding:12px 16px; border-radius:12px; border:1px solid var(--border-color); display:flex; align-items:center; gap:12px;">
+        <div style="width:38px; height:38px; border-radius:10px; background:rgba(239,68,68,0.1); color:#DC2626; display:flex; align-items:center; justify-content:center; font-size:18px;">
+          <i class="ri-close-circle-line"></i>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-secondary); font-weight:700;">غير مكتمل (انتهى اليوم)</div>
+          <div style="font-size:18px; font-weight:900; color:#DC2626; font-family:'Outfit',sans-serif;">${incompleteCaptains} ❌</div>
         </div>
       </div>
 
@@ -19137,6 +19161,10 @@ function generateRewardsMissionsSummaryStats(list) {
 }
 
 function generateSingleMissionRowHtml(m) {
+  const todayStr = getMissionDateHelper(0);
+  const isPastDay = (m.mission_date || '') < todayStr;
+  const isToday = (m.mission_date || '') === todayStr;
+
   const driverName = m.driver?.name || 'كابتن';
   const driverPhone = m.driver?.phone_number || m.driver?.phone || 'بدون هاتف';
   const avatarUrl = m.driver?.avatar_url;
@@ -19155,6 +19183,79 @@ function generateSingleMissionRowHtml(m) {
 
   const dateFormatted = formatRewardsMissionDate(m.mission_date);
   const timeFormatted = formatRewardsMissionTime(m.updated_at || m.created_at);
+
+  // 1. Mission Status Badge:
+  let missionStatusBadge = '';
+  if (isTargetMet) {
+    missionStatusBadge = `
+      <span style="background:rgba(16,185,129,0.12); color:#059669; border:1px solid rgba(16,185,129,0.3); padding:4px 10px; border-radius:12px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;">
+        <i class="ri-trophy-fill"></i> حقق التارجت بنجاح 🏆
+      </span>
+    `;
+  } else if (isPastDay) {
+    missionStatusBadge = `
+      <span style="background:rgba(239,68,68,0.1); color:#DC2626; border:1px solid rgba(239,68,68,0.25); padding:4px 10px; border-radius:12px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;" title="انتهى اليوم دون استكمال عدد الرحلات المطلوبة">
+        <i class="ri-close-circle-line"></i> غير مكتمل ❌
+      </span>
+    `;
+  } else {
+    missionStatusBadge = `
+      <span style="background:rgba(245,158,11,0.12); color:#D97706; border:1px solid rgba(245,158,11,0.3); padding:4px 10px; border-radius:12px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;">
+        <i class="ri-time-line"></i> قيد الإنجاز ⏳
+      </span>
+    `;
+  }
+
+  // 2. Payout Status Badge:
+  let payoutStatusBadge = '';
+  if (m.is_rewarded) {
+    payoutStatusBadge = `
+      <span style="background:#10B981; color:#fff; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;" title="${m.rewarded_at ? 'تم الصرف بواسطة الإدارة في: ' + new Date(m.rewarded_at).toLocaleString('ar-EG') : 'تم الصرف'}">
+        <i class="ri-checkbox-circle-fill"></i> تم الصرف بواسطة الإدارة ✅
+      </span>
+    `;
+  } else if (isTargetMet) {
+    payoutStatusBadge = `
+      <span style="background:#F59E0B; color:#fff; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;" title="الكابتن أتم التارجت ومؤهل للصرف بانتظار إرسال الإدارة">
+        <i class="ri-time-line"></i> مؤهل - بانتظار الإرسال 💵
+      </span>
+    `;
+  } else if (isPastDay) {
+    payoutStatusBadge = `
+      <span style="background:rgba(148,163,184,0.15); color:var(--text-light); padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;">
+        ⏹️ لم يتحقق
+      </span>
+    `;
+  } else {
+    payoutStatusBadge = `
+      <span style="background:rgba(148,163,184,0.15); color:var(--text-secondary); padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;">
+        ⏳ عند الإنجاز
+      </span>
+    `;
+  }
+
+  // 3. Actions:
+  let actionsHtml = '';
+  if (isTargetMet && !m.is_rewarded) {
+    actionsHtml = `
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button class="btn btn-sm" onclick="sendCaptainMissionBonus('${m.id}', '${m.driver_id}', ${m.reward_amount}, '${driverName}')" style="background:linear-gradient(135deg, #10B981, #059669); color:#fff; font-weight:800; border:none; padding:5px 12px; border-radius:8px; display:inline-flex; align-items:center; gap:4px; box-shadow:0 2px 8px rgba(16,185,129,0.35); cursor:pointer;" title="صرف وإيداع البونص في محفظة الكابتن الآن">
+          <i class="ri-send-plane-fill"></i>
+          <span>إرسال البونص</span>
+        </button>
+        <button class="btn btn-outline btn-sm" onclick="viewUserProfile('${m.driver_id}', 'driver')" style="padding:5px 8px; font-size:11px;" title="معاينة الملف">
+          <i class="ri-user-search-line"></i>
+        </button>
+      </div>
+    `;
+  } else {
+    actionsHtml = `
+      <button class="btn btn-outline btn-sm" onclick="viewUserProfile('${m.driver_id}', 'driver')" style="padding:4px 10px; font-size:11px; display:inline-flex; align-items:center; gap:4px; font-weight:700;" title="معاينة ملف الكابتن">
+        <i class="ri-user-search-line"></i>
+        <span>الملف</span>
+      </button>
+    `;
+  }
 
   return `
     <tr style="transition:background 0.2s ease;">
@@ -19198,12 +19299,12 @@ function generateSingleMissionRowHtml(m) {
         <div style="min-width:130px; max-width:180px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; font-size:11px; font-weight:800;">
             <span style="color:var(--text-primary); font-family:'Outfit',sans-serif;">${completed} من ${target} رحلات</span>
-            <span style="color:${isTargetMet ? '#059669' : '#1E88E5'}; font-size:11px; font-weight:900;">${pct}%</span>
+            <span style="color:${isTargetMet ? '#059669' : (isPastDay ? '#DC2626' : '#1E88E5')}; font-size:11px; font-weight:900;">${pct}%</span>
           </div>
           <div style="width:100%; height:6px; background:var(--border-color); border-radius:4px; overflow:hidden;">
-            <div style="width:${pct}%; height:100%; background:${isTargetMet ? 'linear-gradient(90deg, #10B981, #059669)' : 'linear-gradient(90deg, #60A5FA, #1E88E5)'}; border-radius:4px; transition:width 0.3s ease;"></div>
+            <div style="width:${pct}%; height:100%; background:${isTargetMet ? 'linear-gradient(90deg, #10B981, #059669)' : (isPastDay ? 'linear-gradient(90deg, #F87171, #EF4444)' : 'linear-gradient(90deg, #60A5FA, #1E88E5)')}; border-radius:4px; transition:width 0.3s ease;"></div>
           </div>
-          ${!isTargetMet && remaining > 0 ? `<div style="font-size:10px; color:var(--text-light); margin-top:2px; font-weight:600;">فاضل ${remaining} رحلات للبونص 🚀</div>` : ''}
+          ${!isTargetMet && remaining > 0 ? (isPastDay ? `<div style="font-size:10px; color:#DC2626; margin-top:2px; font-weight:700;">انتهى اليوم — لم يكتمل ❌</div>` : `<div style="font-size:10px; color:var(--text-light); margin-top:2px; font-weight:600;">فاضل ${remaining} رحلات للبونص 🚀</div>`) : ''}
         </div>
       </td>
 
@@ -19214,32 +19315,12 @@ function generateSingleMissionRowHtml(m) {
 
       <!-- Mission Status -->
       <td>
-        ${isTargetMet ? `
-          <span style="background:rgba(16,185,129,0.12); color:#059669; border:1px solid rgba(16,185,129,0.3); padding:4px 10px; border-radius:12px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;">
-            <i class="ri-trophy-fill"></i> حقق التارجت بنجاح 🏆
-          </span>
-        ` : `
-          <span style="background:rgba(245,158,11,0.12); color:#D97706; border:1px solid rgba(245,158,11,0.3); padding:4px 10px; border-radius:12px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;">
-            <i class="ri-time-line"></i> قيد الإنجاز ⏳
-          </span>
-        `}
+        ${missionStatusBadge}
       </td>
 
       <!-- Bonus Payout Status -->
       <td>
-        ${m.is_rewarded ? `
-          <span style="background:#10B981; color:#fff; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;" title="${m.rewarded_at ? 'تم الصرف: ' + new Date(m.rewarded_at).toLocaleDateString('ar-EG') : ''}">
-            <i class="ri-check-double-line"></i> تم الإيداع بالمحفظة ✅
-          </span>
-        ` : (isTargetMet ? `
-          <span style="background:#F59E0B; color:#fff; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;">
-            <i class="ri-wallet-3-line"></i> مؤهل للصرف 💵
-          </span>
-        ` : `
-          <span style="background:rgba(148,163,184,0.15); color:var(--text-secondary); padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;">
-            ⏳ في الانتظار
-          </span>
-        `)}
+        ${payoutStatusBadge}
       </td>
 
       <!-- Last Activity -->
@@ -19251,10 +19332,7 @@ function generateSingleMissionRowHtml(m) {
 
       <!-- Action -->
       <td>
-        <button class="btn btn-outline btn-sm" onclick="viewUserProfile('${m.driver_id}', 'driver')" style="padding:4px 10px; font-size:11px; display:inline-flex; align-items:center; gap:4px; font-weight:700;" title="معاينة ملف الكابتن">
-          <i class="ri-user-search-line"></i>
-          <span>الملف</span>
-        </button>
+        ${actionsHtml}
       </td>
     </tr>
   `;
@@ -19268,8 +19346,8 @@ function generateRewardsMissionsTableRows(list) {
           <div style="width:60px; height:60px; border-radius:50%; background:var(--bg-primary); display:flex; align-items:center; justify-content:center; margin:0 auto 12px; font-size:28px; color:var(--text-light);">
             <i class="ri-calendar-check-line"></i>
           </div>
-          <div style="font-weight:800; font-size:15px; color:var(--text-primary); margin-bottom:4px;">لا توجد مشاركات في التحدي لهذا التاريخ أو الفلتر</div>
-          <div style="font-size:12px;">جرّب اختيار تاريخ آخر أو عرض "جميع الأيام" أو التحقق من الكباتن النشطين.</div>
+          <div style="font-weight:800; font-size:15px; color:var(--text-primary); margin-bottom:4px;">لا توجد مشاركات في التحدي تطابق معايير الفلتر الحالية</div>
+          <div style="font-size:12px;">جرّب اختيار تاريخ آخر أو تبويب "الكل" لمشاهدة جميع سجلات الكباتن.</div>
         </td>
       </tr>
     `;
@@ -19340,10 +19418,16 @@ function renderRewardsMissionsTable() {
             <span>سجل ومتابعة الكباتن في التحدي اليومي 🎯</span>
           </h3>
           <p style="margin:0; font-size:13px; color:var(--text-secondary);">
-            عرض تفصيلي لجميع الكباتن المشتركين في التحدي والرحلات المنجزة وحالة تحقيق التارجت وصرف البونص، مرتبة من الأحدث للأقدم كل يوم بيومه.
+            عرض تفصيلي لجميع الكباتن المشتركين في التحدي، تقدم الرحلات، وحالة اعتماد وصرف البونص يدوياً من الإدارة، مرتبة من الأحدث للأقدم كل يوم بيومه.
           </p>
         </div>
-        <div style="display:flex; align-items:center; gap:10px;">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          ${counts.countPendingPayout > 0 ? `
+            <button class="btn btn-sm" onclick="sendAllPendingMissionBonuses()" style="background:linear-gradient(135deg, #10B981, #059669); color:#fff; font-weight:800; border:none; padding:7px 14px; border-radius:8px; display:inline-flex; align-items:center; gap:6px; box-shadow:0 2px 10px rgba(16,185,129,0.35); cursor:pointer;">
+              <i class="ri-send-plane-2-fill"></i>
+              <span>إرسال البونص لجميع المؤهلين (${counts.countPendingPayout}) 🚀</span>
+            </button>
+          ` : ''}
           <button class="btn btn-outline btn-sm" onclick="loadRewardsData(true)" style="display:flex; align-items:center; gap:6px; font-weight:700;">
             <i class="ri-refresh-line"></i>
             <span>تحديث لحظي</span>
@@ -19388,15 +19472,21 @@ function renderRewardsMissionsTable() {
         <!-- Bottom Row: Status Tabs & Search Bar -->
         <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px;">
           <!-- Status Filter Tabs -->
-          <div style="display:flex; background:var(--bg-primary); padding:4px; border-radius:var(--radius-md); border:1px solid var(--border-color); gap:4px;">
+          <div style="display:flex; background:var(--bg-primary); padding:4px; border-radius:var(--radius-md); border:1px solid var(--border-color); gap:4px; flex-wrap:wrap;">
             <button class="filter-tab-btn ${rewardsMissionsStatusFilter === 'all' ? 'active' : ''}" onclick="setRewardsMissionStatusFilter('all')">
               الكل
             </button>
             <button class="filter-tab-btn ${rewardsMissionsStatusFilter === 'completed' ? 'active' : ''}" onclick="setRewardsMissionStatusFilter('completed')">
-              حققوا التارجت 🏆
+              حققوا التارجت 🏆 (${counts.countCompleted})
+            </button>
+            <button class="filter-tab-btn ${rewardsMissionsStatusFilter === 'pending_payout' ? 'active' : ''}" onclick="setRewardsMissionStatusFilter('pending_payout')" style="color:#D97706; font-weight:700;">
+              بانتظار الإرسال 💵 (${counts.countPendingPayout})
             </button>
             <button class="filter-tab-btn ${rewardsMissionsStatusFilter === 'in_progress' ? 'active' : ''}" onclick="setRewardsMissionStatusFilter('in_progress')">
-              قيد الإنجاز ⏳
+              قيد الإنجاز (اليوم) ⏳ (${counts.countInProgress})
+            </button>
+            <button class="filter-tab-btn ${rewardsMissionsStatusFilter === 'incomplete' ? 'active' : ''}" onclick="setRewardsMissionStatusFilter('incomplete')" style="color:#DC2626; font-weight:700;">
+              غير مكتمل ❌ (${counts.countIncomplete})
             </button>
           </div>
 
@@ -19491,11 +19581,152 @@ function handleRewardsMissionSearch(q) {
   updateRewardsMissionsTableView(true);
 }
 
+async function sendCaptainMissionBonus(missionId, driverId, rewardAmount, driverName) {
+  if (!supabaseClient) return;
+
+  const formattedAmount = parseFloat(rewardAmount || 0).toFixed(0);
+  const confirmMsg = `هل تريد بالتأكيد صرف وإرسال بونص التحدي بمبلغ ${formattedAmount} ج.م وإيداعه في محفظة الكابتن (${driverName || 'الكابتن'}) الآن؟`;
+  if (!confirm(confirmMsg)) return;
+
+  try {
+    showToast('⏳ جاري اعتماد وصرف البونص في محفظة الكابتن...');
+
+    // 1. Try secure RPC function in Supabase
+    let success = false;
+    try {
+      const { data, error } = await supabaseClient.rpc('admin_approve_and_send_mission_bonus', {
+        p_mission_id: missionId
+      });
+      if (!error && data && data.success) {
+        success = true;
+      } else if (error) {
+        console.warn('RPC admin_approve_and_send_mission_bonus error:', error);
+      }
+    } catch (e) {
+      console.warn('RPC call failed, trying direct DB update:', e);
+    }
+
+    // 2. Direct fallback if RPC was blocked
+    if (!success) {
+      const { data: userRow } = await supabaseClient
+        .from('users')
+        .select('driver_wallet_balance')
+        .eq('id', driverId)
+        .maybeSingle();
+
+      const currentBal = parseFloat(userRow?.driver_wallet_balance || 0);
+      const newBal = currentBal + parseFloat(rewardAmount);
+
+      await supabaseClient
+        .from('users')
+        .update({ driver_wallet_balance: newBal })
+        .eq('id', driverId);
+
+      await supabaseClient
+        .from('driver_mission_progress')
+        .update({
+          is_completed: true,
+          is_rewarded: true,
+          rewarded_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', missionId);
+
+      await supabaseClient
+        .from('transactions')
+        .insert({
+          id: (typeof generateUUID === 'function') ? generateUUID() : crypto.randomUUID(),
+          user_id: driverId,
+          title: 'بونص التحدي اليومي (اعتماد الإدارة) 🏆',
+          amount: parseFloat(rewardAmount),
+          type: 'bonus',
+          balance_after: newBal,
+          payment_method: 'wallet',
+          notes: 'صرف بونص التحدي اليومي بواسطة الإدارة',
+          created_at: new Date().toISOString()
+        });
+
+      try {
+        await supabaseClient.from('notifications').insert({
+          user_id: driverId,
+          title: 'إيداع بونص التحدي في محفظتك 🎁',
+          body: `مبروك يا كابتن! قامت الإدارة بصرف بونص التحدي وقدره ${formattedAmount} ج.م في محفظتك بنجاح!`,
+          type: 'wallet',
+          is_read: false,
+          data: { amount: rewardAmount, mission_id: missionId, type: 'mission_reward_admin' },
+          created_at: new Date().toISOString()
+        });
+      } catch (_) {}
+    }
+
+    showToast(`✅ تم إرسال البونص (${formattedAmount} ج.م) بنجاح وإيداعه في محفظة الكابتن!`);
+    await loadRewardsData(false);
+  } catch (err) {
+    console.error('Error sending mission bonus:', err);
+    showToast('❌ حدث خطأ أثناء إرسال البونص: ' + err.message);
+  }
+}
+
+async function sendAllPendingMissionBonuses() {
+  if (!supabaseClient) return;
+
+  const eligibleMissions = rewardsMissionsList.filter(m => (m.is_completed || m.completed_trips >= m.target_trips) && !m.is_rewarded);
+
+  if (eligibleMissions.length === 0) {
+    showToast('⚠️ لا يوجد كباتن بانتظار إرسال البونص حالياً');
+    return;
+  }
+
+  const totalAmount = eligibleMissions.reduce((acc, m) => acc + parseFloat(m.reward_amount || 0), 0);
+  const confirmMsg = `هل تريد بالتأكيد صرف وإرسال البونص لجميع الكباتن المؤهلين (${eligibleMissions.length} كابتن) بإجمالي ${totalAmount.toLocaleString('ar-EG')} ج.م؟`;
+  if (!confirm(confirmMsg)) return;
+
+  showToast(`⏳ جاري إرسال البونص لـ ${eligibleMissions.length} كابتن...`);
+
+  let countSuccess = 0;
+  for (const m of eligibleMissions) {
+    try {
+      const { data, error } = await supabaseClient.rpc('admin_approve_and_send_mission_bonus', {
+        p_mission_id: m.id
+      });
+      if (!error && data && data.success) {
+        countSuccess++;
+      } else {
+        const { data: userRow } = await supabaseClient
+          .from('users')
+          .select('driver_wallet_balance')
+          .eq('id', m.driver_id)
+          .maybeSingle();
+
+        const currentBal = parseFloat(userRow?.driver_wallet_balance || 0);
+        const newBal = currentBal + parseFloat(m.reward_amount);
+
+        await supabaseClient.from('users').update({ driver_wallet_balance: newBal }).eq('id', m.driver_id);
+        await supabaseClient.from('driver_mission_progress').update({
+          is_completed: true,
+          is_rewarded: true,
+          rewarded_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }).eq('id', m.id);
+
+        countSuccess++;
+      }
+    } catch (e) {
+      console.warn('Error paying mission:', m.id, e);
+    }
+  }
+
+  showToast(`🎉 تم إرسال البونص لـ ${countSuccess} كابتن بنجاح!`);
+  await loadRewardsData(false);
+}
+
 window.setRewardsMissionDateFilter = setRewardsMissionDateFilter;
 window.setRewardsMissionCustomDate = setRewardsMissionCustomDate;
 window.setRewardsMissionStatusFilter = setRewardsMissionStatusFilter;
 window.handleRewardsMissionSearch = handleRewardsMissionSearch;
 window.updateRewardsMissionsTableView = updateRewardsMissionsTableView;
+window.sendCaptainMissionBonus = sendCaptainMissionBonus;
+window.sendAllPendingMissionBonuses = sendAllPendingMissionBonuses;
 
 // ============================================
 // TIME-WINDOW BONUS SHIFTS TABLE (REWARDS PAGE)

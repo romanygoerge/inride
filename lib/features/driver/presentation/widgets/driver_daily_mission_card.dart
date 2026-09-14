@@ -23,6 +23,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
   int _remainingTrips = 5;
   bool _isCompleted = false;
   bool _isStarted = false;
+  bool _isRewarded = false;
   bool _isShift = false;
 
   RealtimeChannel? _progressChannel;
@@ -58,6 +59,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
           _remainingTrips = 10;
           _isCompleted = false;
           _isStarted = false;
+          _isRewarded = false;
           _isShift = false;
           _isLoading = false;
         });
@@ -86,6 +88,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
           final rem = (res['remaining_trips'] as num?)?.toInt() ?? (target - done).clamp(0, target);
           final completed = res['is_completed'] == true || done >= target;
           final started = res['is_started'] == true || done > 0;
+          final rewarded = res['is_rewarded'] == true;
 
           setState(() {
             _title = (res['title'] as String?)?.isNotEmpty == true ? res['title'] : 'تحدي الـ 10 رحلات اليومي 🚀';
@@ -98,6 +101,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
             _remainingTrips = rem;
             _isCompleted = completed;
             _isStarted = started;
+            _isRewarded = rewarded;
             _isShift = res['is_shift'] == true;
             _isLoading = false;
           });
@@ -122,6 +126,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
       } catch (_) {}
 
       int done = 0;
+      bool fallbackRewarded = false;
       try {
         final todayStr = DateTime.now().toIso8601String().split('T')[0];
         final progRes = await _supabase
@@ -132,6 +137,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
             .maybeSingle();
         if (progRes != null) {
           done = (progRes['completed_trips'] as num?)?.toInt() ?? 0;
+          fallbackRewarded = progRes['is_rewarded'] == true;
         }
       } catch (_) {}
 
@@ -145,6 +151,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
           _remainingTrips = (target - done).clamp(0, target);
           _isCompleted = done >= target;
           _isStarted = done > 0;
+          _isRewarded = fallbackRewarded;
           _isShift = false;
           _isLoading = false;
         });
@@ -363,7 +370,9 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
                             runSpacing: 2,
                             children: [
                               Text(
-                                reached ? '$_title (مكتمل) 🏆' : _title,
+                                reached
+                                    ? (_isRewarded ? '$_title (تم الصرف) 🏆' : '$_title (مكتمل) 🏆')
+                                    : _title,
                                 style: GoogleFonts.cairo(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w800,
@@ -374,13 +383,20 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                                 decoration: BoxDecoration(
                                   color: reached
-                                      ? const Color(0xFF047857)
+                                      ? (_isRewarded ? const Color(0xFF047857) : const Color(0xFFD97706))
                                       : const Color(0xFF10B981).withValues(alpha: 0.3),
                                   borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: const Color(0xFF34D399), width: 0.8),
+                                  border: Border.all(
+                                    color: reached
+                                        ? (_isRewarded ? const Color(0xFF34D399) : const Color(0xFFFBBF24))
+                                        : const Color(0xFF34D399),
+                                    width: 0.8,
+                                  ),
                                 ),
                                 child: Text(
-                                  reached ? 'تم الصرف 🏆' : 'نشط الآن 🟢',
+                                  reached
+                                      ? (_isRewarded ? 'تم الصرف 🏆' : 'بانتظار الإرسال ⏳')
+                                      : 'نشط الآن 🟢',
                                   style: GoogleFonts.cairo(
                                     fontSize: 9,
                                     fontWeight: FontWeight.w700,
@@ -555,7 +571,9 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
                   Expanded(
                     child: Text(
                       reached
-                          ? 'تهانينا يا كابتن! حققت التحدي وتم إيداع المكافأة في محفظتك 🎉'
+                          ? (_isRewarded
+                              ? 'تهانينا يا كابتن! حققت التحدي وتم إيداع المكافأة في محفظتك بنجاح 🎉'
+                              : 'تهانينا يا كابتن! حققت تارجت التحدي بنجاح 🏆 — جاري مراجعة وصرف البونص إلى محفظتك من قِبل الإدارة!')
                           : 'أنجزت $done من $target رحلات — باقي $remaining رحلات للحصول على البونص! 🚀',
                       style: GoogleFonts.cairo(
                         fontSize: 12,

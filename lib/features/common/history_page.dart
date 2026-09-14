@@ -4,6 +4,8 @@ import '../../core/theme/app_theme.dart';
 import '../../core/state/global_state.dart';
 import '../../shared/widgets/skeleton_placeholder.dart';
 import '../../generated/app_localizations.dart';
+import '../../shared/widgets/trip_report_dialog.dart';
+import '../../core/localization/locale_controller.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -197,6 +199,48 @@ class _HistoryPageState extends State<HistoryPage> {
                                     ),
                                   ),
                                 ],
+                              ),
+                              const Divider(height: 16, color: AppColors.border),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(8),
+                                  onTap: () {
+                                    TripReportDialog.show(
+                                      context,
+                                      tripId: trip['id'] as String?,
+                                      reporterId: state.userUid ?? '',
+                                      reporterRole: state.currentRole == UserRole.rider ? 'passenger' : 'driver',
+                                      passengerId: trip['passenger_id'] as String? ?? (state.currentRole == UserRole.rider ? state.userUid : null),
+                                      passengerName: trip['passenger_name'] as String?,
+                                      passengerPhone: trip['passenger_phone'] as String?,
+                                      driverId: trip['driver_id'] as String? ?? (state.currentRole == UserRole.driver ? state.userUid : null),
+                                      driverName: trip['driver_name'] as String?,
+                                      tripStatus: isCompleted ? 'completed' : 'cancelled',
+                                      pickupAddress: trip['from'] as String?,
+                                      destinationAddress: trip['to'] as String?,
+                                      fare: (trip['price'] as double?),
+                                    );
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.shield_outlined, size: 14, color: Colors.red.shade700),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          LocaleController.instance.isArabic ? 'إبلاغ عن المشوار' : 'Report Trip',
+                                          style: GoogleFonts.cairo(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.red.shade700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               ),
                             ],
                           ),

@@ -11,6 +11,7 @@ import '../../../../core/services/location_service.dart';
 import '../../../../core/utils/map_coordinates_helper.dart';
 import '../../../../core/utils/snappy_page_route.dart';
 import '../../../../shared/widgets/osm_map_widget.dart';
+import '../../../../shared/widgets/trip_report_dialog.dart';
 import '../../../chat/presentation/pages/chat_page.dart';
 import 'passenger_home_page.dart';
 
@@ -25,6 +26,33 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
   double _rating = 5.0;
   final TextEditingController _commentController = TextEditingController();
   bool _isPanelCollapsed = false;
+
+  void _openReportDialog({String tripStatus = 'in_progress'}) {
+    final state = GlobalState.instance;
+    final offer = state.acceptedOffer;
+    final driverId = offer?.driverId ?? state.currentRideRequest?.driverId;
+    final driverName = offer?.driver.name ?? 'الكابتن';
+    final driverPhone = offer?.driver.phoneNumber;
+
+    TripReportDialog.show(
+      context,
+      tripId: state.currentRequestId,
+      reporterId: state.userUid ?? '',
+      reporterRole: 'passenger',
+      reportedId: driverId,
+      reportedName: driverName,
+      passengerId: state.userUid,
+      passengerName: state.userName,
+      passengerPhone: state.phoneNumber,
+      driverId: driverId,
+      driverName: driverName,
+      driverPhone: driverPhone,
+      tripStatus: tripStatus,
+      pickupAddress: state.fromAddress,
+      destinationAddress: state.toAddress,
+      fare: offer?.price ?? state.offeredFare,
+    );
+  }
 
   @override
   void initState() {
@@ -653,6 +681,11 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
                                       },
                                     ),
                                     IconButton(
+                                      icon: const Icon(Icons.shield_outlined, color: AppColors.error),
+                                      tooltip: 'إبلاغ عن الكابتن',
+                                      onPressed: () => _openReportDialog(tripStatus: 'in_progress'),
+                                    ),
+                                    IconButton(
                                       icon: const Icon(Icons.share_location_outlined, color: Colors.green),
                                       tooltip: 'مشاركة موقعي المباشر',
                                       onPressed: _shareLiveLocation,
@@ -977,6 +1010,15 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
                                 'إرسال التقييم وإنهاء',
                                 style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
                               ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextButton.icon(
+                            onPressed: () => _openReportDialog(tripStatus: 'completed'),
+                            icon: const Icon(Icons.shield_outlined, size: 16, color: AppColors.error),
+                            label: Text(
+                              'إبلاغ عن مشكلة مع الكابتن',
+                              style: GoogleFonts.cairo(color: AppColors.error, fontSize: 12, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ],

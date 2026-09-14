@@ -778,7 +778,7 @@ function initDashboardAnimations() {
 // ============================================
 
 function navigateTo(page) {
-  const validPages = ['rewards', 'dashboard', 'trips', 'drivers', 'passengers', 'ratings', 'driver-profile', 'passenger-profile', 'wallet', 'pricing', 'places', 'banners', 'communication', 'messages', 'support', 'content', 'monitoring', 'logs', 'settings'];
+  const validPages = ['rewards', 'dashboard', 'trips', 'drivers', 'passengers', 'ratings', 'driver-profile', 'passenger-profile', 'wallet', 'pricing', 'places', 'banners', 'communication', 'messages', 'support', 'reports', 'content', 'monitoring', 'logs', 'settings'];
   if (!validPages.includes(page)) {
     page = 'dashboard';
   }
@@ -828,6 +828,7 @@ function updateHeaderTitle(page) {
     communication: { title: 'مركز التواصل والمحادثات', sub: 'عرض وإدارة محادثات العملاء والكباتن والدعم الفني والتحكم بالتذاكر' },
     messages: { title: 'الإشعارات والرسائل', sub: 'إرسال الإشعارات الجماعية والمستهدفة وجدولة التنبيهات' },
     support: { title: 'الدعم الفني والشكاوى', sub: 'استقبال شكاوى المستخدمين والرد عليها وإغلاق التذاكر' },
+    reports: { title: 'بلاغات وشكاوى الرحلات', sub: 'استقبال ومتابعة شكاوى الركاب والكباتن أثناء أو بعد الرحلات أو عند الإلغاء مع كامل بيانات الحسابات' },
     content: { title: 'إدارة المحتوى', sub: 'التحكم في البانرات، الإعلانات، الكوبونات والأسئلة الشائعة' },
     monitoring: { title: 'مراقبة النظام والأداء', sub: 'متابعة حالة السيرفرات والأخطاء والرحلات النشطة حالياً' },
     logs: { title: 'سجلات التدقيق والصلاحيات', sub: 'متابعة سجلات عمليات الموظفين (Audit Logs) وإدارة الـ RBAC' },
@@ -920,6 +921,10 @@ function renderPage(page) {
         if (currentCommunicationTab === 'chat') {
           initCommChatSync();
         }
+        break;
+      case 'reports':
+        container.innerHTML = renderReportsPage();
+        loadReportsFromSupabase();
         break;
       case 'messages':
         container.innerHTML = renderMessages();
@@ -1362,6 +1367,11 @@ function renderTrips() {
                 <span class="status-dot"></span>
                 ${trip.status}
               </span>
+              ${(liveTripReports || []).some(r => r.trip_id === trip.requestId) ? `
+                <div style="margin-top:4px;">
+                  <span class="badge" style="background:#FEE2E2;color:#DC2626;font-size:10px;cursor:pointer;font-weight:700;" onclick="navigateTo('reports')" title="يوجد بلاغ مقدم على هذه الرحلة">🚨 بلاغ مسجل</span>
+                </div>
+              ` : ''}
             </td>
             <td>
               <div style="display:flex;gap:4px;align-items:center;">
@@ -8125,14 +8135,15 @@ function initSupabaseSync() {
     try {
       console.log(`[InRide DataStore] Starting sync generation #${thisGeneration} at ${new Date().toISOString()}...`);
 
-      const [usersRes, driversRes, vehiclesRes, ridesRes, ratingsRes, settingsRes, passengersRes] = await Promise.all([
+      const [usersRes, driversRes, vehiclesRes, ridesRes, ratingsRes, settingsRes, passengersRes, reportsRes] = await Promise.all([
         supabaseClient.from('users').select('*'),
         supabaseClient.from('drivers').select('*'),
         supabaseClient.from('vehicles').select('*'),
         supabaseClient.from('ride_requests').select('*').order('created_at', { ascending: false }),
         supabaseClient.from('ratings').select('*').order('created_at', { ascending: false }),
         (async () => { try { return await supabaseClient.from('app_settings').select('*').eq('id', 'default').maybeSingle(); } catch (_) { return { data: null }; } })(),
-        (async () => { try { return await supabaseClient.from('passengers').select('*'); } catch (_) { return { data: [] }; } })()
+        (async () => { try { return await supabaseClient.from('passengers').select('*'); } catch (_) { return { data: [] }; } })(),
+        (async () => { try { return await supabaseClient.from('trip_reports').select('*').order('created_at', { ascending: false }); } catch (_) { return { data: [] }; } })()
       ]);
 
       // Check for race conditions before applying state
@@ -8148,6 +8159,8 @@ function initSupabaseSync() {
       const ratingsList = ratingsRes.data || [];
       const settingsData = settingsRes?.data;
       const passengersList = passengersRes?.data || [];
+      liveTripReports = reportsRes?.data || [];
+      updateReportsBadge();
 
       // 1. Index users
       const usersMap = {};
@@ -10790,6 +10803,21 @@ function initDashboardRealtimeTriggers() {
           'wallet'
         );
       }
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_reports' }, payload => {
+      const report = payload.new;
+      if (payload.eventType === 'INSERT' && report) {
+        if (typeof playNotificationChime === 'function') playNotificationChime();
+        addDashboardNotification(
+          'بلاغ جديد عن رحلة 🚨',
+          `${report.reporter_role === 'passenger' ? 'الراكب أبلغ عن الكابتن' : 'الكابتن أبلغ عن الراكب'}: ${report.reason || 'شكوى جديدة'}`,
+          'report',
+          'ri-alarm-warning-fill',
+          'reports',
+          report.id
+        );
+      }
+      loadReportsFromSupabase();
     })
     .subscribe();
 
@@ -20380,4 +20408,416 @@ async function loadCaptainMissionCard(uid, role = 'driver') {
     if (container) container.style.display = 'none';
   }
 }
+
+// ============================================
+// TRIP REPORTS & COMPLAINTS SYSTEM (Realtime Supabase)
+// ============================================
+let liveTripReports = [];
+let reportSearchQuery = '';
+let reportFilterStatus = 'all'; // 'all', 'pending', 'investigating', 'resolved', 'dismissed'
+
+async function loadReportsFromSupabase() {
+  if (!supabaseClient) return;
+  try {
+    const { data: reports, error } = await supabaseClient
+      .from('trip_reports')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[Reports] Error loading trip_reports:', error);
+      return;
+    }
+
+    liveTripReports = reports || [];
+    updateReportsBadge();
+
+    if (currentPage === 'reports') {
+      const container = document.getElementById('pageContent');
+      if (container) {
+        container.innerHTML = renderReportsPage();
+      }
+    }
+  } catch (err) {
+    console.error('[Reports] Exception loading trip_reports:', err);
+  }
+}
+
+function updateReportsBadge() {
+  const pendingCount = (liveTripReports || []).filter(r => r.status === 'pending').length;
+  const badgeEl = document.getElementById('reportsBadge');
+  if (badgeEl) {
+    if (pendingCount > 0) {
+      badgeEl.textContent = pendingCount;
+      badgeEl.style.display = 'inline-block';
+    } else {
+      badgeEl.style.display = 'none';
+    }
+  }
+}
+
+function setReportFilter(status) {
+  reportFilterStatus = status;
+  if (currentPage === 'reports') {
+    const container = document.getElementById('pageContent');
+    if (container) {
+      container.innerHTML = renderReportsPage();
+    }
+  }
+}
+
+function handleReportSearch(query) {
+  reportSearchQuery = (query || '').toLowerCase().trim();
+  const tableBody = document.getElementById('reportsTableBody');
+  if (tableBody) {
+    tableBody.innerHTML = renderReportsTableRows();
+  }
+}
+
+async function updateReportStatus(reportId, newStatus) {
+  if (!supabaseClient || !reportId) return;
+  try {
+    const updatePayload = {
+      status: newStatus,
+      updated_at: new Date().toISOString()
+    };
+    if (newStatus === 'resolved') {
+      updatePayload.resolved_at = new Date().toISOString();
+    }
+
+    const { error } = await supabaseClient
+      .from('trip_reports')
+      .update(updatePayload)
+      .eq('id', reportId);
+
+    if (error) {
+      showToast('❌ تعذر تحديث حالة البلاغ: ' + error.message);
+      return;
+    }
+
+    showToast(newStatus === 'resolved' ? '✅ تم إغلاق وحل البلاغ بنجاح' : '⏳ تم تحديث حالة البلاغ');
+    await loadReportsFromSupabase();
+  } catch (e) {
+    showToast('❌ حدث خطأ: ' + e.message);
+  }
+}
+
+async function promptReportAdminNotes(reportId, currentNotes = '') {
+  if (!supabaseClient || !reportId) return;
+  const note = prompt('إضافة ملاحظات وتوجيهات الإدارة لهذا البلاغ:', currentNotes || '');
+  if (note === null) return;
+
+  try {
+    const { error } = await supabaseClient
+      .from('trip_reports')
+      .update({
+        admin_notes: note,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', reportId);
+
+    if (error) {
+      showToast('❌ فشل حفظ ملاحظات الإدارة: ' + error.message);
+      return;
+    }
+
+    showToast('✅ تم حفظ ملاحظات الإدارة بنجاح');
+    await loadReportsFromSupabase();
+  } catch (e) {
+    showToast('❌ حدث خطأ: ' + e.message);
+  }
+}
+
+function renderReportsPage() {
+  const reports = liveTripReports || [];
+  const totalCount = reports.length;
+  const pendingCount = reports.filter(r => r.status === 'pending').length;
+  const investigatingCount = reports.filter(r => r.status === 'investigating').length;
+  const resolvedCount = reports.filter(r => r.status === 'resolved').length;
+  const dismissedCount = reports.filter(r => r.status === 'dismissed').length;
+
+  return `
+    <div class="page-section">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
+        <div>
+          <h2 style="font-size:22px;font-weight:800;margin-bottom:4px;color:var(--text-primary);">
+            <i class="ri-alarm-warning-fill" style="color:#EF4444;margin-left:8px;"></i>
+            سجل بلاغات وشكاوى الرحلات (Realtime Supabase)
+          </h2>
+          <p style="font-size:13px;color:var(--text-secondary);margin:0;">
+            متابعة البلاغات والشكاوى المقدمة من الركاب والكباتن أثناء سير الرحلة، بعد انتهائها، أو عند إلغائها
+          </p>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline btn-sm" onclick="loadReportsFromSupabase()">
+            <i class="ri-refresh-line"></i> تحديث البلاغات
+          </button>
+        </div>
+      </div>
+
+      <!-- KPI Stats Grid -->
+      <div class="stats-grid" style="margin-bottom:24px;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));">
+        <div class="stat-card blue">
+          <div class="stat-card-header">
+            <div class="stat-card-icon"><i class="ri-shield-fill"></i></div>
+          </div>
+          <div class="stat-card-value font-outfit">${totalCount}</div>
+          <div class="stat-card-label">إجمالي البلاغات الواردة</div>
+        </div>
+
+        <div class="stat-card red">
+          <div class="stat-card-header">
+            <div class="stat-card-icon"><i class="ri-error-warning-fill"></i></div>
+          </div>
+          <div class="stat-card-value font-outfit" style="color:#EF4444;">${pendingCount}</div>
+          <div class="stat-card-label">بلاغات جديدة معلقة 🔴</div>
+        </div>
+
+        <div class="stat-card orange">
+          <div class="stat-card-header">
+            <div class="stat-card-icon"><i class="ri-time-fill"></i></div>
+          </div>
+          <div class="stat-card-value font-outfit" style="color:#F59E0B;">${investigatingCount}</div>
+          <div class="stat-card-label">قيد المتابعة والتحقيق ⏳</div>
+        </div>
+
+        <div class="stat-card green">
+          <div class="stat-card-header">
+            <div class="stat-card-icon"><i class="ri-checkbox-circle-fill"></i></div>
+          </div>
+          <div class="stat-card-value font-outfit" style="color:#10B981;">${resolvedCount}</div>
+          <div class="stat-card-label">تمت معالجتها وحلها ✅</div>
+        </div>
+      </div>
+
+      <!-- Filters & Search Bar -->
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;padding:16px;">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;background:var(--bg-primary);padding:4px;border-radius:var(--radius-md);">
+            <button class="btn btn-sm ${reportFilterStatus === 'all' ? 'btn-primary' : 'btn-outline'}" onclick="setReportFilter('all')">الكل (${totalCount})</button>
+            <button class="btn btn-sm ${reportFilterStatus === 'pending' ? 'btn-primary' : 'btn-outline'}" onclick="setReportFilter('pending')">جديدة معلقة (${pendingCount})</button>
+            <button class="btn btn-sm ${reportFilterStatus === 'investigating' ? 'btn-primary' : 'btn-outline'}" onclick="setReportFilter('investigating')">قيد المتابعة (${investigatingCount})</button>
+            <button class="btn btn-sm ${reportFilterStatus === 'resolved' ? 'btn-primary' : 'btn-outline'}" onclick="setReportFilter('resolved')">تم الحل (${resolvedCount})</button>
+            <button class="btn btn-sm ${reportFilterStatus === 'dismissed' ? 'btn-primary' : 'btn-outline'}" onclick="setReportFilter('dismissed')">متجاهلة (${dismissedCount})</button>
+          </div>
+
+          <div style="flex:1;max-width:380px;min-width:240px;position:relative;">
+            <input type="text" id="reportSearchInput" value="${escapeHtml(reportSearchQuery)}" placeholder="بحث بالاسم، الهاتف، رقم الرحلة، أو السبب..." style="width:100%;padding:8px 34px 8px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);background:var(--bg-primary);font-size:13px;" oninput="handleReportSearch(this.value)">
+            <i class="ri-search-line" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-light);"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reports List / Table Card -->
+      <div class="card">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;padding:16px;">
+          <h3 style="margin:0;font-size:15px;font-weight:700;">
+            <i class="ri-file-list-3-line text-blue"></i> تفاصيل البلاغات والأطراف المعنية
+          </h3>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <div class="table-responsive">
+            <table class="data-table" style="width:100%;font-size:12px;">
+              <thead>
+                <tr style="background:var(--bg-primary);">
+                  <th style="padding:12px 14px;">طرفا البلاغ</th>
+                  <th style="padding:12px 14px;">الرحلة المعنية</th>
+                  <th style="padding:12px 14px;">حساب الراكب</th>
+                  <th style="padding:12px 14px;">حساب الكابتن</th>
+                  <th style="padding:12px 14px;min-width:220px;">الرسالة وتفاصيل البلاغ</th>
+                  <th style="padding:12px 14px;">الحالة</th>
+                  <th style="padding:12px 14px;text-align:center;">إجراءات الإدارة</th>
+                </tr>
+              </thead>
+              <tbody id="reportsTableBody">
+                ${renderReportsTableRows()}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderReportsTableRows() {
+  let list = liveTripReports || [];
+
+  if (reportFilterStatus !== 'all') {
+    list = list.filter(r => r.status === reportFilterStatus);
+  }
+
+  if (reportSearchQuery) {
+    const q = reportSearchQuery.toLowerCase();
+    list = list.filter(r => {
+      const pName = (r.passenger_name || '').toLowerCase();
+      const pPhone = (r.passenger_phone || '').toLowerCase();
+      const dName = (r.driver_name || '').toLowerCase();
+      const dPhone = (r.driver_phone || '').toLowerCase();
+      const reason = (r.reason || '').toLowerCase();
+      const desc = (r.description || '').toLowerCase();
+      const tripId = (r.trip_id || '').toLowerCase();
+      return pName.includes(q) || pPhone.includes(q) || dName.includes(q) || dPhone.includes(q) || reason.includes(q) || desc.includes(q) || tripId.includes(q);
+    });
+  }
+
+  if (list.length === 0) {
+    return `
+      <tr>
+        <td colspan="7" style="text-align:center;padding:40px;color:var(--text-light);">
+          <i class="ri-shield-check-line" style="font-size:36px;color:#10B981;display:block;margin-bottom:8px;"></i>
+          لا توجد بلاغات مسجلة مطابقة لهذا التصنيف
+        </td>
+      </tr>
+    `;
+  }
+
+  return list.map(r => {
+    const isPassengerReporter = r.reporter_role === 'passenger';
+    const timeStr = r.created_at ? new Date(r.created_at).toLocaleString('ar-EG') : '—';
+
+    let statusBadge = '';
+    if (r.status === 'pending') {
+      statusBadge = '<span class="badge" style="background:#FEE2E2;color:#991B1B;font-weight:700;padding:4px 10px;border-radius:12px;">معلق / جديد 🔴</span>';
+    } else if (r.status === 'investigating') {
+      statusBadge = '<span class="badge" style="background:#FEF3C7;color:#92400E;font-weight:700;padding:4px 10px;border-radius:12px;">قيد المتابعة ⏳</span>';
+    } else if (r.status === 'resolved') {
+      statusBadge = '<span class="badge" style="background:#D1FAE5;color:#065F46;font-weight:700;padding:4px 10px;border-radius:12px;">تم الحل ✅</span>';
+    } else {
+      statusBadge = '<span class="badge" style="background:#F3F4F6;color:#4B5563;font-weight:700;padding:4px 10px;border-radius:12px;">تم التجاهل ⚪</span>';
+    }
+
+    let tripStatusLabel = '';
+    if (r.trip_status === 'in_progress') {
+      tripStatusLabel = '<span class="badge" style="background:#EFF6FF;color:#1D4ED8;font-size:10px;">أثناء سير الرحلة 🚗</span>';
+    } else if (r.trip_status === 'completed') {
+      tripStatusLabel = '<span class="badge" style="background:#ECFDF5;color:#047857;font-size:10px;">بعد اكتمال الرحلة ✅</span>';
+    } else if (r.trip_status === 'cancelled') {
+      tripStatusLabel = '<span class="badge" style="background:#FFF1F2;color:#BE123C;font-size:10px;">بعد إلغاء الرحلة ❌</span>';
+    } else {
+      tripStatusLabel = `<span class="badge" style="background:#F3F4F6;color:#374151;font-size:10px;">${escapeHtml(r.trip_status || 'مشوار')}</span>`;
+    }
+
+    const shortTripId = r.trip_id ? r.trip_id.substring(0, 8) : 'غير محدد';
+
+    return `
+      <tr style="border-bottom:1px solid var(--border-light);vertical-align:top;">
+        <td style="padding:14px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+            ${isPassengerReporter
+              ? '<span class="badge" style="background:#F3E8FF;color:#7E22CE;font-weight:700;font-size:11px;">👤 الراكب أبلغ عن الكابتن</span>'
+              : '<span class="badge" style="background:#E0F2FE;color:#0369A1;font-weight:700;font-size:11px;">🚗 الكابتن أبلغ عن الراكب</span>'}
+          </div>
+          <div style="font-size:11px;color:var(--text-light);"><i class="ri-time-line"></i> ${timeStr}</div>
+        </td>
+
+        <td style="padding:14px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <span style="font-family:monospace;font-size:11px;background:#F3F4F6;padding:2px 6px;border-radius:4px;font-weight:bold;">#${shortTripId}</span>
+            ${tripStatusLabel}
+          </div>
+          <div style="font-size:11px;line-height:1.4;margin-bottom:4px;">
+            <div><i class="ri-map-pin-2-fill" style="color:var(--medium-blue);font-size:10px;"></i> <b>من:</b> ${escapeHtml(r.pickup_address || 'الموقع المسجل')}</div>
+            <div><i class="ri-flag-fill" style="color:var(--dark-blue);font-size:10px;"></i> <b>إلى:</b> ${escapeHtml(r.destination_address || 'الوجهة المسجلة')}</div>
+          </div>
+          ${r.fare ? `<div style="font-size:11px;font-weight:700;color:var(--medium-blue);">${r.fare} ج.م</div>` : ''}
+        </td>
+
+        <td style="padding:14px;">
+          <div style="font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:4px;">
+            <i class="ri-user-line" style="color:#7E22CE;"></i>
+            ${escapeHtml(r.passenger_name || 'راكب inRide')}
+          </div>
+          <div style="font-size:11px;color:var(--text-secondary);direction:ltr;text-align:right;margin:2px 0 6px 0;">
+            ${escapeHtml(r.passenger_phone || '—')}
+          </div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            ${r.passenger_phone ? `
+              <a href="tel:${r.passenger_phone}" class="btn btn-sm btn-outline" style="padding:2px 6px;font-size:10px;" title="اتصال">
+                <i class="ri-phone-line"></i> اتصال
+              </a>
+            ` : ''}
+            ${r.passenger_id ? `
+              <button class="btn btn-sm btn-outline" style="padding:2px 6px;font-size:10px;" onclick="openDirectUserChat('${r.passenger_id}', '${escapeHtml(r.passenger_name || 'الراكب')}', 'rider')" title="محادثة مباشرة">
+                <i class="ri-chat-3-line"></i> شات
+              </button>
+              <button class="btn btn-sm btn-outline" style="padding:2px 6px;font-size:10px;" onclick="viewUserProfile('${r.passenger_id}', 'rider')" title="عرض الملف">
+                <i class="ri-external-link-line"></i> الملف
+              </button>
+            ` : ''}
+          </div>
+        </td>
+
+        <td style="padding:14px;">
+          <div style="font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:4px;">
+            <i class="ri-steering-2-fill" style="color:#0369A1;"></i>
+            ${escapeHtml(r.driver_name || 'كابتن inRide')}
+          </div>
+          <div style="font-size:11px;color:var(--text-secondary);direction:ltr;text-align:right;margin:2px 0 6px 0;">
+            ${escapeHtml(r.driver_phone || '—')}
+          </div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            ${r.driver_phone ? `
+              <a href="tel:${r.driver_phone}" class="btn btn-sm btn-outline" style="padding:2px 6px;font-size:10px;" title="اتصال">
+                <i class="ri-phone-line"></i> اتصال
+              </a>
+            ` : ''}
+            ${r.driver_id ? `
+              <button class="btn btn-sm btn-outline" style="padding:2px 6px;font-size:10px;" onclick="openDirectUserChat('${r.driver_id}', '${escapeHtml(r.driver_name || 'الكابتن')}', 'driver')" title="محادثة مباشرة">
+                <i class="ri-chat-3-line"></i> شات
+              </button>
+              <button class="btn btn-sm btn-outline" style="padding:2px 6px;font-size:10px;" onclick="viewUserProfile('${r.driver_id}', 'driver')" title="عرض الملف">
+                <i class="ri-external-link-line"></i> الملف
+              </button>
+            ` : ''}
+          </div>
+        </td>
+
+        <td style="padding:14px;">
+          <div style="font-weight:700;color:#DC2626;font-size:12px;margin-bottom:6px;">
+            <i class="ri-error-warning-line"></i> ${escapeHtml(r.reason)}
+          </div>
+          <div style="font-size:12px;color:var(--text-primary);background:#F9FAFB;padding:8px;border-radius:8px;border:1px solid var(--border-light);line-height:1.5;">
+            ${escapeHtml(r.description || 'لا توجد تفاصيل إضافية مكتوبة.')}
+          </div>
+          ${r.admin_notes ? `
+            <div style="margin-top:6px;font-size:11px;color:#047857;background:#ECFDF5;padding:6px;border-radius:6px;border:1px solid #A7F3D0;">
+              <b>ملاحظة الإدارة:</b> ${escapeHtml(r.admin_notes)}
+            </div>
+          ` : ''}
+        </td>
+
+        <td style="padding:14px;white-space:nowrap;">
+          ${statusBadge}
+          ${r.resolved_at ? `<div style="font-size:10px;color:var(--text-light);margin-top:4px;">حُل في: ${new Date(r.resolved_at).toLocaleDateString('ar-EG')}</div>` : ''}
+        </td>
+
+        <td style="padding:14px;text-align:center;">
+          <div style="display:flex;flex-direction:column;gap:5px;align-items:center;">
+            ${r.status === 'pending' ? `
+              <button class="btn btn-sm btn-primary" style="width:100%;font-size:11px;" onclick="updateReportStatus('${r.id}', 'investigating')">
+                <i class="ri-time-line"></i> بدء المتابعة
+              </button>
+            ` : ''}
+            ${r.status !== 'resolved' ? `
+              <button class="btn btn-sm btn-success" style="width:100%;font-size:11px;background:#10B981;color:#fff;" onclick="updateReportStatus('${r.id}', 'resolved')">
+                <i class="ri-check-line"></i> تم الحل
+              </button>
+            ` : ''}
+            ${r.status !== 'dismissed' && r.status !== 'resolved' ? `
+              <button class="btn btn-sm btn-outline" style="width:100%;font-size:11px;color:#6B7280;" onclick="updateReportStatus('${r.id}', 'dismissed')">
+                <i class="ri-close-circle-line"></i> تجاهل
+              </button>
+            ` : ''}
+            <button class="btn btn-sm btn-outline" style="width:100%;font-size:11px;" onclick="promptReportAdminNotes('${r.id}', '${escapeHtml(r.admin_notes || '')}')">
+              <i class="ri-edit-line"></i> ملاحظة إدارية
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
 

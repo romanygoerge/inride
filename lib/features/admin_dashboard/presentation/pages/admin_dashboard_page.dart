@@ -222,6 +222,7 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
                 _buildNavItem(context, 'Users', Icons.people_alt_rounded, '/dashboard/users', currentTab == 'users'),
                 _buildNavItem(context, 'Captains & Drivers', Icons.local_taxi_rounded, '/dashboard/drivers', currentTab == 'drivers'),
                 _buildNavItem(context, 'Trips & Rides', Icons.route_rounded, '/dashboard/trips', currentTab == 'trips'),
+                _buildNavItem(context, 'Trip Reports', Icons.shield_outlined, '/dashboard/reports', currentTab == 'reports'),
                 _buildNavItem(context, 'System Settings', Icons.settings_rounded, '/dashboard/settings', currentTab == 'settings'),
               ],
             ),
@@ -518,6 +519,10 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
   }
 
   Widget _buildContentAreaCard(String tab) {
+    if (tab == 'reports') {
+      return _buildReportsCard();
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(32),
@@ -550,6 +555,165 @@ class _AdminDashboardPageState extends ConsumerState<AdminDashboardPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildReportsCard() {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: Supabase.instance.client
+          .from('trip_reports')
+          .select()
+          .order('created_at', ascending: false),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()));
+        }
+        final reports = snapshot.data ?? [];
+        if (reports.isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: const Center(
+              child: Text(
+                'No trip reports submitted yet.',
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+            ),
+          );
+        }
+
+        return Column(
+          children: reports.map((r) {
+            final isPassenger = r['reporter_role'] == 'passenger';
+            final status = r['status'] ?? 'pending';
+            final tripId = r['trip_id']?.toString() ?? 'N/A';
+            final shortTripId = tripId.length > 8 ? tripId.substring(0, 8) : tripId;
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: status == 'pending' ? Colors.red.shade200 : Colors.grey.shade200,
+                  width: status == 'pending' ? 1.5 : 1,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.shield_outlined, color: Colors.red.shade700, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            isPassenger ? 'Passenger reported Captain' : 'Captain reported Passenger',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A)),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: status == 'pending'
+                              ? Colors.red.shade50
+                              : (status == 'resolved' ? Colors.green.shade50 : Colors.orange.shade50),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          status.toString().toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: status == 'pending'
+                                ? Colors.red.shade800
+                                : (status == 'resolved' ? Colors.green.shade800 : Colors.orange.shade800),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Passenger Account:', style: TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold)),
+                            Text('${r['passenger_name'] ?? 'N/A'} (${r['passenger_phone'] ?? 'N/A'})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Captain Account:', style: TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold)),
+                            Text('${r['driver_name'] ?? 'N/A'} (${r['driver_phone'] ?? 'N/A'})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text('Trip: #$shortTripId | From: ${r['pickup_address'] ?? 'N/A'} -> To: ${r['destination_address'] ?? 'N/A'} | Fare: ${r['fare'] ?? 'N/A'} EGP', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700)),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Reason: ${r['reason'] ?? ''}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.red.shade800)),
+                        const SizedBox(height: 4),
+                        Text(r['description'] ?? 'No message provided', style: const TextStyle(fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  if (status != 'resolved') ...[
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF16A34A),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: () async {
+                          await Supabase.instance.client
+                              .from('trip_reports')
+                              .update({'status': 'resolved', 'resolved_at': DateTime.now().toIso8601String()})
+                              .eq('id', r['id']);
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.check, size: 16),
+                        label: const Text('Mark as Resolved', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
     );
   }
 }

@@ -24,6 +24,7 @@ import '../../../../core/services/driver_location_service.dart';
 import '../../../../core/localization/locale_controller.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
 import '../../../../core/data/sadat_city_geo_data.dart';
+import '../../../../shared/widgets/trip_report_dialog.dart';
 
 class DriverRideActivePage extends StatefulWidget {
   const DriverRideActivePage({super.key});
@@ -44,6 +45,32 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
   String? _passengerName;
   String? _passengerPhone;
   String? _lastPassengerId;
+
+  void _openReportDialog({String tripStatus = 'in_progress'}) {
+    final state = GlobalState.instance;
+    final passId = state.activePassengerId ?? state.currentRideRequest?.passengerId;
+    final passName = _passengerName ?? (LocaleController.instance.isArabic ? 'الراكب' : 'Passenger');
+    final passPhone = _passengerPhone ?? state.activePassengerPhone ?? state.currentRideRequest?.passengerPhone;
+
+    TripReportDialog.show(
+      context,
+      tripId: state.currentRequestId,
+      reporterId: state.userUid ?? '',
+      reporterRole: 'driver',
+      reportedId: passId,
+      reportedName: passName,
+      passengerId: passId,
+      passengerName: passName,
+      passengerPhone: passPhone,
+      driverId: state.userUid,
+      driverName: state.userName,
+      driverPhone: state.phoneNumber,
+      tripStatus: tripStatus,
+      pickupAddress: state.fromAddress,
+      destinationAddress: state.toAddress,
+      fare: state.offeredFare,
+    );
+  }
 
   @override
   void initState() {
@@ -791,6 +818,11 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                       },
                                     ),
                                     IconButton(
+                                      icon: const Icon(Icons.shield_outlined, color: AppColors.error),
+                                      tooltip: LocaleController.instance.isArabic ? 'إبلاغ عن الراكب' : 'Report Passenger',
+                                      onPressed: () => _openReportDialog(tripStatus: 'in_progress'),
+                                    ),
+                                    IconButton(
                                       icon: const Icon(Icons.share_location_outlined, color: Colors.green),
                                       tooltip: LocaleController.instance.isArabic ? 'مشاركة موقعي المباشر' : 'Share Live Location',
                                       onPressed: _shareLiveLocation,
@@ -1407,6 +1439,15 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                           'إرسال التقييم والبحث عن رحلة أخرى',
                           style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
                         ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextButton.icon(
+                      onPressed: () => _openReportDialog(tripStatus: 'completed'),
+                      icon: const Icon(Icons.shield_outlined, size: 16, color: AppColors.error),
+                      label: Text(
+                        LocaleController.instance.isArabic ? 'إبلاغ عن مشكلة مع الراكب' : 'Report Issue with Passenger',
+                        style: GoogleFonts.cairo(color: AppColors.error, fontSize: 12, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],

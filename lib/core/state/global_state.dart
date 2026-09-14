@@ -1496,6 +1496,12 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'vehicle': data['vehicle_type'] == 'scooter' ? 'اسكوتر' : (data['vehicle_type'] == 'motorcycle' ? 'موتوسيكل' : 'سيارة'),
           'timestamp': dateObj,
           'dbStatus': data['status'] ?? '',
+          'id': data['id']?.toString(),
+          'passenger_id': data['passenger_id']?.toString(),
+          'driver_id': data['driver_id']?.toString(),
+          'passenger_phone': (data['passenger_phone'] ?? data['recipient_phone'])?.toString(),
+          'driver_name': data['driver_name']?.toString(),
+          'passenger_name': data['passenger_name']?.toString(),
         };
       }).toList();
     } catch (_) {}

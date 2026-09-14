@@ -222,7 +222,7 @@ class _InviteFriendsSheetState extends State<InviteFriendsSheet> {
 
     final smartInviteText =
         'حمّل تطبيق inRide لطلب الرحلات والتوصيل بأسعار عادلة! 🚗✨\n'
-        'استخدم كود الدعوة الخاص بي ($code) للحصول على بونص مميز فور التسجيل! 🎁\n\n'
+        'استخدم كود الدعوة الخاص بي ($code) للحصول على رصيد مجاني ترحيبي في محفظتك فور إتمام رحلتك الأولى بنجاح! 🎁\n\n'
         '📱 للأندرويد: ${InviteFriendsSheet.androidUrl}\n'
         '🍏 للآيفون: ${InviteFriendsSheet.iosUrl}';
 
@@ -295,7 +295,7 @@ class _InviteFriendsSheetState extends State<InviteFriendsSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
                 _isReferralSystemActive
-                    ? 'شارك كود الدعوة الخاص بك مع أصدقائك واحصل على مكافأة تصل إلى ${_referralBonusAmount.toInt()} ج.م في محفظتك!'
+                    ? 'شارك كود الدعوة الخاص بك مع أصدقائك: فور إتمام صديقك لرحلته الأولى، يحصل على رصيد مجاني وتحصل أنت على ${_referralBonusAmount.toInt()} ج.م في محفظتك!'
                     : l10n.inviteFriendsSubtitle,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.cairo(

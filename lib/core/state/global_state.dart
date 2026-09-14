@@ -199,17 +199,28 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   // App usage & presence tracking
   DateTime? _lastHeartbeatTime;
   Timer? _presenceHeartbeatTimer;
+  Timer? _inactiveDebounceTimer;
   bool _isAppInForeground = true;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    debugPrint('[CaptainStatus] App lifecycle state changed: ${state.name}');
     if (state == AppLifecycleState.resumed) {
+      _inactiveDebounceTimer?.cancel();
+      _inactiveDebounceTimer = null;
       _onAppResumed();
-    } else if (state == AppLifecycleState.paused || 
-               state == AppLifecycleState.inactive || 
-               state == AppLifecycleState.detached) {
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      _inactiveDebounceTimer?.cancel();
+      _inactiveDebounceTimer = null;
       _onAppPaused();
+    } else if (state == AppLifecycleState.inactive) {
+      // Debounce transient inactive state (pulling notification shade, system popups)
+      _inactiveDebounceTimer?.cancel();
+      _inactiveDebounceTimer = Timer(const Duration(seconds: 3), () {
+        if (!_isAppInForeground) return;
+        _onAppPaused();
+      });
     }
   }
 
@@ -218,7 +229,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     _isAppInForeground = true;
     _recordAppOpen();
     _presenceHeartbeatTimer?.cancel();
-    _presenceHeartbeatTimer = Timer.periodic(const Duration(seconds: 40), (_) {
+    _presenceHeartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _sendPresenceHeartbeat();
     });
   }
@@ -226,6 +237,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   void _stopPresenceTracking() {
     _presenceHeartbeatTimer?.cancel();
     _presenceHeartbeatTimer = null;
+    _inactiveDebounceTimer?.cancel();
+    _inactiveDebounceTimer = null;
     _recordAppClose();
     _isAppInForeground = false;
   }
@@ -236,7 +249,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     _lastHeartbeatTime = DateTime.now();
     _recordAppOpen();
     _presenceHeartbeatTimer?.cancel();
-    _presenceHeartbeatTimer = Timer.periodic(const Duration(seconds: 40), (_) {
+    _presenceHeartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _sendPresenceHeartbeat();
     });
   }
@@ -252,11 +265,14 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _recordAppOpen() async {
     final uid = userUid ?? _supabase.auth.currentUser?.id;
     if (uid == null) return;
-    final nowIso = DateTime.now().toIso8601String();
+    debugPrint('[CaptainStatus] Recording app open (server time) for user: $uid');
     try {
       await _supabase.rpc('record_user_app_open', params: {'p_user_id': uid});
-    } catch (_) {
+      debugPrint('[CaptainStatus] ✓ record_user_app_open success for $uid');
+    } catch (e) {
+      debugPrint('[CaptainStatus] ❌ record_user_app_open RPC error: $e');
       try {
+        final nowIso = DateTime.now().toUtc().toIso8601String();
         final res = await _supabase.from('users').select('app_open_count').eq('id', uid).maybeSingle();
         final currentCount = (res?['app_open_count'] as num?)?.toInt() ?? 0;
         await _supabase.from('users').update({
@@ -265,8 +281,18 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'last_seen_at': nowIso,
           'app_open_count': currentCount + 1,
         }).eq('id', uid);
-      } catch (e) {
-        debugPrint('[Presence] _recordAppOpen fallback error: $e');
+
+        if (currentRole == UserRole.driver || hasDriverProfile) {
+          await _supabase.from('drivers').update({
+            'is_app_open': true,
+            'last_app_open': nowIso,
+            'last_seen_at': nowIso,
+            'is_online': true,
+            'updated_at': nowIso,
+          }).eq('id', uid);
+        }
+      } catch (fbErr) {
+        debugPrint('[CaptainStatus] _recordAppOpen fallback error: $fbErr');
       }
     }
   }
@@ -277,10 +303,13 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     final now = DateTime.now();
     final elapsedSecs = _lastHeartbeatTime != null 
         ? now.difference(_lastHeartbeatTime!).inSeconds 
-        : 40;
+        : 30;
     _lastHeartbeatTime = now;
     final nowIso = now.toUtc().toIso8601String();
 
+    debugPrint('[CaptainStatus] Sending heartbeat (elapsed: ${elapsedSecs}s) for user $uid');
+
+    // 1. Send user app heartbeat
     try {
       await _supabase.rpc('record_user_app_heartbeat', params: {
         'p_user_id': uid,
@@ -296,26 +325,40 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'total_app_time_seconds': currentTime + elapsedSecs,
         }).eq('id', uid);
       } catch (e) {
-        debugPrint('[Presence] _sendPresenceHeartbeat fallback error: $e');
+        debugPrint('[CaptainStatus] _sendPresenceHeartbeat user fallback error: $e');
       }
     }
 
-    // Keep driver online status fresh if currently in driver mode and online
-    if (isDriverOnline && currentRole == UserRole.driver) {
+    // 2. Send captain dedicated heartbeat if driver profile exists or currentRole is driver
+    if (currentRole == UserRole.driver || hasDriverProfile) {
       try {
-        final driverHeartbeat = <String, dynamic>{
-          'id': uid,
-          'is_online': true,
-          'is_available': rideStatus == RideStatus.idle || rideStatus == RideStatus.driverBidding,
-          'updated_at': nowIso,
+        final params = <String, dynamic>{
+          'p_driver_id': uid,
+          'p_elapsed_seconds': elapsedSecs,
         };
         if (driverLatitude != null && driverLongitude != null) {
-          driverHeartbeat['current_latitude'] = driverLatitude;
-          driverHeartbeat['current_longitude'] = driverLongitude;
+          params['p_lat'] = driverLatitude;
+          params['p_lng'] = driverLongitude;
         }
-        await _supabase.from('drivers').upsert(driverHeartbeat);
+        await _supabase.rpc('record_driver_heartbeat', params: params);
+        debugPrint('[CaptainStatus] ✓ Driver heartbeat RPC success (lat=$driverLatitude, lng=$driverLongitude)');
       } catch (e) {
-        debugPrint('[Presence] driver heartbeat error: $e');
+        debugPrint('[CaptainStatus] ❌ Driver heartbeat RPC error: $e');
+        try {
+          final driverHeartbeat = <String, dynamic>{
+            'is_online': true,
+            'is_app_open': true,
+            'last_seen_at': nowIso,
+            'updated_at': nowIso,
+          };
+          if (driverLatitude != null && driverLongitude != null) {
+            driverHeartbeat['current_latitude'] = driverLatitude;
+            driverHeartbeat['current_longitude'] = driverLongitude;
+          }
+          await _supabase.from('drivers').update(driverHeartbeat).eq('id', uid);
+        } catch (fbErr) {
+          debugPrint('[CaptainStatus] Driver heartbeat fallback update error: $fbErr');
+        }
       }
     }
   }
@@ -330,12 +373,15 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     _lastHeartbeatTime = now;
     final nowIso = now.toUtc().toIso8601String();
 
+    debugPrint('[CaptainStatus] Recording app close / background for user $uid');
     try {
       await _supabase.rpc('record_user_app_close', params: {
         'p_user_id': uid,
         'p_elapsed_seconds': elapsedSecs,
       });
-    } catch (_) {
+      debugPrint('[CaptainStatus] ✓ record_user_app_close success');
+    } catch (e) {
+      debugPrint('[CaptainStatus] ❌ record_user_app_close RPC error: $e');
       try {
         final res = await _supabase.from('users').select('total_app_time_seconds').eq('id', uid).maybeSingle();
         final currentTime = (res?['total_app_time_seconds'] as num?)?.toInt() ?? 0;
@@ -344,8 +390,16 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'last_seen_at': nowIso,
           'total_app_time_seconds': currentTime + elapsedSecs,
         }).eq('id', uid);
-      } catch (e) {
-        debugPrint('[Presence] _recordAppClose fallback error: $e');
+
+        if (currentRole == UserRole.driver || hasDriverProfile) {
+          await _supabase.from('drivers').update({
+            'is_app_open': false,
+            'last_seen_at': nowIso,
+            'updated_at': nowIso,
+          }).eq('id', uid);
+        }
+      } catch (fbErr) {
+        debugPrint('[CaptainStatus] _recordAppClose fallback error: $fbErr');
       }
     }
   }
@@ -639,9 +693,14 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     _connectivityTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
       final bool hasNet = await _checkInternetConnection();
       if (isOffline != !hasNet) {
+        final bool wasOffline = isOffline;
         isOffline = !hasNet;
         notifyListeners();
         _showConnectivitySnackBar(hasNet);
+        if (wasOffline && hasNet) {
+          debugPrint('[CaptainStatus] Network reconnected! Triggering immediate heartbeat & presence refresh');
+          _sendPresenceHeartbeat();
+        }
       }
     });
   }
@@ -1095,7 +1154,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
             unawaited(MetaAnalyticsService.instance.clearUserId());
             _stopPresenceTracking();
             try {
-              stopDriverLocationTracking();
+              stopDriverLocationTracking(forceOffline: true);
               _stopAllLocationAndTimers();
             } catch (e) {
               debugPrint('[GlobalState] Error stopping location tracking on signout: $e');
@@ -1950,22 +2009,22 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     final double? initLat = driverLatitude ?? MapCoordinatesHelper.deviceLocation?.latitude;
     final double? initLng = driverLongitude ?? MapCoordinatesHelper.deviceLocation?.longitude;
 
-    // Immediately update online status in database with coordinates if available
+    // Immediately update availability & online status in database with coordinates
     if (userUid != null) {
       _listenToDriverAssignedRides();
+      debugPrint('[CaptainStatus] Enabling driver trip availability for $userUid (lat=$initLat, lng=$initLng)');
       try {
-        final updateMap = <String, dynamic>{
-          'id': userUid!,
-          'is_online': true,
-          'is_available': rideStatus == RideStatus.idle || rideStatus == RideStatus.driverBidding,
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        };
+        await _supabase.rpc('set_driver_trip_availability', params: {
+          'p_driver_id': userUid!,
+          'p_is_available': true,
+        });
         if (initLat != null && initLng != null) {
-          updateMap['current_latitude'] = initLat;
-          updateMap['current_longitude'] = initLng;
+          await _supabase.from('drivers').update({
+            'current_latitude': initLat,
+            'current_longitude': initLng,
+          }).eq('id', userUid!);
         }
-        await _supabase.from('drivers').upsert(updateMap);
-        debugPrint('[DriverStatus] GlobalState immediately upserted is_online=true for driver $userUid (lat=$initLat, lng=$initLng)');
+        debugPrint('[CaptainStatus] ✓ set_driver_trip_availability=true success for $userUid');
         
         // Notify driver of online status
         unawaited(NotificationService.instance.sendNotification(
@@ -1976,7 +2035,23 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           forceSelf: true,
         ));
       } catch (e) {
-        debugPrint('[DriverStatus] Error upserting initial online status: $e');
+        debugPrint('[CaptainStatus] Error setting trip availability, using fallback: $e');
+        try {
+          final nowIso = DateTime.now().toUtc().toIso8601String();
+          final updateMap = <String, dynamic>{
+            'is_online': true,
+            'is_available': true,
+            'last_seen_at': nowIso,
+            'updated_at': nowIso,
+          };
+          if (initLat != null && initLng != null) {
+            updateMap['current_latitude'] = initLat;
+            updateMap['current_longitude'] = initLng;
+          }
+          await _supabase.from('drivers').update(updateMap).eq('id', userUid!);
+        } catch (fbErr) {
+          debugPrint('[CaptainStatus] Fallback availability update error: $fbErr');
+        }
       }
     }
 
@@ -1992,43 +2067,63 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         final now = DateTime.now();
         if (now.difference(lastUpdateTime).inSeconds >= 5) {
           lastUpdateTime = now;
-          _supabase.from('drivers').upsert({
-            'id': userUid!,
+          final nowIso = now.toUtc().toIso8601String();
+          _supabase.from('drivers').update({
             'is_online': true,
             'is_available': rideStatus == RideStatus.idle || rideStatus == RideStatus.driverBidding,
             'current_latitude': position.latitude,
             'current_longitude': position.longitude,
-            'updated_at': DateTime.now().toUtc().toIso8601String(),
+            'last_seen_at': nowIso,
+            'updated_at': nowIso,
+          }).eq('id', userUid!).catchError((e) {
+            debugPrint('[CaptainStatus] Driver location update error: $e');
           });
-          debugPrint('[DriverStatus] GlobalState updated driver location: lat=${position.latitude}, lng=${position.longitude}');
         }
       }
     });
   }
 
-  Future<void> stopDriverLocationTracking() async {
+  Future<void> stopDriverLocationTracking({bool forceOffline = false}) async {
     await _driverLocationStreamSub?.cancel();
     _driverLocationStreamSub = null;
     isDriverOnline = false;
     notifyListeners();
 
     if (userUid != null) {
+      debugPrint('[CaptainStatus] Disabling driver trip availability (forceOffline: $forceOffline) for $userUid');
       try {
-        await _supabase.from('drivers').update({
-          'is_online': false,
-          'is_available': false,
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        }).eq('id', userUid!);
+        if (forceOffline) {
+          final nowIso = DateTime.now().toUtc().toIso8601String();
+          await _supabase.from('drivers').update({
+            'is_online': false,
+            'is_available': false,
+            'is_app_open': false,
+            'updated_at': nowIso,
+          }).eq('id', userUid!);
+        } else {
+          await _supabase.rpc('set_driver_trip_availability', params: {
+            'p_driver_id': userUid!,
+            'p_is_available': false,
+          });
+        }
+        debugPrint('[CaptainStatus] ✓ Trip availability disabled successfully');
 
         unawaited(NotificationService.instance.sendNotification(
           recipientId: userUid!,
-          title: 'أنت غير متصل الآن 🔴',
+          title: 'أنت غير متاح للرحلات الآن 🔴',
           body: 'تم إيقاف استقبال طلبات الرحلات وتحديد الموقع.',
           type: 'driver_offline',
           forceSelf: true,
         ));
       } catch (e) {
-        debugPrint('[DriverStatus] Error updating offline status: $e');
+        debugPrint('[CaptainStatus] Error updating availability to false: $e');
+        try {
+          final nowIso = DateTime.now().toUtc().toIso8601String();
+          await _supabase.from('drivers').update({
+            'is_available': false,
+            'updated_at': nowIso,
+          }).eq('id', userUid!);
+        } catch (_) {}
       }
     }
   }

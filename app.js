@@ -99,7 +99,7 @@ async function verifyAndApplyAdminSession(session) {
         .eq('email', userEmail)
         .maybeSingle();
       adminRecord = byEmail;
-    } catch (_) {}
+    } catch (_) { }
 
     // 2. Fallback query by auth_user_id
     if (!adminRecord) {
@@ -110,7 +110,7 @@ async function verifyAndApplyAdminSession(session) {
           .eq('auth_user_id', userId)
           .maybeSingle();
         adminRecord = byId;
-      } catch (_) {}
+      } catch (_) { }
     }
 
     if (!adminRecord) {
@@ -134,7 +134,7 @@ async function verifyAndApplyAdminSession(session) {
           .update({ auth_user_id: userId })
           .eq('id', adminRecord.id);
         adminRecord.auth_user_id = userId;
-      } catch (_) {}
+      } catch (_) { }
     }
 
     // Update last_login
@@ -143,7 +143,7 @@ async function verifyAndApplyAdminSession(session) {
         .from('admins')
         .update({ last_login: new Date().toISOString() })
         .eq('id', adminRecord.id);
-    } catch (_) {}
+    } catch (_) { }
 
     currentAdminUser = session.user;
     currentAdminProfile = adminRecord;
@@ -162,8 +162,8 @@ async function verifyAndApplyAdminSession(session) {
 
     if (!isSyncStarted) {
       isSyncStarted = true;
-      try { initSupabaseSync(); } catch (_) {}
-      try { initDriversRealtimeSync(); } catch (_) {}
+      try { initSupabaseSync(); } catch (_) { }
+      try { initDriversRealtimeSync(); } catch (_) { }
     }
 
     try {
@@ -219,7 +219,7 @@ async function handleLogin(event) {
     if (error) {
       console.error("Login error from Supabase Auth:", error);
       let errorMsg = "بيانات الدخول غير صحيحة. يرجى التأكد من البريد الإلكتروني وكلمة المرور.";
-      
+
       const msg = (error.message || '').toLowerCase();
       if (msg.includes('email not confirmed')) {
         errorMsg = "لم يتم تأكيد البريد الإلكتروني بعد. يرجى مراجعة البريد أو إيقاف Confirm Email في Supabase Auth Settings.";
@@ -253,7 +253,7 @@ async function handleLogout() {
     if (supabaseClient && supabaseClient.auth) {
       await supabaseClient.auth.signOut();
     }
-  } catch (e) {}
+  } catch (e) { }
   isAuthenticatedAdmin = false;
   currentAdminUser = null;
   currentAdminProfile = null;
@@ -356,7 +356,7 @@ function cleanupAllRealtimeChannels() {
     activeRealtimeChannels.forEach(ch => {
       try {
         if (ch && typeof ch.unsubscribe === 'function') ch.unsubscribe();
-      } catch (_) {}
+      } catch (_) { }
     });
     activeRealtimeChannels = [];
   }
@@ -424,7 +424,7 @@ try {
   if (cachedMaintenance !== null) {
     mockData.settings.is_maintenance_mode = cachedMaintenance === 'true';
   }
-} catch (_) {}
+} catch (_) { }
 
 let currentPage = 'dashboard';
 
@@ -454,7 +454,7 @@ let allSystemRatings = [];
 // ---- Date filtering functions ----
 // ---- UUID Generator ----
 function generateUUID() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
@@ -463,10 +463,10 @@ function generateUUID() {
 function getFilteredTrips() {
   return mockData.trips.filter(trip => {
     // Determine the creation date for this trip
-    const createdStr = (mockData.tripsDataMap && mockData.tripsDataMap[trip.requestId]) 
-      ? mockData.tripsDataMap[trip.requestId].created_at 
+    const createdStr = (mockData.tripsDataMap && mockData.tripsDataMap[trip.requestId])
+      ? mockData.tripsDataMap[trip.requestId].created_at
       : (trip.createdAt || trip.created_at || null);
-    
+
     let date = null;
     if (createdStr) {
       date = new Date(createdStr);
@@ -490,8 +490,8 @@ function getFilteredTrips() {
 
     if (dateFilter === 'today') {
       return date.getDate() === now.getDate() &&
-             date.getMonth() === now.getMonth() &&
-             date.getFullYear() === now.getFullYear();
+        date.getMonth() === now.getMonth() &&
+        date.getFullYear() === now.getFullYear();
     }
 
     if (dateFilter === 'week') {
@@ -502,7 +502,7 @@ function getFilteredTrips() {
 
     if (dateFilter === 'month') {
       return date.getMonth() === now.getMonth() &&
-             date.getFullYear() === now.getFullYear();
+        date.getFullYear() === now.getFullYear();
     }
 
     if (dateFilter === 'custom') {
@@ -523,11 +523,11 @@ function getFilteredTrips() {
 
     return true;
   }).sort((a, b) => {
-    const createdStrA = (mockData.tripsDataMap && mockData.tripsDataMap[a.requestId]) 
-      ? mockData.tripsDataMap[a.requestId].created_at 
+    const createdStrA = (mockData.tripsDataMap && mockData.tripsDataMap[a.requestId])
+      ? mockData.tripsDataMap[a.requestId].created_at
       : (a.createdAt || a.created_at || null);
-    const createdStrB = (mockData.tripsDataMap && mockData.tripsDataMap[b.requestId]) 
-      ? mockData.tripsDataMap[b.requestId].created_at 
+    const createdStrB = (mockData.tripsDataMap && mockData.tripsDataMap[b.requestId])
+      ? mockData.tripsDataMap[b.requestId].created_at
       : (b.createdAt || b.created_at || null);
     const dateA = createdStrA ? new Date(createdStrA).getTime() : 0;
     const dateB = createdStrB ? new Date(createdStrB).getTime() : 0;
@@ -599,15 +599,15 @@ function renderDateFilterBar() {
 function getVehicleIcon(type) {
   switch (type) {
     case 'عربية':
-    case 'car': 
+    case 'car':
       return 'ri-car-fill';
     case 'اسكوتر':
-    case 'scooter': 
+    case 'scooter':
       return 'ri-e-bike-2-fill';
     case 'موتوسيكل':
-    case 'motorcycle': 
+    case 'motorcycle':
       return 'ri-motorbike-fill';
-    default: 
+    default:
       return 'ri-car-fill';
   }
 }
@@ -654,28 +654,67 @@ function formatLastOpenedDateTime(dateStrOrObj) {
   }
 }
 
+function formatHeartbeatTime(dateStrOrMs) {
+  if (!dateStrOrMs) return 'لا يوجد نبض';
+  try {
+    const d = new Date(dateStrOrMs);
+    if (isNaN(d.getTime())) return 'لا يوجد نبض';
+    const diffSec = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (diffSec < 0) return 'الآن (نشط 🟢)';
+    if (diffSec < 45) return 'الآن (نشط 🟢)';
+    if (diffSec < 60) return `منذ ${diffSec} ثانية`;
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `منذ ${diffMin} دقيقة`;
+    return formatLastOpenedDateTime(d);
+  } catch (_) {
+    return 'غير متاح';
+  }
+}
+
+function getDriverTimeoutSeconds() {
+  const cfg = mockData?.settings?.driver_offline_timeout_seconds;
+  return Math.max(30, parseInt(cfg) || 180);
+}
+
+function isDriverCurrentlyOnline(drvObj, userObj) {
+  if (!drvObj && !userObj) return false;
+  const timeoutSec = getDriverTimeoutSeconds();
+  const lastSeenVal = drvObj?.last_seen_at || userObj?.last_seen_at;
+  if (lastSeenVal) {
+    const lastSeenMs = new Date(lastSeenVal).getTime();
+    if (!isNaN(lastSeenMs)) {
+      const diffSec = (Date.now() - lastSeenMs) / 1000;
+      return diffSec <= timeoutSec;
+    }
+  }
+  return (drvObj?.is_online === true || drvObj?.is_app_open === true || userObj?.is_app_open === true);
+}
+
+function isDriverAvailableForTrips(drvObj) {
+  if (!drvObj) return false;
+  return drvObj.is_available === true;
+}
+
 function isUserCurrentlyOnline(userObj, fallbackIsOnline = false) {
   if (!userObj) return !!fallbackIsOnline;
-  const isAppOpen = userObj.is_app_open === true;
-  const isDrvOnline = userObj.is_online === true || fallbackIsOnline === true;
-  if (!userObj.last_seen_at) {
-    return isAppOpen || isDrvOnline;
+  const timeoutSec = getDriverTimeoutSeconds();
+  if (userObj.last_seen_at) {
+    const lastSeenMs = new Date(userObj.last_seen_at).getTime();
+    if (!isNaN(lastSeenMs)) {
+      const diffSec = (Date.now() - lastSeenMs) / 1000;
+      return diffSec <= timeoutSec;
+    }
   }
-  const lastSeenMs = new Date(userObj.last_seen_at).getTime();
-  if (isNaN(lastSeenMs)) return isAppOpen || isDrvOnline;
-  const diffMinutes = (Date.now() - lastSeenMs) / 60000;
-  // User is considered active/online only if app was open and active within the last 4 minutes
-  if (diffMinutes > 4) return false;
-  return isAppOpen || isDrvOnline;
+  return userObj.is_app_open === true || !!fallbackIsOnline;
 }
 
 function getStatusClass(status) {
   switch (status) {
     case 'مكتملة':
-    case 'Completed': 
+    case 'Completed':
       return 'completed';
     case 'ملغاة':
-    case 'Cancelled': 
+    case 'Cancelled':
       return 'cancelled';
     case 'جارية':
     case 'Searching':
@@ -684,21 +723,21 @@ function getStatusClass(status) {
     case 'TripStarted':
       return 'active';
     case 'verified':
-    case 'معتمد': 
+    case 'معتمد':
       return 'verified';
     case 'submitted':
-    case 'قيد المراجعة': 
+    case 'قيد المراجعة':
       return 'submitted';
     case 'unregistered':
-    case 'غير مسجل': 
+    case 'غير مسجل':
       return 'unregistered';
     case 'نشط':
-    case 'active': 
+    case 'active':
       return 'completed';
     case 'غير نشط':
-    case 'inactive': 
+    case 'inactive':
       return 'cancelled';
-    default: 
+    default:
       return 'pending';
   }
 }
@@ -846,12 +885,14 @@ function renderPage(page) {
         initProfileChatSync(activeProfileUid, 'driver');
         loadProfileRatings(activeProfileUid, 'driver');
         loadProfileWalletTransactions(activeProfileUid, 'driver');
+        loadCaptainMissionCard(activeProfileUid, 'driver');
         break;
       case 'passenger-profile':
         container.innerHTML = renderPassengerProfile();
         initProfileChatSync(activeProfileUid, 'rider');
         loadProfileRatings(activeProfileUid, 'rider');
         loadProfileWalletTransactions(activeProfileUid, 'rider');
+        loadCaptainMissionCard(activeProfileUid, 'rider');
         break;
       case 'ratings':
         container.innerHTML = renderRatingsPage();
@@ -1161,10 +1202,10 @@ function formatTime(timestamp) {
 
 function getReceiverTrackingHtml(trip) {
   if (trip.isDeliveryLocationConfirmed === false || trip.receiverLocationConfirmed || trip.linkOpened) {
-    const openedStatus = trip.linkOpened 
-      ? `<span style="font-size: 11px; padding: 3px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #2e7d32; background: #e8f5e9; border: 1px solid #c8e6c9;"><i class="ri-eye-line"></i> فتح الرابط (${trip.linkOpenedTime ? formatTime(trip.linkOpenedTime) : 'مؤخراً'})</span>` 
+    const openedStatus = trip.linkOpened
+      ? `<span style="font-size: 11px; padding: 3px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #2e7d32; background: #e8f5e9; border: 1px solid #c8e6c9;"><i class="ri-eye-line"></i> فتح الرابط (${trip.linkOpenedTime ? formatTime(trip.linkOpenedTime) : 'مؤخراً'})</span>`
       : `<span style="font-size: 11px; padding: 3px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #ef6c00; background: #fff3e0; border: 1px solid #ffe0b2;"><i class="ri-eye-off-line"></i> لم يفتح الرابط</span>`;
-    
+
     let permissionStatus = '';
     if (trip.locationPermissionGranted === true) {
       permissionStatus = `<span style="font-size: 11px; padding: 3px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #2e7d32; background: #e8f5e9; border: 1px solid #c8e6c9;"><i class="ri-map-pin-user-line"></i> إذن الموقع: مسموح</span>`;
@@ -1203,7 +1244,7 @@ function groupTripsByDate(trips) {
     if (createdStr) {
       const d = new Date(createdStr);
       const today = new Date();
-      const yesterday = new Date(today.getTime() - 24*60*60*1000);
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
       if (d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear()) {
         dayLabel = "اليوم الجاري";
       } else if (d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear()) {
@@ -1215,7 +1256,7 @@ function groupTripsByDate(trips) {
       if (trip.date && typeof trip.date === 'string' && trip.date.startsWith("اليوم")) dayLabel = "اليوم الجاري";
       else if (trip.date && typeof trip.date === 'string' && trip.date.startsWith("أمس")) dayLabel = "أمس";
     }
-    
+
     if (!groups[dayLabel]) groups[dayLabel] = [];
     groups[dayLabel].push(trip);
   });
@@ -1227,17 +1268,17 @@ function renderTrips() {
   const filteredTrips = (currentFilter === 'all'
     ? baseTrips
     : baseTrips.filter(t => {
-        if (currentFilter === 'completed') return t.status === 'مكتملة';
-        if (currentFilter === 'cancelled') return t.status === 'ملغاة';
-        if (currentFilter === 'active') return t.status === 'جارية';
-        return true;
-      })).filter(t => {
-        return t.id.toLowerCase().includes(searchQuery) ||
-               t.riderName.toLowerCase().includes(searchQuery) ||
-               t.driverName.toLowerCase().includes(searchQuery) ||
-               t.from.toLowerCase().includes(searchQuery) ||
-               t.to.toLowerCase().includes(searchQuery);
-      });
+      if (currentFilter === 'completed') return t.status === 'مكتملة';
+      if (currentFilter === 'cancelled') return t.status === 'ملغاة';
+      if (currentFilter === 'active') return t.status === 'جارية';
+      return true;
+    })).filter(t => {
+      return t.id.toLowerCase().includes(searchQuery) ||
+        t.riderName.toLowerCase().includes(searchQuery) ||
+        t.driverName.toLowerCase().includes(searchQuery) ||
+        t.from.toLowerCase().includes(searchQuery) ||
+        t.to.toLowerCase().includes(searchQuery);
+    });
 
   const completedCount = baseTrips.filter(t => t.status === 'مكتملة').length;
   const cancelledCount = baseTrips.filter(t => t.status === 'ملغاة').length;
@@ -1410,7 +1451,7 @@ function changeTripPricePrompt(requestId) {
     showToast('⚠️ سعر غير صالح');
     return;
   }
-  
+
   if (supabaseClient) {
     supabaseClient.from('ride_requests').update({ offered_fare: newPrice, updated_at: new Date().toISOString() }).eq('id', requestId)
       .then(async ({ error }) => {
@@ -1438,7 +1479,7 @@ function changeTripPricePrompt(requestId) {
                 type: 'wallet'
               });
             }
-          } catch (_) {}
+          } catch (_) { }
         } else {
           showToast(`❌ فشل: ${error.message}`);
         }
@@ -1485,7 +1526,7 @@ function renderDrivers() {
     const vt = (d.vehicleType || '').toLowerCase();
     return vt === 'motorcycle' || vt === 'scooter' || vt === 'bike' || vt.includes('موتوسيكل') || vt.includes('سكوتر') || vt.includes('دراجة');
   }).length;
-  
+
   // 2. Filter by status / vehicle tab & ghost records
   const filteredDrivers = allDrivers.filter(d => {
     // Vehicle filters
@@ -1540,6 +1581,7 @@ function renderDrivers() {
   const rejectedCount = allDrivers.filter(d => d.status === 'rejected').length;
   const unregisteredCount = allDrivers.filter(d => d.status === 'unregistered' || !d.status).length;
   const activeNowCount = allDrivers.filter(d => d.isOnline).length;
+  const availableNowCount = allDrivers.filter(d => d.isOnline && d.isAvailable).length;
 
   return `
     <div class="page-section">
@@ -1612,10 +1654,16 @@ function renderDrivers() {
         <button class="btn ${driverStatusFilter === 'unregistered' ? 'btn-outline' : 'btn-outline'} btn-sm" style="${driverStatusFilter === 'unregistered' ? 'background:var(--bg-secondary);font-weight:700;' : ''}" onclick="setDriverStatusFilter('unregistered')">
           <i class="ri-draft-line"></i> غير مسجلين / مسودة (${unregisteredCount})
         </button>
-        <span style="margin-right:auto;font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:4px;">
-          <span style="width:8px;height:8px;background:#10b981;border-radius:50%;display:inline-block;"></span>
-          متصلين الآن (فاتحين التطبيق): <strong>${activeNowCount}</strong>
-        </span>
+        <div style="margin-right:auto;font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <span style="display:flex;align-items:center;gap:4px;" title="كباتن متصلين ويرسلون نبضات حية الآن">
+            <span style="width:8px;height:8px;background:#10b981;border-radius:50%;display:inline-block;"></span>
+            متصلين (Online): <strong>${activeNowCount}</strong>
+          </span>
+          <span style="display:flex;align-items:center;gap:4px;" title="كباتن متاحين لاستقبال طلبات الرحلات">
+            <i class="ri-taxi-fill" style="color:#2563eb;font-size:13px;"></i>
+            متاحين للرحلات: <strong>${availableNowCount}</strong>
+          </span>
+        </div>
       </div>
 
       <!-- Drivers Table -->
@@ -1701,16 +1749,25 @@ function renderDrivers() {
                     </span>
                   </td>
                   <td>
-                    ${driver.isOnline 
-                      ? '<span class="status-badge completed" style="background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;font-weight:700;"><span class="status-dot" style="background:#10b981;"></span> متصل (فاتح التطبيق)</span>'
-                      : '<span style="color:var(--text-light);font-size:12px;"><i class="ri-moon-line"></i> غير متصل</span>'
-                    }
-                    <div style="font-size:11px;color:var(--text-secondary);margin-top:5px;line-height:1.4;">
-                      <div title="تاريخ ووقت آخر فتح للتطبيق"><i class="ri-history-line" style="color:var(--medium-blue);"></i> آخر فتح: <strong>${formatLastOpenedDateTime(driver.lastOpenedAt)}</strong></div>
-                      <div style="display:flex;gap:6px;font-size:10px;color:var(--text-light);margin-top:2px;">
-                        <span><i class="ri-login-box-line"></i> ${driver.appOpenCount || 0} مرة</span>
-                        <span>•</span>
-                        <span><i class="ri-time-line"></i> ${formatAppUsageDuration(driver.totalAppTimeSeconds)}</span>
+                    <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
+                      <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+                        ${driver.isOnline
+      ? '<span class="status-badge completed" style="background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;font-weight:700;font-size:11px;padding:2px 8px;"><span class="status-dot" style="background:#10b981;"></span> متصل (Online)</span>'
+      : '<span class="status-badge" style="background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;font-size:11px;padding:2px 8px;"><span class="status-dot" style="background:#94a3b8;"></span> غير متصل (Offline)</span>'
+    }
+                        ${driver.isAvailable
+      ? '<span style="background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;border:1px solid #bfdbfe;display:inline-flex;align-items:center;gap:3px;" title="الكابتن مفعل استقبال الرحلات"><i class="ri-taxi-fill"></i> متاح للرحلات</span>'
+      : '<span style="background:#f3f4f6;color:#9ca3af;font-size:10px;padding:2px 6px;border-radius:6px;border:1px solid #e5e7eb;display:inline-flex;align-items:center;gap:3px;" title="الكابتن غير متاح لاستقبال الرحلات"><i class="ri-close-circle-line"></i> غير متاح</span>'
+    }
+                      </div>
+                      <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;line-height:1.4;">
+                        <div title="توقيت آخر نبض / تواجد مباشر"><i class="ri-pulse-line" style="color:#10b981;"></i> آخر نبض: <strong>${formatHeartbeatTime(driver.lastSeenAt)}</strong></div>
+                        <div title="تاريخ ووقت آخر فتح للتطبيق"><i class="ri-history-line" style="color:var(--medium-blue);"></i> آخر فتح: <strong>${formatLastOpenedDateTime(driver.lastOpenedAt)}</strong></div>
+                        <div style="display:flex;gap:6px;font-size:10px;color:var(--text-light);margin-top:2px;">
+                          <span><i class="ri-login-box-line"></i> ${driver.appOpenCount || 0} مرة</span>
+                          <span>•</span>
+                          <span><i class="ri-time-line"></i> ${formatAppUsageDuration(driver.totalAppTimeSeconds)}</span>
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -1967,7 +2024,7 @@ function parseVehicleImages(raw) {
         if (Array.isArray(parsed)) {
           return parsed.filter(item => typeof item === 'string' && item.trim().length > 5 && !item.includes('placehold.co'));
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     if (trimmed.includes(',')) {
       return trimmed.split(',')
@@ -2147,10 +2204,10 @@ function renderPassengers() {
   const filteredPassengers = allPassengers.filter(p => {
     if (!q) return true;
     return (p.id || '').toString().toLowerCase().includes(q) ||
-           (p.uid || '').toString().toLowerCase().includes(q) ||
-           (p.name || '').toString().toLowerCase().includes(q) ||
-           (p.phone || '').toString().includes(q) ||
-           (p.email || '').toString().toLowerCase().includes(q);
+      (p.uid || '').toString().toLowerCase().includes(q) ||
+      (p.name || '').toString().toLowerCase().includes(q) ||
+      (p.phone || '').toString().includes(q) ||
+      (p.email || '').toString().toLowerCase().includes(q);
   });
 
   // Always sort from newest to oldest by registration date
@@ -2258,10 +2315,10 @@ function renderPassengers() {
                   <td><span class="font-outfit fw-700" style="white-space:nowrap;">${p.totalTrips} رحلة</span></td>
                   <td><span style="font-size:12px;color:var(--text-light);font-weight:600;">${p.joinDate}</span></td>
                   <td>
-                    ${p.isOnline 
-                      ? '<span class="status-badge completed" style="background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;font-weight:700;"><span class="status-dot" style="background:#10b981;"></span> نشط (فاتح التطبيق)</span>'
-                      : '<span style="color:var(--text-light);font-size:12px;"><i class="ri-moon-line"></i> غير متصل</span>'
-                    }
+                    ${p.isOnline
+      ? '<span class="status-badge completed" style="background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;font-weight:700;"><span class="status-dot" style="background:#10b981;"></span> نشط (فاتح التطبيق)</span>'
+      : '<span style="color:var(--text-light);font-size:12px;"><i class="ri-moon-line"></i> غير متصل</span>'
+    }
                     <div style="font-size:11px;color:var(--text-secondary);margin-top:5px;line-height:1.4;">
                       <div title="تاريخ ووقت آخر فتح للتطبيق"><i class="ri-history-line" style="color:var(--medium-blue);"></i> آخر فتح: <strong>${formatLastOpenedDateTime(p.lastOpenedAt)}</strong></div>
                       <div style="display:flex;gap:6px;font-size:10px;color:var(--text-light);margin-top:2px;">
@@ -2321,7 +2378,7 @@ function renderPassengers() {
 function showAddUserModal(role) {
   const isDriver = role === 'driver';
   const title = isDriver ? 'إضافة سائق (كابتن) جديد' : 'إضافة راكب جديد';
-  
+
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
   modal.style.cssText = `
@@ -2330,7 +2387,7 @@ function showAddUserModal(role) {
     display:flex; align-items:center; justify-content:center;
     font-family: 'Cairo', sans-serif;
   `;
-  
+
   modal.innerHTML = `
     <div style="background:white; padding:24px; border-radius:var(--radius-lg); width:550px; max-width:95%; max-height:85vh; overflow-y:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.2); direction:rtl; text-align:right;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
@@ -2403,11 +2460,11 @@ function submitAddUser(role) {
   const email = document.getElementById('addEmail').value.trim();
   const address = document.getElementById('addAddress').value.trim();
   const rating = 0.0;
-  
+
   let vehicleType = '';
   let vehicleName = '';
   let licensePlate = '';
-  
+
   if (isDriver) {
     vehicleType = document.getElementById('addVehicleType').value;
     vehicleName = document.getElementById('addVehicleName').value.trim();
@@ -2469,7 +2526,7 @@ function submitAddUser(role) {
     const uid = 'local_uid_' + Math.random().toString(36).substring(2, 10);
     const dateStr = new Date().toLocaleDateString('ar-EG');
     const avatar = name.charAt(0);
-    
+
     if (isDriver) {
       const newDriver = {
         id: uid.substring(0, 8).toUpperCase(),
@@ -2536,7 +2593,7 @@ function showEditUserModal(uid, role) {
   } else {
     user = mockData.passengers.find(p => p.uid === uid);
   }
-  
+
   if (!user) {
     showToast('⚠️ لم يتم العثور على بيانات المستخدم');
     return;
@@ -2550,7 +2607,7 @@ function showEditUserModal(uid, role) {
     display:flex; align-items:center; justify-content:center;
     font-family: 'Cairo', sans-serif;
   `;
-  
+
   modal.innerHTML = `
     <div style="background:white; padding:24px; border-radius:var(--radius-lg); width:550px; max-width:95%; max-height:85vh; overflow-y:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.2); direction:rtl; text-align:right;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
@@ -2635,11 +2692,11 @@ function submitEditUser(uid, role) {
   const phone = document.getElementById('editPhone').value.trim();
   const email = document.getElementById('editEmail').value.trim();
   const address = document.getElementById('editAddress').value.trim();
-  
+
   let vehicleType = '';
   let vehicleName = '';
   let licensePlate = '';
-  
+
   if (isDriver) {
     vehicleType = document.getElementById('editVehicleType')?.value || 'car';
     vehicleName = document.getElementById('editVehicleName')?.value.trim() || 'مركبة';
@@ -2721,7 +2778,7 @@ function submitEditUser(uid, role) {
 function deleteUserPrompt(uid, role) {
   const isDriver = role === 'driver';
   const roleName = isDriver ? 'السائق' : 'الراكب';
-  
+
   // Custom styled confirmation modal
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
@@ -2731,7 +2788,7 @@ function deleteUserPrompt(uid, role) {
     display:flex; align-items:center; justify-content:center;
     font-family: 'Cairo', sans-serif;
   `;
-  
+
   modal.innerHTML = `
     <div style="background:white; padding:24px; border-radius:var(--radius-lg); width:450px; max-width:95%; box-shadow: 0 10px 25px rgba(0,0,0,0.2); direction:rtl; text-align:right;">
       <div style="display:flex; gap:16px; align-items:flex-start; margin-bottom:20px;">
@@ -2834,7 +2891,7 @@ async function loadFinancialDataFromSupabase() {
           });
         })
         .subscribe();
-    } catch (_) {}
+    } catch (_) { }
   }
 
   try {
@@ -2887,9 +2944,9 @@ function getFilteredTransactions() {
       const isApproved = r.status === 'approved';
       const existingId = Object.keys(combinedMap).find(k => {
         const item = combinedMap[k];
-        return item.user_id === r.user_id && 
+        return item.user_id === r.user_id &&
           ((isApproved && item.type === 'charge' && Math.abs((item.amount || 0) - (r.amount || 0)) < 0.1) ||
-           (!isApproved && item.type === 'charge_rejected'));
+            (!isApproved && item.type === 'charge_rejected'));
       });
 
       if (!existingId) {
@@ -2977,7 +3034,7 @@ async function approvePendingRecharge(id, userId, amount, requestIdFallback = nu
     try {
       const { data: rData } = await client.from('wallet_recharge_requests').select('*').eq('id', targetId).maybeSingle();
       reqObj = rData;
-    } catch (_) {}
+    } catch (_) { }
 
     // 1. Try stored RPC function first
     let rpcSuccess = false;
@@ -2989,7 +3046,7 @@ async function approvePendingRecharge(id, userId, amount, requestIdFallback = nu
       if (!rpcErr && rpcData && rpcData.success) {
         rpcSuccess = true;
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // 2. Update wallet_recharge_requests status
     await client.from('wallet_recharge_requests').update({
@@ -3008,7 +3065,7 @@ async function approvePendingRecharge(id, userId, amount, requestIdFallback = nu
     const newBalance = currentBalance + numericAmount;
 
     await client.from('users').update({ wallet_balance: newBalance }).eq('id', userId);
-    try { await client.from('profiles').update({ wallet_balance: newBalance }).eq('id', userId); } catch (_) {}
+    try { await client.from('profiles').update({ wallet_balance: newBalance }).eq('id', userId); } catch (_) { }
 
     // 4. Ensure record exists in transactions ledger table
     let existingTx = null;
@@ -3019,7 +3076,7 @@ async function approvePendingRecharge(id, userId, amount, requestIdFallback = nu
         .eq('type', 'charge_pending')
         .limit(1);
       if (txList && txList.length > 0) existingTx = txList[0];
-    } catch (_) {}
+    } catch (_) { }
 
     if (existingTx) {
       await client.from('transactions').update({
@@ -3056,7 +3113,7 @@ async function approvePendingRecharge(id, userId, amount, requestIdFallback = nu
         type: 'wallet',
         created_at: new Date().toISOString()
       });
-    } catch (_) {}
+    } catch (_) { }
 
     // Push Notification: إبلاغ المستخدم بقبول الشحن فوراً على جهازه
     try {
@@ -3066,7 +3123,7 @@ async function approvePendingRecharge(id, userId, amount, requestIdFallback = nu
         body: `تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م بنجاح. رصيدك الحالي: ${newBalance} ج.م`,
         type: 'wallet'
       });
-    } catch (_) {}
+    } catch (_) { }
 
     showToast(`✅ تم قبول طلب الشحن بمبلغ ${numericAmount} ج.م وإضافته للمحفظة بنجاح!`);
     await loadFinancialDataFromSupabase();
@@ -3099,7 +3156,7 @@ async function rejectPendingRecharge(id, userId, requestIdFallback = null) {
     try {
       const { data: rData } = await client.from('wallet_recharge_requests').select('*').eq('id', targetId).maybeSingle();
       reqObj = rData;
-    } catch (_) {}
+    } catch (_) { }
 
     let rpcSuccess = false;
     try {
@@ -3111,7 +3168,7 @@ async function rejectPendingRecharge(id, userId, requestIdFallback = null) {
       if (!rpcErr && rpcData && rpcData.success) {
         rpcSuccess = true;
       }
-    } catch (_) {}
+    } catch (_) { }
 
     await client.from('wallet_recharge_requests').update({
       status: 'rejected',
@@ -3127,7 +3184,7 @@ async function rejectPendingRecharge(id, userId, requestIdFallback = null) {
         .eq('type', 'charge_pending')
         .limit(1);
       if (txList && txList.length > 0) existingTx = txList[0];
-    } catch (_) {}
+    } catch (_) { }
 
     if (existingTx) {
       await client.from('transactions').update({
@@ -3163,7 +3220,7 @@ async function rejectPendingRecharge(id, userId, requestIdFallback = null) {
         type: 'wallet',
         created_at: new Date().toISOString()
       });
-    } catch (_) {}
+    } catch (_) { }
 
     // Push Notification: إبلاغ المستخدم برفض الشحن فوراً على جهازه
     try {
@@ -3173,7 +3230,7 @@ async function rejectPendingRecharge(id, userId, requestIdFallback = null) {
         body: `نأسف، تعذر قبول طلب الشحن الخاص بك. السبب: ${reason || 'إيصال غير واضح'}`,
         type: 'wallet'
       });
-    } catch (_) {}
+    } catch (_) { }
 
     showToast('❌ تم رفض طلب الشحن وإبلاغ المستخدم بنجاح.');
     await loadFinancialDataFromSupabase();
@@ -3317,10 +3374,10 @@ async function loadRideChatsFromSupabase() {
 
       if (dIds.length > 0) {
         const { data: dUsers } = await supabaseClient.from('drivers').select('id, user_id, name, phone_number').in('id', dIds);
-        (dUsers || []).forEach(d => { 
+        (dUsers || []).forEach(d => {
           const key = d.user_id || d.id;
-          dMap[key] = { name: d.name || 'كابتن', phone: d.phone_number || '—' }; 
-          dMap[d.id] = { name: d.name || 'كابتن', phone: d.phone_number || '—' }; 
+          dMap[key] = { name: d.name || 'كابتن', phone: d.phone_number || '—' };
+          dMap[d.id] = { name: d.name || 'كابتن', phone: d.phone_number || '—' };
         });
       }
 
@@ -3435,7 +3492,7 @@ async function loadRideChatMessages(roomId) {
           time: m.created_at ? new Date(m.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : 'الآن'
         }));
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   const box = document.getElementById('rideChatMessagesBox');
@@ -3474,7 +3531,7 @@ function selectCommConversation(userId, role) {
   if (commActiveUserId === userId) return;
   commActiveUserId = userId;
   commActiveUserRole = role || 'rider';
-  
+
   const items = document.querySelectorAll('.comm-conv-item');
   items.forEach(item => {
     if (item.getAttribute('data-userid') === userId) {
@@ -3505,7 +3562,7 @@ function openDirectUserChat(userId, userName, role) {
 
 function getCommContactsList() {
   let contactsMap = {};
-  
+
   if (mockData.drivers) {
     mockData.drivers.forEach(d => {
       contactsMap[d.uid] = {
@@ -3868,13 +3925,13 @@ function renderCommunication() {
                   ${(!liveSupportChats || liveSupportChats.length === 0) ? `
                     <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text-light);">لا توجد تذاكر دعم مسجلة في هذا القسم حالياً</td></tr>
                   ` : liveSupportChats.filter(c => supportFilterStatus === 'all' || c.status === supportFilterStatus).map(tkt => {
-                    const isDriver = tkt.user_type === 'driver';
-                    const timeStr = tkt.last_message_at ? new Date(tkt.last_message_at).toLocaleString('ar-EG') : 'الآن';
-                    const statusBg = tkt.status === 'resolved' ? '#D1FAE5' : (tkt.status === 'pending' ? '#FEF3C7' : '#FEE2E2');
-                    const statusColor = tkt.status === 'resolved' ? '#065F46' : (tkt.status === 'pending' ? '#92400E' : '#991B1B');
-                    const statusText = tkt.status === 'resolved' ? 'تم الحل ✅' : (tkt.status === 'pending' ? 'قيد المتابعة ⏳' : 'مفتوحة 🔴');
+      const isDriver = tkt.user_type === 'driver';
+      const timeStr = tkt.last_message_at ? new Date(tkt.last_message_at).toLocaleString('ar-EG') : 'الآن';
+      const statusBg = tkt.status === 'resolved' ? '#D1FAE5' : (tkt.status === 'pending' ? '#FEF3C7' : '#FEE2E2');
+      const statusColor = tkt.status === 'resolved' ? '#065F46' : (tkt.status === 'pending' ? '#92400E' : '#991B1B');
+      const statusText = tkt.status === 'resolved' ? 'تم الحل ✅' : (tkt.status === 'pending' ? 'قيد المتابعة ⏳' : 'مفتوحة 🔴');
 
-                    return `
+      return `
                       <tr style="border-bottom:1px solid var(--border-light);">
                         <td style="padding:12px 14px;">
                           <div style="font-weight:700;color:var(--text-primary);">${tkt.user_name || (isDriver ? 'كابتن inRide' : 'عميل inRide')}</div>
@@ -3902,7 +3959,7 @@ function renderCommunication() {
                         </td>
                       </tr>
                     `;
-                  }).join('')}
+    }).join('')}
                 </tbody>
               </table>
             </div>
@@ -3997,7 +4054,7 @@ async function initCommChatSync(force = false) {
             });
           })
           .subscribe();
-      } catch (_) {}
+      } catch (_) { }
     }
   } catch (e) {
     console.warn('[Comm] initCommChatSync warning:', e);
@@ -4048,7 +4105,7 @@ async function loadCommMessagesThread(userId, isSwitching = false) {
           };
         });
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   // Save to cache
@@ -4089,7 +4146,7 @@ function generateUUID() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
@@ -4390,16 +4447,16 @@ function renderWalletContentHtml() {
               </tr>
             </thead>
             <tbody>
-              ${pendingRechargeList.length === 0 ? 
-                `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-light);font-size:12.5px;">✨ لا توجد طلبات شحن معلقة حالياً. جميع إيصالات التحويل تم مراجعتها بالكامل!</td></tr>` : 
-                pendingRechargeList.map(tx => {
-                  const amt = parseFloat(tx.amount || 0);
-                  const dateStr = new Date(tx.created_at || Date.now()).toLocaleString('ar-EG');
-                  const userObj = (financialState.usersList || []).find(u => u.id === tx.user_id) || { name: 'مستخدم inRide', phone: '', role: 'راكب' };
-                  const userRoleBadge = userObj.role === 'driver' ? 'كابتن 🚗' : 'راكب 👤';
-                  const receiptUrl = tx.receipt_url || '';
+              ${pendingRechargeList.length === 0 ?
+      `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-light);font-size:12.5px;">✨ لا توجد طلبات شحن معلقة حالياً. جميع إيصالات التحويل تم مراجعتها بالكامل!</td></tr>` :
+      pendingRechargeList.map(tx => {
+        const amt = parseFloat(tx.amount || 0);
+        const dateStr = new Date(tx.created_at || Date.now()).toLocaleString('ar-EG');
+        const userObj = (financialState.usersList || []).find(u => u.id === tx.user_id) || { name: 'مستخدم inRide', phone: '', role: 'راكب' };
+        const userRoleBadge = userObj.role === 'driver' ? 'كابتن 🚗' : 'راكب 👤';
+        const receiptUrl = tx.receipt_url || '';
 
-                  return `
+        return `
                     <tr style="border-bottom:1px solid #FEF3C7;background:white;">
                       <td style="white-space:nowrap;padding:12px 14px;font-weight:600;">${dateStr}</td>
                       <td style="padding:12px 14px;">
@@ -4418,12 +4475,12 @@ function renderWalletContentHtml() {
                         +${amt.toLocaleString()} ج.م
                       </td>
                       <td style="padding:12px 14px;">
-                        ${receiptUrl ? 
-                          `<button class="btn btn-sm btn-outline" style="background:#EFF6FF;border-color:#3B82F6;color:#1D4ED8;font-weight:700;padding:5px 12px;border-radius:8px;" onclick="viewReceiptModal('${receiptUrl}', 'إيصال شحن معلق', '${userObj.name}', ${amt}, '${dateStr}', '${tx.payment_method || 'InstaPay'}')">
+                        ${receiptUrl ?
+            `<button class="btn btn-sm btn-outline" style="background:#EFF6FF;border-color:#3B82F6;color:#1D4ED8;font-weight:700;padding:5px 12px;border-radius:8px;" onclick="viewReceiptModal('${receiptUrl}', 'إيصال شحن معلق', '${userObj.name}', ${amt}, '${dateStr}', '${tx.payment_method || 'InstaPay'}')">
                              📸 معاينة الإيصال
-                           </button>` : 
-                          `<span style="color:var(--error);font-weight:bold;font-size:11px;">❌ بدون صورة إيصال</span>`
-                        }
+                           </button>` :
+            `<span style="color:var(--error);font-weight:bold;font-size:11px;">❌ بدون صورة إيصال</span>`
+          }
                       </td>
                       <td style="padding:12px 14px;text-align:center;">
                         <div style="display:flex;gap:8px;justify-content:center;">
@@ -4437,8 +4494,8 @@ function renderWalletContentHtml() {
                       </td>
                     </tr>
                   `;
-                }).join('')
-              }
+      }).join('')
+    }
             </tbody>
           </table>
         </div>
@@ -4453,8 +4510,8 @@ function renderWalletContentHtml() {
           </div>
           <div class="card-body">
             <div style="display:flex;flex-direction:column;gap:10px;">
-              ${activeMethods.length === 0 ? `<div style="text-align:center;padding:16px;color:var(--text-light);">لا توجد طرق دفع معرفة بعد</div>` : 
-                activeMethods.map(pm => `
+              ${activeMethods.length === 0 ? `<div style="text-align:center;padding:16px;color:var(--text-light);">لا توجد طرق دفع معرفة بعد</div>` :
+      activeMethods.map(pm => `
                   <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--bg-primary);border-radius:var(--radius-md);border:1px solid var(--border-color);">
                     <div style="display:flex;align-items:center;gap:12px;">
                       <i class="${pm.icon_name || 'ri-bank-card-line'}" style="font-size:22px;color:var(--medium-blue);"></i>
@@ -4476,7 +4533,7 @@ function renderWalletContentHtml() {
                     </div>
                   </div>
                 `).join('')
-              }
+    }
             </div>
           </div>
         </div>
@@ -4487,9 +4544,9 @@ function renderWalletContentHtml() {
             <h3><i class="ri-history-line text-blue" style="margin-left:8px;"></i> أرشيف وسجل تصفير الفترات المالية</h3>
           </div>
           <div class="card-body" style="max-height:260px;overflow-y:auto;">
-            ${(financialState.settlements || []).length === 0 ? 
-              `<div style="text-align:center;padding:24px;color:var(--text-light);font-size:12px;">لم يتم إجراء أي تصفية أو تصفير للفترات حتى الآن. جميع الحسابات تاريخية ومسجلة بالكامل.</div>` : 
-              (financialState.settlements || []).map(st => `
+            ${(financialState.settlements || []).length === 0 ?
+      `<div style="text-align:center;padding:24px;color:var(--text-light);font-size:12px;">لم يتم إجراء أي تصفية أو تصفير للفترات حتى الآن. جميع الحسابات تاريخية ومسجلة بالكامل.</div>` :
+      (financialState.settlements || []).map(st => `
                 <div style="padding:10px 12px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center;">
                   <div>
                     <div style="font-weight:700;font-size:12px;">تصفية فترة: ${st.period_type}</div>
@@ -4501,7 +4558,7 @@ function renderWalletContentHtml() {
                   </div>
                 </div>
               `).join('')
-            }
+    }
           </div>
         </div>
       </div>
@@ -4533,14 +4590,14 @@ function renderWalletContentHtml() {
               </tr>
             </thead>
             <tbody>
-              ${displayTx.length === 0 ? `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-light);">لا توجد معاملات مالية مطابقة للفترات المحددة</td></tr>` : 
-                displayTx.map(tx => {
-                  const amt = parseFloat(tx.amount || 0);
-                  const isInc = amt > 0;
-                  const dateStr = new Date(tx.created_at || Date.now()).toLocaleString('ar-EG');
-                  const userObj = (financialState.usersList || []).find(u => u.id === tx.user_id) || { name: 'مستخدم', phone: '' };
+              ${displayTx.length === 0 ? `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-light);">لا توجد معاملات مالية مطابقة للفترات المحددة</td></tr>` :
+      displayTx.map(tx => {
+        const amt = parseFloat(tx.amount || 0);
+        const isInc = amt > 0;
+        const dateStr = new Date(tx.created_at || Date.now()).toLocaleString('ar-EG');
+        const userObj = (financialState.usersList || []).find(u => u.id === tx.user_id) || { name: 'مستخدم', phone: '' };
 
-                  return `
+        return `
                     <tr>
                       <td style="white-space:nowrap;">${dateStr}</td>
                       <td>
@@ -4554,12 +4611,12 @@ function renderWalletContentHtml() {
                         ${tx.reference_code ? `<div style="font-size:10px;color:var(--text-light);margin-top:2px;">مرجع: ${tx.reference_code}</div>` : ''}
                       </td>
                       <td>
-                        ${tx.receipt_url ? 
-                          `<button class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:10px;" onclick="viewReceiptModal('${tx.receipt_url}', '${tx.reference_code || 'إيصال تحويل'}', '${userObj.name}', ${amt}, '${dateStr}', '${tx.payment_method || ''}')">
+                        ${tx.receipt_url ?
+            `<button class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:10px;" onclick="viewReceiptModal('${tx.receipt_url}', '${tx.reference_code || 'إيصال تحويل'}', '${userObj.name}', ${amt}, '${dateStr}', '${tx.payment_method || ''}')">
                              📷 معاينة الريسيت
-                           </button>` : 
-                          `<span style="color:var(--text-light);font-size:10px;">بدون ريسيت</span>`
-                        }
+                           </button>` :
+            `<span style="color:var(--text-light);font-size:10px;">بدون ريسيت</span>`
+          }
                       </td>
                       <td style="font-weight:700;color:${isInc ? 'var(--success)' : 'var(--error)'};white-space:nowrap;">
                         ${isInc ? '+' : ''}${amt.toLocaleString()} ج.م
@@ -4574,8 +4631,8 @@ function renderWalletContentHtml() {
                       </td>
                     </tr>
                   `;
-                }).join('')
-              }
+      }).join('')
+    }
             </tbody>
           </table>
         </div>
@@ -4904,7 +4961,7 @@ async function processTopupWithReceipt(userId, amount, methodCode, refCode, rece
         body: `تم شحن رصيد محفظتك بمبلغ ${parseFloat(amount)} ج.م. رصيدك الحالي: ${newBal} ج.م`,
         type: 'wallet'
       });
-    } catch (_) {}
+    } catch (_) { }
 
     showToast('✅ تم شحن الرصيد وتوثيق الريسيت بنجاح');
     closeFinancialModal('rechargeModal');
@@ -4961,7 +5018,7 @@ async function processDriverPayout(userId, amount, methodCode, refCode, receiptB
         type: 'wallet',
         targetRole: 'driver'
       });
-    } catch (_) {}
+    } catch (_) { }
 
     showToast('✅ تم سحب المبلغ وتسوية المستحقات بنجاح');
     closeFinancialModal('payoutModal');
@@ -5014,7 +5071,7 @@ async function togglePaymentMethodActive(id, currentStatus) {
     await loadFinancialDataFromSupabase();
     if (typeof window.runBulkSync === 'function') window.runBulkSync();
     renderPage('wallet');
-  } catch (err) {}
+  } catch (err) { }
 }
 
 async function deletePaymentMethod(id) {
@@ -5027,7 +5084,7 @@ async function deletePaymentMethod(id) {
     await loadFinancialDataFromSupabase();
     if (typeof window.runBulkSync === 'function') window.runBulkSync();
     renderPage('wallet');
-  } catch (err) {}
+  } catch (err) { }
 }
 
 function generateFinancialReport() {
@@ -5123,12 +5180,12 @@ function generateFinancialReport() {
           </tr>
         </thead>
         <tbody>
-          ${periodTx.length === 0 ? '<tr><td colspan="6" style="text-align:center;">لا توجد معاملات مسجلة لهذه الفترة</td></tr>' : 
-            periodTx.map(tx => {
-              const amt = parseFloat(tx.amount || 0);
-              const isInc = amt > 0;
-              const dateStr = new Date(tx.created_at || Date.now()).toLocaleString('ar-EG');
-              return `
+          ${periodTx.length === 0 ? '<tr><td colspan="6" style="text-align:center;">لا توجد معاملات مسجلة لهذه الفترة</td></tr>' :
+      periodTx.map(tx => {
+        const amt = parseFloat(tx.amount || 0);
+        const isInc = amt > 0;
+        const dateStr = new Date(tx.created_at || Date.now()).toLocaleString('ar-EG');
+        return `
                 <tr>
                   <td>${dateStr}</td>
                   <td>
@@ -5145,8 +5202,8 @@ function generateFinancialReport() {
                   </td>
                 </tr>
               `;
-            }).join('')
-          }
+      }).join('')
+    }
         </tbody>
       </table>
       <div class="footer">
@@ -5187,10 +5244,10 @@ function viewReceiptModal(receiptUrl, refCode, userName, amount, dateStr, pmName
         <div style="grid-column:span 2;"><strong>📅 التاريخ والوقت:</strong> ${dateStr || ''}</div>
       </div>
       <div style="text-align:center;background:#0F172A;padding:16px;border-radius:10px;max-height:380px;overflow:auto;">
-        ${receiptUrl ? 
-          `<img src="${receiptUrl}" style="max-width:100%;max-height:340px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,0.4);object-fit:contain;" alt="الريسيت" onError="this.onerror=null;this.src='https://placehold.co/400x300?text=تعذر+تحميل+الصورة';" />` : 
-          `<div style="padding:32px;color:#94A3B8;"><i class="ri-file-unknow-line" style="font-size:48px;display:block;margin-bottom:8px;"></i><p style="margin:0;">لا توجد صورة ريسيت مرفقة لهذه المعاملة</p></div>`
-        }
+        ${receiptUrl ?
+      `<img src="${receiptUrl}" style="max-width:100%;max-height:340px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,0.4);object-fit:contain;" alt="الريسيت" onError="this.onerror=null;this.src='https://placehold.co/400x300?text=تعذر+تحميل+الصورة';" />` :
+      `<div style="padding:32px;color:#94A3B8;"><i class="ri-file-unknow-line" style="font-size:48px;display:block;margin-bottom:8px;"></i><p style="margin:0;">لا توجد صورة ريسيت مرفقة لهذه المعاملة</p></div>`
+    }
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
         ${receiptUrl && receiptUrl.startsWith('http') ? `
@@ -5433,9 +5490,9 @@ function renderSettings() {
         </div>
         <div class="card-body">
           <p style="font-size:13px; color:var(--text-secondary); margin-bottom:18px; line-height:1.7;">
-            ${mockData.settings.is_maintenance_mode === true 
-              ? '⚠️ <strong>وضع الصيانة قيد التشغيل:</strong> تطبيق الهاتف مقفل بالكامل الآن في كافة الشاشات والواجهات، وتظهر للمستخدمين شاشة الصيانة. تم إرسال إشعار فوري (Push Notification) لجميع الأجهزة النشطة. لإعادة فتح التطبيق وإرسال إشعار العودة للمستخدمين، قم بإيقاف المفتاح أعلاه.' 
-              : '✅ <strong>التطبيق متاح ونشط:</strong> المستخدمون يمكنهم تصفح التطبيق وطلب الرحلات والتسجيل بشكل طبيعي. عند تفعيل هذا الوضع، سيتم حجب التطبيق فوراً وعرض شاشة الصيانة وإرسال إشعار Push لجميع المستخدمين.'}
+            ${mockData.settings.is_maintenance_mode === true
+      ? '⚠️ <strong>وضع الصيانة قيد التشغيل:</strong> تطبيق الهاتف مقفل بالكامل الآن في كافة الشاشات والواجهات، وتظهر للمستخدمين شاشة الصيانة. تم إرسال إشعار فوري (Push Notification) لجميع الأجهزة النشطة. لإعادة فتح التطبيق وإرسال إشعار العودة للمستخدمين، قم بإيقاف المفتاح أعلاه.'
+      : '✅ <strong>التطبيق متاح ونشط:</strong> المستخدمون يمكنهم تصفح التطبيق وطلب الرحلات والتسجيل بشكل طبيعي. عند تفعيل هذا الوضع، سيتم حجب التطبيق فوراً وعرض شاشة الصيانة وإرسال إشعار Push لجميع المستخدمين.'}
           </p>
 
           <div class="grid-2" style="gap:16px;">
@@ -5488,9 +5545,9 @@ function renderSettings() {
         </div>
         <div class="card-body">
           <p style="font-size:12.5px; color:var(--text-secondary); margin-bottom:18px; line-height:1.6;">
-            ${mockData.settings.demo_mode_enabled === true 
-              ? '✅ <strong>الميزة تعمل الآن:</strong> يمكنك تفعيل أو إغلاق الراكب التجريبي أو الكابتن التجريبي بشكل مستقل أدناه، للتحكم الدقيق فيما يظهر في صفحة تسجيل الدخول بتطبيق الهاتف.'
-              : '⚠️ <strong>الميزة محذوفة ومعطلة حالياً:</strong> زر الدخول التجريبي مخفي تماماً من تطبيق الهاتف، ولا يمكن لأي شخص استخدام الحسابات التجريبية أو تخطي كود التحقق.'}
+            ${mockData.settings.demo_mode_enabled === true
+      ? '✅ <strong>الميزة تعمل الآن:</strong> يمكنك تفعيل أو إغلاق الراكب التجريبي أو الكابتن التجريبي بشكل مستقل أدناه، للتحكم الدقيق فيما يظهر في صفحة تسجيل الدخول بتطبيق الهاتف.'
+      : '⚠️ <strong>الميزة محذوفة ومعطلة حالياً:</strong> زر الدخول التجريبي مخفي تماماً من تطبيق الهاتف، ولا يمكن لأي شخص استخدام الحسابات التجريبية أو تخطي كود التحقق.'}
           </p>
 
           <!-- Granular Independent Controls for Passenger and Driver -->
@@ -5503,9 +5560,9 @@ function renderSettings() {
                   <h5 style="margin:0; font-size:13.5px; font-weight:700;">ميزة الراكب التجريبي (Demo Rider)</h5>
                 </div>
                 <p style="margin:4px 0 0 0; font-size:11.5px; font-weight:600; color:${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_passenger_enabled === true ? '#15803d' : '#991b1b'};">
-                  ${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_passenger_enabled === true 
-                    ? '🟢 مفعل: يظهر زر دخول الراكب التجريبي بالتطبيق' 
-                    : '🔴 مغلق: زر الراكب التجريبي مخفي وممنوع نهائياً'}
+                  ${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_passenger_enabled === true
+      ? '🟢 مفعل: يظهر زر دخول الراكب التجريبي بالتطبيق'
+      : '🔴 مغلق: زر الراكب التجريبي مخفي وممنوع نهائياً'}
                 </p>
               </div>
               <label class="toggle-switch" style="${mockData.settings.demo_mode_enabled !== true ? 'opacity:0.4; pointer-events:none;' : ''}">
@@ -5522,9 +5579,9 @@ function renderSettings() {
                   <h5 style="margin:0; font-size:13.5px; font-weight:700;">ميزة الكابتن التجريبي (Demo Driver)</h5>
                 </div>
                 <p style="margin:4px 0 0 0; font-size:11.5px; font-weight:600; color:${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_driver_enabled === true ? '#15803d' : '#991b1b'};">
-                  ${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_driver_enabled === true 
-                    ? '🟢 مفعل: يظهر زر دخول الكابتن التجريبي بالتطبيق' 
-                    : '🔴 مغلق: زر الكابتن التجريبي مخفي وممنوع نهائياً'}
+                  ${mockData.settings.demo_mode_enabled === true && mockData.settings.demo_driver_enabled === true
+      ? '🟢 مفعل: يظهر زر دخول الكابتن التجريبي بالتطبيق'
+      : '🔴 مغلق: زر الكابتن التجريبي مخفي وممنوع نهائياً'}
                 </p>
               </div>
               <label class="toggle-switch" style="${mockData.settings.demo_mode_enabled !== true ? 'opacity:0.4; pointer-events:none;' : ''}">
@@ -5611,7 +5668,7 @@ async function toggleDemoMode(enabled) {
     localStorage.setItem('inride_demo_mode_enabled', enabled ? 'true' : 'false');
     localStorage.setItem('inride_demo_passenger_enabled', mockData.settings.demo_passenger_enabled ? 'true' : 'false');
     localStorage.setItem('inride_demo_driver_enabled', mockData.settings.demo_driver_enabled ? 'true' : 'false');
-  } catch (_) {}
+  } catch (_) { }
   settingsDirty = true;
   settingsLastSavedAt = Date.now(); // Block sync overwrite during toggle operation
   if (enabled) {
@@ -5625,7 +5682,7 @@ async function toggleDemoPassenger(enabled) {
   mockData.settings.demo_passenger_enabled = !!enabled;
   try {
     localStorage.setItem('inride_demo_passenger_enabled', enabled ? 'true' : 'false');
-  } catch (_) {}
+  } catch (_) { }
   settingsDirty = true;
   settingsLastSavedAt = Date.now(); // Block sync overwrite during toggle
   if (enabled) {
@@ -5640,7 +5697,7 @@ async function toggleDemoDriver(enabled) {
   mockData.settings.demo_driver_enabled = !!enabled;
   try {
     localStorage.setItem('inride_demo_driver_enabled', enabled ? 'true' : 'false');
-  } catch (_) {}
+  } catch (_) { }
   settingsDirty = true;
   settingsLastSavedAt = Date.now(); // Block sync overwrite during toggle
   if (enabled) {
@@ -5677,8 +5734,8 @@ async function enableAndCreateDemoFeature() {
     localStorage.setItem('inride_demo_mode_enabled', 'true');
     localStorage.setItem('inride_demo_passenger_enabled', 'true');
     localStorage.setItem('inride_demo_driver_enabled', 'true');
-  } catch (_) {}
-  
+  } catch (_) { }
+
   if (supabaseClient) {
     try {
       await supabaseClient.rpc('setup_or_reset_demo_account', {
@@ -5689,7 +5746,7 @@ async function enableAndCreateDemoFeature() {
       await saveSettings();
       showToast(`🚀 تم تفعيل ميزة الديمو بنجاح وإظهارها فوراً في تطبيق الهاتف!`);
       if (typeof debouncedSync === 'function') debouncedSync();
-    } catch(e) {
+    } catch (e) {
       showToast(`❌ خطأ أثناء التفعيل: ${e.message}`);
     }
   }
@@ -5697,12 +5754,12 @@ async function enableAndCreateDemoFeature() {
 
 async function initializeDemoAccountFromDashboard(role = 'driver') {
   const phone = mockData.settings.demo_phone || '01000000000';
-  const name = role === 'driver' 
+  const name = role === 'driver'
     ? (mockData.settings.demo_driver_name || 'كابتن تجريبي (Demo)')
     : (mockData.settings.demo_passenger_name || 'راكب تجريبي (Demo)');
-  
+
   showToast(`⏳ جاري تجهيز واعتماد حساب الـ ${role === 'driver' ? 'كابتن' : 'راكب'} التجريبي...`);
-  
+
   if (supabaseClient) {
     try {
       const { data, error } = await supabaseClient.rpc('setup_or_reset_demo_account', {
@@ -5716,7 +5773,7 @@ async function initializeDemoAccountFromDashboard(role = 'driver') {
         showToast(`✅ تم اعتماد وتجهيز حساب ${role === 'driver' ? 'الكابتن' : 'الراكب'} التجريبي بنجاح! جاهز للدخول فوراً.`);
         if (typeof debouncedSync === 'function') debouncedSync();
       }
-    } catch(e) {
+    } catch (e) {
       showToast(`❌ خطأ: ${e.message}`);
     }
   }
@@ -5736,7 +5793,7 @@ async function purgeDemoAccountFromDashboard(isSilent = false) {
     localStorage.setItem('inride_demo_mode_enabled', 'false');
     localStorage.setItem('inride_demo_passenger_enabled', 'false');
     localStorage.setItem('inride_demo_driver_enabled', 'false');
-  } catch (_) {}
+  } catch (_) { }
 
   if (supabaseClient) {
     try {
@@ -5755,7 +5812,7 @@ async function purgeDemoAccountFromDashboard(isSilent = false) {
         // Delay the sync to allow the DB write to fully propagate
         setTimeout(() => { settingsLastSavedAt = 0; if (typeof debouncedSync === 'function') debouncedSync(); }, 3000);
       }
-    } catch(e) {
+    } catch (e) {
       console.error('[purgeDemoAccount] Error:', e);
       await saveSettings();
       showToast(`🗑️ تم إغلاق ميزة الديمو بنجاح.`);
@@ -6022,7 +6079,7 @@ function logAction(action) {
     ip: '197.34.120.12'
   };
   mockData.auditLogs.unshift(newLog);
-  
+
   if (supabaseClient) {
     supabaseClient.from('audit_logs').insert({
       employee: 'أحمد محمد',
@@ -6143,9 +6200,9 @@ function renderPricing() {
               </div>
               <div style="display:flex;gap:8px;flex-direction:column;">
                 ${(mockData.settings.region_fares || [
-                  { id: '1', name: 'القاهرة الكبرى', surcharge: 0, is_default: true },
-                  { id: '2', name: 'الإسكندرية (الساحل)', surcharge: 5, is_default: false }
-                ]).map(reg => `
+      { id: '1', name: 'القاهرة الكبرى', surcharge: 0, is_default: true },
+      { id: '2', name: 'الإسكندرية (الساحل)', surcharge: 5, is_default: false }
+    ]).map(reg => `
                   <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:10px 12px;background:var(--bg-primary);border-radius:8px;border:1px solid var(--border-color);">
                     <div>
                       <strong style="color:var(--text-primary);">${reg.name}</strong>
@@ -6528,7 +6585,7 @@ async function dispatchDashboardPushNotification({ target = 'all', recipientId =
         sentSuccessfully = true;
         console.log('[DashboardPush] Dispatched successfully via local /api/push-notification');
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   // 3. Direct OneSignal REST API (Ensures 100% immediate delivery to devices)
@@ -6593,7 +6650,7 @@ function sendCustomNotification() {
   const target = document.getElementById('notifTarget').value;
   const type = document.getElementById('notifType').value;
   const scheduleTime = document.getElementById('notifSchedule').value;
-  
+
   let targetUid = '';
   let targetCity = '';
 
@@ -6665,7 +6722,7 @@ function sendCustomNotification() {
         }
 
         showToast(scheduleTime ? '✅ تم جدولة الإشعار بنجاح' : '✅ تم إرسال الإشعار لجميع الأجهزة النشطة بنجاح');
-        
+
         document.getElementById('notifTitle').value = '';
         document.getElementById('notifBody').value = '';
         document.getElementById('notifSchedule').value = '';
@@ -6693,7 +6750,7 @@ function initMessagesPage() {
         .select('*')
         .order('created_at', { ascending: false })
         .limit(10);
-      
+
       const historyContainer = document.getElementById('notifHistoryList');
       if (!historyContainer) return;
 
@@ -6707,11 +6764,11 @@ function initMessagesPage() {
         const id = notif.id;
         const dateObj = new Date(notif.created_at || Date.now());
         const date = dateObj.toLocaleString('ar-EG');
-        
+
         const isScheduled = notif.scheduled_at && new Date(notif.scheduled_at) > new Date();
         const statusText = isScheduled ? 'مجدول' : 'تم الإرسال';
         const statusClass = isScheduled ? 'submitted' : 'completed';
-        
+
         let targetText = '';
         if (notif.target === 'all') targetText = 'الكل';
         else if (notif.target === 'drivers') targetText = 'الكباتن فقط';
@@ -6796,7 +6853,7 @@ function playNotificationChime() {
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + 0.4);
-  } catch (e) {}
+  } catch (e) { }
 }
 
 async function initSupportRealtimeSystem() {
@@ -6900,12 +6957,12 @@ async function loadSupportChatsFromSupabase() {
       const { data: users } = await supabaseClient.from('users').select('id, name, phone_number, role').in('id', userIds);
       const { data: drivers } = await supabaseClient.from('drivers').select('id, name, phone_number').in('id', userIds);
       const { data: passengers } = await supabaseClient.from('passengers').select('id, name, phone, phone_number').in('id', userIds);
-      
+
       (users || []).forEach(u => { userMap[u.id] = { name: u.name || 'مستخدم', role: u.role || 'rider', phone: u.phone_number }; });
       (drivers || []).forEach(d => { userMap[d.id] = { name: d.name || 'سائق', role: 'driver', phone: d.phone_number }; });
-      (passengers || []).forEach(p => { 
+      (passengers || []).forEach(p => {
         if (!userMap[p.id] || !userMap[p.id].name || userMap[p.id].name === 'مستخدم' || userMap[p.id].name === 'راكب') {
-          userMap[p.id] = { name: p.name || 'راكب', role: 'rider', phone: p.phone || p.phone_number }; 
+          userMap[p.id] = { name: p.name || 'راكب', role: 'rider', phone: p.phone || p.phone_number };
         }
       });
     }
@@ -6968,7 +7025,7 @@ function renderConversationsListHtml() {
 
   return filtered.map(tkt => {
     const isSelected = activeTicketId === tkt.id;
-    const timeStr = tkt.last_message_at ? new Date(tkt.last_message_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'}) : '';
+    const timeStr = tkt.last_message_at ? new Date(tkt.last_message_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '';
     const userRoleAr = tkt.user_type === 'driver' ? 'سائق' : 'راكب';
 
     let statusBadgeClass = 'pending';
@@ -7042,7 +7099,7 @@ async function setConversationStatus(id, newStatus) {
 
     const statusNames = { resolved: 'تم الحل', pending: 'قيد المتابعة', open: 'مفتوحة' };
     showToast(`✅ تم تحديث حالة الشكوى إلى: ${statusNames[newStatus] || newStatus}`);
-    
+
     refreshActiveTicketChat();
     const container = document.getElementById('supportConversationsList');
     if (container) container.innerHTML = renderConversationsListHtml();
@@ -7084,7 +7141,7 @@ async function renderTicketChatHtmlAsync() {
         .or(`user_id.eq.${activeTicketId},conversation_id.eq.${activeTicketId}`)
         .order('created_at', { ascending: true });
       if (!error && data) messages = data;
-    } catch (e) {}
+    } catch (e) { }
   }
 
   const userRoleAr = tkt.user_type === 'driver' ? 'سائق' : 'راكب';
@@ -7134,7 +7191,7 @@ async function sendSupportReply(id) {
     const emptyNotice = scrollArea.querySelector('div[style*="text-align:center"]');
     if (emptyNotice) emptyNotice.remove();
 
-    const timeStr = new Date().toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'});
+    const timeStr = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
     const tempMsgHtml = `
       <div id="msg-${msgId}" style="align-self:flex-end;max-width:75%;transition:opacity 0.3s;">
         <div style="padding:10px 16px;border-radius:var(--radius-md);background:var(--medium-blue);color:white;box-shadow:var(--shadow-sm);font-size:13px;border:none;">
@@ -7209,7 +7266,7 @@ async function sendSupportReply(id) {
         updated_at: nowStr,
         unread_user_count: 1
       }).eq('id', id);
-    } catch (_) {}
+    } catch (_) { }
 
     const notifId = generateUUID();
     try {
@@ -7227,11 +7284,11 @@ async function sendSupportReply(id) {
           type: 'support_chat'
         }
       });
-    } catch (_) {}
+    } catch (_) { }
 
     try {
       await dispatchPushNotificationToUser(id, "الدعم الفني", text, msgId);
-    } catch (_) {}
+    } catch (_) { }
 
     // Update ticket last_message in local state list
     const localTkt = liveSupportChats.find(t => t.id === id);
@@ -7373,7 +7430,7 @@ function showNewCouponPrompt() {
     alert('الرجاء إدخال رقم صحيح');
     return;
   }
-  
+
   mockData.coupons.push({
     code: code.toUpperCase(),
     discount: discount,
@@ -7767,7 +7824,7 @@ function modifyUserStatus(uid, action, userRole) {
               targetRole: userRole || ''
             });
           }
-        } catch (_) {}
+        } catch (_) { }
 
         logAction(`إجراء (${action}) على حساب المستخدم/السائق: ${uid}`);
         showToast(`✅ تم تنفيذ الإجراء بنجاح`);
@@ -7815,7 +7872,7 @@ function adjustUserWallet(uid, amountStr, role) {
     p.passengerWalletBalance = p.walletBalance;
   }
   renderPage(currentPage);
-  
+
   if (supabaseClient) {
     (async () => {
       try {
@@ -7825,16 +7882,16 @@ function adjustUserWallet(uid, amountStr, role) {
           .eq('id', uid)
           .maybeSingle();
         if (getError || !userData) throw new Error("المستخدم غير موجود");
-        
+
         const currentBal = parseFloat(userData.wallet_balance || 0.0);
         const newBal = currentBal + amount;
-        
+
         const { error: updateError } = await supabaseClient
           .from('users')
           .update({ wallet_balance: newBal, updated_at: new Date().toISOString() })
           .eq('id', uid);
         if (updateError) throw updateError;
-        
+
         // Add to transactions
         await supabaseClient.from('transactions').insert({
           id: generateUUID(),
@@ -7864,7 +7921,7 @@ function adjustUserWallet(uid, amountStr, role) {
             body: walletNotifBody,
             type: 'wallet'
           });
-        } catch (_) {}
+        } catch (_) { }
 
         logAction(`تعديل رصيد محفظة ${uid} بقيمة ${amount} ج.م`);
         showToast('✅ تم تحديث الرصيد بنجاح');
@@ -7897,9 +7954,9 @@ function adjustUserWallet(uid, amountStr, role) {
 function submitDocApproval(uid, decision) {
   const modal = document.querySelector('.modal-backdrop');
   const reason = document.getElementById('rejectReason')?.value || '';
-  
+
   if (modal) modal.remove();
-  
+
   if (decision === 'approve') {
     approveDriver(uid);
   } else {
@@ -7991,8 +8048,8 @@ function getUserUnifiedRating(userId, targetRole = 'all') {
   }
 
   const normalizedUid = String(userId).trim().toLowerCase();
-  const allRatings = (typeof allSystemRatings !== 'undefined' && Array.isArray(allSystemRatings)) 
-    ? allSystemRatings 
+  const allRatings = (typeof allSystemRatings !== 'undefined' && Array.isArray(allSystemRatings))
+    ? allSystemRatings
     : [];
 
   // Filter ratings strictly received by this user
@@ -8068,15 +8125,15 @@ function initSupabaseSync() {
 
     try {
       console.log(`[InRide DataStore] Starting sync generation #${thisGeneration} at ${new Date().toISOString()}...`);
-      
+
       const [usersRes, driversRes, vehiclesRes, ridesRes, ratingsRes, settingsRes, passengersRes] = await Promise.all([
         supabaseClient.from('users').select('*'),
         supabaseClient.from('drivers').select('*'),
         supabaseClient.from('vehicles').select('*'),
         supabaseClient.from('ride_requests').select('*').order('created_at', { ascending: false }),
         supabaseClient.from('ratings').select('*').order('created_at', { ascending: false }),
-        (async () => { try { return await supabaseClient.from('app_settings').select('*').eq('id', 'default').maybeSingle(); } catch(_) { return { data: null }; } })(),
-        (async () => { try { return await supabaseClient.from('passengers').select('*'); } catch(_) { return { data: [] }; } })()
+        (async () => { try { return await supabaseClient.from('app_settings').select('*').eq('id', 'default').maybeSingle(); } catch (_) { return { data: null }; } })(),
+        (async () => { try { return await supabaseClient.from('passengers').select('*'); } catch (_) { return { data: [] }; } })()
       ]);
 
       // Check for race conditions before applying state
@@ -8217,10 +8274,11 @@ function initSupabaseSync() {
           createdAt: dateObj.getTime(),
           appOpenCount: parseInt(userObj.app_open_count || drv.app_open_count || 0),
           totalAppTimeSeconds: parseInt(userObj.total_app_time_seconds || drv.total_app_time_seconds || 0),
-          lastOpenedAt: userObj.last_opened_at || drv.last_opened_at || null,
-          lastSeenAt: userObj.last_seen_at ? new Date(userObj.last_seen_at).getTime() : (drv.last_seen_at ? new Date(drv.last_seen_at).getTime() : null),
+          lastOpenedAt: userObj.last_opened_at || drv.last_app_open || drv.last_opened_at || null,
+          lastSeenAt: drv.last_seen_at ? new Date(drv.last_seen_at).getTime() : (userObj.last_seen_at ? new Date(userObj.last_seen_at).getTime() : null),
           isAppOpen: userObj.is_app_open === true || drv.is_app_open === true,
-          isOnline: isUserCurrentlyOnline(userObj, drv.is_online),
+          isOnline: isDriverCurrentlyOnline(drv, userObj),
+          isAvailable: isDriverAvailableForTrips(drv),
           joinDate: dateObj.toLocaleDateString('ar-EG'),
           avatar: driverName.charAt(0).toUpperCase(),
           avatarUrl: drv.avatar_url || userObj.avatar_url || userObj.photo_url || drv.photo_url || drv.selfie_url || '',
@@ -8285,7 +8343,8 @@ function initSupabaseSync() {
             lastOpenedAt: u.last_opened_at || null,
             lastSeenAt: u.last_seen_at ? new Date(u.last_seen_at).getTime() : null,
             isAppOpen: u.is_app_open === true,
-            isOnline: isUserCurrentlyOnline(u, false),
+            isOnline: isDriverCurrentlyOnline(null, u),
+            isAvailable: false,
             joinDate: new Date(u.created_at || Date.now()).toLocaleDateString('ar-EG'),
             avatar: dName.charAt(0).toUpperCase(),
             avatarUrl: u.avatar_url || u.photo_url || '',
@@ -8496,13 +8555,13 @@ function initSupabaseSync() {
 
         try {
           localStorage.setItem('inride_maintenance_mode', mockData.settings.is_maintenance_mode ? 'true' : 'false');
-        } catch (_) {}
+        } catch (_) { }
 
         try {
           localStorage.setItem('inride_demo_mode_enabled', mockData.settings.demo_mode_enabled ? 'true' : 'false');
           localStorage.setItem('inride_demo_passenger_enabled', mockData.settings.demo_passenger_enabled ? 'true' : 'false');
           localStorage.setItem('inride_demo_driver_enabled', mockData.settings.demo_driver_enabled ? 'true' : 'false');
-        } catch (_) {}
+        } catch (_) { }
       }
 
       globalSyncState.status = 'success';
@@ -8583,7 +8642,7 @@ window.addEventListener('focus', () => {
 });
 
 // Development Data Consistency Checker
-window.runDataConsistencyCheck = async function() {
+window.runDataConsistencyCheck = async function () {
   console.log("%c[DATA CONSISTENCY CHECK] Starting live comparison against Supabase...", "color:#2563eb; font-weight:bold; font-size:14px;");
   if (!supabaseClient) {
     console.error("Supabase client is not available.");
@@ -8673,7 +8732,7 @@ function downloadCSV(filename, data, headers) {
   data.forEach(row => {
     csv += row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(',') + '\n';
   });
-  
+
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   if (link.download !== undefined) {
@@ -8690,19 +8749,19 @@ function downloadCSV(filename, data, headers) {
 function exportTripsCSV() {
   const headers = ['رقم الرحلة', 'التاريخ', 'الراكب', 'السائق', 'نقطة الانطلاق', 'الوجهة', 'السعر (ج.م)', 'المركبة', 'الحالة'];
   const data = mockData.trips.map(t => [t.id, t.date, t.riderName, t.driverName, t.from, t.to, t.price, t.vehicle, t.status]);
-  downloadCSV('inRide_Trips_' + new Date().toISOString().slice(0,10) + '.csv', data, headers);
+  downloadCSV('inRide_Trips_' + new Date().toISOString().slice(0, 10) + '.csv', data, headers);
 }
 
 function exportDriversCSV() {
   const headers = ['الكود', 'الاسم', 'الهاتف', 'البريد', 'المركبة', 'اللوحة', 'التقييم', 'الرحلات', 'الأرباح', 'الحالة'];
   const data = mockData.drivers.map(d => [d.id, d.name, d.phone, d.email, d.vehicleName, d.licensePlate, d.rating, d.totalTrips, d.earnings, d.statusAr]);
-  downloadCSV('inRide_Drivers_' + new Date().toISOString().slice(0,10) + '.csv', data, headers);
+  downloadCSV('inRide_Drivers_' + new Date().toISOString().slice(0, 10) + '.csv', data, headers);
 }
 
 function exportPassengersCSV() {
   const headers = ['الكود', 'الاسم', 'الهاتف', 'البريد', 'التقييم', 'إجمالي الرحلات', 'إجمالي الإنفاق', 'تاريخ الانضمام', 'الحالة'];
   const data = mockData.passengers.map(p => [p.id, p.name, p.phone, p.email, p.rating, p.totalTrips, p.totalSpent, p.joinDate, p.statusAr]);
-  downloadCSV('inRide_Passengers_' + new Date().toISOString().slice(0,10) + '.csv', data, headers);
+  downloadCSV('inRide_Passengers_' + new Date().toISOString().slice(0, 10) + '.csv', data, headers);
 }
 
 // ============================================
@@ -8742,14 +8801,14 @@ function resolveUserEntity(uid) {
   const targetUid = String(uid).trim().toLowerCase();
 
   // 1. Check in mockData.drivers
-  let driverObj = (mockData.drivers || []).find(d => 
+  let driverObj = (mockData.drivers || []).find(d =>
     (d.uid && d.uid.toLowerCase() === targetUid) ||
     (d.id && d.id.toLowerCase() === targetUid)
   );
   if (driverObj) return { user: driverObj, type: 'driver' };
 
   // 2. Check in mockData.passengers
-  let passengerObj = (mockData.passengers || []).find(p => 
+  let passengerObj = (mockData.passengers || []).find(p =>
     (p.uid && p.uid.toLowerCase() === targetUid) ||
     (p.id && p.id.toLowerCase() === targetUid)
   );
@@ -8800,7 +8859,7 @@ function resolveUserEntity(uid) {
   }
 
   // 4. Check in mockData.trips
-  const matchingTrip = (mockData.trips || []).find(t => 
+  const matchingTrip = (mockData.trips || []).find(t =>
     (t.riderUid && t.riderUid.toLowerCase() === targetUid) ||
     (t.driverUid && t.driverUid.toLowerCase() === targetUid)
   );
@@ -9266,7 +9325,7 @@ function renderDriverProfile() {
   const ratingInfo = getUserUnifiedRating(activeProfileUid, 'driver');
 
   // Find driver's trips
-  const driverTrips = (mockData.trips || []).filter(t => 
+  const driverTrips = (mockData.trips || []).filter(t =>
     (t.driverUid && t.driverUid.toLowerCase() === targetUid) ||
     t.driverName === driver.name ||
     (t.driverId && t.driverId.toLowerCase() === targetUid)
@@ -9311,6 +9370,13 @@ function renderDriverProfile() {
 
         <!-- Right Side: Details & Documents -->
         <div style="display:flex;flex-direction:column;gap:24px;">
+          <!-- Captain Daily Mission / Bonus Progress Banner -->
+          <div id="profileCaptainMissionCardContainer">
+            <div class="card" style="padding:16px 20px; background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-xl); text-align:center; color:var(--text-light); font-size:13px;">
+              <i class="ri-loader-4-line ri-spin" style="font-size:18px; margin-left:6px; vertical-align:middle;"></i> جاري تحميل تفاصيل التحدي اليومي والبونص للكابتن...
+            </div>
+          </div>
+
           <!-- Personal Details -->
           <div class="card">
             <div class="card-header">
@@ -9384,18 +9450,28 @@ function renderDriverProfile() {
 
                 <!-- App Activity & Usage Stats Card -->
                 <div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); padding: 14px 16px; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-top: 14px; grid-column: span 2;">
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px; flex-wrap:wrap; gap:8px;">
                     <h5 style="margin:0; font-size:13px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
-                      <i class="ri-smartphone-fill text-blue"></i> إحصائيات التفاعل ونشاط التطبيق
+                      <i class="ri-smartphone-fill text-blue"></i> إحصائيات التواجد ونشاط التطبيق اللحظي
                     </h5>
-                    <span class="status-badge ${driver.isOnline ? 'completed' : 'pending'}" style="font-size:11px;">
-                      <span class="status-dot"></span> ${driver.isOnline ? 'متصل الآن (فاتح التطبيق)' : 'غير متصل'}
-                    </span>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                      <span class="status-badge ${driver.isOnline ? 'completed' : 'pending'}" style="font-size:11px;">
+                        <span class="status-dot"></span> ${driver.isOnline ? 'متصل (Online)' : 'غير متصل (Offline)'}
+                      </span>
+                      ${driver.isAvailable
+      ? '<span style="background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;border:1px solid #bfdbfe;display:inline-flex;align-items:center;gap:3px;"><i class="ri-taxi-fill"></i> متاح للرحلات</span>'
+      : '<span style="background:#f3f4f6;color:#9ca3af;font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid #e5e7eb;display:inline-flex;align-items:center;gap:3px;"><i class="ri-close-circle-line"></i> غير متاح</span>'
+    }
+                    </div>
                   </div>
-                  <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align:center;">
+                  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; text-align:center;">
                     <div style="background: white; padding: 8px; border-radius: 8px; border: 1px solid #e2e8f0;">
                       <div style="font-size:10px; color:var(--text-light); margin-bottom: 2px;">آخر فتح للتطبيق</div>
                       <div style="font-weight:700; font-size:12px; color:var(--medium-blue);">${formatLastOpenedDateTime(driver.lastOpenedAt)}</div>
+                    </div>
+                    <div style="background: white; padding: 8px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                      <div style="font-size:10px; color:var(--text-light); margin-bottom: 2px;">آخر نبض حي (Heartbeat)</div>
+                      <div style="font-weight:700; font-size:12px; color:#10b981;">${formatHeartbeatTime(driver.lastSeenAt)}</div>
                     </div>
                     <div style="background: white; padding: 8px; border-radius: 8px; border: 1px solid #e2e8f0;">
                       <div style="font-size:10px; color:var(--text-light); margin-bottom: 2px;">عدد مرات الفتح</div>
@@ -9592,7 +9668,7 @@ function renderPassengerProfile() {
   const ratingInfo = getUserUnifiedRating(activeProfileUid, 'rider');
 
   // Find passenger's trips
-  const passengerTrips = (mockData.trips || []).filter(t => 
+  const passengerTrips = (mockData.trips || []).filter(t =>
     (t.riderUid && t.riderUid.toLowerCase() === targetUid) ||
     t.riderName === passenger.name ||
     (passenger.phone && passenger.phone !== '—' && t.riderPhone === passenger.phone)
@@ -9637,6 +9713,9 @@ function renderPassengerProfile() {
 
         <!-- Right Side: Details -->
         <div style="display:flex;flex-direction:column;gap:24px;">
+          <!-- Captain Daily Mission / Bonus Progress Banner (Shown if user has driver activity/mode) -->
+          <div id="profileCaptainMissionCardContainer"></div>
+
           <!-- Personal Details -->
           <div class="card">
             <div class="card-header">
@@ -9877,9 +9956,9 @@ async function loadProfileRatings(uid, role = 'rider') {
         <!-- Rating Breakdown Bars -->
         <div style="background:var(--bg-primary);padding:14px;border-radius:var(--radius-md);margin-bottom:16px;border:1px solid var(--border-color);display:flex;flex-direction:column;gap:6px;">
           ${[5, 4, 3, 2, 1].map(stars => {
-            const count = starCounts[stars] || 0;
-            const pct = list.length > 0 ? Math.round((count / list.length) * 100) : 0;
-            return `
+        const count = starCounts[stars] || 0;
+        const pct = list.length > 0 ? Math.round((count / list.length) * 100) : 0;
+        return `
               <div style="display:flex;align-items:center;gap:8px;font-size:12px;">
                 <span style="width:50px;font-weight:700;display:flex;align-items:center;gap:2px;">${stars} <i class="ri-star-fill" style="color:var(--warning);font-size:11px;"></i></span>
                 <div style="flex:1;height:8px;background:var(--border-color);border-radius:4px;overflow:hidden;">
@@ -9888,7 +9967,7 @@ async function loadProfileRatings(uid, role = 'rider') {
                 <span style="width:40px;text-align:left;color:var(--text-secondary);font-size:11px;">${count} (${pct}%)</span>
               </div>
             `;
-          }).join('')}
+      }).join('')}
         </div>
       `;
     }
@@ -10048,7 +10127,7 @@ async function loadRatingsPageData() {
       try {
         const { data: usrs } = await supabaseClient.from('users').select('id, name, phone_number, role').in('id', missingIds);
         if (usrs) usrs.forEach(u => { globalUsersMap[u.id] = u; });
-      } catch(_) {}
+      } catch (_) { }
     }
 
     // Enrich ratings with resolved names
@@ -10345,8 +10424,8 @@ function renderChatMessageBubblesHtml(messages, otherPartyName = 'المستخد
     const timeStr = dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
 
     // Date divider check
-    const today = new Date(); today.setHours(0,0,0,0);
-    const msgDay = new Date(dateObj); msgDay.setHours(0,0,0,0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const msgDay = new Date(dateObj); msgDay.setHours(0, 0, 0, 0);
     const diffDays = Math.round((today - msgDay) / (1000 * 60 * 60 * 24));
     let dateLabel = '';
     if (diffDays === 0) dateLabel = 'اليوم';
@@ -10424,7 +10503,7 @@ async function renderSupabaseProfileChat(uid) {
     // Mark as read by admin
     try {
       await supabaseClient.from('support_chats').update({ unread_admin_count: 0 }).eq('id', uid);
-    } catch (_) {}
+    } catch (_) { }
   } catch (e) {
     console.warn("[SupportChat Log] Error loading profile chat:", e);
     renderLocalProfileChat(uid);
@@ -10531,7 +10610,7 @@ async function sendProfileChatMessage() {
 
       try {
         await dispatchPushNotificationToUser(uid, "رسالة جديدة من إدارة inRide", text, msgId);
-      } catch (_) {}
+      } catch (_) { }
       await renderSupabaseProfileChat(uid);
       showToast("✅ تم إرسال الرسالة بنجاح");
     } catch (e) {
@@ -10756,7 +10835,7 @@ async function loadCommRooms() {
 
     commRooms = data || [];
     renderCommRoomsList();
-    
+
     // Update active badges globally
     const unreadCount = commRooms.filter(r => r.type === 'support' && r.status === 'active').length; // or calculate total unread
     const badgeEl = document.getElementById('communicationBadge');
@@ -10802,10 +10881,10 @@ function renderCommRoomsList() {
 
   container.innerHTML = filtered.map(room => {
     const isSelected = selectedCommRoomId === room.id;
-    const timeStr = room.updated_at ? new Date(room.updated_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'}) : '';
+    const timeStr = room.updated_at ? new Date(room.updated_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '';
     const roomTitle = room.type === 'support' ? `دعم: ${room.passenger?.name || 'مستخدم'}` : `رحلة: ${room.passenger?.name} ↔ ${room.driver?.name || 'سائق'}`;
     const roomSub = room.type === 'support' ? 'محادثة دعم فني مع العميل' : `رقم الرحلة: ${room.trip_id?.substring(0, 8)}...`;
-    
+
     return `
       <div style="padding:14px 16px; border-bottom:1px solid var(--border-light); cursor:pointer; background:${isSelected ? 'rgba(30,136,229,0.08)' : 'transparent'}; transition:all 0.2s; position:relative;"
            onclick="selectCommRoom('${room.id}')">
@@ -10882,7 +10961,7 @@ async function selectCommRoom(roomId) {
                 ON CONFLICT DO NOTHING;`
       });
     }
-  } catch (_) {}
+  } catch (_) { }
 
   // Fetch messages and subscribe to room
   await loadCommMessages(roomId);
@@ -10962,8 +11041,8 @@ function renderCommChatArea() {
     const isMe = msg.sender_type === 'admin' || msg.is_admin === true || msg.sender_role === 'admin' || msg.sender_id === null || (currentAdminUser && msg.sender_id === currentAdminUser.id);
     const text = msg.text || msg.message || '';
     const dateObj = new Date(msg.created_at || Date.now());
-    const timeStr = dateObj.toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'});
-    
+    const timeStr = dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+
     // Check attachments
     let attachmentHtml = '';
     if (msg.attachments && msg.attachments.length > 0) {
@@ -11323,9 +11402,9 @@ async function loadProfileWalletTransactions(uid, role = 'rider') {
           </thead>
           <tbody>
             ${combined.map(tx => {
-              const isInc = tx.amount > 0;
-              const dateStr = new Date(tx.created_at || Date.now()).toLocaleString('ar-EG');
-              return `
+      const isInc = tx.amount > 0;
+      const dateStr = new Date(tx.created_at || Date.now()).toLocaleString('ar-EG');
+      return `
                 <tr>
                   <td style="white-space:nowrap;font-weight:600;">${dateStr}</td>
                   <td>
@@ -11352,7 +11431,7 @@ async function loadProfileWalletTransactions(uid, role = 'rider') {
                   </td>
                 </tr>
               `;
-            }).join('')}
+    }).join('')}
           </tbody>
         </table>
       </div>
@@ -11509,9 +11588,9 @@ async function showUserWalletHistoryModal(userId, role = 'rider') {
         </thead>
         <tbody>
           ${combined.map(t => {
-            const isInc = t.amount > 0;
-            const dateStr = new Date(t.created_at || Date.now()).toLocaleString('ar-EG');
-            return `
+      const isInc = t.amount > 0;
+      const dateStr = new Date(t.created_at || Date.now()).toLocaleString('ar-EG');
+      return `
               <tr style="border-bottom:1px solid #F1F5F9;">
                 <td style="white-space:nowrap; font-weight:600;">${dateStr}</td>
                 <td>
@@ -11538,7 +11617,7 @@ async function showUserWalletHistoryModal(userId, role = 'rider') {
                 </td>
               </tr>
             `;
-          }).join('')}
+    }).join('')}
         </tbody>
       </table>
     `;
@@ -16453,9 +16532,9 @@ function renderPlaces() {
         <div class="card-body" style="padding:14px 18px;">
           <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;scrollbar-width:thin;">
             ${SADAT_CATEGORIES.map(cat => {
-              const isActive = sadatPlacesState.selectedCategory === cat.id;
-              const count = cat.id === 'all' ? totalCount : (catCounts[cat.id] || 0);
-              return `
+    const isActive = sadatPlacesState.selectedCategory === cat.id;
+    const count = cat.id === 'all' ? totalCount : (catCounts[cat.id] || 0);
+    return `
                 <button type="button" class="btn btn-sm" 
                   onclick="selectPlacesCategory('${cat.id}')"
                   style="white-space:nowrap;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px;transition:all 0.2s;
@@ -16465,7 +16544,7 @@ function renderPlaces() {
                   <span style="background:${isActive ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.06)'};padding:1px 6px;border-radius:10px;font-size:10px;">${count}</span>
                 </button>
               `;
-            }).join('')}
+  }).join('')}
           </div>
         </div>
       </div>
@@ -16515,8 +16594,8 @@ function renderPlaces() {
                   </td>
                 </tr>
               ` : filtered.map(place => {
-                const mapUrl = `https://www.google.com/maps?q=${place.lat},${place.lng}`;
-                return `
+    const mapUrl = `https://www.google.com/maps?q=${place.lat},${place.lng}`;
+    return `
                   <tr>
                     <td>
                       <div style="font-weight:800;color:var(--text-primary);font-size:13px;">${place.name_ar || place.name}</div>
@@ -16566,7 +16645,7 @@ function renderPlaces() {
                     </td>
                   </tr>
                 `;
-              }).join('')}
+  }).join('')}
             </tbody>
           </table>
         </div>
@@ -16867,7 +16946,7 @@ async function syncPlacesWithSupabase() {
 async function toggleMaintenanceMode(enabled) {
   const isEnabling = !!enabled;
   const actionText = isEnabling ? 'تفعيل وضع الصيانة وقفل التطبيق بالكامل' : 'إلغاء وضع الصيانة وإعادة فتح التطبيق للجميع';
-  const confirmMsg = isEnabling 
+  const confirmMsg = isEnabling
     ? '⚠️ تنبيه هام: هل أنت متأكد من تفعيل وضع الصيانة الآن؟• سيتم قفل التطبيق فوراً أمام جميع الركاب والسائقين.\n• ستظهر شاشة الصيانة على كامل الشاشة وتمنع أي استخدام.\n• سيتم إرسال إشعار فوري (Push Notification) لجميع الأجهزة النشطة والمسجلة.'
     : '🚀 هل تريد إنهاء الصيانة وإعادة فتح التطبيق لجميع المستخدمين الآن؟\n\n• سيعود التطبيق للعمل بشكل فوري للجميع.\n• سيتم إرسال إشعار فوري لجميع المستخدمين يبشرهم بعودة التطبيق للعمل.';
 
@@ -16882,7 +16961,7 @@ async function toggleMaintenanceMode(enabled) {
   mockData.settings.is_maintenance_mode = isEnabling;
   try {
     localStorage.setItem('inride_maintenance_mode', isEnabling ? 'true' : 'false');
-  } catch (_) {}
+  } catch (_) { }
 
   showToast(`⏳ جاري ${actionText}...`);
 
@@ -16907,8 +16986,8 @@ async function toggleMaintenanceMode(enabled) {
       // Log in audit logs
       logAction(`${actionText} - عنوان: ${mockData.settings.maintenance_title}`);
 
-      showToast(isEnabling 
-        ? '🔴 تم تفعيل وضع الصيانة وقفل التطبيق بنجاح وإرسال الإشعار لجميع المستخدمين' 
+      showToast(isEnabling
+        ? '🔴 تم تفعيل وضع الصيانة وقفل التطبيق بنجاح وإرسال الإشعار لجميع المستخدمين'
         : '🟢 تم إلغاء وضع الصيانة وعاد التطبيق للعمل بنجاح وتم إرسال إشعار العودة');
 
       renderPage(currentPage);
@@ -16941,10 +17020,10 @@ async function sendCustomMaintenanceBroadcast() {
 }
 
 async function broadcastMaintenancePushNotification(isEnabling) {
-  const notifTitle = isEnabling 
+  const notifTitle = isEnabling
     ? (mockData.settings.maintenance_title || '⚙️ إشعار صيانة مجدولة')
     : '🚀 عاد التطبيق للعمل!';
-  
+
   const notifBody = isEnabling
     ? (mockData.settings.maintenance_message || 'تطبيق inRide تحت الصيانة الدورية حالياً وسيعود للعمل قريباً.')
     : 'تم الانتهاء من أعمال الصيانة بنجاح. يمكنك الآن استخدام التطبيق وطلب الرحلات كالمعتاد.';
@@ -17031,7 +17110,7 @@ async function broadcastMaintenancePushNotification(isEnabling) {
         sentSuccessfully = true;
         console.log('[BroadcastPush] Dispatched via local /api/push-notification');
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   // 4. Direct OneSignal REST API Broadcast with subscription IDs & segments
@@ -17488,7 +17567,7 @@ function updateModalBannerLivePreview() {
   const btnText = (document.getElementById('bannerBtnTextInput')?.value || '').trim() || 'عرض';
   const start = document.getElementById('bannerGradientStart')?.value || '#8B5CF6';
   const end = document.getElementById('bannerGradientEnd')?.value || '#4F46E5';
-  
+
   const format = document.querySelector('input[name="bannerFormat"]:checked')?.value || 'gradient';
   const urlVal = (document.getElementById('bannerImageUrlInput')?.value || '').trim();
   const hasImage = (format === 'image' || urlVal.startsWith('http')) && urlVal.length > 0;
@@ -17619,17 +17698,17 @@ function renderBannersTable() {
       </thead>
       <tbody>
         ${appBannersList.map(banner => {
-          const start = banner.gradient_start || '#4F46E5';
-          const end = banner.gradient_end || '#7C3AED';
-          const isActive = banner.is_active === true;
-          const hasImage = banner.image_url && banner.image_url.trim().length > 0;
-          return `
+    const start = banner.gradient_start || '#4F46E5';
+    const end = banner.gradient_end || '#7C3AED';
+    const isActive = banner.is_active === true;
+    const hasImage = banner.image_url && banner.image_url.trim().length > 0;
+    return `
             <tr style="transition:background 0.2s;">
               <td style="text-align:center;">
-                ${hasImage 
-                  ? `<img src="${escapeHtml(banner.image_url)}" style="width:36px;height:26px;border-radius:6px;object-fit:cover;border:1px solid #CBD5E1;box-shadow:0 2px 4px rgba(0,0,0,0.1);" title="صورة إعلانية">`
-                  : `<div style="width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg, ${start}, ${end});margin:0 auto;box-shadow:0 2px 6px rgba(0,0,0,0.15);" title="${start} → ${end}"></div>`
-                }
+                ${hasImage
+        ? `<img src="${escapeHtml(banner.image_url)}" style="width:36px;height:26px;border-radius:6px;object-fit:cover;border:1px solid #CBD5E1;box-shadow:0 2px 4px rgba(0,0,0,0.1);" title="صورة إعلانية">`
+        : `<div style="width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg, ${start}, ${end});margin:0 auto;box-shadow:0 2px 6px rgba(0,0,0,0.15);" title="${start} → ${end}"></div>`
+      }
               </td>
               <td>
                 <div style="font-weight:800;font-size:13px;color:var(--text-primary);">
@@ -17668,7 +17747,7 @@ function renderBannersTable() {
               </td>
             </tr>
           `;
-        }).join('')}
+  }).join('')}
       </tbody>
     </table>
   `;
@@ -18013,6 +18092,8 @@ function setupBannersRealtimeSubscription() {
 let rewardsSettings = null;
 let rewardsReferralsList = [];
 let rewardsMissionsList = [];
+let rewardsShiftsList = [];
+let activeMissionBannerData = null;
 let rewardsActiveTab = 'all';
 let rewardsSearchQuery = '';
 let rewardsRealtimeChannel = null;
@@ -18022,44 +18103,62 @@ function renderRewardsPage() {
     <div class="rewards-container" style="display:flex; flex-direction:column; gap:24px; padding-bottom:40px;">
       
       <!-- Top Banner: Master Toggles -->
-      <div class="card" style="background:linear-gradient(135deg, #1E3A8A 0%, #1E88E5 100%); color:#fff; padding:24px; border-radius:var(--radius-xl); box-shadow:0 10px 30px rgba(30,136,229,0.25); position:relative; overflow:hidden;">
-        <div style="position:absolute; right:-20px; top:-20px; font-size:160px; color:rgba(255,255,255,0.05); pointer-events:none;">
+      <div class="card" style="background:linear-gradient(135deg, #0D47A1 0%, #1565C0 50%, #1E88E5 100%); color:#fff; padding:28px 28px 24px; border-radius:var(--radius-xl); box-shadow:0 10px 30px rgba(13,71,161,0.35); position:relative; overflow:hidden; border:none;">
+        <div style="position:absolute; right:-20px; top:-20px; font-size:160px; color:rgba(255,255,255,0.06); pointer-events:none;">
           <i class="ri-gift-2-fill"></i>
         </div>
         <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:20px; position:relative; z-index:1;">
           <div>
-            <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
-              <span style="background:rgba(255,255,255,0.2); padding:4px 12px; border-radius:20px; font-size:12px; font-weight:700;">🎯 تحكم النظام اللحظي</span>
-              <span id="rewardsSystemStatusBadge" style="background:#10B981; padding:4px 12px; border-radius:20px; font-size:12px; font-weight:700;">النظام يعمل بكفاءة</span>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+              <span style="background:rgba(255,255,255,0.2); padding:4px 14px; border-radius:20px; font-size:12px; font-weight:700; letter-spacing:0.3px;">🎯 تحكم النظام اللحظي</span>
+              <span id="rewardsSystemStatusBadge" style="background:#10B981; padding:4px 14px; border-radius:20px; font-size:12px; font-weight:700; letter-spacing:0.3px;">النظام يعمل بكفاءة ✅</span>
             </div>
-            <h2 style="font-size:24px; font-weight:800; margin:0 0 6px 0; color:#fff;">نظام الإحالات وبونص الكباتن الذكي</h2>
-            <p style="margin:0; font-size:14px; color:rgba(255,255,255,0.85); max-width:650px;">
+            <h2 style="font-size:24px; font-weight:800; margin:0 0 8px 0; color:#fff;">نظام الإحالات وبونص الكباتن الذكي</h2>
+            <p style="margin:0; font-size:14px; color:rgba(255,255,255,0.8); max-width:650px; line-height:1.7;">
               تحكم كامل في تفعيل أو إيقاف مكافآت دعوة الأصدقاء وبونص المهام اليومية، وتعديل قيم الرحلات والمكافآت المالية بضغطة زر دون تعديل الكود.
             </p>
           </div>
           
           <!-- Master Switches Box -->
-          <div style="display:flex; flex-direction:column; gap:12px; background:rgba(0,0,0,0.25); padding:16px 20px; border-radius:var(--radius-lg); backdrop-filter:blur(10px); min-width:280px;">
+          <div style="display:flex; flex-direction:column; gap:16px; background:rgba(255,255,255,0.12); padding:18px 22px; border-radius:var(--radius-lg); backdrop-filter:blur(10px); min-width:340px; border:1px solid rgba(255,255,255,0.25);">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <i class="ri-user-shared-line" style="font-size:18px;"></i>
-                <span style="font-size:13px; font-weight:700;">نظام الإحالات (Referrals)</span>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <div style="width:36px; height:36px; border-radius:10px; background:rgba(255,255,255,0.18); display:flex; align-items:center; justify-content:center;">
+                  <i class="ri-user-shared-line" style="font-size:19px; color:#93C5FD;"></i>
+                </div>
+                <div>
+                  <div style="font-size:13px; font-weight:800; color:#fff;">نظام الإحالات (Referrals)</div>
+                  <div style="font-size:10px; color:rgba(255,255,255,0.75);">مكافآت دعوة الأصدقاء</div>
+                </div>
               </div>
-              <label class="switch" style="position:relative; display:inline-block; width:48px; height:26px; margin:0;">
-                <input type="checkbox" id="toggleReferralsSwitch" onchange="handleToggleReferrals(this.checked)">
-                <span class="slider round" style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:#ccc; transition:.3s; border-radius:34px;"></span>
-              </label>
+              <div class="switch-control-group">
+                <span id="referralSwitchStatusBadge" class="switch-pill active">مفعل 🟢</span>
+                <label class="switch">
+                  <input type="checkbox" id="toggleReferralsSwitch" onchange="handleToggleReferrals(this.checked)">
+                  <span class="slider round"></span>
+                </label>
+              </div>
             </div>
-            <div style="height:1px; background:rgba(255,255,255,0.15);"></div>
+
+            <div style="height:1px; background:rgba(255,255,255,0.18);"></div>
+
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <i class="ri-medal-line" style="font-size:18px;"></i>
-                <span style="font-size:13px; font-weight:700;">بونص تحدي الكباتن اليومي</span>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <div style="width:36px; height:36px; border-radius:10px; background:rgba(255,255,255,0.18); display:flex; align-items:center; justify-content:center;">
+                  <i class="ri-medal-line" style="font-size:19px; color:#FDE047;"></i>
+                </div>
+                <div>
+                  <div style="font-size:13px; font-weight:800; color:#fff;">بونص تحدي الكباتن اليومي</div>
+                  <div style="font-size:10px; color:rgba(255,255,255,0.75);">تحديات الفترات والشفتات</div>
+                </div>
               </div>
-              <label class="switch" style="position:relative; display:inline-block; width:48px; height:26px; margin:0;">
-                <input type="checkbox" id="toggleMissionsSwitch" onchange="handleToggleMissions(this.checked)">
-                <span class="slider round" style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:#ccc; transition:.3s; border-radius:34px;"></span>
-              </label>
+              <div class="switch-control-group">
+                <span id="missionSwitchStatusBadge" class="switch-pill active">مفعل 🟢</span>
+                <label class="switch">
+                  <input type="checkbox" id="toggleMissionsSwitch" onchange="handleToggleMissions(this.checked)">
+                  <span class="slider round"></span>
+                </label>
+              </div>
             </div>
           </div>
         </div>
@@ -18067,54 +18166,64 @@ function renderRewardsPage() {
 
       <!-- KPI Stat Cards -->
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px;">
-        <div class="card stat-card" style="padding:20px; display:flex; align-items:center; gap:16px;">
-          <div style="width:52px; height:52px; border-radius:14px; background:rgba(30,136,229,0.1); color:#1E88E5; display:flex; align-items:center; justify-content:center; font-size:26px;">
+        <div class="card" style="padding:20px; display:flex; align-items:center; gap:16px; border-right:4px solid #1E88E5; border-radius:var(--radius-lg);">
+          <div style="width:52px; height:52px; border-radius:14px; background:linear-gradient(135deg, rgba(30,136,229,0.12) 0%, rgba(13,71,161,0.08) 100%); color:#1E88E5; display:flex; align-items:center; justify-content:center; font-size:26px;">
             <i class="ri-user-add-line"></i>
           </div>
           <div>
             <div style="font-size:12px; color:var(--text-secondary); font-weight:600;">إجمالي الإحالات</div>
-            <div id="kpiTotalReferrals" style="font-size:24px; font-weight:800; color:var(--text-primary);">--</div>
-            <div style="font-size:11px; color:#10B981; font-weight:600;">مسجلين برمز دعوة</div>
+            <div id="kpiTotalReferrals" style="font-size:26px; font-weight:800; color:var(--text-primary); font-family:'Outfit',sans-serif;">--</div>
+            <div style="font-size:11px; color:#1E88E5; font-weight:600;">مسجلين برمز دعوة</div>
           </div>
         </div>
 
-        <div class="card stat-card" style="padding:20px; display:flex; align-items:center; gap:16px;">
-          <div style="width:52px; height:52px; border-radius:14px; background:rgba(16,185,129,0.1); color:#10B981; display:flex; align-items:center; justify-content:center; font-size:26px;">
+        <div class="card" style="padding:20px; display:flex; align-items:center; gap:16px; border-right:4px solid #10B981; border-radius:var(--radius-lg);">
+          <div style="width:52px; height:52px; border-radius:14px; background:linear-gradient(135deg, rgba(16,185,129,0.12) 0%, rgba(5,150,105,0.08) 100%); color:#10B981; display:flex; align-items:center; justify-content:center; font-size:26px;">
             <i class="ri-checkbox-circle-line"></i>
           </div>
           <div>
             <div style="font-size:12px; color:var(--text-secondary); font-weight:600;">إحالات استوفت الشروط</div>
-            <div id="kpiCompletedReferrals" style="font-size:24px; font-weight:800; color:#10B981;">--</div>
-            <div style="font-size:11px; color:var(--text-light);">أتموا الرحلات المطلوبة</div>
+            <div id="kpiCompletedReferrals" style="font-size:26px; font-weight:800; color:#059669; font-family:'Outfit',sans-serif;">--</div>
+            <div style="font-size:11px; color:var(--text-light); font-weight:600;">أتموا الرحلات المطلوبة</div>
           </div>
         </div>
 
-        <div class="card stat-card" style="padding:20px; display:flex; align-items:center; gap:16px;">
-          <div style="width:52px; height:52px; border-radius:14px; background:rgba(245,158,11,0.1); color:#F59E0B; display:flex; align-items:center; justify-content:center; font-size:26px;">
+        <div class="card" style="padding:20px; display:flex; align-items:center; gap:16px; border-right:4px solid #F59E0B; border-radius:var(--radius-lg);">
+          <div style="width:52px; height:52px; border-radius:14px; background:linear-gradient(135deg, rgba(245,158,11,0.12) 0%, rgba(217,119,6,0.08) 100%); color:#F59E0B; display:flex; align-items:center; justify-content:center; font-size:26px;">
             <i class="ri-wallet-3-line"></i>
           </div>
           <div>
             <div style="font-size:12px; color:var(--text-secondary); font-weight:600;">مكافآت تم صرفها</div>
-            <div id="kpiTotalRewardsPaid" style="font-size:24px; font-weight:800; color:#F59E0B;">-- ج.م</div>
-            <div style="font-size:11px; color:var(--text-light);">أودعت بمحافظ المستخدمين</div>
+            <div id="kpiTotalRewardsPaid" style="font-size:26px; font-weight:800; color:#D97706; font-family:'Outfit',sans-serif;">-- ج.م</div>
+            <div style="font-size:11px; color:var(--text-light); font-weight:600;">أودعت بمحافظ المستخدمين</div>
           </div>
         </div>
 
-        <div class="card stat-card" style="padding:20px; display:flex; align-items:center; gap:16px;">
-          <div style="width:52px; height:52px; border-radius:14px; background:rgba(139,92,246,0.1); color:#8B5CF6; display:flex; align-items:center; justify-content:center; font-size:26px;">
-            <i class="ri-steering-2-line"></i>
+        <div class="card" style="padding:20px; display:flex; align-items:center; gap:16px; border-right:4px solid #7C3AED; border-radius:var(--radius-lg);">
+          <div style="width:52px; height:52px; border-radius:14px; background:linear-gradient(135deg, rgba(124,58,237,0.12) 0%, rgba(109,40,217,0.08) 100%); color:#7C3AED; display:flex; align-items:center; justify-content:center; font-size:26px;">
+            <i class="ri-trophy-line"></i>
           </div>
           <div>
             <div style="font-size:12px; color:var(--text-secondary); font-weight:600;">تحديات اليوم المكتملة</div>
-            <div id="kpiTodayMissionsCompleted" style="font-size:24px; font-weight:800; color:#8B5CF6;">--</div>
-            <div style="font-size:11px; color:var(--text-light);">كباتن حققوا التارجت اليوم</div>
+            <div id="kpiTodayMissionsCompleted" style="font-size:26px; font-weight:800; color:#6D28D9; font-family:'Outfit',sans-serif;">--</div>
+            <div style="font-size:11px; color:var(--text-light); font-weight:600;">كباتن حققوا التارجت اليوم</div>
           </div>
         </div>
       </div>
 
+      <!-- Live Active Challenge & Bonus Monitor Banner -->
+      <div id="rewardsActiveMissionBannerContainer">
+        ${renderRewardsActiveMissionBanner()}
+      </div>
+
+      <!-- Time-Window Bonus Shifts Management Card -->
+      <div id="rewardsShiftsTableContainer">
+        ${renderRewardsShiftsTable()}
+      </div>
+
       <!-- Settings Configuration Form Card -->
-      <div class="card" style="padding:24px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+      <div class="card" style="padding:28px; border-radius:var(--radius-xl);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; border-bottom:2px solid var(--border-light); padding-bottom:14px;">
           <div>
             <h3 style="font-size:17px; font-weight:800; margin:0 0 4px 0; color:var(--text-primary); display:flex; align-items:center; gap:8px;">
               <i class="ri-settings-3-fill" style="color:var(--medium-blue);"></i>
@@ -18122,7 +18231,7 @@ function renderRewardsPage() {
             </h3>
             <p style="margin:0; font-size:13px; color:var(--text-secondary);">يمكنك تخصيص مبالغ المكافآت وعدد الرحلات المطلوبة في أي وقت ويتم تطبيقها فوراً.</p>
           </div>
-          <button class="btn btn-primary" id="btnSaveRewardSettings" onclick="saveRewardSettings()" style="display:flex; align-items:center; gap:6px;">
+          <button class="btn btn-primary" id="btnSaveRewardSettings" onclick="saveRewardSettings()" style="display:flex; align-items:center; gap:6px; background:linear-gradient(135deg, #1565C0, #1E88E5); box-shadow:0 4px 12px rgba(30,136,229,0.3);">
             <i class="ri-save-3-line"></i>
             <span>حفظ التعديلات</span>
           </button>
@@ -18132,92 +18241,107 @@ function renderRewardsPage() {
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:24px;">
             
             <!-- Drivers Rules Box -->
-            <div style="background:var(--bg-primary); padding:20px; border-radius:var(--radius-lg); border:1px solid var(--border-color);">
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px; color:#1E88E5; font-weight:800; font-size:15px;">
-                <i class="ri-steering-2-fill" style="font-size:20px;"></i>
-                <span>قواعد وبونص الكباتن (Drivers Rules)</span>
+            <div style="background:linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%); padding:22px; border-radius:var(--radius-lg); border:1px solid #BFDBFE;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:18px;">
+                <div style="width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg, #1E88E5, #0D47A1); display:flex; align-items:center; justify-content:center;">
+                  <i class="ri-steering-2-fill" style="font-size:18px; color:#fff;"></i>
+                </div>
+                <span style="color:#0D47A1; font-weight:800; font-size:15px;">قواعد وبونص الكباتن (Drivers Rules)</span>
               </div>
 
               <div class="form-group" style="margin-bottom:16px;">
-                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">مكافأة دعوة كابتن جديد (ج.م)</label>
+                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block; color:#1E3A5F;">مكافأة دعوة كابتن جديد (ج.م)</label>
                 <div class="input-wrapper">
                   <i class="ri-money-dollar-circle-line"></i>
                   <input type="number" id="inputDriverReferralBonus" min="0" step="5" placeholder="100.00" required>
                 </div>
-                <small style="color:var(--text-light); font-size:11px;">المبلغ الذي يحصل عليه الكابتن الداعي في محفظته فور إتمام الشروط.</small>
+                <small style="color:#64748B; font-size:11px;">المبلغ الذي يحصل عليه الكابتن الداعي في محفظته فور إتمام الشروط.</small>
               </div>
 
               <div class="form-group" style="margin-bottom:16px;">
-                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">عدد الرحلات المطلوبة من الكابتن الجديد</label>
+                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block; color:#1E3A5F;">عدد الرحلات المطلوبة من الكابتن الجديد</label>
                 <div class="input-wrapper">
                   <i class="ri-route-line"></i>
                   <input type="number" id="inputDriverTargetTrips" min="1" step="1" placeholder="5" required>
                 </div>
-                <small style="color:var(--text-light); font-size:11px;">يجب على الكابتن الجديد إتمام هذا العدد من الرحلات لصرف المكافأة.</small>
+                <small style="color:#64748B; font-size:11px;">يجب على الكابتن الجديد إتمام هذا العدد من الرحلات لصرف المكافأة.</small>
               </div>
 
               <div class="form-group" style="margin-bottom:16px;">
-                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">بونص ترحيبي للكابتن الجديد (ج.م)</label>
+                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block; color:#1E3A5F;">بونص ترحيبي للكابتن الجديد (ج.م)</label>
                 <div class="input-wrapper">
                   <i class="ri-gift-line"></i>
                   <input type="number" id="inputDriverWelcomeBonus" min="0" step="5" placeholder="50.00">
                 </div>
-                <small style="color:var(--text-light); font-size:11px;">هدية ترحيبية تنزل في محفظة الكابتن الجديد بعد إتمام الرحلات المطلوبة (0 لتعطيلها).</small>
+                <small style="color:#64748B; font-size:11px;">هدية ترحيبية تنزل في محفظة الكابتن الجديد بعد إتمام الرحلات المطلوبة (0 لتعطيلها).</small>
               </div>
 
-              <div style="height:1px; background:var(--border-color); margin:16px 0;"></div>
+              <div style="height:1px; background:#BFDBFE; margin:18px 0;"></div>
 
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-                <div class="form-group">
-                  <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">رحلات التحدي اليومي</label>
-                  <div class="input-wrapper">
-                    <i class="ri-flag-2-line"></i>
-                    <input type="number" id="inputDailyMissionTrips" min="1" step="1" placeholder="8" required>
+              <!-- Daily Mission Section with highlight -->
+              <div style="background:rgba(255,255,255,0.7); padding:16px; border-radius:var(--radius-md); border:1px dashed #60A5FA;">
+                <div style="display:flex; align-items:center; gap:6px; margin-bottom:12px; color:#0D47A1; font-size:13px; font-weight:800;">
+                  <i class="ri-trophy-fill" style="color:#F59E0B;"></i>
+                  التحدي اليومي للكباتن
+                  <span style="background:#FEF3C7; color:#92400E; padding:2px 8px; border-radius:6px; font-size:10px; font-weight:700; margin-right:8px;">يتجدد يومياً تلقائياً</span>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                  <div class="form-group">
+                    <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block; color:#1E3A5F;">رحلات التحدي اليومي</label>
+                    <div class="input-wrapper">
+                      <i class="ri-flag-2-line"></i>
+                      <input type="number" id="inputDailyMissionTrips" min="1" step="1" placeholder="8" required>
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block; color:#1E3A5F;">بونص التحدي اليومي (ج.م)</label>
+                    <div class="input-wrapper">
+                      <i class="ri-copper-coin-line"></i>
+                      <input type="number" id="inputDailyMissionReward" min="0" step="5" placeholder="80.00" required>
+                    </div>
                   </div>
                 </div>
-
-                <div class="form-group">
-                  <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">بونص التحدي اليومي (ج.م)</label>
-                  <div class="input-wrapper">
-                    <i class="ri-copper-coin-line"></i>
-                    <input type="number" id="inputDailyMissionReward" min="0" step="5" placeholder="80.00" required>
-                  </div>
-                </div>
+                <small style="color:#64748B; font-size:11px; display:block; margin-top:8px;">
+                  <i class="ri-information-line" style="color:#F59E0B;"></i>
+                  الكابتن الذي ينجز التارجت خلال اليوم يحصل فوراً على البونص في محفظته. التحدي يتجدد كل يوم تلقائياً — لو الكابتن عمل 9 من 10 امبارح ومكملش، بكرا يبدأ من الصفر في تحدي جديد.
+                </small>
               </div>
-              <small style="color:var(--text-light); font-size:11px;">الكابتن الذي ينجز هذا التارجت خلال اليوم يحصل فوراً على البونص في محفظته.</small>
             </div>
 
             <!-- Riders Rules Box -->
-            <div style="background:var(--bg-primary); padding:20px; border-radius:var(--radius-lg); border:1px solid var(--border-color);">
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px; color:#10B981; font-weight:800; font-size:15px;">
-                <i class="ri-group-fill" style="font-size:20px;"></i>
-                <span>قواعد دعوة الركاب (Riders Rules)</span>
+            <div style="background:linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%); padding:22px; border-radius:var(--radius-lg); border:1px solid #A7F3D0;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:18px;">
+                <div style="width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg, #10B981, #047857); display:flex; align-items:center; justify-content:center;">
+                  <i class="ri-group-fill" style="font-size:18px; color:#fff;"></i>
+                </div>
+                <span style="color:#065F46; font-weight:800; font-size:15px;">قواعد دعوة الركاب (Riders Rules)</span>
               </div>
 
               <div class="form-group" style="margin-bottom:16px;">
-                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">مكافأة دعوة راكب جديد (ج.م)</label>
+                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block; color:#065F46;">مكافأة دعوة راكب جديد (ج.م)</label>
                 <div class="input-wrapper">
                   <i class="ri-money-dollar-circle-line"></i>
                   <input type="number" id="inputRiderReferralBonus" min="0" step="5" placeholder="20.00" required>
                 </div>
-                <small style="color:var(--text-light); font-size:11px;">تضاف في رصيد محفظة الراكب الداعي لاستخدامها في رحلاته القادمة.</small>
+                <small style="color:#64748B; font-size:11px;">تضاف في رصيد محفظة الراكب الداعي لاستخدامها في رحلاته القادمة.</small>
               </div>
 
               <div class="form-group" style="margin-bottom:16px;">
-                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">عدد الرحلات المطلوبة من الراكب الجديد</label>
+                <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block; color:#065F46;">عدد الرحلات المطلوبة من الراكب الجديد</label>
                 <div class="input-wrapper">
                   <i class="ri-route-line"></i>
                   <input type="number" id="inputRiderTargetTrips" min="1" step="1" placeholder="1" required>
                 </div>
-                <small style="color:var(--text-light); font-size:11px;">تُصرف المكافأة فور إتمام الصديق المدعو لرحلته الأولى.</small>
+                <small style="color:#64748B; font-size:11px;">تُصرف المكافأة فور إتمام الصديق المدعو لرحلته الأولى.</small>
               </div>
 
               <!-- Information Callout -->
-              <div style="background:rgba(30,136,229,0.06); border:1px dashed #1E88E5; border-radius:var(--radius-md); padding:16px; margin-top:24px;">
+              <div style="background:rgba(255,255,255,0.7); border:1px solid #6EE7B7; border-radius:var(--radius-md); padding:16px; margin-top:24px;">
                 <div style="display:flex; gap:10px;">
-                  <i class="ri-shield-check-fill" style="color:#1E88E5; font-size:20px;"></i>
-                  <div style="font-size:12px; color:var(--text-primary); line-height:1.6;">
-                    <strong>الحماية التلقائية من الاحتيال (Anti-Fraud):</strong><br>
+                  <i class="ri-shield-check-fill" style="color:#059669; font-size:22px; flex-shrink:0; margin-top:2px;"></i>
+                  <div style="font-size:12px; color:#1E293B; line-height:1.7;">
+                    <strong style="color:#065F46;">الحماية التلقائية من الاحتيال (Anti-Fraud):</strong><br>
                     • منع الإحالة الذاتية (Self-referrals).<br>
                     • منع استخدام أكثر من كود دعوة لنفس المستخدم.<br>
                     • يتم صرف البونص فقط بعد تسجيل الرحلة كـ Completed رسمي في قاعدة البيانات.
@@ -18231,7 +18355,7 @@ function renderRewardsPage() {
       </div>
 
       <!-- Referrals History & Tracking Table Card -->
-      <div class="card" style="padding:24px;">
+      <div class="card" style="padding:28px; border-radius:var(--radius-xl);">
         <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:16px; margin-bottom:20px;">
           <div>
             <h3 style="font-size:17px; font-weight:800; margin:0 0 4px 0; color:var(--text-primary); display:flex; align-items:center; gap:8px;">
@@ -18342,10 +18466,37 @@ async function loadRewardsData(showToastFeedback = false) {
 
     rewardsMissionsList = missionData || [];
 
-    // 4. Update KPIs
+    // 4. Load Shifts
+    const { data: shiftsData } = await supabaseClient
+      .from('driver_mission_shifts')
+      .select('*')
+      .order('start_time', { ascending: true });
+    rewardsShiftsList = shiftsData || [];
+
+    // 5. Load Active Mission Banner data
+    try {
+      const { data: activeMissionRes } = await supabaseClient.rpc('get_active_driver_mission', { p_driver_id: null });
+      activeMissionBannerData = activeMissionRes;
+    } catch (e) {
+      console.warn('RPC active mission error:', e);
+    }
+
+    // 6. Update KPIs
     updateRewardsKPIs();
 
-    // 5. Render Table
+    // 7. Update Live Active Mission Banner Container
+    const bannerContainer = document.getElementById('rewardsActiveMissionBannerContainer');
+    if (bannerContainer) {
+      bannerContainer.innerHTML = renderRewardsActiveMissionBanner();
+    }
+
+    // 8. Update Shifts Table Container
+    const shiftsContainer = document.getElementById('rewardsShiftsTableContainer');
+    if (shiftsContainer) {
+      shiftsContainer.innerHTML = renderRewardsShiftsTable();
+    }
+
+    // 9. Render Referrals Table
     renderReferralsTable();
 
     if (showToastFeedback) {
@@ -18364,6 +18515,18 @@ function populateRewardSettingsForm(s) {
 
   if (refSwitch) refSwitch.checked = !!s.is_referral_active;
   if (misSwitch) misSwitch.checked = !!s.is_missions_active;
+
+  const refBadge = document.getElementById('referralSwitchStatusBadge');
+  if (refBadge) {
+    refBadge.className = s.is_referral_active ? 'switch-pill active' : 'switch-pill inactive';
+    refBadge.textContent = s.is_referral_active ? 'مفعل 🟢' : 'متوقف ⚪';
+  }
+
+  const misBadge = document.getElementById('missionSwitchStatusBadge');
+  if (misBadge) {
+    misBadge.className = s.is_missions_active ? 'switch-pill active' : 'switch-pill inactive';
+    misBadge.textContent = s.is_missions_active ? 'مفعل 🟢' : 'متوقف ⚪';
+  }
 
   if (badge) {
     if (s.is_referral_active && s.is_missions_active) {
@@ -18404,7 +18567,7 @@ function updateRewardsKPIs() {
 
   const totalCount = rewardsReferralsList.length;
   const completedCount = rewardsReferralsList.filter(r => r.status === 'rewarded' || r.completed_trips >= r.target_trips).length;
-  
+
   // Calculate total paid bonus
   let totalBonus = 0;
   rewardsReferralsList.forEach(r => {
@@ -18503,10 +18666,10 @@ function renderReferralsTable() {
           <div style="font-size:11px; color:var(--text-light); direction:ltr; text-align:right;">${referredPhone}</div>
         </td>
         <td>
-          ${isDriver 
-            ? '<span style="background:rgba(30,136,229,0.1); color:#1E88E5; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;"><i class="ri-steering-2-line"></i> كابتن</span>'
-            : '<span style="background:rgba(16,185,129,0.1); color:#10B981; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;"><i class="ri-user-3-line"></i> راكب</span>'
-          }
+          ${isDriver
+        ? '<span style="background:rgba(30,136,229,0.1); color:#1E88E5; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;"><i class="ri-steering-2-line"></i> كابتن</span>'
+        : '<span style="background:rgba(16,185,129,0.1); color:#10B981; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;"><i class="ri-user-3-line"></i> راكب</span>'
+      }
         </td>
         <td>
           <code style="background:var(--bg-primary); border:1px solid var(--border-color); padding:3px 8px; border-radius:6px; font-family:monospace; font-weight:700; font-size:12px;">${item.referral_code}</code>
@@ -18524,12 +18687,12 @@ function renderReferralsTable() {
           ${item.welcome_bonus_amount > 0 ? `<div style="font-size:10px; color:#10B981;">+ ${item.welcome_bonus_amount} ج.م ترحيبي</div>` : ''}
         </td>
         <td>
-          ${isRewarded 
-            ? '<span style="background:#10B981; color:#fff; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;"><i class="ri-check-double-line"></i> تم الصرف</span>'
-            : (isTargetMet 
-                ? '<span style="background:#F59E0B; color:#fff; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;"><i class="ri-time-line"></i> مؤهل للصرف</span>'
-                : '<span style="background:rgba(148,163,184,0.15); color:var(--text-secondary); padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;">⏳ قيد الإنجاز</span>')
-          }
+          ${isRewarded
+        ? '<span style="background:#10B981; color:#fff; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;"><i class="ri-check-double-line"></i> تم الصرف</span>'
+        : (isTargetMet
+          ? '<span style="background:#F59E0B; color:#fff; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;"><i class="ri-time-line"></i> مؤهل للصرف</span>'
+          : '<span style="background:rgba(148,163,184,0.15); color:var(--text-secondary); padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;">⏳ قيد الإنجاز</span>')
+      }
         </td>
         <td style="font-size:12px; color:var(--text-secondary);">${dateStr}</td>
       </tr>
@@ -18655,8 +18818,479 @@ function setupRewardsRealtimeSubscription() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
         loadRewardsData(false);
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_mission_shifts' }, () => {
+        loadRewardsData(false);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_mission_progress' }, () => {
+        loadRewardsData(false);
+      })
       .subscribe();
   } catch (e) {
     console.warn('Realtime subscription error for rewards:', e);
   }
 }
+
+// ============================================
+// LIVE ACTIVE MISSION BANNER (REWARDS PAGE)
+// ============================================
+function renderRewardsActiveMissionBanner() {
+  if (!rewardsSettings) return '';
+  const isMissionsOn = !!rewardsSettings.is_missions_active;
+  const mission = activeMissionBannerData;
+  const hasActive = isMissionsOn && mission && (mission.is_active || mission.has_active_mission);
+
+  const title = mission?.title || 'تحدي اليوم 🚀';
+  const timeWindow = mission?.time_window_text || (mission?.start_time && mission?.end_time ? `من ${mission.start_time} إلى ${mission.end_time}` : 'طوال اليوم (حتى 11:59 م)');
+  const target = mission?.target_trips || rewardsSettings.daily_mission_trips || 10;
+  const reward = mission?.reward_amount || rewardsSettings.daily_mission_reward || 50;
+
+  const todayProgressCount = rewardsMissionsList.length;
+  const todayCompletedCount = rewardsMissionsList.filter(m => m.is_completed || m.completed_trips >= m.target_trips).length;
+  const totalTripsCount = rewardsMissionsList.reduce((acc, m) => acc + (m.completed_trips || 0), 0);
+
+  return `
+    <div class="card rewards-hero-card">
+      
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:20px; flex-wrap:wrap; margin-bottom:18px;">
+        <div style="display:flex; align-items:center; gap:16px;">
+          <div style="width:54px; height:54px; border-radius:50%; background:rgba(253,224,71,0.2); display:flex; align-items:center; justify-content:center; font-size:28px; color:#FDE047; border:2px solid #FDE047; flex-shrink:0;">
+            <i class="ri-trophy-fill"></i>
+          </div>
+          <div>
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <h3 style="margin:0; font-size:18px; font-weight:800; color:#FFFFFF;">شاشة وبانر التحدي اليومي الحي (المعاينة اللحظية للكباتن)</h3>
+              <span style="background:${hasActive ? '#10B981' : '#EF4444'}; color:#FFFFFF; padding:4px 12px; border-radius:8px; font-size:11px; font-weight:800; box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+                ${hasActive ? 'نشط الآن لجميع الكباتن 🟢' : 'التحديات متوقفة مؤقتاً ⏸️'}
+              </span>
+            </div>
+            <div style="margin-top:6px; display:inline-flex; align-items:center; gap:6px; background:rgba(0,0,0,0.45); padding:4px 14px; border-radius:6px; font-size:12px; font-weight:800; color:#FDE047; border:1px solid rgba(253,224,71,0.3);">
+              <i class="ri-alarm-fill"></i>
+              <span>المواعيد الحالية: ${timeWindow}</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <div style="text-align:center; background:linear-gradient(135deg, #FDE047 0%, #F59E0B 100%); color:#0A192F; padding:8px 18px; border-radius:14px; font-weight:900; box-shadow:0 4px 15px rgba(245,158,11,0.35);">
+            <div style="font-size:18px; font-family:'Outfit',sans-serif; line-height:1.1;">+${parseFloat(reward).toFixed(0)} ج.م</div>
+            <div style="font-size:10px; font-weight:900;">بونص كاش لكل كابتن</div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="showAddShiftModal()" style="color:#FFFFFF; border-color:rgba(255,255,255,0.45); background:rgba(255,255,255,0.12); padding:8px 14px; display:flex; align-items:center; gap:6px; font-weight:700;">
+            <i class="ri-add-circle-line" style="font-size:16px;"></i>
+            <span>إضافة فترة/شفت</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- App Banner Simulation Box -->
+      <div style="background:rgba(255,255,255,0.08); padding:16px 20px; border-radius:14px; border:1px solid rgba(255,255,255,0.16); margin-bottom:18px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <i class="ri-smartphone-line" style="color:#60A5FA; font-size:20px;"></i>
+            <span style="font-size:13px; font-weight:800; color:#FFFFFF;">
+              المعادلة التفاعلية في تطبيق الكابتن (داخل الشاشة الرئيسية):
+            </span>
+          </div>
+          <span style="font-size:11px; font-weight:700; background:rgba(0,0,0,0.35); color:#93C5FD; padding:4px 12px; border-radius:6px; border:1px solid rgba(147,197,253,0.3);">
+            تحديث فوري لكل رحلة مكتملة
+          </span>
+        </div>
+        <div style="margin-top:10px; font-size:13px; color:rgba(255,255,255,0.92); line-height:1.7;">
+          الهدف المطلوب: إتمام <strong>${target} رحلات</strong> خلال المواعيد المحددة (${timeWindow}).<br>
+          <span style="color:#FDE047; font-weight:800;">💡 تجربة الكابتن:</span> 
+          يظهر زر <span style="background:#FDE047; color:#0A192F; padding:2px 8px; border-radius:4px; font-weight:900;">«بدء التحدي 🎯»</span> وعند الضغط عليه يبدأ العداد فوراً: <span style="background:rgba(0,0,0,0.5); padding:2px 10px; border-radius:4px; font-weight:800; color:#FDE047;">«أنجزت 1 من ${target} رحلات — فاضل ${Math.max(1, target - 1)} رحلات للحصول على البونص! 🚀»</span> حتى اكتمال التارجت وصرف البونص في محفظته!
+        </div>
+      </div>
+
+      <!-- Realtime Live Monitor Stats -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; border-top:1px solid rgba(255,255,255,0.15); padding-top:16px;">
+        <div class="hero-stat-box">
+          <div style="font-size:11px; color:#CBD5E1; font-weight:700;">كباتن يشاركون اليوم</div>
+          <div style="font-size:22px; font-weight:800; color:#FFFFFF; font-family:'Outfit',sans-serif; margin-top:2px;">${todayProgressCount} كابتن</div>
+        </div>
+        <div class="hero-stat-box">
+          <div style="font-size:11px; color:#CBD5E1; font-weight:700;">حققوا التارجت بنجاح</div>
+          <div style="font-size:22px; font-weight:800; color:#10B981; font-family:'Outfit',sans-serif; margin-top:2px;">${todayCompletedCount} كابتن 🏆</div>
+        </div>
+        <div class="hero-stat-box">
+          <div style="font-size:11px; color:#CBD5E1; font-weight:700;">إجمالي رحلات التحدي المنجزة</div>
+          <div style="font-size:22px; font-weight:800; color:#FDE047; font-family:'Outfit',sans-serif; margin-top:2px;">${totalTripsCount} رحلة</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================
+// TIME-WINDOW BONUS SHIFTS TABLE (REWARDS PAGE)
+// ============================================
+function renderRewardsShiftsTable() {
+  const shifts = rewardsShiftsList || [];
+  return `
+    <div class="card" style="padding:24px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
+        <div>
+          <h3 style="font-size:17px; font-weight:800; margin:0 0 4px 0; color:var(--text-primary); display:flex; align-items:center; gap:8px;">
+            <i class="ri-time-zone-fill" style="color:var(--medium-blue);"></i>
+            فترات ومواعيد البونص المخصصة (Time-Window Shifts)
+          </h3>
+          <p style="margin:0; font-size:13px; color:var(--text-secondary);">يمكنك تحديد فترات مخصصة (صباحية، مسائية، أوقات الذروة) بعدد رحلات وبونص مستقل.</p>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="showAddShiftModal()" style="display:flex; align-items:center; gap:6px;">
+          <i class="ri-add-line"></i>
+          <span>إضافة فترة بونص جديدة</span>
+        </button>
+      </div>
+
+      <div style="overflow-x:auto;">
+        <table class="data-table" style="width:100%; text-align:right;">
+          <thead>
+            <tr>
+              <th>عنوان الفترة</th>
+              <th>بداية الفترة</th>
+              <th>نهاية الفترة</th>
+              <th>الرحلات المطلوبة</th>
+              <th>مبلغ البونص</th>
+              <th>الحالة والتفعيل</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${shifts.length === 0 ? `
+              <tr>
+                <td colspan="7" style="text-align:center; padding:32px; color:var(--text-light);">
+                  <i class="ri-time-line" style="font-size:32px; display:block; margin-bottom:6px; opacity:0.5;"></i>
+                  لا توجد فترات بونص مسجلة حالياً. يتم تطبيق التحدي اليومي العام افتراضياً.
+                </td>
+              </tr>
+            ` : shifts.map(shift => {
+    const startFormatted = formatTimeSimple(shift.start_time);
+    const endFormatted = formatTimeSimple(shift.end_time);
+    const isMorning = (shift.title || '').includes('صباح');
+    const isEvening = (shift.title || '').includes('مساء') || (shift.title || '').includes('سهرة') || (shift.title || '').includes('ليل');
+    const shiftIcon = isMorning ? 'ri-sun-fill' : (isEvening ? 'ri-moon-fill' : 'ri-sun-cloudy-fill');
+    const shiftColor = isMorning ? '#F59E0B' : (isEvening ? '#7C3AED' : '#1E88E5');
+    const shiftBg = isMorning ? 'rgba(245,158,11,0.1)' : (isEvening ? 'rgba(124,58,237,0.1)' : 'rgba(30,136,229,0.1)');
+    return `
+                <tr>
+                  <td>
+                    <div style="font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:8px;">
+                      <div style="width:32px; height:32px; border-radius:8px; background:${shiftBg}; color:${shiftColor}; display:flex; align-items:center; justify-content:center; font-size:16px;">
+                        <i class="${shiftIcon}"></i>
+                      </div>
+                      <div>
+                        <div style="font-weight:800; font-size:13px;">${shift.title || 'فترة مخصصة'}</div>
+                        <div style="font-size:10px; color:var(--text-secondary);">${startFormatted} - ${endFormatted}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td><span style="font-weight:700; color:var(--text-primary);">${startFormatted}</span></td>
+                  <td><span style="font-weight:700; color:var(--text-primary);">${endFormatted}</span></td>
+                  <td><span style="font-weight:800; color:var(--medium-blue); font-family:'Outfit',sans-serif;">${shift.target_trips} رحلات</span></td>
+                  <td><span style="font-weight:900; color:#10B981; font-family:'Outfit',sans-serif;">+${parseFloat(shift.reward_amount || 0).toFixed(0)} ج.م</span></td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <label class="switch switch-light" style="width:44px; height:24px; margin:0;">
+                        <input type="checkbox" ${shift.is_active ? 'checked' : ''} onchange="handleToggleShiftActive('${shift.id}', this.checked, this)">
+                        <span class="slider round"></span>
+                      </label>
+                      <span class="switch-pill ${shift.is_active ? 'active' : 'inactive'}" style="font-size:10px; padding:2px 8px;">
+                        ${shift.is_active ? 'مفعل 🟢' : 'متوقف ⚪'}
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    <button class="btn btn-outline btn-sm" style="color:var(--error); border-color:var(--error); padding:4px 8px;" onclick="handleDeleteShift('${shift.id}')" title="حذف هذه الفترة">
+                      <i class="ri-delete-bin-line"></i>
+                    </button>
+                  </td>
+                </tr>
+              `;
+  }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function formatTimeSimple(timeStr) {
+  if (!timeStr) return '--';
+  try {
+    const parts = timeStr.split(':');
+    let hour = parseInt(parts[0], 10);
+    const min = parts[1] || '00';
+    const ampm = hour >= 12 ? 'م' : 'ص';
+    if (hour > 12) hour -= 12;
+    if (hour === 0) hour = 12;
+    return `${hour.toString().padStart(2, '0')}:${min} ${ampm}`;
+  } catch (e) {
+    return timeStr;
+  }
+}
+
+function showAddShiftModal() {
+  let modal = document.getElementById('addShiftModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'addShiftModal';
+    modal.className = 'modal-overlay active';
+    modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;';
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="card" style="width:100%; max-width:500px; padding:24px; border-radius:var(--radius-xl); box-shadow:0 12px 40px rgba(0,0,0,0.25);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+        <h3 style="margin:0; font-size:16px; font-weight:800; display:flex; align-items:center; gap:8px;">
+          <i class="ri-alarm-add-line" style="color:var(--medium-blue);"></i> إضافة فترة / شفت بونص جديد
+        </h3>
+        <button onclick="closeAddShiftModal()" style="background:none; border:none; font-size:20px; cursor:pointer; color:var(--text-light);">&times;</button>
+      </div>
+
+      <!-- Quick Preset Buttons -->
+      <div style="margin-bottom:16px; background:var(--bg-primary); padding:10px 12px; border-radius:var(--radius-md); border:1px dashed var(--border-color);">
+        <label style="font-size:11px; font-weight:800; color:var(--text-secondary); margin-bottom:6px; display:block;">قوالب سريعة جاهزة (اضغط للتعبئة الفورية):</label>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button type="button" class="btn btn-sm btn-outline" onclick="applyShiftPreset('فترة الصباح', '06:00', '12:00', 5, 50)" style="font-size:11px; padding:3px 8px;">🌅 الصباح (06-12)</button>
+          <button type="button" class="btn btn-sm btn-outline" onclick="applyShiftPreset('فترة الظهيرة', '12:00', '18:00', 5, 50)" style="font-size:11px; padding:3px 8px;">☀️ الظهيرة (12-18)</button>
+          <button type="button" class="btn btn-sm btn-outline" onclick="applyShiftPreset('فترة المساء', '18:00', '23:59', 6, 60)" style="font-size:11px; padding:3px 8px;">🌙 المساء (18-24)</button>
+          <button type="button" class="btn btn-sm btn-outline" onclick="applyShiftPreset('فترة الذروة', '13:00', '17:00', 4, 40)" style="font-size:11px; padding:3px 8px;">⚡ الذروة (13-17)</button>
+        </div>
+      </div>
+
+      <form onsubmit="event.preventDefault(); submitNewShift();" style="display:flex; flex-direction:column; gap:16px;">
+        <div class="form-group">
+          <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">عنوان الفترة (مثلاً: فترة الصباح)</label>
+          <input type="text" id="newShiftTitle" required placeholder="فترة الصباح" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary);">
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="form-group">
+            <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">وقت البدء</label>
+            <input type="time" id="newShiftStart" required value="06:00" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary);">
+          </div>
+          <div class="form-group">
+            <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">وقت الانتهاء</label>
+            <input type="time" id="newShiftEnd" required value="12:00" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary);">
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="form-group">
+            <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">الرحلات المطلوبة</label>
+            <input type="number" id="newShiftTarget" min="1" step="1" required value="5" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary);">
+          </div>
+          <div class="form-group">
+            <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">مبلغ البونص (ج.م)</label>
+            <input type="number" id="newShiftReward" min="0" step="5" required value="50" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary);">
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px; border-top:1px solid var(--border-color); padding-top:16px;">
+          <button type="button" class="btn btn-outline" onclick="closeAddShiftModal()">إلغاء</button>
+          <button type="submit" class="btn btn-primary" id="btnSubmitNewShift">
+            <i class="ri-check-line"></i> حفظ الفترة وتفعيلها
+          </button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+window.applyShiftPreset = function(title, start, end, trips, reward) {
+  const t = document.getElementById('newShiftTitle');
+  const s = document.getElementById('newShiftStart');
+  const e = document.getElementById('newShiftEnd');
+  const tr = document.getElementById('newShiftTarget');
+  const r = document.getElementById('newShiftReward');
+  if (t) t.value = title;
+  if (s) s.value = start;
+  if (e) e.value = end;
+  if (tr) tr.value = trips;
+  if (r) r.value = reward;
+};
+
+function closeAddShiftModal() {
+  const modal = document.getElementById('addShiftModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function submitNewShift() {
+  const btn = document.getElementById('btnSubmitNewShift');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> جاري الحفظ...'; }
+  try {
+    const title = document.getElementById('newShiftTitle')?.value.trim() || 'فترة مخصصة';
+    const startVal = document.getElementById('newShiftStart')?.value || '06:00';
+    const endVal = document.getElementById('newShiftEnd')?.value || '12:00';
+    const target = parseInt(document.getElementById('newShiftTarget')?.value || 5, 10);
+    const reward = parseFloat(document.getElementById('newShiftReward')?.value || 50);
+
+    const { error } = await supabaseClient
+      .from('driver_mission_shifts')
+      .insert({
+        title: title,
+        start_time: `${startVal}:00`,
+        end_time: `${endVal}:00`,
+        target_trips: target,
+        reward_amount: reward,
+        is_active: true
+      });
+
+    if (error) throw error;
+    showToast('تمت إضافة فترة البونص بنجاح 🎉');
+    closeAddShiftModal();
+    await loadRewardsData(false);
+  } catch (err) {
+    console.error('Error saving shift:', err);
+    showToast('فشل في إضافة الفترة: ' + err.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-check-line"></i> حفظ الفترة وتفعيلها'; }
+  }
+}
+
+async function handleToggleShiftActive(shiftId, active, elem) {
+  if (elem) {
+    const pill = elem.closest('td')?.querySelector('.switch-pill');
+    if (pill) {
+      pill.className = active ? 'switch-pill active' : 'switch-pill inactive';
+      pill.textContent = active ? 'مفعل 🟢' : 'متوقف ⚪';
+    }
+  }
+  try {
+    const { error } = await supabaseClient
+      .from('driver_mission_shifts')
+      .update({ is_active: active, updated_at: new Date().toISOString() })
+      .eq('id', shiftId);
+    if (error) throw error;
+    showToast(active ? 'تم تفعيل الفترة بنجاح 🟢' : 'تم تعطيل الفترة ⏸️');
+    await loadRewardsData(false);
+  } catch (err) {
+    console.error('Error toggling shift active:', err);
+    showToast('فشل تعديل حالة الفترة: ' + err.message);
+  }
+}
+
+async function handleDeleteShift(shiftId) {
+  if (!confirm('هل أنت متأكد من حذف فترة البونص هذه؟')) return;
+  try {
+    const { error } = await supabaseClient
+      .from('driver_mission_shifts')
+      .delete()
+      .eq('id', shiftId);
+    if (error) throw error;
+    showToast('تم حذف فترة البونص بنجاح 🗑️');
+    await loadRewardsData(false);
+  } catch (err) {
+    console.error('Error deleting shift:', err);
+    showToast('فشل حذف الفترة: ' + err.message);
+  }
+}
+
+// ============================================
+// CAPTAIN PROFILE MISSION & BONUS PROGRESS CARD
+// ============================================
+async function loadCaptainMissionCard(uid, role = 'driver') {
+  const container = document.getElementById('profileCaptainMissionCardContainer');
+  if (!container) return;
+
+  try {
+    if (!supabaseClient) {
+      container.style.display = 'none';
+      return;
+    }
+
+    // Call get_active_driver_mission RPC
+    const { data: mission, error } = await supabaseClient.rpc('get_active_driver_mission', { p_driver_id: uid });
+    if (error || !mission || (!mission.is_active && !mission.has_active_mission)) {
+      if (role === 'rider') {
+        container.innerHTML = '';
+        container.style.display = 'none';
+        return;
+      }
+      container.style.display = 'block';
+      container.innerHTML = `
+        <div class="card" style="padding:16px 20px; background:var(--bg-primary); border:1px dashed var(--border-color); border-radius:var(--radius-xl); display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <i class="ri-information-line" style="font-size:22px; color:var(--text-light);"></i>
+            <span style="font-size:13px; color:var(--text-secondary); font-weight:600;">لا يوجد بونص أو تحدي يومي نشط لهذا الكابتن في هذا الوقت.</span>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="navigateTo('rewards')" style="font-size:11px;">إدارة التحديات والبونص</button>
+        </div>
+      `;
+      return;
+    }
+
+    container.style.display = 'block';
+    const isCompleted = mission.is_completed || (mission.completed_trips >= mission.target_trips);
+    const target = mission.target_trips || 10;
+    const done = mission.completed_trips || 0;
+    const remaining = mission.remaining_trips !== undefined ? mission.remaining_trips : Math.max(0, target - done);
+    const progressPct = Math.min(100, Math.round((done / Math.max(1, target)) * 100));
+    const title = mission.title || 'تحدي اليوم 🚀';
+    const timeWindow = mission.time_window_text || (mission.start_time && mission.end_time ? `من ${mission.start_time} إلى ${mission.end_time}` : 'طوال اليوم (حتى 11:59 م)');
+    const reward = parseFloat(mission.reward_amount || 50);
+
+    container.innerHTML = `
+      <div class="card rewards-hero-card" style="background:linear-gradient(135deg, ${isCompleted ? '#065F46 0%, #059669 100%' : (mission.is_shift ? '#0F2042 0%, #1E3A8A 50%, #2563EB 100%' : '#0F172A 0%, #1E293B 100%')} !important; color:#fff !important; padding:22px; border-radius:var(--radius-xl); box-shadow:0 10px 25px ${isCompleted ? 'rgba(5,150,105,0.25)' : 'rgba(37,99,235,0.25)'}; position:relative; overflow:hidden; border:1px solid ${isCompleted ? '#34D399' : 'rgba(255,255,255,0.2)'} !important; margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
+          
+          <!-- Left: Icon and Header Info -->
+          <div style="display:flex; align-items:center; gap:14px; flex:1; min-width:260px;">
+            <div style="width:48px; height:48px; border-radius:50%; background:${isCompleted ? 'rgba(253,224,71,0.25)' : 'rgba(255,255,255,0.15)'}; display:flex; align-items:center; justify-content:center; font-size:26px; color:#FDE047; border:2px solid ${isCompleted ? '#FDE047' : 'rgba(255,255,255,0.2)'}; flex-shrink:0;">
+              <i class="${isCompleted ? 'ri-medal-fill' : (mission.is_shift ? 'ri-time-fill' : 'ri-trophy-fill')}"></i>
+            </div>
+            <div>
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <h4 style="margin:0; font-size:16px; font-weight:800; color:#fff;">${title} ${isCompleted ? '(مكتمل) 🏆' : ''}</h4>
+                <span style="background:${isCompleted ? '#047857' : 'rgba(16,185,129,0.3)'}; border:1px solid #34D399; color:#fff; padding:2px 8px; border-radius:8px; font-size:10px; font-weight:700;">
+                  ${isCompleted ? 'تم صرف البونص 🏆' : 'نشط للكابتن الآن 🟢'}
+                </span>
+              </div>
+              <div style="margin-top:4px; display:inline-flex; align-items:center; gap:5px; background:rgba(0,0,0,0.25); padding:3px 10px; border-radius:6px; font-size:11px; font-weight:700; color:#FDE047;">
+                <i class="ri-alarm-line"></i>
+                <span>المواعيد: ${timeWindow}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Reward Amount Pill -->
+          <div style="text-align:center; background:linear-gradient(135deg, #FDE047 0%, #F59E0B 100%); color:#0F172A; padding:8px 16px; border-radius:14px; font-weight:900; box-shadow:0 4px 12px rgba(245,158,11,0.35);">
+            <div style="font-size:16px; font-family:'Outfit',sans-serif; line-height:1.1;">+${reward.toFixed(0)} ج.م</div>
+            <div style="font-size:10px; font-weight:800;">بونص كاش</div>
+          </div>
+        </div>
+
+        <!-- Progress highlight box (User requirement: أنجز كذا وفاضل كذا) -->
+        <div style="margin:16px 0 12px 0; background:${isCompleted ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.1)'}; padding:10px 14px; border-radius:12px; border:1px solid rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <i class="${isCompleted ? 'ri-checkbox-circle-fill' : 'ri-flag-fill'}" style="color:${isCompleted ? '#FDE047' : '#60A5FA'}; font-size:18px;"></i>
+            <span style="font-size:13px; font-weight:700; color:#fff;">
+              ${isCompleted
+        ? 'تهانينا للكابتن! حقق التحدي بنجاح وتم إيداع المكافأة في محفظته 🎉'
+        : `أنجز الكابتن <strong>${done}</strong> من <strong>${target}</strong> رحلات — <span style="color:#FDE047; font-weight:800;">فاضل ${remaining} رحلات</span> للحصول على البونص! 🚀`}
+            </span>
+          </div>
+          <button onclick="loadCaptainMissionCard('${uid}', '${role}')" title="تحديث حالة التحدي" style="background:rgba(255,255,255,0.2); border:none; color:#fff; border-radius:6px; padding:4px 8px; cursor:pointer; font-size:11px; display:inline-flex; align-items:center; gap:4px;">
+            <i class="ri-refresh-line"></i> تحديث
+          </button>
+        </div>
+
+        <!-- Progress Bar -->
+        <div style="background:rgba(255,255,255,0.2); height:10px; border-radius:6px; overflow:hidden; margin-bottom:8px;">
+          <div style="background:${isCompleted ? '#FDE047' : '#38BDF8'}; height:100%; width:${progressPct}%; transition:width 0.4s ease; border-radius:6px;"></div>
+        </div>
+
+        <!-- Progress Footer -->
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:rgba(255,255,255,0.9); font-weight:700;">
+          <span>${isCompleted ? '100% تم الإنجاز 🏆' : `${progressPct}% من الهدف المطلوب`}</span>
+          <span style="font-family:'Outfit',sans-serif; font-size:13px; color:#fff;">${done} / ${target} رحلة مكتملة</span>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    console.error('Error loading captain mission card:', err);
+    if (container) container.style.display = 'none';
+  }
+}
+

@@ -15,6 +15,11 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
   final SupabaseClient _supabase = Supabase.instance.client;
   bool _isLoading = true;
   bool _isStarting = false;
+  bool _isMissionsActive = true;
+  bool _hasActiveMission = true;
+  bool _isUpcoming = false;
+  String _countdownText = '';
+  String _startTimeFormatted = '';
   String _title = 'تحدي اليوم 🚀';
   String _timeWindowText = 'طوال اليوم';
   int _targetTrips = 5;
@@ -26,6 +31,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
   bool _isRewarded = false;
   bool _isShift = false;
 
+  Timer? _countdownTimer;
   RealtimeChannel? _progressChannel;
   RealtimeChannel? _settingsChannel;
   RealtimeChannel? _shiftsChannel;
@@ -35,10 +41,16 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
     super.initState();
     _loadMissionData();
     _setupRealtime();
+    _countdownTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) {
+        _loadMissionData();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _progressChannel?.unsubscribe();
     _settingsChannel?.unsubscribe();
     _shiftsChannel?.unsubscribe();
@@ -64,6 +76,42 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
     }
   }
 
+  String _buildCountdownText(String? startTimeStr) {
+    if (startTimeStr == null || startTimeStr.isEmpty) return '';
+    try {
+      final now = DateTime.now().toUtc().add(const Duration(hours: 3));
+      final currentMinutes = now.hour * 60 + now.minute;
+      final parts = startTimeStr.split(':');
+      final startMin = (int.tryParse(parts[0]) ?? 0) * 60 + (int.tryParse(parts[1]) ?? 0);
+
+      int diff = startMin - currentMinutes;
+      if (diff <= 0) {
+        diff += 24 * 60; // Next day
+      }
+
+      final hours = diff ~/ 60;
+      final mins = diff % 60;
+
+      if (hours > 0 && mins > 0) {
+        if (hours == 1) return 'يبدأ التحدي بعد ساعة و $mins دقيقة';
+        if (hours == 2) return 'يبدأ التحدي بعد ساعتين و $mins دقيقة';
+        if (hours >= 3 && hours <= 10) return 'يبدأ التحدي بعد $hours ساعات و $mins دقيقة';
+        return 'يبدأ التحدي بعد $hours ساعة و $mins دقيقة';
+      } else if (hours > 0) {
+        if (hours == 1) return 'يبدأ التحدي بعد ساعة واحدة';
+        if (hours == 2) return 'يبدأ التحدي بعد ساعتين';
+        if (hours >= 3 && hours <= 10) return 'يبدأ التحدي بعد $hours ساعات';
+        return 'يبدأ التحدي بعد $hours ساعة';
+      } else if (mins > 0) {
+        return 'يبدأ التحدي بعد $mins دقيقة';
+      } else {
+        return 'يبدأ التحدي خلال أقل من دقيقة';
+      }
+    } catch (_) {
+      return '';
+    }
+  }
+
   Future<void> _loadMissionData() async {
     final uid = GlobalState.instance.userUid ?? _supabase.auth.currentUser?.id;
 
@@ -75,52 +123,88 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
       if (!mounted) return;
 
       if (res != null && res is Map) {
-        final isActive = res['is_active'] == true;
+        final isMissionsActive = res['is_missions_active'] != false;
         final hasActive = res['has_active_mission'] == true;
 
-        if (isActive && hasActive) {
-          final target = (res['target_trips'] as num?)?.toInt() ?? 5;
-          final done = (res['completed_trips'] as num?)?.toInt() ?? 0;
-          final rawRew = res['reward_amount'];
-          final reward = (rawRew is num)
-              ? rawRew.toDouble()
-              : (double.tryParse(rawRew?.toString() ?? '50') ?? 50.0);
-          final rem = (res['remaining_trips'] as num?)?.toInt() ?? (target - done).clamp(0, target);
-          final completed = res['is_completed'] == true || done >= target;
-          final started = res['is_started'] == true || done > 0;
-          final rewarded = res['is_rewarded'] == true;
-          final titleStr = (res['title'] as String?)?.isNotEmpty == true
-              ? res['title'] as String
-              : 'تحدي اليوم 🚀';
-
-          String timeWindow = (res['time_window_text'] as String?)?.isNotEmpty == true
-              ? res['time_window_text'] as String
-              : '';
-          if (timeWindow.isEmpty && (res['start_time'] != null || res['end_time'] != null)) {
-            timeWindow = 'من ${_formatTimeSimple(res['start_time']?.toString())} إلى ${_formatTimeSimple(res['end_time']?.toString())}';
-          }
-          if (timeWindow.isEmpty) {
-            timeWindow = 'طوال اليوم';
-          }
-
+        if (!isMissionsActive || !hasActive) {
           setState(() {
-            _title = titleStr;
-            _timeWindowText = timeWindow;
-            _targetTrips = target > 0 ? target : 5;
-            _rewardAmount = reward;
-            _completedTrips = done;
-            _remainingTrips = rem;
-            _isCompleted = completed;
-            _isStarted = started;
-            _isRewarded = rewarded;
-            _isShift = res['is_shift'] == true;
+            _isMissionsActive = false;
+            _hasActiveMission = false;
             _isLoading = false;
           });
           return;
         }
+
+        final isUpcoming = res['is_upcoming'] == true;
+        final countdown = res['countdown_text']?.toString() ?? '';
+        final startStr = res['start_time']?.toString() ?? '';
+        final target = (res['target_trips'] as num?)?.toInt() ?? 5;
+        final done = (res['completed_trips'] as num?)?.toInt() ?? 0;
+        final rawRew = res['reward_amount'];
+        final reward = (rawRew is num)
+            ? rawRew.toDouble()
+            : (double.tryParse(rawRew?.toString() ?? '50') ?? 50.0);
+        final rem = (res['remaining_trips'] as num?)?.toInt() ?? (target - done).clamp(0, target);
+        final completed = res['is_completed'] == true || done >= target;
+        final started = res['is_started'] == true || done > 0;
+        final rewarded = res['is_rewarded'] == true;
+        final titleStr = (res['title'] as String?)?.isNotEmpty == true
+            ? res['title'] as String
+            : 'تحدي اليوم 🚀';
+
+        String timeWindow = (res['time_window_text'] as String?)?.isNotEmpty == true
+            ? res['time_window_text'] as String
+            : '';
+        if (timeWindow.isEmpty && (res['start_time'] != null || res['end_time'] != null)) {
+          timeWindow = 'من ${_formatTimeSimple(res['start_time']?.toString())} إلى ${_formatTimeSimple(res['end_time']?.toString())}';
+        }
+        if (timeWindow.isEmpty) {
+          timeWindow = 'طوال اليوم';
+        }
+
+        setState(() {
+          _isMissionsActive = true;
+          _hasActiveMission = true;
+          _isUpcoming = isUpcoming;
+          _countdownText = countdown.isNotEmpty ? countdown : _buildCountdownText(res['start_time']?.toString());
+          _startTimeFormatted = startStr;
+          _title = titleStr;
+          _timeWindowText = timeWindow;
+          _targetTrips = target > 0 ? target : 5;
+          _rewardAmount = reward;
+          _completedTrips = done;
+          _remainingTrips = rem;
+          _isCompleted = completed;
+          _isStarted = started;
+          _isRewarded = rewarded;
+          _isShift = res['is_shift'] == true;
+          _isLoading = false;
+        });
+        return;
       }
 
-      // Fallback 1: Query driver_mission_shifts directly from database
+      // Fallback 1: Query rewards_settings directly
+      try {
+        final settingsRes = await _supabase
+            .from('rewards_settings')
+            .select()
+            .eq('id', 'default')
+            .maybeSingle();
+        if (settingsRes != null && settingsRes['is_missions_active'] != true) {
+          if (mounted) {
+            setState(() {
+              _isMissionsActive = false;
+              _hasActiveMission = false;
+              _isLoading = false;
+            });
+          }
+          return;
+        }
+      } catch (err) {
+        debugPrint('[DriverDailyMissionCard] Fallback settings query notice: $err');
+      }
+
+      // Fallback 2: Query active shifts directly
       List<dynamic> shifts = [];
       try {
         shifts = await _supabase
@@ -132,98 +216,72 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
         debugPrint('[DriverDailyMissionCard] Error querying shifts directly: $e');
       }
 
-      if (shifts.isNotEmpty) {
-        final now = DateTime.now().toUtc().add(const Duration(hours: 3)); // Cairo Time
-        final currentMinutes = now.hour * 60 + now.minute;
-
-        Map<String, dynamic>? activeShift;
-        for (final s in shifts) {
-          final startParts = (s['start_time'] as String? ?? '00:00').split(':');
-          final endParts = (s['end_time'] as String? ?? '00:00').split(':');
-          final startMin = (int.tryParse(startParts[0]) ?? 0) * 60 + (int.tryParse(startParts[1]) ?? 0);
-          final endMin = (int.tryParse(endParts[0]) ?? 0) * 60 + (int.tryParse(endParts[1]) ?? 0);
-          if (startMin <= endMin) {
-            if (currentMinutes >= startMin && currentMinutes <= endMin) {
-              activeShift = s as Map<String, dynamic>;
-              break;
-            }
-          } else {
-            if (currentMinutes >= startMin || currentMinutes <= endMin) {
-              activeShift = s as Map<String, dynamic>;
-              break;
-            }
-          }
-        }
-
-        activeShift ??= shifts.first as Map<String, dynamic>;
-
-        final target = (activeShift['target_trips'] as num?)?.toInt() ?? 5;
-        final rawRew = activeShift['reward_amount'];
-        final reward = (rawRew is num)
-            ? rawRew.toDouble()
-            : (double.tryParse(rawRew?.toString() ?? '50') ?? 50.0);
-        final title = activeShift['title']?.toString() ?? 'فترة التحدي 🚀';
-        final startFmt = _formatTimeSimple(activeShift['start_time']?.toString());
-        final endFmt = _formatTimeSimple(activeShift['end_time']?.toString());
-        final timeWindow = 'من $startFmt إلى $endFmt';
-
-        int done = 0;
-        bool isStarted = false;
-        bool isRewarded = false;
-        if (uid != null) {
-          try {
-            final todayStr = DateTime.now().toIso8601String().split('T')[0];
-            final progRes = await _supabase
-                .from('driver_mission_progress')
-                .select()
-                .eq('driver_id', uid)
-                .eq('mission_date', todayStr)
-                .maybeSingle();
-            if (progRes != null) {
-              done = (progRes['completed_trips'] as num?)?.toInt() ?? 0;
-              isRewarded = progRes['is_rewarded'] == true;
-              isStarted = progRes['is_started'] == true || done > 0;
-            }
-          } catch (_) {}
-        }
-
+      if (shifts.isEmpty) {
         if (mounted) {
           setState(() {
-            _title = title;
-            _timeWindowText = timeWindow;
-            _targetTrips = target > 0 ? target : 5;
-            _rewardAmount = reward;
-            _completedTrips = done;
-            _remainingTrips = (target - done).clamp(0, target);
-            _isCompleted = done >= target;
-            _isStarted = isStarted;
-            _isRewarded = isRewarded;
-            _isShift = true;
+            _isMissionsActive = false;
+            _hasActiveMission = false;
             _isLoading = false;
           });
-          return;
+        }
+        return;
+      }
+
+      final now = DateTime.now().toUtc().add(const Duration(hours: 3)); // Cairo Time
+      final currentMinutes = now.hour * 60 + now.minute;
+
+      Map<String, dynamic>? activeShift;
+      for (final s in shifts) {
+        final startParts = (s['start_time'] as String? ?? '00:00').split(':');
+        final endParts = (s['end_time'] as String? ?? '00:00').split(':');
+        final startMin = (int.tryParse(startParts[0]) ?? 0) * 60 + (int.tryParse(startParts[1]) ?? 0);
+        final endMin = (int.tryParse(endParts[0]) ?? 0) * 60 + (int.tryParse(endParts[1]) ?? 0);
+        if (startMin <= endMin) {
+          if (currentMinutes >= startMin && currentMinutes <= endMin) {
+            activeShift = s as Map<String, dynamic>;
+            break;
+          }
+        } else {
+          if (currentMinutes >= startMin || currentMinutes <= endMin) {
+            activeShift = s as Map<String, dynamic>;
+            break;
+          }
         }
       }
 
-      // Fallback 2: Query rewards_settings
-      int target = 5;
-      double reward = 50.0;
-      try {
-        final settingsRes = await _supabase
-            .from('rewards_settings')
-            .select()
-            .eq('id', 'default')
-            .maybeSingle();
-        if (settingsRes != null) {
-          target = (settingsRes['daily_mission_trips'] as num?)?.toInt() ?? 5;
-          final rawRew = settingsRes['daily_mission_reward'];
-          reward = (rawRew is num) ? rawRew.toDouble() : (double.tryParse(rawRew?.toString() ?? '50') ?? 50.0);
+      bool isUpcoming = false;
+      String countdown = '';
+
+      if (activeShift != null) {
+        isUpcoming = false;
+      } else {
+        isUpcoming = true;
+
+        for (final s in shifts) {
+          final parts = (s['start_time'] as String? ?? '00:00').split(':');
+          final min = (int.tryParse(parts[0]) ?? 0) * 60 + (int.tryParse(parts[1]) ?? 0);
+          if (min > currentMinutes) {
+            activeShift = s as Map<String, dynamic>;
+            break;
+          }
         }
-      } catch (_) {}
+        activeShift ??= shifts.first as Map<String, dynamic>;
+        countdown = _buildCountdownText(activeShift['start_time']?.toString());
+      }
+
+      final target = (activeShift['target_trips'] as num?)?.toInt() ?? 5;
+      final rawRew = activeShift['reward_amount'];
+      final reward = (rawRew is num)
+          ? rawRew.toDouble()
+          : (double.tryParse(rawRew?.toString() ?? '50') ?? 50.0);
+      final title = activeShift['title']?.toString() ?? 'فترة التحدي 🚀';
+      final startFmt = _formatTimeSimple(activeShift['start_time']?.toString());
+      final endFmt = _formatTimeSimple(activeShift['end_time']?.toString());
+      final timeWindow = isUpcoming ? 'الفترة القادمة: من $startFmt إلى $endFmt' : 'من $startFmt إلى $endFmt';
 
       int done = 0;
-      bool fallbackRewarded = false;
       bool isStarted = false;
+      bool isRewarded = false;
       if (uid != null) {
         try {
           final todayStr = DateTime.now().toIso8601String().split('T')[0];
@@ -235,7 +293,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
               .maybeSingle();
           if (progRes != null) {
             done = (progRes['completed_trips'] as num?)?.toInt() ?? 0;
-            fallbackRewarded = progRes['is_rewarded'] == true;
+            isRewarded = progRes['is_rewarded'] == true;
             isStarted = progRes['is_started'] == true || done > 0;
           }
         } catch (_) {}
@@ -243,18 +301,24 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
 
       if (mounted) {
         setState(() {
-          _title = 'تحدي اليوم 🚀';
-          _timeWindowText = 'خلال فترات اليوم المعتمدة';
+          _isMissionsActive = true;
+          _hasActiveMission = true;
+          _isUpcoming = isUpcoming;
+          _countdownText = countdown;
+          _startTimeFormatted = startFmt;
+          _title = title;
+          _timeWindowText = timeWindow;
           _targetTrips = target > 0 ? target : 5;
           _rewardAmount = reward;
           _completedTrips = done;
           _remainingTrips = (target - done).clamp(0, target);
           _isCompleted = done >= target;
           _isStarted = isStarted;
-          _isRewarded = fallbackRewarded;
-          _isShift = false;
+          _isRewarded = isRewarded;
+          _isShift = true;
           _isLoading = false;
         });
+        return;
       }
     } catch (e) {
       debugPrint('[DriverDailyMissionCard] Error loading active mission: $e');
@@ -385,6 +449,368 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
     }
   }
 
+  Widget _buildPausedMissionCard() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF334155), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFF64748B), width: 1.5),
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.pause_circle_outline_rounded, color: Color(0xFF94A3B8), size: 26),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'تحديات وبونص الرحلات',
+                        style: GoogleFonts.cairo(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        'متوقفة حالياً بقرار من الإدارة',
+                        style: GoogleFonts.cairo(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF94A3B8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF334155),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF475569)),
+                ),
+                child: Text(
+                  'متوقف ⚪',
+                  style: GoogleFonts.cairo(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFFE2E8F0),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.25),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, color: Color(0xFF94A3B8), size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'تم إيقاف تفعيل فترات التحدي والبونص مؤقتاً عبر الداش بورد. تابع الإشعارات للتعرف على مواعيد انطلاق التحديات القادمة!',
+                    style: GoogleFonts.cairo(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFFCBD5E1),
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUpcomingMissionCard() {
+    final int target = _targetTrips > 0 ? _targetTrips : 5;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF1E3A8A)],
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFF3B82F6).withValues(alpha: 0.4),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1E3A8A).withValues(alpha: 0.35),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header Row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFFFDE047),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.hourglass_top_rounded,
+                          color: Color(0xFFFDE047),
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 6,
+                            runSpacing: 2,
+                            children: [
+                              Text(
+                                _title,
+                                style: GoogleFonts.cairo(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: const Color(0xFFFBBF24),
+                                    width: 0.8,
+                                  ),
+                                ),
+                                child: Text(
+                                  'يبدأ قريباً ⏳',
+                                  style: GoogleFonts.cairo(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFFFDE047),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.access_time_filled_rounded, color: Color(0xFF93C5FD), size: 12),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    _timeWindowText,
+                                    style: GoogleFonts.cairo(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFFBFDBFE),
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 10),
+
+              // Reward Pill
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFDE047), Color(0xFFF59E0B)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      '+${_rewardAmount.toInt()} ج.م',
+                      style: GoogleFonts.outfit(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFF0F172A),
+                        height: 1.1,
+                      ),
+                    ),
+                    Text(
+                      'بونص كاش',
+                      style: GoogleFonts.cairo(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                        height: 1.1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Countdown Info Box
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.alarm_on_rounded, color: Color(0xFFFDE047), size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _countdownText.isNotEmpty
+                            ? '$_countdownText ⏰'
+                            : 'سيبدأ التحدي القادم قريباً ⏰',
+                        style: GoogleFonts.cairo(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFFFDE047),
+                        ),
+                      ),
+                      Text(
+                        'الهدف: إنجاز $target رحلات خلال الفترة للحصول على ${_rewardAmount.toInt()} ج.م كاش بمحفظتك.',
+                        style: GoogleFonts.cairo(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.85),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          // Disabled Waiting Button
+          Container(
+            height: 42,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.lock_clock_rounded, size: 18, color: Color(0xFFCBD5E1)),
+                const SizedBox(width: 8),
+                Text(
+                  _startTimeFormatted.isNotEmpty
+                      ? 'يبدأ التحدي عند الساعة $_startTimeFormatted'
+                      : 'سيبدأ التحدي عند انطلاق الفترة',
+                  style: GoogleFonts.cairo(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFFCBD5E1),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -400,6 +826,16 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
           child: CircularProgressIndicator(color: Color(0xFF1E88E5), strokeWidth: 2.5),
         ),
       );
+    }
+
+    // 1. If missions are disabled or no active mission available:
+    if (!_isMissionsActive || !_hasActiveMission) {
+      return _buildPausedMissionCard();
+    }
+
+    // 2. If outside shift hours (Upcoming shift):
+    if (_isUpcoming) {
+      return _buildUpcomingMissionCard();
     }
 
     final int target = _targetTrips > 0 ? _targetTrips : 10;

@@ -41,6 +41,7 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
   int _completedInvites = 0;
   double _totalEarned = 0.0;
   bool _isReferralActive = true;
+  bool _isMissionsActive = true;
   double _driverReferralBonus = 100.0;
   double _driverWelcomeBonus = 50.0;
   double _riderReferralBonus = 20.0;
@@ -124,6 +125,7 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
 
         if (settingsRes != null && mounted) {
           _isReferralActive = settingsRes['is_referral_active'] ?? true;
+          _isMissionsActive = settingsRes['is_missions_active'] ?? true;
           _driverReferralBonus = (settingsRes['driver_referral_bonus'] is num)
               ? (settingsRes['driver_referral_bonus'] as num).toDouble()
               : (double.tryParse(settingsRes['driver_referral_bonus']?.toString() ?? '100') ?? 100.0);
@@ -458,6 +460,34 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (!_isMissionsActive) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFCA5A5)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.pause_circle_rounded, color: Color(0xFFDC2626), size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'تحديات وبونص الرحلات متوقفة حالياً بقرار من إدارة التطبيق.',
+                      style: GoogleFonts.cairo(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF991B1B),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           // Section Title
           Row(
             children: [
@@ -1192,7 +1222,46 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
     }
   }
 
+  Map<String, dynamic>? _getNextUpcomingShift() {
+    final activeShifts = _shifts.where((s) => s['is_active'] == true).toList();
+    if (activeShifts.isEmpty) return null;
+
+    final now = DateTime.now().toUtc().add(const Duration(hours: 3)); // Cairo Time
+    final currentMinutes = now.hour * 60 + now.minute;
+
+    for (final s in activeShifts) {
+      if (_isShiftCurrentlyActive(s)) return null;
+    }
+
+    activeShifts.sort((a, b) {
+      final aParts = (a['start_time'] as String? ?? '00:00').split(':');
+      final bParts = (b['start_time'] as String? ?? '00:00').split(':');
+      final aMin = (int.tryParse(aParts[0]) ?? 0) * 60 + (int.tryParse(aParts[1]) ?? 0);
+      final bMin = (int.tryParse(bParts[0]) ?? 0) * 60 + (int.tryParse(bParts[1]) ?? 0);
+      return aMin.compareTo(bMin);
+    });
+
+    for (final s in activeShifts) {
+      final parts = (s['start_time'] as String? ?? '00:00').split(':');
+      final min = (int.tryParse(parts[0]) ?? 0) * 60 + (int.tryParse(parts[1]) ?? 0);
+      if (min > currentMinutes) return s;
+    }
+
+    return activeShifts.first;
+  }
+
+  bool _isShiftNextUpcoming(Map<String, dynamic> shift) {
+    if (shift['is_active'] != true || !_isMissionsActive) return false;
+    for (final s in _shifts) {
+      if (s['is_active'] == true && _isShiftCurrentlyActive(s)) return false;
+    }
+    final next = _getNextUpcomingShift();
+    return next != null && next['id'] == shift['id'];
+  }
+
   Widget _buildBonusShiftsScheduleCard() {
+    final bool hasLiveShift = _isMissionsActive && _shifts.any((s) => _isShiftCurrentlyActive(s));
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1223,20 +1292,36 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: !_isMissionsActive
+                      ? const Color(0xFFF1F5F9)
+                      : (hasLiveShift ? const Color(0xFFDCFCE7) : const Color(0xFFEFF6FF)),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                  border: Border.all(
+                    color: !_isMissionsActive
+                        ? const Color(0xFFCBD5E1)
+                        : (hasLiveShift ? const Color(0xFF86EFAC) : const Color(0xFFBFDBFE)),
+                  ),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.sync_rounded, color: AppColors.mediumBlue, size: 12),
+                    Icon(
+                      !_isMissionsActive
+                          ? Icons.pause_circle_outline_rounded
+                          : (hasLiveShift ? Icons.fiber_manual_record_rounded : Icons.schedule_rounded),
+                      color: !_isMissionsActive
+                          ? const Color(0xFF64748B)
+                          : (hasLiveShift ? const Color(0xFF166534) : AppColors.mediumBlue),
+                      size: 12,
+                    ),
                     const SizedBox(width: 4),
                     Text(
-                      'مباشر',
+                      !_isMissionsActive ? 'متوقف مؤقتاً' : (hasLiveShift ? 'نشط الآن' : 'مجدول'),
                       style: GoogleFonts.cairo(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.mediumBlue,
+                        color: !_isMissionsActive
+                            ? const Color(0xFF64748B)
+                            : (hasLiveShift ? const Color(0xFF166534) : AppColors.mediumBlue),
                       ),
                     ),
                   ],
@@ -1251,7 +1336,9 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
               time: '06:00 ص - 12:00 م',
               trips: 'أكمل 5 رحلات',
               bonus: '+50 ج.م',
-              isActive: false,
+              statusBadge: !_isMissionsActive ? 'متوقفة ⚪' : 'مجدولة ⏰',
+              statusColor: const Color(0xFFF1F5F9),
+              statusTextColor: const Color(0xFF64748B),
             ),
             const Divider(height: 14),
             _buildShiftRow(
@@ -1259,26 +1346,61 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
               time: '12:00 م - 06:00 م',
               trips: 'أكمل 5 رحلات',
               bonus: '+50 ج.م',
-              isActive: true,
+              statusBadge: !_isMissionsActive ? 'متوقفة ⚪' : 'مجدولة ⏰',
+              statusColor: const Color(0xFFF1F5F9),
+              statusTextColor: const Color(0xFF64748B),
             ),
             const Divider(height: 14),
             _buildShiftRow(
               name: 'فترة المساء 🌙',
-              time: '06:00 م - 12:00 ص',
+              time: '06:00 م - 12:00 منتصف الليل',
               trips: 'أكمل 6 رحلات',
               bonus: '+60 ج.م',
-              isActive: false,
+              statusBadge: !_isMissionsActive ? 'متوقفة ⚪' : 'مجدولة ⏰',
+              statusColor: const Color(0xFFF1F5F9),
+              statusTextColor: const Color(0xFF64748B),
             ),
           ] else ...[
             for (int i = 0; i < _shifts.length; i++) ...[
-              _buildShiftRow(
-                name: _shifts[i]['title']?.toString() ?? 'فترة مخصصة',
-                time: '${_formatShiftTime(_shifts[i]['start_time']?.toString())} - ${_formatShiftTime(_shifts[i]['end_time']?.toString())}',
-                trips: 'أكمل ${_shifts[i]['target_trips'] ?? 5} رحلات',
-                bonus: '+${(_shifts[i]['reward_amount'] as num?)?.toInt() ?? 50} ج.م',
-                isActive: _isShiftCurrentlyActive(_shifts[i]),
-              ),
-              if (i < _shifts.length - 1) const Divider(height: 14),
+              () {
+                final shift = _shifts[i];
+                final isShiftActiveInDb = shift['is_active'] == true && _isMissionsActive;
+                final isCurrentlyRunning = isShiftActiveInDb && _isShiftCurrentlyActive(shift);
+                final isNextUpcoming = isShiftActiveInDb && !isCurrentlyRunning && _isShiftNextUpcoming(shift);
+
+                String? badgeText;
+                Color badgeBg = const Color(0xFFF1F5F9);
+                Color badgeFg = const Color(0xFF64748B);
+
+                if (!isShiftActiveInDb) {
+                  badgeText = 'متوقفة ⚪';
+                  badgeBg = const Color(0xFFF1F5F9);
+                  badgeFg = const Color(0xFF64748B);
+                } else if (isCurrentlyRunning) {
+                  badgeText = 'نشط الآن 🟢';
+                  badgeBg = const Color(0xFFDCFCE7);
+                  badgeFg = const Color(0xFF166534);
+                } else if (isNextUpcoming) {
+                  badgeText = 'الفترة القادمة ⏳';
+                  badgeBg = const Color(0xFFFEF3C7);
+                  badgeFg = const Color(0xFFB45309);
+                }
+
+                return Column(
+                  children: [
+                    _buildShiftRow(
+                      name: shift['title']?.toString() ?? 'فترة مخصصة',
+                      time: '${_formatShiftTime(shift['start_time']?.toString())} - ${_formatShiftTime(shift['end_time']?.toString())}',
+                      trips: 'أكمل ${shift['target_trips'] ?? 5} رحلات',
+                      bonus: '+${(shift['reward_amount'] as num?)?.toInt() ?? 50} ج.م',
+                      statusBadge: badgeText,
+                      statusColor: badgeBg,
+                      statusTextColor: badgeFg,
+                    ),
+                    if (i < _shifts.length - 1) const Divider(height: 14),
+                  ],
+                );
+              }(),
             ],
           ],
         ],
@@ -1291,7 +1413,9 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
     required String time,
     required String trips,
     required String bonus,
-    required bool isActive,
+    required String? statusBadge,
+    required Color statusColor,
+    required Color statusTextColor,
   }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1313,17 +1437,17 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (isActive) ...[
+                  if (statusBadge != null) ...[
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFDCFCE7),
+                        color: statusColor,
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        'نشط الآن',
-                        style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: const Color(0xFF166534)),
+                        statusBadge,
+                        style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: statusTextColor),
                       ),
                     ),
                   ],

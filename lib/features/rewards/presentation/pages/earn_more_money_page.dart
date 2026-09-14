@@ -316,6 +316,7 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
             ),
             child: TabBar(
               controller: _tabController,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 2),
               indicator: BoxDecoration(
                 color: AppColors.mediumBlue,
                 borderRadius: BorderRadius.circular(12),
@@ -329,39 +330,51 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
               ),
               labelColor: Colors.white,
               unselectedLabelColor: const Color(0xFF64748B),
-              labelStyle: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w700),
-              unselectedLabelStyle: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600),
+              labelStyle: GoogleFonts.cairo(fontSize: 12.5, fontWeight: FontWeight.w700),
+              unselectedLabelStyle: GoogleFonts.cairo(fontSize: 12.5, fontWeight: FontWeight.w600),
               indicatorSize: TabBarIndicatorSize.tab,
               dividerColor: Colors.transparent,
               tabs: const [
                 Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.emoji_events_rounded, size: 17),
-                      SizedBox(width: 5),
-                      Text('بونص الرحلات'),
-                    ],
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.emoji_events_rounded, size: 15),
+                        SizedBox(width: 4),
+                        Text('بونص الرحلات'),
+                      ],
+                    ),
                   ),
                 ),
                 Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.card_giftcard_rounded, size: 17),
-                      SizedBox(width: 5),
-                      Text('كود الدعوة'),
-                    ],
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.card_giftcard_rounded, size: 15),
+                        SizedBox(width: 4),
+                        Text('كود الدعوة'),
+                      ],
+                    ),
                   ),
                 ),
                 Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.local_offer_rounded, size: 17),
-                      SizedBox(width: 5),
-                      Text('إدخال كود'),
-                    ],
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.local_offer_rounded, size: 15),
+                        SizedBox(width: 4),
+                        Text('إدخال كود'),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -1162,12 +1175,15 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
             children: [
               Row(
                 children: [
-                  Text(
-                    name,
-                    style: GoogleFonts.cairo(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                  Flexible(
+                    child: Text(
+                      name,
+                      style: GoogleFonts.cairo(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   if (isActive) ...[
@@ -1186,14 +1202,16 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
                   ],
                 ],
               ),
-              const SizedBox(height: 2),
-              Row(
+              const SizedBox(height: 3),
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 3,
                 children: [
                   Text(
                     time,
                     style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textLight),
                   ),
-                  const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                     decoration: BoxDecoration(

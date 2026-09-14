@@ -18878,9 +18878,16 @@ function renderRewardsActiveMissionBanner() {
             <div style="font-size:18px; font-family:'Outfit',sans-serif; line-height:1.1;">+${parseFloat(reward).toFixed(0)} ج.م</div>
             <div style="font-size:10px; font-weight:900;">بونص كاش لكل كابتن</div>
           </div>
+          <button class="btn btn-sm" onclick="showEditDailyMissionModal()" style="color:#0A192F; background:#FDE047; border:none; padding:8px 14px; display:flex; align-items:center; gap:6px; font-weight:800; border-radius:8px; box-shadow:0 3px 10px rgba(253,224,71,0.35); cursor:pointer;">
+            <i class="ri-edit-2-line" style="font-size:16px;"></i>
+            <span>تعديل التحدي اليومي ✏️</span>
+          </button>
           <button class="btn btn-outline btn-sm" onclick="showAddShiftModal()" style="color:#FFFFFF; border-color:rgba(255,255,255,0.45); background:rgba(255,255,255,0.12); padding:8px 14px; display:flex; align-items:center; gap:6px; font-weight:700;">
             <i class="ri-add-circle-line" style="font-size:16px;"></i>
             <span>إضافة فترة/شفت</span>
+          </button>
+          <button class="btn btn-outline btn-sm" onclick="loadRewardsData(true)" title="تحديث وتزامن فوري مع التطبيق" style="color:#FFFFFF; border-color:rgba(255,255,255,0.3); background:rgba(255,255,255,0.08); padding:8px 12px; display:flex; align-items:center; gap:6px;">
+            <i class="ri-refresh-line" style="font-size:16px;"></i>
           </button>
         </div>
       </div>
@@ -18894,9 +18901,14 @@ function renderRewardsActiveMissionBanner() {
               المعادلة التفاعلية في تطبيق الكابتن (داخل الشاشة الرئيسية):
             </span>
           </div>
-          <span style="font-size:11px; font-weight:700; background:rgba(0,0,0,0.35); color:#93C5FD; padding:4px 12px; border-radius:6px; border:1px solid rgba(147,197,253,0.3);">
-            تحديث فوري لكل رحلة مكتملة
-          </span>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <span style="font-size:11px; font-weight:700; background:rgba(16,185,129,0.25); color:#34D399; padding:4px 12px; border-radius:6px; border:1px solid rgba(52,211,153,0.3); display:inline-flex; align-items:center; gap:4px;">
+              <i class="ri-checkbox-circle-fill"></i> متزامن لحظياً مع التطبيق وقاعدة البيانات
+            </span>
+            <span style="font-size:11px; font-weight:700; background:rgba(0,0,0,0.35); color:#93C5FD; padding:4px 12px; border-radius:6px; border:1px solid rgba(147,197,253,0.3);">
+              تحديث فوري لكل رحلة مكتملة
+            </span>
+          </div>
         </div>
         <div style="margin-top:10px; font-size:13px; color:rgba(255,255,255,0.92); line-height:1.7;">
           الهدف المطلوب: إتمام <strong>${target} رحلات</strong> خلال المواعيد المحددة (${timeWindow}).<br>
@@ -18937,12 +18949,18 @@ function renderRewardsShiftsTable() {
             <i class="ri-time-zone-fill" style="color:var(--medium-blue);"></i>
             فترات ومواعيد البونص المخصصة (Time-Window Shifts)
           </h3>
-          <p style="margin:0; font-size:13px; color:var(--text-secondary);">يمكنك تحديد فترات مخصصة (صباحية، مسائية، أوقات الذروة) بعدد رحلات وبونص مستقل.</p>
+          <p style="margin:0; font-size:13px; color:var(--text-secondary);">يمكنك تحديد فترات مخصصة (صباحية، مسائية، أوقات الذروة) بعدد رحلات وبونص مستقل، ويتم مزامنتها تلقائياً مع التطبيق.</p>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="showAddShiftModal()" style="display:flex; align-items:center; gap:6px;">
-          <i class="ri-add-line"></i>
-          <span>إضافة فترة بونص جديدة</span>
-        </button>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" onclick="showEditDailyMissionModal()" style="display:flex; align-items:center; gap:6px;">
+            <i class="ri-edit-line"></i>
+            <span>تعديل التحدي اليومي العام</span>
+          </button>
+          <button class="btn btn-primary btn-sm" onclick="showAddShiftModal()" style="display:flex; align-items:center; gap:6px;">
+            <i class="ri-add-line"></i>
+            <span>إضافة فترة بونص جديدة</span>
+          </button>
+        </div>
       </div>
 
       <div style="overflow-x:auto;">
@@ -19003,9 +19021,14 @@ function renderRewardsShiftsTable() {
                     </div>
                   </td>
                   <td>
-                    <button class="btn btn-outline btn-sm" style="color:var(--error); border-color:var(--error); padding:4px 8px;" onclick="handleDeleteShift('${shift.id}')" title="حذف هذه الفترة">
-                      <i class="ri-delete-bin-line"></i>
-                    </button>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                      <button class="btn btn-outline btn-sm" style="color:var(--medium-blue); border-color:var(--medium-blue); padding:4px 8px;" onclick="showEditShiftModal('${shift.id}')" title="تعديل هذه الفترة">
+                        <i class="ri-edit-2-line"></i>
+                      </button>
+                      <button class="btn btn-outline btn-sm" style="color:var(--error); border-color:var(--error); padding:4px 8px;" onclick="handleDeleteShift('${shift.id}')" title="حذف هذه الفترة">
+                        <i class="ri-delete-bin-line"></i>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               `;
@@ -19029,6 +19052,250 @@ function formatTimeSimple(timeStr) {
     return `${hour.toString().padStart(2, '0')}:${min} ${ampm}`;
   } catch (e) {
     return timeStr;
+  }
+}
+
+// ============================================
+// EDIT DAILY MISSION MODAL (CONNECTED DIRECTLY)
+// ============================================
+function showEditDailyMissionModal() {
+  let modal = document.getElementById('editDailyMissionModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'editDailyMissionModal';
+    modal.className = 'modal-overlay active';
+    modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;';
+    document.body.appendChild(modal);
+  }
+
+  const trips = rewardsSettings?.daily_mission_trips || 10;
+  const reward = rewardsSettings?.daily_mission_reward || 50;
+  const isActive = rewardsSettings ? !!rewardsSettings.is_missions_active : true;
+
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="card" style="width:100%; max-width:480px; padding:24px; border-radius:var(--radius-xl); box-shadow:0 12px 40px rgba(0,0,0,0.35);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+        <h3 style="margin:0; font-size:17px; font-weight:800; display:flex; align-items:center; gap:8px;">
+          <i class="ri-trophy-fill" style="color:#F59E0B;"></i> تعديل التحدي اليومي للكباتن
+        </h3>
+        <button onclick="closeEditDailyMissionModal()" style="background:none; border:none; font-size:22px; cursor:pointer; color:var(--text-light);">&times;</button>
+      </div>
+
+      <div style="margin-bottom:16px; background:#EFF6FF; border:1px solid #BFDBFE; padding:12px; border-radius:var(--radius-md); font-size:12px; color:#1E40AF; line-height:1.6;">
+        <i class="ri-information-fill"></i> أي تعديل تحفظه هنا يتم مزامنته <strong>فورياً ولحظياً</strong> في قاعدة البيانات وتطبيق الكابتن دون الحاجة لإعادة تشغيل التطبيق.
+      </div>
+
+      <form onsubmit="event.preventDefault(); submitEditDailyMission();" style="display:flex; flex-direction:column; gap:16px;">
+        <div class="form-group">
+          <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">عدد رحلات التحدي المطلوبة (التارجت)</label>
+          <div class="input-wrapper">
+            <i class="ri-flag-2-line"></i>
+            <input type="number" id="modalDailyTargetTrips" min="1" step="1" required value="${trips}" style="width:100%; padding:10px 10px 10px 38px; border:1px solid var(--border-color); border-radius:var(--radius-md); font-weight:700;">
+          </div>
+          <small style="color:var(--text-light); font-size:11px;">عدد الرحلات التي يجب على الكابتن إنجازها خلال اليوم.</small>
+        </div>
+
+        <div class="form-group">
+          <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">مبلغ البونص المالي (ج.م)</label>
+          <div class="input-wrapper">
+            <i class="ri-copper-coin-line"></i>
+            <input type="number" id="modalDailyRewardAmount" min="0" step="5" required value="${parseFloat(reward)}" style="width:100%; padding:10px 10px 10px 38px; border:1px solid var(--border-color); border-radius:var(--radius-md); font-weight:700;">
+          </div>
+          <small style="color:var(--text-light); font-size:11px;">المبلغ الذي يتم إيداعه فوراً في محفظة الكابتن كاش عند إكمال التحدي.</small>
+        </div>
+
+        <div class="form-group" style="background:var(--bg-primary); padding:12px; border-radius:var(--radius-md); display:flex; align-items:center; justify-content:space-between;">
+          <div>
+            <div style="font-weight:700; font-size:13px;">تفعيل التحديات للكباتن في التطبيق</div>
+            <div style="font-size:11px; color:var(--text-secondary);">تشغيل أو إيقاف ظهور التحديات</div>
+          </div>
+          <label class="switch switch-light" style="width:46px; height:24px; margin:0;">
+            <input type="checkbox" id="modalDailyIsActive" ${isActive ? 'checked' : ''}>
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:8px; border-top:1px solid var(--border-color); padding-top:16px;">
+          <button type="button" class="btn btn-outline" onclick="closeEditDailyMissionModal()">إلغاء</button>
+          <button type="submit" class="btn btn-primary" id="btnSubmitDailyMission" style="background:linear-gradient(135deg, #1565C0, #1E88E5);">
+            <i class="ri-save-3-line"></i> حفظ وتزامن فوري مع التطبيق
+          </button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function closeEditDailyMissionModal() {
+  const modal = document.getElementById('editDailyMissionModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function submitEditDailyMission() {
+  const btn = document.getElementById('btnSubmitDailyMission');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> جاري الحفظ...'; }
+  try {
+    const trips = parseInt(document.getElementById('modalDailyTargetTrips')?.value || 10, 10);
+    const reward = parseFloat(document.getElementById('modalDailyRewardAmount')?.value || 50);
+    const isActive = document.getElementById('modalDailyIsActive')?.checked ?? true;
+
+    const { error } = await supabaseClient
+      .from('rewards_settings')
+      .update({
+        daily_mission_trips: trips,
+        daily_mission_reward: reward,
+        is_missions_active: isActive,
+        updated_at: new Date().toISOString(),
+        updated_by: currentAdminUser?.email || 'admin'
+      })
+      .eq('id', 'default');
+
+    if (error) throw error;
+
+    if (rewardsSettings) {
+      rewardsSettings.daily_mission_trips = trips;
+      rewardsSettings.daily_mission_reward = reward;
+      rewardsSettings.is_missions_active = isActive;
+    }
+
+    // Also sync with the form inputs at bottom
+    const inputTrips = document.getElementById('inputDailyMissionTrips');
+    const inputReward = document.getElementById('inputDailyMissionReward');
+    const toggleMis = document.getElementById('toggleMissionsSwitch');
+    if (inputTrips) inputTrips.value = trips;
+    if (inputReward) inputReward.value = reward;
+    if (toggleMis) toggleMis.checked = isActive;
+
+    showToast('تم حفظ التعديلات وتزامنها مع تطبيق الكباتن بنجاح 🎉');
+    closeEditDailyMissionModal();
+    await loadRewardsData(false);
+  } catch (err) {
+    console.error('Error saving daily mission:', err);
+    showToast('فشل في حفظ التحدي: ' + err.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-save-3-line"></i> حفظ وتزامن فوري مع التطبيق'; }
+  }
+}
+
+// ============================================
+// EDIT SHIFT MODAL
+// ============================================
+function showEditShiftModal(shiftId) {
+  const shift = rewardsShiftsList.find(s => s.id === shiftId);
+  if (!shift) {
+    showToast('تعذر العثور على الفترة المحددة');
+    return;
+  }
+
+  let modal = document.getElementById('editShiftModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'editShiftModal';
+    modal.className = 'modal-overlay active';
+    modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;';
+    document.body.appendChild(modal);
+  }
+
+  const startH = (shift.start_time || '06:00').substring(0, 5);
+  const endH = (shift.end_time || '12:00').substring(0, 5);
+
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="card" style="width:100%; max-width:500px; padding:24px; border-radius:var(--radius-xl); box-shadow:0 12px 40px rgba(0,0,0,0.35);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:1px solid var(--border-color); padding-bottom:12px;">
+        <h3 style="margin:0; font-size:16px; font-weight:800; display:flex; align-items:center; gap:8px;">
+          <i class="ri-edit-2-line" style="color:var(--medium-blue);"></i> تعديل فترة / شفت البونص
+        </h3>
+        <button onclick="closeEditShiftModal()" style="background:none; border:none; font-size:20px; cursor:pointer; color:var(--text-light);">&times;</button>
+      </div>
+
+      <form onsubmit="event.preventDefault(); submitEditShift('${shift.id}');" style="display:flex; flex-direction:column; gap:16px;">
+        <div class="form-group">
+          <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">عنوان الفترة</label>
+          <input type="text" id="editShiftTitle" required value="${shift.title || ''}" placeholder="فترة الصباح" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary); font-weight:700;">
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="form-group">
+            <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">وقت البدء</label>
+            <input type="time" id="editShiftStart" required value="${startH}" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary);">
+          </div>
+          <div class="form-group">
+            <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">وقت الانتهاء</label>
+            <input type="time" id="editShiftEnd" required value="${endH}" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary);">
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="form-group">
+            <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">الرحلات المطلوبة</label>
+            <input type="number" id="editShiftTarget" min="1" step="1" required value="${shift.target_trips || 5}" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary); font-weight:700;">
+          </div>
+          <div class="form-group">
+            <label style="font-weight:700; font-size:13px; margin-bottom:6px; display:block;">مبلغ البونص (ج.م)</label>
+            <input type="number" id="editShiftReward" min="0" step="5" required value="${parseFloat(shift.reward_amount || 50)}" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--bg-primary); font-weight:700;">
+          </div>
+        </div>
+
+        <div class="form-group" style="background:var(--bg-primary); padding:10px 14px; border-radius:var(--radius-md); display:flex; align-items:center; justify-content:space-between;">
+          <span style="font-weight:700; font-size:13px;">تفعيل هذه الفترة الآن</span>
+          <label class="switch switch-light" style="width:44px; height:24px; margin:0;">
+            <input type="checkbox" id="editShiftIsActive" ${shift.is_active ? 'checked' : ''}>
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px; border-top:1px solid var(--border-color); padding-top:16px;">
+          <button type="button" class="btn btn-outline" onclick="closeEditShiftModal()">إلغاء</button>
+          <button type="submit" class="btn btn-primary" id="btnSubmitEditShift">
+            <i class="ri-check-line"></i> حفظ التعديلات وتطبيقها
+          </button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function closeEditShiftModal() {
+  const modal = document.getElementById('editShiftModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function submitEditShift(shiftId) {
+  const btn = document.getElementById('btnSubmitEditShift');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> جاري الحفظ...'; }
+  try {
+    const title = document.getElementById('editShiftTitle')?.value.trim() || 'فترة مخصصة';
+    const startVal = document.getElementById('editShiftStart')?.value || '06:00';
+    const endVal = document.getElementById('editShiftEnd')?.value || '12:00';
+    const target = parseInt(document.getElementById('editShiftTarget')?.value || 5, 10);
+    const reward = parseFloat(document.getElementById('editShiftReward')?.value || 50);
+    const isActive = document.getElementById('editShiftIsActive')?.checked ?? true;
+
+    const { error } = await supabaseClient
+      .from('driver_mission_shifts')
+      .update({
+        title: title,
+        start_time: `${startVal}:00`,
+        end_time: `${endVal}:00`,
+        target_trips: target,
+        reward_amount: reward,
+        is_active: isActive,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', shiftId);
+
+    if (error) throw error;
+
+    showToast('تم تعديل فترة البونص بنجاح وتزامنها مع التطبيق 🎉');
+    closeEditShiftModal();
+    await loadRewardsData(false);
+  } catch (err) {
+    console.error('Error updating shift:', err);
+    showToast('فشل في تعديل الفترة: ' + err.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-check-line"></i> حفظ التعديلات وتطبيقها'; }
   }
 }
 

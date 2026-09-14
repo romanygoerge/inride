@@ -52,6 +52,11 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
   String _redeemedStatus = 'none';
   double _redeemedWelcomeBonus = 0.0;
 
+  // Dynamic Shifts from Database
+  List<Map<String, dynamic>> _shifts = [];
+  RealtimeChannel? _shiftsChannel;
+  RealtimeChannel? _settingsChannel;
+
   @override
   void initState() {
     super.initState();
@@ -62,13 +67,42 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
       initialIndex: initialIndex,
     );
     _loadAllRewardsData();
+    _setupRealtime();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     _promoController.dispose();
+    _shiftsChannel?.unsubscribe();
+    _settingsChannel?.unsubscribe();
     super.dispose();
+  }
+
+  void _setupRealtime() {
+    try {
+      _settingsChannel = _supabase
+          .channel('public:rewards_settings_earn_page')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'rewards_settings',
+            callback: (_) => _loadAllRewardsData(),
+          )
+          .subscribe();
+
+      _shiftsChannel = _supabase
+          .channel('public:driver_shifts_earn_page')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'driver_mission_shifts',
+            callback: (_) => _loadAllRewardsData(),
+          )
+          .subscribe();
+    } catch (e) {
+      debugPrint('[EarnMoreMoneyPage] Realtime setup error: $e');
+    }
   }
 
   Future<void> _loadAllRewardsData() async {
@@ -146,6 +180,19 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
             }
           } catch (_) {}
         }
+      }
+
+      // 3. Fetch driver bonus shifts dynamically from Supabase
+      try {
+        final shiftsRes = await _supabase
+            .from('driver_mission_shifts')
+            .select()
+            .order('start_time', ascending: true);
+        if (mounted) {
+          _shifts = List<Map<String, dynamic>>.from(shiftsRes);
+        }
+      } catch (shiftsErr) {
+        debugPrint('[EarnMoreMoney] Error fetching shifts: $shiftsErr');
       }
 
       if (mounted) {
@@ -1105,6 +1152,41 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
     );
   }
 
+  String _formatShiftTime(String? timeStr) {
+    if (timeStr == null || timeStr.isEmpty) return '--';
+    try {
+      final parts = timeStr.split(':');
+      int hour = int.tryParse(parts[0]) ?? 0;
+      final min = parts.length > 1 ? parts[1] : '00';
+      final isPm = hour >= 12;
+      if (hour > 12) hour -= 12;
+      if (hour == 0) hour = 12;
+      final ampm = isPm ? 'م' : 'ص';
+      return '${hour.toString().padLeft(2, '0')}:$min $ampm';
+    } catch (_) {
+      return timeStr;
+    }
+  }
+
+  bool _isShiftCurrentlyActive(Map<String, dynamic> shift) {
+    if (shift['is_active'] != true) return false;
+    try {
+      final now = DateTime.now().toUtc().add(const Duration(hours: 3)); // Cairo Time
+      final currentMinutes = now.hour * 60 + now.minute;
+      final startParts = (shift['start_time'] as String? ?? '00:00').split(':');
+      final endParts = (shift['end_time'] as String? ?? '00:00').split(':');
+      final startMin = (int.tryParse(startParts[0]) ?? 0) * 60 + (int.tryParse(startParts[1]) ?? 0);
+      final endMin = (int.tryParse(endParts[0]) ?? 0) * 60 + (int.tryParse(endParts[1]) ?? 0);
+      if (startMin <= endMin) {
+        return currentMinutes >= startMin && currentMinutes <= endMin;
+      } else {
+        return currentMinutes >= startMin || currentMinutes <= endMin;
+      }
+    } catch (_) {
+      return false;
+    }
+  }
+
   Widget _buildBonusShiftsScheduleCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1117,43 +1199,83 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Icon(Icons.schedule_rounded, color: AppColors.mediumBlue, size: 18),
-              const SizedBox(width: 6),
-              Text(
-                'فترات وتحديات بونص مدينة السادات',
-                style: GoogleFonts.cairo(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+              Row(
+                children: [
+                  const Icon(Icons.schedule_rounded, color: AppColors.mediumBlue, size: 18),
+                  const SizedBox(width: 6),
+                  Text(
+                    'فترات وتحديات بونص مدينة السادات',
+                    style: GoogleFonts.cairo(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.sync_rounded, color: AppColors.mediumBlue, size: 12),
+                    const SizedBox(width: 4),
+                    Text(
+                      'مباشر',
+                      style: GoogleFonts.cairo(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.mediumBlue,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          _buildShiftRow(
-            name: 'فترة الصباح ☀️',
-            time: '07:00 ص - 11:59 ص',
-            trips: 'أكمل 5 رحلات',
-            bonus: '+50 ج.م',
-            isActive: false,
-          ),
-          const Divider(height: 14),
-          _buildShiftRow(
-            name: 'تحدي الذروة المسائية 🌆',
-            time: '04:00 م - 10:00 م',
-            trips: 'أكمل 10 رحلات',
-            bonus: '+150 ج.م',
-            isActive: true,
-          ),
-          const Divider(height: 14),
-          _buildShiftRow(
-            name: 'فترة السهرة 🌙',
-            time: '10:00 م - 02:00 ص',
-            trips: 'أكمل 6 رحلات',
-            bonus: '+60 ج.م',
-            isActive: false,
-          ),
+          if (_shifts.isEmpty) ...[
+            _buildShiftRow(
+              name: 'فترة الصباح ☀️',
+              time: '06:00 ص - 12:00 م',
+              trips: 'أكمل 5 رحلات',
+              bonus: '+50 ج.م',
+              isActive: false,
+            ),
+            const Divider(height: 14),
+            _buildShiftRow(
+              name: 'فترة الظهيرة ☀️',
+              time: '12:00 م - 06:00 م',
+              trips: 'أكمل 5 رحلات',
+              bonus: '+50 ج.م',
+              isActive: true,
+            ),
+            const Divider(height: 14),
+            _buildShiftRow(
+              name: 'فترة المساء 🌙',
+              time: '06:00 م - 12:00 ص',
+              trips: 'أكمل 6 رحلات',
+              bonus: '+60 ج.م',
+              isActive: false,
+            ),
+          ] else ...[
+            for (int i = 0; i < _shifts.length; i++) ...[
+              _buildShiftRow(
+                name: _shifts[i]['title']?.toString() ?? 'فترة مخصصة',
+                time: '${_formatShiftTime(_shifts[i]['start_time']?.toString())} - ${_formatShiftTime(_shifts[i]['end_time']?.toString())}',
+                trips: 'أكمل ${_shifts[i]['target_trips'] ?? 5} رحلات',
+                bonus: '+${(_shifts[i]['reward_amount'] as num?)?.toInt() ?? 50} ج.م',
+                isActive: _isShiftCurrentlyActive(_shifts[i]),
+              ),
+              if (i < _shifts.length - 1) const Divider(height: 14),
+            ],
+          ],
         ],
       ),
     );

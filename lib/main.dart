@@ -207,8 +207,19 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _checkAuth() async {
-    // Wait a very brief moment to allow Supabase Auth and GlobalState to resolve initial user session
-    await Future.delayed(const Duration(milliseconds: 50));
+    // Safety fallback: Never allow the app to be stuck on loading spinner for more than 2 seconds
+    Future.delayed(const Duration(milliseconds: 2000), () {
+      if (mounted && (!GlobalState.instance.isAuthResolved || !_initialized)) {
+        debugPrint('[AuthGate] Safety fallback timer triggered: forcing auth resolved');
+        GlobalState.instance.isAuthResolved = true;
+        setState(() {
+          _initialized = true;
+        });
+      }
+    });
+
+    // Wait a brief moment to allow Supabase Auth and GlobalState to resolve initial user session
+    await Future.delayed(const Duration(milliseconds: 100));
     if (!mounted) return;
     setState(() {
       _initialized = true;

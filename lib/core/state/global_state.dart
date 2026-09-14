@@ -684,6 +684,10 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
   void _startConnectivityMonitor() {
     _connectivityTimer?.cancel();
+    if (kIsWeb) {
+      isOffline = false;
+      return;
+    }
     // Initial immediate check
     _checkInternetConnection().then((hasNet) {
       isOffline = !hasNet;
@@ -706,6 +710,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<bool> _checkInternetConnection() async {
+    if (kIsWeb) {
+      return true;
+    }
     try {
       final result = await InternetAddress.lookup('google.com').timeout(const Duration(seconds: 3));
       return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
@@ -840,315 +847,39 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   List<Map<String, dynamic>> walletTransactions = [];
 
   void _initAuthListener() {
+    // 1. Safety fallback timer: NEVER allow isAuthResolved to stay false for more than 2.5 seconds
+    Timer(const Duration(milliseconds: 2500), () {
+      if (!isAuthResolved) {
+        debugPrint('[GlobalState] Auth resolution safety timeout reached (2.5s) - forcing isAuthResolved = true');
+        isAuthResolved = true;
+        notifyListeners();
+      }
+    });
+
     try {
+      // 2. Immediate check of currentSession / currentUser to avoid waiting on stream delay
+      final initialSession = _supabase.auth.currentSession;
+      final initialUser = initialSession?.user ?? _supabase.auth.currentUser;
+
+      if (initialUser != null) {
+        _handleUserAuth(initialUser, initialSession);
+      } else {
+        // No stored session found immediately: mark auth resolved after a short moment so login page renders
+        Future.delayed(const Duration(milliseconds: 200), () {
+          if (!isAuthResolved && _supabase.auth.currentUser == null) {
+            isAuthResolved = true;
+            notifyListeners();
+          }
+        });
+      }
+
+      // 3. Listen to auth state changes for live login/logout events
       _supabase.auth.onAuthStateChange.listen((authState) async {
         final session = authState.session;
         final user = session?.user;
         try {
           if (user != null) {
-            userUid = user.id;
-            phoneNumber = user.phone;
-            isLoggedIn = true;
-
-            unawaited(MetaAnalyticsService.instance.logLogin(
-              userId: user.id,
-              method: user.appMetadata['provider']?.toString() ?? 'phone',
-            ));
-            
-            try {
-              // حفظ OneSignal Player ID الحقيقي (بدلاً من 'default_token' السابق)
-              sl<AppNotificationService>().savePlayerIdForUser(user.id);
-              sl<NotificationController>().init(user.id);
-              unawaited(SupportChatService.instance.initializeForUser(user.id));
-            } catch (e) {
-              debugPrint("Notification initialization failed on auth changes: $e");
-            }
-            
-            _rechargeStreamSubscription?.cancel();
-            _rechargeStreamSubscription = _supabase
-                .from('wallet_recharge_requests')
-                .stream(primaryKey: ['id'])
-                .eq('user_id', user.id)
-                .listen((requests) {
-              for (final req in requests) {
-                final reqId = req['id'] as String?;
-                final status = req['status'] as String?;
-                final amount = (req['amount'] as num? ?? 0.0).toDouble();
-                final reason = (req['rejection_reason'] as String? ?? '').trim();
-
-                if (reqId == null || status == null || status == 'pending') continue;
-
-                if (!_notifiedRechargeIds.contains(reqId)) {
-                  _notifiedRechargeIds.add(reqId);
-
-                  final ctx = navigatorKey.currentContext;
-                  if (status == 'approved') {
-                    unawaited(MetaAnalyticsService.instance.logPayment(
-                      transactionId: reqId,
-                      amount: amount,
-                      paymentType: 'wallet_recharge',
-                    ));
-                    try {
-                      sl<RideSoundService>().playNotification();
-                    } catch (_) {}
-                    if (ctx != null && ctx.mounted) {
-                      InAppNotificationWidget.show(
-                        ctx,
-                        title: '✅ تم قبول طلب الشحن',
-                        body: 'تم إضافة ${amount.toStringAsFixed(0)} ج.م إلى رصيد محفظتك بنجاح!',
-                        onTap: () {},
-                      );
-                    }
-                    reloadUserProfile();
-                  } else if (status == 'rejected') {
-                    try {
-                      sl<RideSoundService>().playNotification();
-                    } catch (_) {}
-                    final reasonStr = reason.isNotEmpty ? reason : 'إيصال تحويل غير مطابق أو تعذر التحقق';
-                    if (ctx != null && ctx.mounted) {
-                      InAppNotificationWidget.show(
-                        ctx,
-                        title: '❌ تم رفض طلب الشحن',
-                        body: 'تعذر قبول طلب الشحن بمبلغ ${amount.toStringAsFixed(0)} ج.م. السبب: $reasonStr',
-                        onTap: () {},
-                      );
-                    }
-                    reloadUserProfile();
-                  }
-                }
-              }
-            });
-
-            _userDocSubscription?.cancel();
-            _userDocSubscription = _supabase
-                .from('users')
-                .stream(primaryKey: ['id'])
-                .eq('id', user.id)
-                .listen((userList) async {
-              if (userList.isEmpty) {
-                try {
-                  await AuthRepository.instance.fetchOrCreateUserProfile(
-                    user.id,
-                    user.phone ?? '',
-                    _currentRole,
-                  );
-                } catch (e) {
-                  debugPrint('Error creating missing user profile on session restore: $e');
-                }
-                isAuthResolved = true;
-                notifyListeners();
-                return;
-              }
-
-              final data = Map<String, dynamic>.from(userList.first);
-              final String savedRoleInDb = (data['role'] ?? data['current_role'] ?? 'rider').toString();
-
-              final rawPassengerBal = data['wallet_balance'] ?? data['passenger_wallet_balance'] ?? data['walletBalance'];
-              passengerWalletBalance = (rawPassengerBal is num) ? rawPassengerBal.toDouble() : (double.tryParse(rawPassengerBal?.toString() ?? '0') ?? 0.0);
-
-              final rawDriverBal = data['driver_wallet_balance'] ?? data['driverWalletBalance'];
-              driverWalletBalance = (rawDriverBal is num) 
-                  ? rawDriverBal.toDouble() 
-                  : (rawDriverBal != null ? (double.tryParse(rawDriverBal.toString()) ?? 0.0) : passengerWalletBalance);
-
-              final rawLim = data['credit_limit'] ?? data['creditLimit'];
-              creditLimit = (rawLim is num) ? rawLim.toDouble() : (double.tryParse(rawLim?.toString() ?? '-100') ?? -100.0);
-              
-              if (currentRole == UserRole.driver) {
-                checkWalletWarnings();
-              }
-              userName = data['name'];
-              userAvatarUrl = data['avatar_url'] ?? data['avatarUrl'];
-              referralCode = data['referral_code']?.toString();
-              final rawRat = data['rating'];
-              userRating = (rawRat is num) ? rawRat.toDouble() : (double.tryParse(rawRat?.toString() ?? '0') ?? 0.0);
-              if (phoneNumber == null || phoneNumber!.isEmpty) {
-                phoneNumber = data['phone_number'] ?? data['phone'];
-              }
-
-              await recoverActiveRideOnStartup(user.id);
-
-              // ── INITIAL FETCH: Load driver & passenger data BEFORE marking auth resolved ──
-              try {
-                final driverInitial = await _supabase.from('drivers').select().eq('id', user.id).maybeSingle();
-                if (driverInitial != null) {
-                  final dData = Map<String, dynamic>.from(driverInitial);
-                  final dStatus = dData['verification_status'] ?? dData['verificationStatus'] ?? 'unregistered';
-                  if (dStatus == 'verified') {
-                    verificationStatus = DriverVerificationStatus.verified;
-                    if (savedRoleInDb == 'driver') {
-                      _currentRole = UserRole.driver;
-                      debugPrint('[GlobalState] Startup: Restored UserRole.driver for verified driver ${user.id}');
-                    }
-                  } else if (dStatus == 'submitted') {
-                    verificationStatus = DriverVerificationStatus.submitted;
-                  } else if (dStatus == 'rejected') {
-                    verificationStatus = DriverVerificationStatus.rejected;
-                  } else {
-                    verificationStatus = DriverVerificationStatus.unregistered;
-                  }
-                  driverAddress = dData['address'];
-                  driverRejectionReason = dData['rejection_reason'];
-                  driverNationalIdUrl = dData['national_id_url'];
-                  driverLicenseUrl = dData['license_url'];
-                  driverVehicleFrontUrl = dData['vehicle_front_url'];
-
-                  final vehicleId = dData['vehicle_id'];
-                  if (vehicleId != null && vehicleId.toString().trim().isNotEmpty) {
-                    try {
-                      final vData = await _supabase.from('vehicles').select().eq('id', vehicleId.toString().trim()).maybeSingle();
-                      if (vData != null) {
-                        vehicleName = vData['model'];
-                        vehicleNumber = vData['number_plate'];
-                        driverVehicleColor = vData['color'];
-                        driverVehicleCategory = vData['vehicle_category'];
-                        driverHasAC = vData['has_ac'] ?? false;
-                        driverMaxPassengers = vData['max_passengers'] ?? 4;
-                        driverVehicleImages = List<String>.from(vData['images'] ?? []);
-                      }
-                    } catch (e) {
-                      debugPrint('Error fetching vehicle details on initial load: $e');
-                    }
-                  } else {
-                    vehicleName = dData['vehicle_name'] ?? dData['vehicleName'];
-                    vehicleNumber = dData['vehicle_number'] ?? dData['vehicleNumber'];
-                    driverVehicleColor = dData['vehicle_color'] ?? dData['color'] ?? 'أبيض';
-                    driverVehicleCategory = dData['vehicle_category'] ?? dData['vehicle_type'] ?? dData['vehicleCategory'] ?? dData['vehicleType'];
-                  }
-
-                  if (verificationStatus == DriverVerificationStatus.verified && driverVehicleCategory == null) {
-                    _notifyDriverToUpdateVehicle();
-                  }
-                  debugPrint('[GlobalState] Initial driver fetch: verificationStatus=$verificationStatus');
-                }
-              } catch (e) {
-                debugPrint('[GlobalState] Error in initial driver fetch: $e');
-              }
-
-              try {
-                final passengerInitial = await _supabase.from('passengers').select().eq('id', user.id).maybeSingle();
-                if (passengerInitial != null) {
-                  final rData = Map<String, dynamic>.from(passengerInitial);
-                  final rName = (rData['name'] as String?)?.trim();
-                  passengerName = (rName != null && rName.isNotEmpty) ? rName : userName;
-                  passengerGender = rData['gender'];
-                  passengerAddress = rData['address'];
-                } else {
-                  if (userName != null && userName!.trim().isNotEmpty) {
-                    passengerName = userName;
-                  }
-                }
-                debugPrint('[GlobalState] Initial passenger fetch: passengerName=$passengerName');
-              } catch (e) {
-                debugPrint('[GlobalState] Error in initial passenger fetch: $e');
-              }
-
-              // ── Mark auth resolved AFTER initial data is loaded ──
-              isAuthResolved = true;
-              _saveProfileToCache();
-              notifyListeners();
-
-              // ── REALTIME STREAMS: Set up ongoing listeners for live updates ──
-              _driverDocSubscription ??= _supabase
-                  .from('drivers')
-                  .stream(primaryKey: ['id'])
-                  .eq('id', user.id)
-                  .listen((driverList) async {
-                if (driverList.isNotEmpty) {
-                  final dData = Map<String, dynamic>.from(driverList.first);
-                  final dStatus = dData['verification_status'] ?? dData['verificationStatus'] ?? 'unregistered';
-                  if (dStatus == 'verified') {
-                    verificationStatus = DriverVerificationStatus.verified;
-                  } else if (dStatus == 'submitted') {
-                    verificationStatus = DriverVerificationStatus.submitted;
-                  } else if (dStatus == 'rejected') {
-                    verificationStatus = DriverVerificationStatus.rejected;
-                  } else {
-                    verificationStatus = DriverVerificationStatus.unregistered;
-                  }
-                  driverAddress = dData['address'];
-                  driverRejectionReason = dData['rejection_reason'];
-                  // Store document URLs
-                  driverNationalIdUrl = dData['national_id_url'];
-                  driverLicenseUrl = dData['license_url'];
-                  driverVehicleFrontUrl = dData['vehicle_front_url'];
-
-                  // Load vehicle details
-                  final vehicleId = dData['vehicle_id'];
-                  if (vehicleId != null && vehicleId.toString().trim().isNotEmpty) {
-                    try {
-                      final vData = await _supabase.from('vehicles').select().eq('id', vehicleId.toString().trim()).maybeSingle();
-                      if (vData != null) {
-                        vehicleName = vData['model'];
-                        vehicleNumber = vData['number_plate'];
-                        driverVehicleCategory = vData['vehicle_category'];
-                        driverHasAC = vData['has_ac'] ?? false;
-                        driverMaxPassengers = vData['max_passengers'] ?? 4;
-                        driverVehicleImages = List<String>.from(vData['images'] ?? []);
-                      }
-                    } catch (e) {
-                      debugPrint('Error fetching vehicle details: $e');
-                    }
-                  } else {
-                    vehicleName = dData['vehicle_name'] ?? dData['vehicleName'];
-                    vehicleNumber = dData['vehicle_number'] ?? dData['vehicleNumber'];
-                    driverVehicleCategory = dData['vehicle_category'] ?? dData['vehicle_type'] ?? dData['vehicleCategory'] ?? dData['vehicleType'];
-                  }
-
-                  // Check if existing driver needs vehicle update
-                  if (verificationStatus == DriverVerificationStatus.verified && driverVehicleCategory == null) {
-                    _notifyDriverToUpdateVehicle();
-                  }
-                } else {
-                  verificationStatus = DriverVerificationStatus.unregistered;
-                  vehicleName = null;
-                  vehicleNumber = null;
-                }
-                _saveProfileToCache();
-                notifyListeners();
-              }, onError: (e) {
-                debugPrint("Error listening to driver doc: $e");
-              });
-
-              _passengerDocSubscription ??= _supabase
-                  .from('passengers')
-                  .stream(primaryKey: ['id'])
-                  .eq('id', user.id)
-                  .listen((riderList) {
-                if (riderList.isNotEmpty) {
-                  final rData = Map<String, dynamic>.from(riderList.first);
-                  final rName = (rData['name'] as String?)?.trim();
-                  passengerName = (rName != null && rName.isNotEmpty) ? rName : userName;
-                  passengerGender = rData['gender'];
-                  passengerAddress = rData['address'];
-                } else {
-                  if (userName != null && userName!.trim().isNotEmpty) {
-                    passengerName = userName;
-                    ensurePassengerProfileExists();
-                  } else {
-                    passengerName = null;
-                  }
-                  passengerGender = null;
-                  passengerAddress = null;
-                }
-                _saveProfileToCache();
-                notifyListeners();
-              }, onError: (e) {
-                debugPrint("Error listening to passenger doc: $e");
-              });
-            }, onError: (e) {
-              debugPrint("Error listening to user doc: $e");
-              isAuthResolved = true;
-              notifyListeners();
-            });
-
-            try {
-              fetchTripHistory().timeout(const Duration(seconds: 3));
-            } catch (e) {
-              debugPrint("Error fetching trip history: $e");
-            }
-            _listenToActiveRideMessages();
-            _startPresenceTracking();
+            await _handleUserAuth(user, session);
           } else {
             debugPrint('[GlobalState] Auth state changed to signedOut. Cleaning up state & location streams...');
             unawaited(MetaAnalyticsService.instance.clearUserId());
@@ -1205,6 +936,310 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  void _applyUserData(Map<String, dynamic> data) {
+    final String savedRoleInDb = (data['role'] ?? data['current_role'] ?? 'rider').toString();
+
+    final rawPassengerBal = data['wallet_balance'] ?? data['passenger_wallet_balance'] ?? data['walletBalance'];
+    passengerWalletBalance = (rawPassengerBal is num) ? rawPassengerBal.toDouble() : (double.tryParse(rawPassengerBal?.toString() ?? '0') ?? 0.0);
+
+    final rawDriverBal = data['driver_wallet_balance'] ?? data['driverWalletBalance'];
+    driverWalletBalance = (rawDriverBal is num) 
+        ? rawDriverBal.toDouble() 
+        : (rawDriverBal != null ? (double.tryParse(rawDriverBal.toString()) ?? 0.0) : passengerWalletBalance);
+
+    final rawLim = data['credit_limit'] ?? data['creditLimit'];
+    creditLimit = (rawLim is num) ? rawLim.toDouble() : (double.tryParse(rawLim?.toString() ?? '-100') ?? -100.0);
+    
+    if (currentRole == UserRole.driver) {
+      checkWalletWarnings();
+    }
+    userName = data['name'];
+    userAvatarUrl = data['avatar_url'] ?? data['avatarUrl'];
+    referralCode = data['referral_code']?.toString();
+    final rawRat = data['rating'];
+    userRating = (rawRat is num) ? rawRat.toDouble() : (double.tryParse(rawRat?.toString() ?? '0') ?? 0.0);
+    if (phoneNumber == null || phoneNumber!.isEmpty) {
+      phoneNumber = data['phone_number'] ?? data['phone'];
+    }
+
+    if (savedRoleInDb == 'driver' && verificationStatus == DriverVerificationStatus.verified) {
+      _currentRole = UserRole.driver;
+    }
+  }
+
+  Future<void> _applyDriverData(Map<String, dynamic> dData) async {
+    final dStatus = dData['verification_status'] ?? dData['verificationStatus'] ?? 'unregistered';
+    if (dStatus == 'verified') {
+      verificationStatus = DriverVerificationStatus.verified;
+    } else if (dStatus == 'submitted') {
+      verificationStatus = DriverVerificationStatus.submitted;
+    } else if (dStatus == 'rejected') {
+      verificationStatus = DriverVerificationStatus.rejected;
+    } else {
+      verificationStatus = DriverVerificationStatus.unregistered;
+    }
+    driverAddress = dData['address'];
+    driverRejectionReason = dData['rejection_reason'];
+    driverNationalIdUrl = dData['national_id_url'];
+    driverLicenseUrl = dData['license_url'];
+    driverVehicleFrontUrl = dData['vehicle_front_url'];
+
+    final vehicleId = dData['vehicle_id'];
+    if (vehicleId != null && vehicleId.toString().trim().isNotEmpty) {
+      try {
+        final vData = await _supabase.from('vehicles').select().eq('id', vehicleId.toString().trim()).maybeSingle().timeout(const Duration(seconds: 2));
+        if (vData != null) {
+          vehicleName = vData['model'];
+          vehicleNumber = vData['number_plate'];
+          driverVehicleColor = vData['color'];
+          driverVehicleCategory = vData['vehicle_category'];
+          driverHasAC = vData['has_ac'] ?? false;
+          driverMaxPassengers = vData['max_passengers'] ?? 4;
+          driverVehicleImages = List<String>.from(vData['images'] ?? []);
+        }
+      } catch (e) {
+        debugPrint('Error fetching vehicle details: $e');
+      }
+    } else {
+      vehicleName = dData['vehicle_name'] ?? dData['vehicleName'];
+      vehicleNumber = dData['vehicle_number'] ?? dData['vehicleNumber'];
+      driverVehicleColor = dData['vehicle_color'] ?? dData['color'] ?? 'أبيض';
+      driverVehicleCategory = dData['vehicle_category'] ?? dData['vehicle_type'] ?? dData['vehicleCategory'] ?? dData['vehicleType'];
+    }
+
+    if (verificationStatus == DriverVerificationStatus.verified && driverVehicleCategory == null) {
+      _notifyDriverToUpdateVehicle();
+    }
+  }
+
+  void _applyPassengerData(Map<String, dynamic> rData) {
+    final rName = (rData['name'] as String?)?.trim();
+    passengerName = (rName != null && rName.isNotEmpty) ? rName : userName;
+    passengerGender = rData['gender'];
+    passengerAddress = rData['address'];
+  }
+
+  Future<void> _handleUserAuth(User user, Session? session) async {
+    userUid = user.id;
+    phoneNumber = user.phone;
+    isLoggedIn = true;
+
+    unawaited(MetaAnalyticsService.instance.logLogin(
+      userId: user.id,
+      method: user.appMetadata['provider']?.toString() ?? 'phone',
+    ));
+    
+    try {
+      if (!kIsWeb) {
+        sl<AppNotificationService>().savePlayerIdForUser(user.id);
+      }
+      sl<NotificationController>().init(user.id);
+      unawaited(SupportChatService.instance.initializeForUser(user.id));
+    } catch (e) {
+      debugPrint("Notification initialization failed on auth changes: $e");
+    }
+
+    // Immediate REST fetch with strict timeouts (FAST & RELIABLE, independent of WebSockets)
+    try {
+      final userDoc = await _supabase
+          .from('users')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 3));
+
+      if (userDoc != null) {
+        _applyUserData(userDoc);
+      } else {
+        try {
+          await AuthRepository.instance.fetchOrCreateUserProfile(
+            user.id,
+            user.phone ?? '',
+            _currentRole,
+          ).timeout(const Duration(seconds: 3));
+        } catch (e) {
+          debugPrint('Error creating missing user profile: $e');
+        }
+      }
+
+      // Check for active ride on startup with timeout
+      try {
+        await recoverActiveRideOnStartup(user.id).timeout(const Duration(seconds: 2));
+      } catch (e) {
+        debugPrint('Error recovering active ride on startup: $e');
+      }
+
+      // Initial driver fetch with timeout
+      try {
+        final driverInitial = await _supabase
+            .from('drivers')
+            .select()
+            .eq('id', user.id)
+            .maybeSingle()
+            .timeout(const Duration(seconds: 2));
+        if (driverInitial != null) {
+          await _applyDriverData(driverInitial);
+        }
+      } catch (e) {
+        debugPrint('[GlobalState] Error in initial driver fetch: $e');
+      }
+
+      // Initial passenger fetch with timeout
+      try {
+        final passengerInitial = await _supabase
+            .from('passengers')
+            .select()
+            .eq('id', user.id)
+            .maybeSingle()
+            .timeout(const Duration(seconds: 2));
+        if (passengerInitial != null) {
+          _applyPassengerData(passengerInitial);
+        }
+      } catch (e) {
+        debugPrint('[GlobalState] Error in initial passenger fetch: $e');
+      }
+    } catch (e) {
+      debugPrint('[GlobalState] Error in fast initial REST fetch: $e');
+    } finally {
+      // GUARANTEED: Mark auth resolved so UI can display immediately
+      isAuthResolved = true;
+      _saveProfileToCache();
+      notifyListeners();
+    }
+
+    // Now start background realtime stream subscriptions for live updates
+    _startBackgroundUserStreams(user);
+  }
+
+  void _startBackgroundUserStreams(User user) {
+    // 1. Wallet recharge requests stream
+    _rechargeStreamSubscription?.cancel();
+    _rechargeStreamSubscription = _supabase
+        .from('wallet_recharge_requests')
+        .stream(primaryKey: ['id'])
+        .eq('user_id', user.id)
+        .listen((requests) {
+      for (final req in requests) {
+        final reqId = req['id'] as String?;
+        final status = req['status'] as String?;
+        final amount = (req['amount'] as num? ?? 0.0).toDouble();
+        final reason = (req['rejection_reason'] as String? ?? '').trim();
+
+        if (reqId == null || status == null || status == 'pending') continue;
+
+        if (!_notifiedRechargeIds.contains(reqId)) {
+          _notifiedRechargeIds.add(reqId);
+
+          final ctx = navigatorKey.currentContext;
+          if (status == 'approved') {
+            unawaited(MetaAnalyticsService.instance.logPayment(
+              transactionId: reqId,
+              amount: amount,
+              paymentType: 'wallet_recharge',
+            ));
+            try {
+              sl<RideSoundService>().playNotification();
+            } catch (_) {}
+            if (ctx != null && ctx.mounted) {
+              InAppNotificationWidget.show(
+                ctx,
+                title: '✅ تم قبول طلب الشحن',
+                body: 'تم إضافة ${amount.toStringAsFixed(0)} ج.م إلى رصيد محفظتك بنجاح!',
+                onTap: () {},
+              );
+            }
+            reloadUserProfile();
+          } else if (status == 'rejected') {
+            try {
+              sl<RideSoundService>().playNotification();
+            } catch (_) {}
+            final reasonStr = reason.isNotEmpty ? reason : 'إيصال تحويل غير مطابق أو تعذر التحقق';
+            if (ctx != null && ctx.mounted) {
+              InAppNotificationWidget.show(
+                ctx,
+                title: '❌ تم رفض طلب الشحن',
+                body: 'تعذر قبول طلب الشحن بمبلغ ${amount.toStringAsFixed(0)} ج.م. السبب: $reasonStr',
+                onTap: () {},
+              );
+            }
+            reloadUserProfile();
+          }
+        }
+      }
+    }, onError: (e) {
+      debugPrint('[GlobalState] Error listening to wallet recharge requests: $e');
+    });
+
+    // 2. Users table stream
+    _userDocSubscription?.cancel();
+    _userDocSubscription = _supabase
+        .from('users')
+        .stream(primaryKey: ['id'])
+        .eq('id', user.id)
+        .listen((userList) {
+      if (userList.isNotEmpty) {
+        _applyUserData(Map<String, dynamic>.from(userList.first));
+        _saveProfileToCache();
+        notifyListeners();
+      }
+    }, onError: (e) {
+      debugPrint("[GlobalState] Error listening to user doc: $e");
+    });
+
+    // 3. Drivers table stream
+    _driverDocSubscription?.cancel();
+    _driverDocSubscription = _supabase
+        .from('drivers')
+        .stream(primaryKey: ['id'])
+        .eq('id', user.id)
+        .listen((driverList) async {
+      if (driverList.isNotEmpty) {
+        await _applyDriverData(Map<String, dynamic>.from(driverList.first));
+      } else {
+        verificationStatus = DriverVerificationStatus.unregistered;
+        vehicleName = null;
+        vehicleNumber = null;
+      }
+      _saveProfileToCache();
+      notifyListeners();
+    }, onError: (e) {
+      debugPrint("[GlobalState] Error listening to driver doc: $e");
+    });
+
+    // 4. Passengers table stream
+    _passengerDocSubscription?.cancel();
+    _passengerDocSubscription = _supabase
+        .from('passengers')
+        .stream(primaryKey: ['id'])
+        .eq('id', user.id)
+        .listen((riderList) {
+      if (riderList.isNotEmpty) {
+        _applyPassengerData(Map<String, dynamic>.from(riderList.first));
+      } else {
+        if (userName != null && userName!.trim().isNotEmpty) {
+          passengerName = userName;
+          ensurePassengerProfileExists();
+        } else {
+          passengerName = null;
+        }
+        passengerGender = null;
+        passengerAddress = null;
+      }
+      _saveProfileToCache();
+      notifyListeners();
+    }, onError: (e) {
+      debugPrint("[GlobalState] Error listening to passenger doc: $e");
+    });
+
+    try {
+      fetchTripHistory().timeout(const Duration(seconds: 3));
+    } catch (e) {
+      debugPrint("Error fetching trip history: $e");
+    }
+    _listenToActiveRideMessages();
+    _startPresenceTracking();
+  }
+
   // Dynamic Payment Methods State (Synced with Supabase DB)
   List<Map<String, dynamic>> paymentMethods = [
     {
@@ -1249,7 +1284,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       final data = await _supabase
           .from('payment_methods')
           .select()
-          .order('created_at', ascending: true);
+          .order('created_at', ascending: true)
+          .timeout(const Duration(seconds: 4));
       if (data.isNotEmpty) {
         paymentMethods = List<Map<String, dynamic>>.from(data);
         notifyListeners();
@@ -1312,7 +1348,12 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     };
 
     try {
-      final res = await _supabase.from('app_settings').select().eq('id', 'default').maybeSingle();
+      final res = await _supabase
+          .from('app_settings')
+          .select()
+          .eq('id', 'default')
+          .maybeSingle()
+          .timeout(const Duration(seconds: 4));
       if (res != null) {
         appSettings.addAll(res);
         if (res['commission_rate'] != null) {

@@ -483,7 +483,9 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
           const SizedBox(height: 10),
 
           // Centerpiece: The Live Mission Card
-          const DriverDailyMissionCard(),
+          DriverDailyMissionCard(
+            key: ValueKey('mission_card_${_shifts.length}_${_shifts.hashCode}'),
+          ),
 
           const SizedBox(height: 14),
 
@@ -1158,6 +1160,9 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
       final parts = timeStr.split(':');
       int hour = int.tryParse(parts[0]) ?? 0;
       final min = parts.length > 1 ? parts[1] : '00';
+      if (hour >= 23 && (int.tryParse(min) ?? 0) >= 59) {
+        return '12:00 منتصف الليل';
+      }
       final isPm = hour >= 12;
       if (hour > 12) hour -= 12;
       if (hour == 0) hour = 12;

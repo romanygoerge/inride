@@ -45,27 +45,27 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
     super.dispose();
   }
 
+  String _formatTimeSimple(String? timeStr) {
+    if (timeStr == null || timeStr.isEmpty) return '--';
+    try {
+      final parts = timeStr.split(':');
+      int hour = int.tryParse(parts[0]) ?? 0;
+      final min = parts.length > 1 ? parts[1] : '00';
+      if (hour >= 23 && (int.tryParse(min) ?? 0) >= 59) {
+        return '12:00 منتصف الليل';
+      }
+      final isPm = hour >= 12;
+      if (hour > 12) hour -= 12;
+      if (hour == 0) hour = 12;
+      final ampm = isPm ? 'م' : 'ص';
+      return '${hour.toString().padLeft(2, '0')}:$min $ampm';
+    } catch (_) {
+      return timeStr;
+    }
+  }
+
   Future<void> _loadMissionData() async {
     final uid = GlobalState.instance.userUid ?? _supabase.auth.currentUser?.id;
-
-    if (uid == null) {
-      if (mounted) {
-        setState(() {
-          _title = 'تحدي الـ 10 رحلات اليومي 🚀';
-          _timeWindowText = 'من 04:00 عصراً إلى 10:00 مساءً';
-          _targetTrips = 10;
-          _rewardAmount = 50.0;
-          _completedTrips = 0;
-          _remainingTrips = 10;
-          _isCompleted = false;
-          _isStarted = false;
-          _isRewarded = false;
-          _isShift = false;
-          _isLoading = false;
-        });
-      }
-      return;
-    }
 
     try {
       final res = await _supabase.rpc('get_active_driver_mission', params: {
@@ -79,7 +79,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
         final hasActive = res['has_active_mission'] == true;
 
         if (isActive && hasActive) {
-          final target = (res['target_trips'] as num?)?.toInt() ?? 10;
+          final target = (res['target_trips'] as num?)?.toInt() ?? 5;
           final done = (res['completed_trips'] as num?)?.toInt() ?? 0;
           final rawRew = res['reward_amount'];
           final reward = (rawRew is num)
@@ -89,13 +89,24 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
           final completed = res['is_completed'] == true || done >= target;
           final started = res['is_started'] == true || done > 0;
           final rewarded = res['is_rewarded'] == true;
+          final titleStr = (res['title'] as String?)?.isNotEmpty == true
+              ? res['title'] as String
+              : 'تحدي اليوم 🚀';
+
+          String timeWindow = (res['time_window_text'] as String?)?.isNotEmpty == true
+              ? res['time_window_text'] as String
+              : '';
+          if (timeWindow.isEmpty && (res['start_time'] != null || res['end_time'] != null)) {
+            timeWindow = 'من ${_formatTimeSimple(res['start_time']?.toString())} إلى ${_formatTimeSimple(res['end_time']?.toString())}';
+          }
+          if (timeWindow.isEmpty) {
+            timeWindow = 'طوال اليوم';
+          }
 
           setState(() {
-            _title = (res['title'] as String?)?.isNotEmpty == true ? res['title'] : 'تحدي الـ 10 رحلات اليومي 🚀';
-            _timeWindowText = (res['time_window_text'] as String?)?.isNotEmpty == true
-                ? res['time_window_text']
-                : 'من 04:00 عصراً إلى 10:00 مساءً';
-            _targetTrips = target > 0 ? target : 10;
+            _title = titleStr;
+            _timeWindowText = timeWindow;
+            _targetTrips = target > 0 ? target : 5;
             _rewardAmount = reward;
             _completedTrips = done;
             _remainingTrips = rem;
@@ -109,8 +120,93 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
         }
       }
 
-      // Fallback: Query rewards_settings or use standard 10 trips challenge
-      int target = 10;
+      // Fallback 1: Query driver_mission_shifts directly from database
+      List<dynamic> shifts = [];
+      try {
+        shifts = await _supabase
+            .from('driver_mission_shifts')
+            .select()
+            .eq('is_active', true)
+            .order('start_time', ascending: true);
+      } catch (e) {
+        debugPrint('[DriverDailyMissionCard] Error querying shifts directly: $e');
+      }
+
+      if (shifts.isNotEmpty) {
+        final now = DateTime.now().toUtc().add(const Duration(hours: 3)); // Cairo Time
+        final currentMinutes = now.hour * 60 + now.minute;
+
+        Map<String, dynamic>? activeShift;
+        for (final s in shifts) {
+          final startParts = (s['start_time'] as String? ?? '00:00').split(':');
+          final endParts = (s['end_time'] as String? ?? '00:00').split(':');
+          final startMin = (int.tryParse(startParts[0]) ?? 0) * 60 + (int.tryParse(startParts[1]) ?? 0);
+          final endMin = (int.tryParse(endParts[0]) ?? 0) * 60 + (int.tryParse(endParts[1]) ?? 0);
+          if (startMin <= endMin) {
+            if (currentMinutes >= startMin && currentMinutes <= endMin) {
+              activeShift = s as Map<String, dynamic>;
+              break;
+            }
+          } else {
+            if (currentMinutes >= startMin || currentMinutes <= endMin) {
+              activeShift = s as Map<String, dynamic>;
+              break;
+            }
+          }
+        }
+
+        activeShift ??= shifts.first as Map<String, dynamic>;
+
+        final target = (activeShift['target_trips'] as num?)?.toInt() ?? 5;
+        final rawRew = activeShift['reward_amount'];
+        final reward = (rawRew is num)
+            ? rawRew.toDouble()
+            : (double.tryParse(rawRew?.toString() ?? '50') ?? 50.0);
+        final title = activeShift['title']?.toString() ?? 'فترة التحدي 🚀';
+        final startFmt = _formatTimeSimple(activeShift['start_time']?.toString());
+        final endFmt = _formatTimeSimple(activeShift['end_time']?.toString());
+        final timeWindow = 'من $startFmt إلى $endFmt';
+
+        int done = 0;
+        bool isStarted = false;
+        bool isRewarded = false;
+        if (uid != null) {
+          try {
+            final todayStr = DateTime.now().toIso8601String().split('T')[0];
+            final progRes = await _supabase
+                .from('driver_mission_progress')
+                .select()
+                .eq('driver_id', uid)
+                .eq('mission_date', todayStr)
+                .maybeSingle();
+            if (progRes != null) {
+              done = (progRes['completed_trips'] as num?)?.toInt() ?? 0;
+              isRewarded = progRes['is_rewarded'] == true;
+              isStarted = progRes['is_started'] == true || done > 0;
+            }
+          } catch (_) {}
+        }
+
+        if (mounted) {
+          setState(() {
+            _title = title;
+            _timeWindowText = timeWindow;
+            _targetTrips = target > 0 ? target : 5;
+            _rewardAmount = reward;
+            _completedTrips = done;
+            _remainingTrips = (target - done).clamp(0, target);
+            _isCompleted = done >= target;
+            _isStarted = isStarted;
+            _isRewarded = isRewarded;
+            _isShift = true;
+            _isLoading = false;
+          });
+          return;
+        }
+      }
+
+      // Fallback 2: Query rewards_settings
+      int target = 5;
       double reward = 50.0;
       try {
         final settingsRes = await _supabase
@@ -119,7 +215,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
             .eq('id', 'default')
             .maybeSingle();
         if (settingsRes != null) {
-          target = (settingsRes['daily_mission_trips'] as num?)?.toInt() ?? 10;
+          target = (settingsRes['daily_mission_trips'] as num?)?.toInt() ?? 5;
           final rawRew = settingsRes['daily_mission_reward'];
           reward = (rawRew is num) ? rawRew.toDouble() : (double.tryParse(rawRew?.toString() ?? '50') ?? 50.0);
         }
@@ -127,30 +223,34 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
 
       int done = 0;
       bool fallbackRewarded = false;
-      try {
-        final todayStr = DateTime.now().toIso8601String().split('T')[0];
-        final progRes = await _supabase
-            .from('driver_mission_progress')
-            .select()
-            .eq('driver_id', uid)
-            .eq('mission_date', todayStr)
-            .maybeSingle();
-        if (progRes != null) {
-          done = (progRes['completed_trips'] as num?)?.toInt() ?? 0;
-          fallbackRewarded = progRes['is_rewarded'] == true;
-        }
-      } catch (_) {}
+      bool isStarted = false;
+      if (uid != null) {
+        try {
+          final todayStr = DateTime.now().toIso8601String().split('T')[0];
+          final progRes = await _supabase
+              .from('driver_mission_progress')
+              .select()
+              .eq('driver_id', uid)
+              .eq('mission_date', todayStr)
+              .maybeSingle();
+          if (progRes != null) {
+            done = (progRes['completed_trips'] as num?)?.toInt() ?? 0;
+            fallbackRewarded = progRes['is_rewarded'] == true;
+            isStarted = progRes['is_started'] == true || done > 0;
+          }
+        } catch (_) {}
+      }
 
       if (mounted) {
         setState(() {
-          _title = 'تحدي الـ 10 رحلات اليومي 🚀';
-          _timeWindowText = 'من 04:00 عصراً إلى 10:00 مساءً (أو طوال اليوم)';
-          _targetTrips = target > 0 ? target : 10;
+          _title = 'تحدي اليوم 🚀';
+          _timeWindowText = 'خلال فترات اليوم المعتمدة';
+          _targetTrips = target > 0 ? target : 5;
           _rewardAmount = reward;
           _completedTrips = done;
           _remainingTrips = (target - done).clamp(0, target);
           _isCompleted = done >= target;
-          _isStarted = done > 0;
+          _isStarted = isStarted;
           _isRewarded = fallbackRewarded;
           _isShift = false;
           _isLoading = false;
@@ -160,10 +260,6 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
       debugPrint('[DriverDailyMissionCard] Error loading active mission: $e');
       if (mounted) {
         setState(() {
-          _title = 'تحدي الـ 10 رحلات اليومي 🚀';
-          _timeWindowText = 'من 04:00 عصراً إلى 10:00 مساءً';
-          _targetTrips = 10;
-          _rewardAmount = 50.0;
           _isLoading = false;
         });
       }
@@ -172,7 +268,20 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
 
   Future<void> _startMission() async {
     final uid = GlobalState.instance.userUid ?? _supabase.auth.currentUser?.id;
-    if (uid == null) return;
+    if (uid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFDC2626),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          content: Text(
+            'يرجى تسجيل الدخول أولاً لبدء التحدي',
+            style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+        ),
+      );
+      return;
+    }
 
     setState(() => _isStarting = true);
     try {
@@ -233,23 +342,24 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
 
   void _setupRealtime() {
     final uid = GlobalState.instance.userUid ?? _supabase.auth.currentUser?.id;
-    if (uid == null) return;
 
     try {
-      _progressChannel = _supabase
-          .channel('public:driver_mission_card_$uid')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.all,
-            schema: 'public',
-            table: 'driver_mission_progress',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'driver_id',
-              value: uid,
-            ),
-            callback: (_) => _loadMissionData(),
-          )
-          .subscribe();
+      if (uid != null) {
+        _progressChannel = _supabase
+            .channel('public:driver_mission_card_$uid')
+            .onPostgresChanges(
+              event: PostgresChangeEvent.all,
+              schema: 'public',
+              table: 'driver_mission_progress',
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'driver_id',
+                value: uid,
+              ),
+              callback: (_) => _loadMissionData(),
+            )
+            .subscribe();
+      }
 
       _settingsChannel = _supabase
           .channel('public:rewards_settings_mission_card')

@@ -17118,7 +17118,7 @@ async function broadcastMaintenancePushNotification(isEnabling) {
 
   // 4. Direct OneSignal REST API Broadcast with subscription IDs & segments
   try {
-    const ONESIGNAL_REST_KEY = (typeof atob === 'function' ? atob('b3NfdjJfYXBwX2hjZ3JzcmFscW5ldWZkNGF3ZXN5anh4eDI3N3Ayb2Vwdm95dWJlbWltcmhrc2ZteHl0bHBvNmtjeXFzcjV3ZXFwcmNicnVzeDRxcXRsbnM3dHgzanNhdnc3amp3a2RqNXB6ZGh6YmE=') : Buffer.from('b3NfdjJfYXBwX2hjZ3JzcmFscW5ldWZkNGF3ZXN5anh4eDI3N3Ayb2Vwdm95dWJlbWltcmhrc2ZteHl0bHBvNmtjeXFzcjV3ZXFwcmNicnVzeDRxcXRsbnM3dHgzanNhdnc3amp3a2RqNXB6ZGh6YmE=', 'base64').toString('utf8'));
+    const ONESIGNAL_REST_KEY = (typeof atob === 'function' ? atob('b3NfdjJfYXBwX2hjZ3JzcmFscW5ldWZkNGF3ZXN5anh4eDI3NzBwMmVwdm95dWJlbWltcmhrc2ZteHl0bHBvNmtjeXFzcjV3ZXFwcmNicnVzeDRxcXRsbnM3dHgzanNhdnc3amp3a2RqNXB6ZGh6YmE=') : Buffer.from('b3NfdjJfYXBwX2hjZ3JzcmFscW5ldWZkNGF3ZXN5anh4eDI3NzBwMmVwdm95dWJlbWltcmhrc2ZteHl0bHBvNmtjeXFzcjV3ZXFwcmNicnVzeDRxcXRsbnM3dHgzanNhdnc3amp3a2RqNXB6ZGh6YmE=', 'base64').toString('utf8'));
     const osPayload = {
       app_id: '388d1944-0b83-4942-8f80-b12584def7d7',
       target_channel: 'push',
@@ -18100,6 +18100,10 @@ let activeMissionBannerData = null;
 let rewardsActiveTab = 'all';
 let rewardsSearchQuery = '';
 let rewardsRealtimeChannel = null;
+let rewardsMissionsDateFilter = 'today';
+let rewardsMissionsCustomDate = '';
+let rewardsMissionsStatusFilter = 'all';
+let rewardsMissionsSearchQuery = '';
 
 function renderRewardsPage() {
   return `
@@ -18217,6 +18221,11 @@ function renderRewardsPage() {
       <!-- Live Active Challenge & Bonus Monitor Banner -->
       <div id="rewardsActiveMissionBannerContainer">
         ${renderRewardsActiveMissionBanner()}
+      </div>
+
+      <!-- Captain Daily Mission Progress Table Container -->
+      <div id="rewardsMissionsTableContainer">
+        ${renderRewardsMissionsTable()}
       </div>
 
       <!-- Time-Window Bonus Shifts Management Card -->
@@ -18460,14 +18469,31 @@ async function loadRewardsData(showToastFeedback = false) {
 
     rewardsReferralsList = refData || [];
 
-    // 3. Load Today's Captain Missions for KPI
-    const todayStr = new Date().toISOString().split('T')[0];
-    const { data: missionData } = await supabaseClient
-      .from('driver_mission_progress')
-      .select('*')
-      .eq('mission_date', todayStr);
+    // 3. Load Captain Missions Progress with joined driver details (ordered newest to oldest)
+    try {
+      const { data: missionData, error: mErr } = await supabaseClient
+        .from('driver_mission_progress')
+        .select(`
+          *,
+          driver:users!driver_mission_progress_driver_id_fkey(id, name, phone_number, phone, avatar_url, role)
+        `)
+        .order('mission_date', { ascending: false })
+        .order('updated_at', { ascending: false });
 
-    rewardsMissionsList = missionData || [];
+      if (mErr) {
+        console.warn('Driver mission progress join error, falling back:', mErr);
+        const { data: fallbackMissions } = await supabaseClient
+          .from('driver_mission_progress')
+          .select('*')
+          .order('updated_at', { ascending: false });
+        rewardsMissionsList = fallbackMissions || [];
+      } else {
+        rewardsMissionsList = missionData || [];
+      }
+    } catch (e) {
+      console.warn('Error loading driver mission progress:', e);
+      rewardsMissionsList = [];
+    }
 
     // 4. Load Shifts
     const { data: shiftsData } = await supabaseClient
@@ -18493,13 +18519,19 @@ async function loadRewardsData(showToastFeedback = false) {
       bannerContainer.innerHTML = renderRewardsActiveMissionBanner();
     }
 
-    // 8. Update Shifts Table Container
+    // 8. Update Captain Missions Progress Table Container
+    const missionsContainer = document.getElementById('rewardsMissionsTableContainer');
+    if (missionsContainer) {
+      missionsContainer.innerHTML = renderRewardsMissionsTable();
+    }
+
+    // 9. Update Shifts Table Container
     const shiftsContainer = document.getElementById('rewardsShiftsTableContainer');
     if (shiftsContainer) {
       shiftsContainer.innerHTML = renderRewardsShiftsTable();
     }
 
-    // 9. Render Referrals Table
+    // 10. Render Referrals Table
     renderReferralsTable();
 
     if (showToastFeedback) {
@@ -18579,7 +18611,9 @@ function updateRewardsKPIs() {
     }
   });
 
-  const todayCompletedMissions = rewardsMissionsList.filter(m => m.is_completed || m.completed_trips >= m.target_trips).length;
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayMissions = rewardsMissionsList.filter(m => m.mission_date === todayStr);
+  const todayCompletedMissions = todayMissions.filter(m => m.is_completed || m.completed_trips >= m.target_trips).length;
 
   if (totalEl) totalEl.textContent = totalCount;
   if (compEl) compEl.textContent = completedCount;
@@ -18847,9 +18881,11 @@ function renderRewardsActiveMissionBanner() {
   const target = mission?.target_trips || rewardsSettings.daily_mission_trips || 10;
   const reward = mission?.reward_amount || rewardsSettings.daily_mission_reward || 50;
 
-  const todayProgressCount = rewardsMissionsList.length;
-  const todayCompletedCount = rewardsMissionsList.filter(m => m.is_completed || m.completed_trips >= m.target_trips).length;
-  const totalTripsCount = rewardsMissionsList.reduce((acc, m) => acc + (m.completed_trips || 0), 0);
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayMissions = rewardsMissionsList.filter(m => m.mission_date === todayStr);
+  const todayProgressCount = todayMissions.length;
+  const todayCompletedCount = todayMissions.filter(m => m.is_completed || m.completed_trips >= m.target_trips).length;
+  const totalTripsCount = todayMissions.reduce((acc, m) => acc + (m.completed_trips || 0), 0);
 
   return `
     <div class="card rewards-hero-card">
@@ -18935,6 +18971,531 @@ function renderRewardsActiveMissionBanner() {
     </div>
   `;
 }
+
+// ============================================
+// CAPTAIN DAILY MISSIONS PROGRESS TABLE
+// ============================================
+function getMissionDateHelper(dateOffsetDays = 0) {
+  const d = new Date();
+  if (dateOffsetDays !== 0) {
+    d.setDate(d.getDate() + dateOffsetDays);
+  }
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatRewardsMissionDate(dateStr) {
+  if (!dateStr) return 'غير محدد';
+  const todayStr = getMissionDateHelper(0);
+  const yesterdayStr = getMissionDateHelper(-1);
+  
+  if (dateStr === todayStr) {
+    return `اليوم (${dateStr})`;
+  } else if (dateStr === yesterdayStr) {
+    return `أمس (${dateStr})`;
+  }
+  
+  try {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      return d.toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
+    }
+  } catch (e) {}
+  return dateStr;
+}
+
+function formatRewardsMissionTime(isoStr) {
+  if (!isoStr) return '--';
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    return '--';
+  }
+}
+
+function getFilteredRewardsMissions() {
+  const todayStr = getMissionDateHelper(0);
+  const yesterdayStr = getMissionDateHelper(-1);
+  const weekAgoStr = getMissionDateHelper(-7);
+
+  let list = [...rewardsMissionsList];
+
+  // 1. Date Filter
+  if (rewardsMissionsDateFilter === 'today') {
+    list = list.filter(m => m.mission_date === todayStr);
+  } else if (rewardsMissionsDateFilter === 'yesterday') {
+    list = list.filter(m => m.mission_date === yesterdayStr);
+  } else if (rewardsMissionsDateFilter === 'week') {
+    list = list.filter(m => m.mission_date >= weekAgoStr);
+  } else if (rewardsMissionsDateFilter === 'custom' && rewardsMissionsCustomDate) {
+    list = list.filter(m => m.mission_date === rewardsMissionsCustomDate);
+  }
+
+  // 2. Status Filter
+  if (rewardsMissionsStatusFilter === 'completed') {
+    list = list.filter(m => m.is_completed || m.completed_trips >= m.target_trips);
+  } else if (rewardsMissionsStatusFilter === 'in_progress') {
+    list = list.filter(m => !(m.is_completed || m.completed_trips >= m.target_trips));
+  }
+
+  // 3. Search Filter
+  if (rewardsMissionsSearchQuery && rewardsMissionsSearchQuery.trim()) {
+    const q = rewardsMissionsSearchQuery.trim().toLowerCase();
+    list = list.filter(m => {
+      const driverName = (m.driver?.name || '').toLowerCase();
+      const driverPhone = (m.driver?.phone_number || m.driver?.phone || '').toLowerCase();
+      const shiftTitle = (m.shift_title || '').toLowerCase();
+      const dateStr = (m.mission_date || '').toLowerCase();
+      return driverName.includes(q) || driverPhone.includes(q) || shiftTitle.includes(q) || dateStr.includes(q);
+    });
+  }
+
+  // 4. Sort strictly from newest to oldest
+  list.sort((a, b) => {
+    const dateA = a.mission_date || '';
+    const dateB = b.mission_date || '';
+    if (dateA !== dateB) {
+      return dateB.localeCompare(dateA);
+    }
+    const timeA = a.updated_at || a.created_at || '';
+    const timeB = b.updated_at || b.created_at || '';
+    return timeB.localeCompare(timeA);
+  });
+
+  return list;
+}
+
+function getRewardsMissionCounts() {
+  const todayStr = getMissionDateHelper(0);
+  const yesterdayStr = getMissionDateHelper(-1);
+  const weekAgoStr = getMissionDateHelper(-7);
+
+  const totalAll = rewardsMissionsList.length;
+  const countToday = rewardsMissionsList.filter(m => m.mission_date === todayStr).length;
+  const countYesterday = rewardsMissionsList.filter(m => m.mission_date === yesterdayStr).length;
+  const countWeek = rewardsMissionsList.filter(m => m.mission_date >= weekAgoStr).length;
+
+  return { totalAll, countToday, countYesterday, countWeek };
+}
+
+function generateRewardsMissionsSummaryStats(list) {
+  const totalCaptains = list.length;
+  const completedCaptains = list.filter(m => m.is_completed || m.completed_trips >= m.target_trips).length;
+  const inProgressCaptains = totalCaptains - completedCaptains;
+  const totalTrips = list.reduce((acc, m) => acc + (m.completed_trips || 0), 0);
+  const totalBonusPaid = list
+    .filter(m => m.is_rewarded)
+    .reduce((acc, m) => acc + parseFloat(m.reward_amount || 0), 0);
+
+  return `
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; margin-bottom:18px;">
+      <div style="background:var(--bg-primary); padding:12px 16px; border-radius:12px; border:1px solid var(--border-color); display:flex; align-items:center; gap:12px;">
+        <div style="width:38px; height:38px; border-radius:10px; background:rgba(30,136,229,0.12); color:#1E88E5; display:flex; align-items:center; justify-content:center; font-size:18px;">
+          <i class="ri-user-star-line"></i>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-secondary); font-weight:700;">كباتن في هذا العرض</div>
+          <div style="font-size:18px; font-weight:900; color:var(--text-primary); font-family:'Outfit',sans-serif;">${totalCaptains} كابتن</div>
+        </div>
+      </div>
+
+      <div style="background:var(--bg-primary); padding:12px 16px; border-radius:12px; border:1px solid var(--border-color); display:flex; align-items:center; gap:12px;">
+        <div style="width:38px; height:38px; border-radius:10px; background:rgba(16,185,129,0.12); color:#10B981; display:flex; align-items:center; justify-content:center; font-size:18px;">
+          <i class="ri-trophy-line"></i>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-secondary); font-weight:700;">حققوا التارجت بنجاح</div>
+          <div style="font-size:18px; font-weight:900; color:#059669; font-family:'Outfit',sans-serif;">${completedCaptains} 🏆</div>
+        </div>
+      </div>
+
+      <div style="background:var(--bg-primary); padding:12px 16px; border-radius:12px; border:1px solid var(--border-color); display:flex; align-items:center; gap:12px;">
+        <div style="width:38px; height:38px; border-radius:10px; background:rgba(245,158,11,0.12); color:#F59E0B; display:flex; align-items:center; justify-content:center; font-size:18px;">
+          <i class="ri-route-line"></i>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-secondary); font-weight:700;">إجمالي الرحلات المنجزة</div>
+          <div style="font-size:18px; font-weight:900; color:#D97706; font-family:'Outfit',sans-serif;">${totalTrips} رحلة</div>
+        </div>
+      </div>
+
+      <div style="background:var(--bg-primary); padding:12px 16px; border-radius:12px; border:1px solid var(--border-color); display:flex; align-items:center; gap:12px;">
+        <div style="width:38px; height:38px; border-radius:10px; background:rgba(124,58,237,0.12); color:#7C3AED; display:flex; align-items:center; justify-content:center; font-size:18px;">
+          <i class="ri-hand-coin-line"></i>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-secondary); font-weight:700;">بونص تم صرفه بالمحفظة</div>
+          <div style="font-size:18px; font-weight:900; color:#6D28D9; font-family:'Outfit',sans-serif;">${totalBonusPaid.toLocaleString('ar-EG')} ج.م</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function generateSingleMissionRowHtml(m) {
+  const driverName = m.driver?.name || 'كابتن';
+  const driverPhone = m.driver?.phone_number || m.driver?.phone || 'بدون هاتف';
+  const avatarUrl = m.driver?.avatar_url;
+  const initial = (driverName.trim()[0] || 'ك').toUpperCase();
+
+  const target = m.target_trips || 10;
+  const completed = m.completed_trips || 0;
+  const isTargetMet = completed >= target || !!m.is_completed;
+  const pct = Math.min(100, Math.round((completed / Math.max(1, target)) * 100));
+  const remaining = Math.max(0, target - completed);
+  const bonusAmount = parseFloat(m.reward_amount || 0).toFixed(0);
+
+  const shiftTitle = m.shift_title || 'تحدي اليوم العام 🎯';
+  const isShift = !!m.shift_id;
+  const isStarted = !!m.is_started;
+
+  const dateFormatted = formatRewardsMissionDate(m.mission_date);
+  const timeFormatted = formatRewardsMissionTime(m.updated_at || m.created_at);
+
+  return `
+    <tr style="transition:background 0.2s ease;">
+      <!-- Captain -->
+      <td>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="position:relative; flex-shrink:0;">
+            ${avatarUrl ? `
+              <img src="${avatarUrl}" alt="${driverName}" style="width:38px; height:38px; border-radius:50%; object-fit:cover; border:2px solid var(--border-color);" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+              <div style="display:none; width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg, #1E88E5, #0D47A1); color:#fff; align-items:center; justify-content:center; font-weight:800; font-size:14px;">${initial}</div>
+            ` : `
+              <div style="width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg, #1E88E5, #0D47A1); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:14px;">${initial}</div>
+            `}
+          </div>
+          <div>
+            <div style="font-weight:800; color:var(--text-primary); cursor:pointer;" onclick="viewUserProfile('${m.driver_id}', 'driver')" title="عرض الملف">${driverName}</div>
+            <div style="font-size:11px; color:var(--text-light); direction:ltr; text-align:right;">${driverPhone}</div>
+          </div>
+        </div>
+      </td>
+
+      <!-- Date -->
+      <td>
+        <div style="font-size:12px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:4px;">
+          <i class="ri-calendar-line" style="color:var(--text-light);"></i>
+          <span>${dateFormatted}</span>
+        </div>
+      </td>
+
+      <!-- Shift / Challenge Title -->
+      <td>
+        <span style="background:${isShift ? 'rgba(124,58,237,0.1)' : 'rgba(30,136,229,0.1)'}; color:${isShift ? '#7C3AED' : '#1E88E5'}; padding:3px 10px; border-radius:10px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;">
+          <i class="${isShift ? 'ri-time-zone-line' : 'ri-trophy-line'}"></i>
+          <span>${shiftTitle}</span>
+        </span>
+        ${isStarted ? `<div style="font-size:10px; color:#059669; font-weight:700; margin-top:2px;">🟢 بدأ التحدي</div>` : ''}
+      </td>
+
+      <!-- Trips Progress -->
+      <td>
+        <div style="min-width:130px; max-width:180px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; font-size:11px; font-weight:800;">
+            <span style="color:var(--text-primary); font-family:'Outfit',sans-serif;">${completed} من ${target} رحلات</span>
+            <span style="color:${isTargetMet ? '#059669' : '#1E88E5'}; font-size:11px; font-weight:900;">${pct}%</span>
+          </div>
+          <div style="width:100%; height:6px; background:var(--border-color); border-radius:4px; overflow:hidden;">
+            <div style="width:${pct}%; height:100%; background:${isTargetMet ? 'linear-gradient(90deg, #10B981, #059669)' : 'linear-gradient(90deg, #60A5FA, #1E88E5)'}; border-radius:4px; transition:width 0.3s ease;"></div>
+          </div>
+          ${!isTargetMet && remaining > 0 ? `<div style="font-size:10px; color:var(--text-light); margin-top:2px; font-weight:600;">فاضل ${remaining} رحلات للبونص 🚀</div>` : ''}
+        </div>
+      </td>
+
+      <!-- Bonus Amount -->
+      <td>
+        <div style="font-weight:900; font-size:14px; color:#D97706; font-family:'Outfit',sans-serif;">+${bonusAmount} ج.م</div>
+      </td>
+
+      <!-- Mission Status -->
+      <td>
+        ${isTargetMet ? `
+          <span style="background:rgba(16,185,129,0.12); color:#059669; border:1px solid rgba(16,185,129,0.3); padding:4px 10px; border-radius:12px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;">
+            <i class="ri-trophy-fill"></i> حقق التارجت بنجاح 🏆
+          </span>
+        ` : `
+          <span style="background:rgba(245,158,11,0.12); color:#D97706; border:1px solid rgba(245,158,11,0.3); padding:4px 10px; border-radius:12px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;">
+            <i class="ri-time-line"></i> قيد الإنجاز ⏳
+          </span>
+        `}
+      </td>
+
+      <!-- Bonus Payout Status -->
+      <td>
+        ${m.is_rewarded ? `
+          <span style="background:#10B981; color:#fff; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;" title="${m.rewarded_at ? 'تم الصرف: ' + new Date(m.rewarded_at).toLocaleDateString('ar-EG') : ''}">
+            <i class="ri-check-double-line"></i> تم الإيداع بالمحفظة ✅
+          </span>
+        ` : (isTargetMet ? `
+          <span style="background:#F59E0B; color:#fff; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:800; display:inline-flex; align-items:center; gap:4px;">
+            <i class="ri-wallet-3-line"></i> مؤهل للصرف 💵
+          </span>
+        ` : `
+          <span style="background:rgba(148,163,184,0.15); color:var(--text-secondary); padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700;">
+            ⏳ في الانتظار
+          </span>
+        `)}
+      </td>
+
+      <!-- Last Activity -->
+      <td>
+        <div style="font-size:11px; color:var(--text-secondary); font-family:'Outfit',sans-serif; direction:ltr; text-align:right;">
+          ${timeFormatted}
+        </div>
+      </td>
+
+      <!-- Action -->
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="viewUserProfile('${m.driver_id}', 'driver')" style="padding:4px 10px; font-size:11px; display:inline-flex; align-items:center; gap:4px; font-weight:700;" title="معاينة ملف الكابتن">
+          <i class="ri-user-search-line"></i>
+          <span>الملف</span>
+        </button>
+      </td>
+    </tr>
+  `;
+}
+
+function generateRewardsMissionsTableRows(list) {
+  if (!list || list.length === 0) {
+    return `
+      <tr>
+        <td colspan="9" style="text-align:center; padding:48px 20px; color:var(--text-light);">
+          <div style="width:60px; height:60px; border-radius:50%; background:var(--bg-primary); display:flex; align-items:center; justify-content:center; margin:0 auto 12px; font-size:28px; color:var(--text-light);">
+            <i class="ri-calendar-check-line"></i>
+          </div>
+          <div style="font-weight:800; font-size:15px; color:var(--text-primary); margin-bottom:4px;">لا توجد مشاركات في التحدي لهذا التاريخ أو الفلتر</div>
+          <div style="font-size:12px;">جرّب اختيار تاريخ آخر أو عرض "جميع الأيام" أو التحقق من الكباتن النشطين.</div>
+        </td>
+      </tr>
+    `;
+  }
+
+  const showDateGroups = rewardsMissionsDateFilter === 'week' || rewardsMissionsDateFilter === 'all';
+
+  if (!showDateGroups) {
+    return list.map(m => generateSingleMissionRowHtml(m)).join('');
+  }
+
+  // Group by mission_date
+  const groups = {};
+  list.forEach(m => {
+    const d = m.mission_date || 'غير محدد';
+    if (!groups[d]) groups[d] = [];
+    groups[d].push(m);
+  });
+
+  const sortedDates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+
+  let html = '';
+  sortedDates.forEach(dateKey => {
+    const groupList = groups[dateKey];
+    const groupCompleted = groupList.filter(x => x.is_completed || x.completed_trips >= x.target_trips).length;
+    const groupTrips = groupList.reduce((acc, x) => acc + (x.completed_trips || 0), 0);
+    const dateTitle = formatRewardsMissionDate(dateKey);
+
+    html += `
+      <tr style="background:linear-gradient(90deg, #F1F5F9 0%, #E2E8F0 100%);">
+        <td colspan="9" style="padding:10px 16px; border-top:2px solid #CBD5E1; border-bottom:1px solid #CBD5E1;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div style="font-weight:800; color:#0F172A; font-size:13px; display:flex; align-items:center; gap:8px;">
+              <span style="background:var(--medium-blue); color:#fff; width:24px; height:24px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; font-size:12px;">
+                <i class="ri-calendar-event-fill"></i>
+              </span>
+              <span>${dateTitle}</span>
+            </div>
+            <div style="display:flex; gap:12px; font-size:11px; font-weight:700; color:var(--text-secondary);">
+              <span>👥 ${groupList.length} كباتن مسجلين</span>
+              <span>•</span>
+              <span style="color:#059669;">🏆 ${groupCompleted} حققوا التارجت</span>
+              <span>•</span>
+              <span style="color:#D97706;">🚗 ${groupTrips} رحلة منجزة</span>
+            </div>
+          </div>
+        </td>
+      </tr>
+    `;
+
+    html += groupList.map(m => generateSingleMissionRowHtml(m)).join('');
+  });
+
+  return html;
+}
+
+function renderRewardsMissionsTable() {
+  const filtered = getFilteredRewardsMissions();
+  const counts = getRewardsMissionCounts();
+
+  return `
+    <div class="card" style="padding:24px; border-radius:var(--radius-xl); box-shadow:var(--shadow-md);">
+      <!-- Header -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:14px;">
+        <div>
+          <h3 style="font-size:17px; font-weight:800; margin:0 0 4px 0; color:var(--text-primary); display:flex; align-items:center; gap:8px;">
+            <i class="ri-team-fill" style="color:var(--medium-blue); font-size:20px;"></i>
+            <span>سجل ومتابعة الكباتن في التحدي اليومي 🎯</span>
+          </h3>
+          <p style="margin:0; font-size:13px; color:var(--text-secondary);">
+            عرض تفصيلي لجميع الكباتن المشتركين في التحدي والرحلات المنجزة وحالة تحقيق التارجت وصرف البونص، مرتبة من الأحدث للأقدم كل يوم بيومه.
+          </p>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button class="btn btn-outline btn-sm" onclick="loadRewardsData(true)" style="display:flex; align-items:center; gap:6px; font-weight:700;">
+            <i class="ri-refresh-line"></i>
+            <span>تحديث لحظي</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Filters & Search Toolbar -->
+      <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:18px;">
+        
+        <!-- Top Row: Date Tabs & Custom Date Picker -->
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px;">
+          
+          <!-- Date Filter Buttons -->
+          <div style="display:flex; background:var(--bg-primary); padding:4px; border-radius:var(--radius-md); border:1px solid var(--border-color); gap:4px; flex-wrap:wrap;">
+            <button class="filter-tab-btn ${rewardsMissionsDateFilter === 'today' ? 'active' : ''}" onclick="setRewardsMissionDateFilter('today')">
+              اليوم (<span id="countMissionToday">${counts.countToday}</span>)
+            </button>
+            <button class="filter-tab-btn ${rewardsMissionsDateFilter === 'yesterday' ? 'active' : ''}" onclick="setRewardsMissionDateFilter('yesterday')">
+              أمس (<span id="countMissionYesterday">${counts.countYesterday}</span>)
+            </button>
+            <button class="filter-tab-btn ${rewardsMissionsDateFilter === 'week' ? 'active' : ''}" onclick="setRewardsMissionDateFilter('week')">
+              آخر 7 أيام (<span id="countMissionWeek">${counts.countWeek}</span>)
+            </button>
+            <button class="filter-tab-btn ${rewardsMissionsDateFilter === 'all' ? 'active' : ''}" onclick="setRewardsMissionDateFilter('all')">
+              جميع الأيام (<span id="countMissionAll">${counts.totalAll}</span>)
+            </button>
+          </div>
+
+          <!-- Custom Date Input Picker -->
+          <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:12px; font-weight:700; color:var(--text-secondary); display:flex; align-items:center; gap:4px;">
+              <i class="ri-calendar-2-line"></i> تاريخ مخصص:
+            </label>
+            <input type="date" id="rewardsMissionDatePicker" 
+                   value="${rewardsMissionsCustomDate || ''}" 
+                   onchange="setRewardsMissionCustomDate(this.value)" 
+                   style="padding:6px 10px; border-radius:var(--radius-md); border:1px solid var(--border-color); font-family:inherit; font-size:12px; background:var(--bg-primary); cursor:pointer;">
+          </div>
+        </div>
+
+        <!-- Bottom Row: Status Tabs & Search Bar -->
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px;">
+          <!-- Status Filter Tabs -->
+          <div style="display:flex; background:var(--bg-primary); padding:4px; border-radius:var(--radius-md); border:1px solid var(--border-color); gap:4px;">
+            <button class="filter-tab-btn ${rewardsMissionsStatusFilter === 'all' ? 'active' : ''}" onclick="setRewardsMissionStatusFilter('all')">
+              الكل
+            </button>
+            <button class="filter-tab-btn ${rewardsMissionsStatusFilter === 'completed' ? 'active' : ''}" onclick="setRewardsMissionStatusFilter('completed')">
+              حققوا التارجت 🏆
+            </button>
+            <button class="filter-tab-btn ${rewardsMissionsStatusFilter === 'in_progress' ? 'active' : ''}" onclick="setRewardsMissionStatusFilter('in_progress')">
+              قيد الإنجاز ⏳
+            </button>
+          </div>
+
+          <!-- Search Input Field -->
+          <div style="flex:1; min-width:260px; position:relative;">
+            <i class="ri-search-line" style="position:absolute; right:12px; top:50%; transform:translateY(-50%); color:var(--text-light);"></i>
+            <input type="text" id="inputSearchRewardsMissions" 
+                   placeholder="بحث باسم الكابتن، رقم الهاتف، أو التحدي..." 
+                   value="${rewardsMissionsSearchQuery || ''}" 
+                   oninput="handleRewardsMissionSearch(this.value)" 
+                   style="width:100%; padding:9px 36px 9px 12px; border-radius:var(--radius-md); border:1px solid var(--border-color); font-family:inherit; font-size:13px; background:var(--bg-primary);">
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Quick Summary Stats Bar -->
+      <div id="rewardsMissionsSummaryBox">
+        ${generateRewardsMissionsSummaryStats(filtered)}
+      </div>
+
+      <!-- Table Container -->
+      <div style="overflow-x:auto;">
+        <table class="data-table" style="width:100%; text-align:right;">
+          <thead>
+            <tr>
+              <th>الكابتن</th>
+              <th>التاريخ</th>
+              <th>عنوان التحدي / الفترة</th>
+              <th>تقدم الرحلات</th>
+              <th>مبلغ البونص</th>
+              <th>حالة التحدي</th>
+              <th>صرف البونص</th>
+              <th>آخر نشاط</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="rewardsMissionsTableBody">
+            ${generateRewardsMissionsTableRows(filtered)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function updateRewardsMissionsTableView(preserveSearch = false) {
+  const container = document.getElementById('rewardsMissionsTableContainer');
+  if (!container) return;
+
+  const tbody = document.getElementById('rewardsMissionsTableBody');
+  const summaryBox = document.getElementById('rewardsMissionsSummaryBox');
+
+  if (tbody && summaryBox && preserveSearch) {
+    const list = getFilteredRewardsMissions();
+    tbody.innerHTML = generateRewardsMissionsTableRows(list);
+    summaryBox.innerHTML = generateRewardsMissionsSummaryStats(list);
+    return;
+  }
+
+  container.innerHTML = renderRewardsMissionsTable();
+}
+
+function setRewardsMissionDateFilter(f) {
+  rewardsMissionsDateFilter = f;
+  if (f !== 'custom') {
+    rewardsMissionsCustomDate = '';
+    const dp = document.getElementById('rewardsMissionDatePicker');
+    if (dp) dp.value = '';
+  }
+  updateRewardsMissionsTableView(false);
+}
+
+function setRewardsMissionCustomDate(d) {
+  if (!d) {
+    rewardsMissionsDateFilter = 'today';
+    rewardsMissionsCustomDate = '';
+  } else {
+    rewardsMissionsDateFilter = 'custom';
+    rewardsMissionsCustomDate = d;
+  }
+  updateRewardsMissionsTableView(false);
+}
+
+function setRewardsMissionStatusFilter(s) {
+  rewardsMissionsStatusFilter = s;
+  updateRewardsMissionsTableView(false);
+}
+
+function handleRewardsMissionSearch(q) {
+  rewardsMissionsSearchQuery = q;
+  updateRewardsMissionsTableView(true);
+}
+
+window.setRewardsMissionDateFilter = setRewardsMissionDateFilter;
+window.setRewardsMissionCustomDate = setRewardsMissionCustomDate;
+window.setRewardsMissionStatusFilter = setRewardsMissionStatusFilter;
+window.handleRewardsMissionSearch = handleRewardsMissionSearch;
+window.updateRewardsMissionsTableView = updateRewardsMissionsTableView;
 
 // ============================================
 // TIME-WINDOW BONUS SHIFTS TABLE (REWARDS PAGE)

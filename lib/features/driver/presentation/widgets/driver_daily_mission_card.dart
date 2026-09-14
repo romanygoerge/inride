@@ -15,7 +15,6 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
   final SupabaseClient _supabase = Supabase.instance.client;
   bool _isLoading = true;
   bool _isStarting = false;
-  bool _hasActiveMission = false;
   String _title = 'تحدي اليوم 🚀';
   String _timeWindowText = 'طوال اليوم';
   int _targetTrips = 5;
@@ -47,8 +46,22 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
 
   Future<void> _loadMissionData() async {
     final uid = GlobalState.instance.userUid ?? _supabase.auth.currentUser?.id;
+
     if (uid == null) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _title = 'تحدي الـ 10 رحلات اليومي 🚀';
+          _timeWindowText = 'من 04:00 عصراً إلى 10:00 مساءً';
+          _targetTrips = 10;
+          _rewardAmount = 50.0;
+          _completedTrips = 0;
+          _remainingTrips = 10;
+          _isCompleted = false;
+          _isStarted = false;
+          _isShift = false;
+          _isLoading = false;
+        });
+      }
       return;
     }
 
@@ -64,7 +77,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
         final hasActive = res['has_active_mission'] == true;
 
         if (isActive && hasActive) {
-          final target = (res['target_trips'] as num?)?.toInt() ?? 5;
+          final target = (res['target_trips'] as num?)?.toInt() ?? 10;
           final done = (res['completed_trips'] as num?)?.toInt() ?? 0;
           final rawRew = res['reward_amount'];
           final reward = (rawRew is num)
@@ -75,12 +88,11 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
           final started = res['is_started'] == true || done > 0;
 
           setState(() {
-            _hasActiveMission = true;
-            _title = (res['title'] as String?)?.isNotEmpty == true ? res['title'] : 'تحدي اليوم 🚀';
+            _title = (res['title'] as String?)?.isNotEmpty == true ? res['title'] : 'تحدي الـ 10 رحلات اليومي 🚀';
             _timeWindowText = (res['time_window_text'] as String?)?.isNotEmpty == true
                 ? res['time_window_text']
-                : 'طوال اليوم (حتى 11:59 م)';
-            _targetTrips = target > 0 ? target : 5;
+                : 'من 04:00 عصراً إلى 10:00 مساءً';
+            _targetTrips = target > 0 ? target : 10;
             _rewardAmount = reward;
             _completedTrips = done;
             _remainingTrips = rem;
@@ -93,15 +105,61 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
         }
       }
 
+      // Fallback: Query rewards_settings or use standard 10 trips challenge
+      int target = 10;
+      double reward = 50.0;
+      try {
+        final settingsRes = await _supabase
+            .from('rewards_settings')
+            .select()
+            .eq('id', 'default')
+            .maybeSingle();
+        if (settingsRes != null) {
+          target = (settingsRes['daily_mission_trips'] as num?)?.toInt() ?? 10;
+          final rawRew = settingsRes['daily_mission_reward'];
+          reward = (rawRew is num) ? rawRew.toDouble() : (double.tryParse(rawRew?.toString() ?? '50') ?? 50.0);
+        }
+      } catch (_) {}
+
+      int done = 0;
+      try {
+        final todayStr = DateTime.now().toIso8601String().split('T')[0];
+        final progRes = await _supabase
+            .from('driver_mission_progress')
+            .select()
+            .eq('driver_id', uid)
+            .eq('mission_date', todayStr)
+            .maybeSingle();
+        if (progRes != null) {
+          done = (progRes['completed_trips'] as num?)?.toInt() ?? 0;
+        }
+      } catch (_) {}
+
       if (mounted) {
         setState(() {
-          _hasActiveMission = false;
+          _title = 'تحدي الـ 10 رحلات اليومي 🚀';
+          _timeWindowText = 'من 04:00 عصراً إلى 10:00 مساءً (أو طوال اليوم)';
+          _targetTrips = target > 0 ? target : 10;
+          _rewardAmount = reward;
+          _completedTrips = done;
+          _remainingTrips = (target - done).clamp(0, target);
+          _isCompleted = done >= target;
+          _isStarted = done > 0;
+          _isShift = false;
           _isLoading = false;
         });
       }
     } catch (e) {
       debugPrint('[DriverDailyMissionCard] Error loading active mission: $e');
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _title = 'تحدي الـ 10 رحلات اليومي 🚀';
+          _timeWindowText = 'من 04:00 عصراً إلى 10:00 مساءً';
+          _targetTrips = 10;
+          _rewardAmount = 50.0;
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -212,11 +270,22 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading || !_hasActiveMission) {
-      return const SizedBox.shrink();
+    if (_isLoading) {
+      return Container(
+        height: 90,
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEFF6FF),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFBFDBFE)),
+        ),
+        child: const Center(
+          child: CircularProgressIndicator(color: Color(0xFF1E88E5), strokeWidth: 2.5),
+        ),
+      );
     }
 
-    final int target = _targetTrips > 0 ? _targetTrips : 5;
+    final int target = _targetTrips > 0 ? _targetTrips : 10;
     final int done = _completedTrips;
     final double progress = (done / target).clamp(0.0, 1.0);
     final bool reached = done >= target || _isCompleted;

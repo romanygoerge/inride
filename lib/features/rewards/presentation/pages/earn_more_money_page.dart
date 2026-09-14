@@ -55,11 +55,9 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
   @override
   void initState() {
     super.initState();
-    final isDriver = GlobalState.instance.currentRole == UserRole.driver;
-    final tabCount = isDriver ? 3 : 2;
-    final initialIndex = widget.initialTabIndex.clamp(0, tabCount - 1);
+    final initialIndex = widget.initialTabIndex.clamp(0, 2);
     _tabController = TabController(
-      length: tabCount,
+      length: 3,
       vsync: this,
       initialIndex: initialIndex,
     );
@@ -272,7 +270,6 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
 
   @override
   Widget build(BuildContext context) {
-    final isDriver = GlobalState.instance.currentRole == UserRole.driver;
     final isAr = LocaleController.instance.isArabic;
 
     return Scaffold(
@@ -336,61 +333,38 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
               unselectedLabelStyle: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600),
               indicatorSize: TabBarIndicatorSize.tab,
               dividerColor: Colors.transparent,
-              tabs: isDriver
-                  ? const [
-                      Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.emoji_events_rounded, size: 17),
-                            SizedBox(width: 5),
-                            Text('تحديات البونص'),
-                          ],
-                        ),
-                      ),
-                      Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.card_giftcard_rounded, size: 17),
-                            SizedBox(width: 5),
-                            Text('كود الدعوة'),
-                          ],
-                        ),
-                      ),
-                      Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.local_offer_rounded, size: 17),
-                            SizedBox(width: 5),
-                            Text('إدخال كود'),
-                          ],
-                        ),
-                      ),
-                    ]
-                  : const [
-                      Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.card_giftcard_rounded, size: 17),
-                            SizedBox(width: 5),
-                            Text('كود الدعوة'),
-                          ],
-                        ),
-                      ),
-                      Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.local_offer_rounded, size: 17),
-                            SizedBox(width: 5),
-                            Text('إدخال كود'),
-                          ],
-                        ),
-                      ),
+              tabs: const [
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.emoji_events_rounded, size: 17),
+                      SizedBox(width: 5),
+                      Text('بونص الرحلات'),
                     ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.card_giftcard_rounded, size: 17),
+                      SizedBox(width: 5),
+                      Text('كود الدعوة'),
+                    ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.local_offer_rounded, size: 17),
+                      SizedBox(width: 5),
+                      Text('إدخال كود'),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -404,16 +378,11 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
               onRefresh: _loadAllRewardsData,
               child: TabBarView(
                 controller: _tabController,
-                children: isDriver
-                    ? [
-                        _buildMissionsTab(),
-                        _buildReferralsTab(),
-                        _buildPromoCodeTab(),
-                      ]
-                    : [
-                        _buildReferralsTab(),
-                        _buildPromoCodeTab(),
-                      ],
+                children: [
+                  _buildMissionsTab(),
+                  _buildReferralsTab(),
+                  _buildPromoCodeTab(),
+                ],
               ),
             ),
     );
@@ -1139,7 +1108,7 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
               const Icon(Icons.schedule_rounded, color: AppColors.mediumBlue, size: 18),
               const SizedBox(width: 6),
               Text(
-                'فترات بونص مدينة السادات',
+                'فترات وتحديات بونص مدينة السادات',
                 style: GoogleFonts.cairo(
                   fontSize: 13.5,
                   fontWeight: FontWeight.bold,
@@ -1148,12 +1117,30 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          _buildShiftRow(name: 'فترة الصباح ☀️', time: '07:00 ص - 11:59 ص', bonus: '+40 ج.م', isActive: false),
+          const SizedBox(height: 12),
+          _buildShiftRow(
+            name: 'فترة الصباح ☀️',
+            time: '07:00 ص - 11:59 ص',
+            trips: 'أكمل 5 رحلات',
+            bonus: '+50 ج.م',
+            isActive: false,
+          ),
           const Divider(height: 14),
-          _buildShiftRow(name: 'فترة المساء 🌆', time: '06:00 م - 11:59 م', bonus: '+60 ج.م', isActive: true),
+          _buildShiftRow(
+            name: 'تحدي الذروة المسائية 🌆',
+            time: '04:00 م - 10:00 م',
+            trips: 'أكمل 10 رحلات',
+            bonus: '+150 ج.م',
+            isActive: true,
+          ),
           const Divider(height: 14),
-          _buildShiftRow(name: 'فترة السهرة 🌙', time: '12:00 ص - 04:00 ص', bonus: '+50 ج.م', isActive: false),
+          _buildShiftRow(
+            name: 'فترة السهرة 🌙',
+            time: '10:00 م - 02:00 ص',
+            trips: 'أكمل 6 رحلات',
+            bonus: '+60 ج.م',
+            isActive: false,
+          ),
         ],
       ),
     );
@@ -1162,57 +1149,77 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
   Widget _buildShiftRow({
     required String name,
     required String time,
+    required String trips,
     required String bonus,
     required bool isActive,
   }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  name,
-                  style: GoogleFonts.cairo(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    name,
+                    style: GoogleFonts.cairo(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
-                ),
-                if (isActive) ...[
-                  const SizedBox(width: 6),
+                  if (isActive) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'نشط الآن',
+                        style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: const Color(0xFF166534)),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  Text(
+                    time,
+                    style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textLight),
+                  ),
+                  const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFDCFCE7),
-                      borderRadius: BorderRadius.circular(6),
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      'نشط الآن',
-                      style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: const Color(0xFF166534)),
+                      trips,
+                      style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.mediumBlue),
                     ),
                   ),
                 ],
-              ],
-            ),
-            Text(
-              time,
-              style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textLight),
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
             color: const Color(0xFFFEF3C7),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Text(
             bonus,
             style: GoogleFonts.cairo(
-              fontSize: 11.5,
+              fontSize: 12,
               fontWeight: FontWeight.w800,
               color: const Color(0xFF92400E),
             ),

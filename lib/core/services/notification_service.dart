@@ -387,12 +387,18 @@ class NotificationService {
 
     // Build a unique notifId based on recipient + type + tripId/requestId
     // IMPORTANT: For chat messages, use data['id'] (messageId) so each chat message is treated uniquely and not deduped!
+    // IMPORTANT: For offers and negotiations, include price so each counter-offer or new offer is delivered immediately!
+    final bool isOfferOrNegotiation = type == 'counter_offer' ||
+        type == 'new_offer' ||
+        type == 'driver_offer';
     final String tripRef = (type == 'chat_message' || type == 'new_message' || type == 'support_chat')
         ? (data?['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString())
-        : (data?['requestId']?.toString() ??
-            data?['tripId']?.toString() ??
-            data?['id']?.toString() ??
-            DateTime.now().millisecondsSinceEpoch.toString());
+        : isOfferOrNegotiation
+            ? '${data?['requestId'] ?? data?['tripId'] ?? ''}_${data?['price'] ?? ''}_${DateTime.now().millisecondsSinceEpoch}'
+            : (data?['requestId']?.toString() ??
+                data?['tripId']?.toString() ??
+                data?['id']?.toString() ??
+                DateTime.now().millisecondsSinceEpoch.toString());
     final String notifId = '${cleanRecipient}_${type}_$tripRef';
 
     // Clean up stale dedup entries (older than 5 minutes)

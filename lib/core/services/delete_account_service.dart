@@ -9,16 +9,18 @@ class DeleteAccountResult {
   final bool success;
   final bool isActiveTrip;
   final String message;
+  final String? scope;
 
   const DeleteAccountResult({
     required this.success,
     this.isActiveTrip = false,
     required this.message,
+    this.scope,
   });
 }
 
 /// خدمة حذف الحساب المستقلة وتفريغ البيانات (DeleteAccountService)
-/// تلتزم بأحدث معايير الأمان وتجربة المستخدم وتطبيق حذف الحساب بشكل نهائي
+/// تدعم الحذف المتخصص (كابتن فقط، راكب فقط، أو الحساب بالكامل) وتوثيق الداشبورد
 class DeleteAccountService {
   DeleteAccountService._internal();
   static final DeleteAccountService instance = DeleteAccountService._internal();
@@ -74,8 +76,37 @@ class DeleteAccountService {
     return false;
   }
 
+  /// فحص ما إذا كان المستخدم يمتلك حساب كابتن مسجل أو معتمد
+  Future<bool> hasDriverAccount() async {
+    final state = GlobalState.instance;
+    if (state.verificationStatus == DriverVerificationStatus.verified ||
+        state.verificationStatus == DriverVerificationStatus.submitted ||
+        state.currentRole == UserRole.driver) {
+      return true;
+    }
+
+    final userId = state.userUid ?? _supabase.auth.currentUser?.id;
+    if (userId == null) return false;
+
+    try {
+      final dRes = await _supabase
+          .from('drivers')
+          .select('id')
+          .eq('id', userId)
+          .maybeSingle();
+      return dRes != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// تنفيذ عملية حذف الحساب والبيانات التابعة له بشكل احترافي وآمن
-  Future<DeleteAccountResult> deleteAccount({required bool isArabic}) async {
+  /// [scope]: 'driver' (كابتن فقط) | 'rider' (راكب فقط) | 'both' (الحساب بالكامل)
+  Future<DeleteAccountResult> deleteAccount({
+    required bool isArabic,
+    String scope = 'both',
+    String? reason,
+  }) async {
     // 1. منع تنفيذ الحذف أكثر من مرة في نفس الوقت
     if (_isDeleting) {
       return DeleteAccountResult(
@@ -100,7 +131,7 @@ class DeleteAccountService {
     }
 
     try {
-      AppLogger.rideLog('DeleteAccount', 'Starting account deletion procedure for user', passengerId: userId);
+      AppLogger.rideLog('DeleteAccount', 'Starting account deletion procedure (scope: $scope) for user', passengerId: userId);
 
       // 2. التحقق من وجود رحلة جارية ومنع الحذف إذا وجدت
       final activeTrip = await hasActiveTrip(userId);
@@ -115,108 +146,108 @@ class DeleteAccountService {
         );
       }
 
-      // 3. المحاولة الأولى: استدعاء الدالة الآمنة (RPC) delete_own_account في Supabase
-      bool rpcSuccess = false;
+      // 3. استدعاء الدالة الآمنة (RPC) delete_user_account في Supabase
+      Map<String, dynamic>? rpcMap;
       try {
-        final rpcRes = await _supabase.rpc('delete_own_account');
-        if (rpcRes != null && (rpcRes['success'] == true || rpcRes == true)) {
-          rpcSuccess = true;
-          debugPrint('[DeleteAccountService] RPC delete_own_account succeeded.');
+        final rpcRes = await _supabase.rpc('delete_user_account', params: {
+          'p_scope': scope,
+          'p_reason': reason,
+        });
+        if (rpcRes is Map) {
+          rpcMap = Map<String, dynamic>.from(rpcRes);
         }
       } catch (e) {
-        debugPrint('[DeleteAccountService] RPC delete_own_account not available or failed: $e. Falling back to explicit table deletions.');
+        debugPrint('[DeleteAccountService] RPC delete_user_account error: $e');
       }
 
-      // 4. في حالة عدم وجود الـ RPC أو فشلها، تنفيذ حذف التبيعات خطوة بخطوة بالترتيب الصحيح
-      if (!rpcSuccess) {
-        // أ. إيقاف تتبع الموقع إن كان كابتن
+      final isSuccess = rpcMap != null && rpcMap['success'] == true;
+      final effectiveScope = (rpcMap?['scope'] ?? scope).toString();
+      final serverMessage = rpcMap?['message']?.toString();
+
+      if (!isSuccess && rpcMap?['is_active_trip'] == true) {
+        _isDeleting = false;
+        return DeleteAccountResult(
+          success: false,
+          isActiveTrip: true,
+          message: serverMessage ?? (isArabic ? 'توجد رحلة نشطة حالياً' : 'Active trip in progress'),
+        );
+      }
+
+      // 4. معالجة الحالة المحلية بناءً على النطاق المنفذ
+      if (effectiveScope == 'driver') {
+        // حذف حساب الكابتن فقط: يظل المستخدم مسجلاً كراكب
         try {
           GlobalState.instance.stopDriverLocationTracking();
         } catch (_) {}
 
-        // ب. حذف الإشعارات الخاصة بالمستخدم
+        GlobalState.instance.verificationStatus = DriverVerificationStatus.unregistered;
+        GlobalState.instance.currentRole = UserRole.rider;
+        GlobalState.instance.driverWalletBalance = 0.0;
+        GlobalState.instance.driverAddress = null;
+        GlobalState.instance.driverRejectionReason = null;
+        GlobalState.instance.notify();
+
+        _isDeleting = false;
+        AppLogger.rideLog('DeleteAccount', 'Driver account removed successfully. Switched to rider.', passengerId: userId);
+
+        return DeleteAccountResult(
+          success: true,
+          scope: 'driver',
+          message: serverMessage ?? (isArabic
+              ? 'تم حذف حساب الكابتن بنجاح. حسابك الآن يعمل كراكب فقط.'
+              : 'Driver account deleted successfully. You are now a rider only.'),
+        );
+      } else if (effectiveScope == 'rider') {
+        // حذف بيانات الراكب فقط
+        GlobalState.instance.passengerWalletBalance = 0.0;
+        GlobalState.instance.walletBalance = 0.0;
+        GlobalState.instance.notify();
+
+        _isDeleting = false;
+        return DeleteAccountResult(
+          success: true,
+          scope: 'rider',
+          message: serverMessage ?? (isArabic
+              ? 'تم حذف بيانات حساب الراكب بنجاح.'
+              : 'Rider account data deleted successfully.'),
+        );
+      } else {
+        // حذف الحساب بالكامل (Both)
         try {
-          await _supabase.from('notifications').delete().eq('user_id', userId);
+          GlobalState.instance.stopDriverLocationTracking();
+        } catch (_) {}
+
+        // مسح جميع البيانات المحلية (SharedPreferences) مع الحفاظ على لغة التطبيق
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final langCode = prefs.getString('selected_language_code');
+          await prefs.clear();
+          if (langCode != null) {
+            await prefs.setString('selected_language_code', langCode);
+          }
         } catch (e) {
-          debugPrint('[DeleteAccountService] Error deleting notifications: $e');
+          debugPrint('[DeleteAccountService] Local prefs clear error: $e');
         }
 
-        // ج. حذف سجل الأجهزة و Push Notification Tokens
-        try {
-          await _supabase.from('user_fcm_tokens').delete().eq('user_id', userId);
-        } catch (_) {}
-        try {
-          await _supabase.from('device_tokens').delete().eq('user_id', userId);
-        } catch (_) {}
-
-        // د. حذف العناوين المحفوظة
-        try {
-          await _supabase.from('saved_addresses').delete().eq('user_id', userId);
-        } catch (e) {
-          debugPrint('[DeleteAccountService] Error deleting saved_addresses: $e');
-        }
-
-        // هـ. حذف محادثات ورسائل الدعم الفني
-        try {
-          await _supabase.from('support_messages').delete().eq('sender_id', userId);
-          await _supabase.from('support_chats').delete().eq('user_id', userId);
-        } catch (e) {
-          debugPrint('[DeleteAccountService] Error deleting support chats: $e');
-        }
-
-        // و. حذف بيانات الكابتن إن وجدت (الموقع، الوثائق، المركبة، سجل السائق والراكب)
-        try {
-          await _supabase.from('driver_locations').delete().or('driver_id.eq.$userId,user_id.eq.$userId');
-        } catch (_) {}
-        try {
-          await _supabase.from('driver_documents').delete().or('driver_id.eq.$userId,user_id.eq.$userId');
-        } catch (_) {}
-        try {
-          await _supabase.from('vehicles').delete().or('driver_id.eq.$userId,user_id.eq.$userId');
-        } catch (_) {}
-        try {
-          await _supabase.from('drivers').delete().or('id.eq.$userId,user_id.eq.$userId');
-        } catch (_) {}
-        try {
-          await _supabase.from('passengers').delete().or('id.eq.$userId,user_id.eq.$userId');
-        } catch (_) {}
-
-        // ز. حذف الحساب الشخصي من جدول users / profiles
-        await _supabase.from('users').delete().eq('id', userId);
-        try {
-          await _supabase.from('profiles').delete().eq('id', userId);
-        } catch (_) {}
-
-        // ح. تسجل خروج المستخدم من Supabase Auth
+        // تسجيل الخروج من Supabase Auth
         try {
           await _supabase.auth.signOut();
         } catch (e) {
           debugPrint('[DeleteAccountService] Auth signOut error: $e');
         }
+
+        // إعادة ضبط حالة التطبيق بالكامل
+        GlobalState.instance.reset();
+
+        _isDeleting = false;
+        AppLogger.rideLog('DeleteAccount', 'Entire account deleted successfully for user', passengerId: userId);
+
+        return DeleteAccountResult(
+          success: true,
+          scope: 'both',
+          message: serverMessage ?? (isArabic ? 'تم حذف الحساب بالكامل بنجاح.' : 'Account deleted successfully.'),
+        );
       }
-
-      // 5. مسح جميع البيانات المحلية (SharedPreferences & Session Cache)
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final langCode = prefs.getString('selected_language_code'); // الحفاظ على لغة التطبيق المفضل للمستخدم
-        await prefs.clear();
-        if (langCode != null) {
-          await prefs.setString('selected_language_code', langCode);
-        }
-      } catch (e) {
-        debugPrint('[DeleteAccountService] Local prefs clear error: $e');
-      }
-
-      // 6. إعادة ضبط حالة التطبيق بالكامل (GlobalState)
-      GlobalState.instance.reset();
-
-      _isDeleting = false;
-      AppLogger.rideLog('DeleteAccount', 'Account deletion completed successfully for user', passengerId: userId);
-
-      return DeleteAccountResult(
-        success: true,
-        message: isArabic ? 'تم حذف الحساب بنجاح.' : 'Account deleted successfully.',
-      );
     } catch (e, stackTrace) {
       _isDeleting = false;
       AppLogger.error('DeleteAccountService', 'Failed to delete account for user $userId', e, stackTrace);

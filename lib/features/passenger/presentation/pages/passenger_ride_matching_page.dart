@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/state/global_state.dart';
@@ -96,6 +97,145 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
   void dispose() {
     GlobalState.instance.removeListener(_onStateChange);
     super.dispose();
+  }
+
+  /// Shows a premium confirmation bottom sheet before cancelling the ride
+  Future<void> _showCancelConfirmation() async {
+    if (_isCancelling || _isNavigating) return;
+    final isArabic = LocaleController.instance.isArabic;
+
+    final shouldCancel = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      isDismissible: true,
+      builder: (ctx) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black12,
+                blurRadius: 20,
+                spreadRadius: 5,
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 48,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Warning icon
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.search_off_rounded,
+                    color: Colors.orange.shade700,
+                    size: 40,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Title
+              Text(
+                isArabic ? 'إلغاء البحث عن كابتن؟' : 'Cancel searching for a captain?',
+                style: GoogleFonts.cairo(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+
+              // Message
+              Text(
+                isArabic
+                    ? 'لو رجعت دلوقتي هيتم إلغاء طلب الرحلة وهتحتاج تطلب رحلة جديدة من الأول.\n\nهل أنت متأكد؟'
+                    : 'If you go back now, your ride request will be cancelled and you\'ll need to request a new ride.\n\nAre you sure?',
+                style: GoogleFonts.cairo(
+                  fontSize: 13.5,
+                  color: AppColors.textSecondary,
+                  height: 1.6,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 28),
+
+              // Continue searching button (primary)
+              ElevatedButton.icon(
+                onPressed: () => Navigator.pop(ctx, false),
+                icon: const Icon(Icons.search_rounded, size: 20),
+                label: Text(
+                  isArabic ? 'متابعة البحث عن كابتن' : 'Continue searching',
+                  style: GoogleFonts.cairo(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.mediumBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Cancel ride button (destructive)
+              OutlinedButton.icon(
+                onPressed: () => Navigator.pop(ctx, true),
+                icon: Icon(Icons.cancel_outlined, size: 18, color: AppColors.error),
+                label: Text(
+                  isArabic ? 'إلغاء الرحلة' : 'Cancel ride',
+                  style: GoogleFonts.cairo(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.error,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  side: BorderSide(color: AppColors.error.withValues(alpha: 0.3)),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (shouldCancel == true && mounted) {
+      _handleCancelRide();
+    }
   }
 
   /// Handles ride cancellation with proper sequencing and guards
@@ -239,16 +379,11 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
     final isSearching = state.rideStatus == RideStatus.searching;
 
     return PopScope(
-      // Allow pop but do NOT call cancelRide() here.
-      // The cancel button and back button handler already manage cancellation.
-      // Calling cancelRide() here caused triple cancellation (root cause #4).
-      canPop: true,
+      // Block system back button – show confirmation dialog instead
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
-        // If popped via system back button (not via our cancel button),
-        // trigger cancellation only if not already cancelling
-        if (didPop && !_isCancelling && !_isNavigating) {
-          _isCancelling = true;
-          GlobalState.instance.cancelRide();
+        if (!didPop && !_isCancelling && !_isNavigating) {
+          _showCancelConfirmation();
         }
       },
       child: Scaffold(
@@ -264,7 +399,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
             top: MediaQuery.of(context).padding.top + 12,
             right: 16,
             child: GestureDetector(
-              onTap: _handleCancelRide,
+              onTap: _showCancelConfirmation,
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -483,9 +618,9 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                     const SizedBox(height: 12),
                   ],
 
-                  // Cancel ride button - disabled during cancellation
+                  // Cancel ride button - shows confirmation first
                   ElevatedButton(
-                    onPressed: _isCancelling ? null : _handleCancelRide,
+                    onPressed: _isCancelling ? null : _showCancelConfirmation,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _isCancelling
                           ? Colors.grey[200]
@@ -559,8 +694,31 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                 // Driver Avatar
                 CircleAvatar(
                   radius: 24,
-                  backgroundImage: NetworkImage(offer.driver.avatar),
                   backgroundColor: AppColors.background,
+                  backgroundImage: (offer.driver.avatar.trim().isNotEmpty && !offer.driver.avatar.contains('unsplash.com'))
+                      ? CachedNetworkImageProvider(offer.driver.avatar.trim(), maxWidth: 150, maxHeight: 150)
+                      : null,
+                  child: (offer.driver.avatar.trim().isEmpty || offer.driver.avatar.contains('unsplash.com'))
+                      ? Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: [AppColors.mediumBlue.withValues(alpha: 0.15), AppColors.mediumBlue.withValues(alpha: 0.05)],
+                            ),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            (offer.driver.name.trim().isNotEmpty && offer.driver.name != 'كابتن')
+                                ? offer.driver.name.trim().characters.first.toUpperCase()
+                                : 'ك',
+                            style: GoogleFonts.cairo(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.mediumBlue,
+                            ),
+                          ),
+                        )
+                      : null,
                 ),
                 const SizedBox(width: 10),
 
@@ -888,12 +1046,16 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         final isArabic = LocaleController.instance.isArabic;
-        return Container(
+        // Use StatefulBuilder so the submit button can show loading state
+        bool isSubmitting = false;
+        return StatefulBuilder(
+          builder: (innerCtx, setSheetState) {
+            return Container(
                 padding: EdgeInsets.only(
                   left: 20,
                   right: 20,
                   top: 24,
-                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+                  bottom: MediaQuery.of(innerCtx).viewInsets.bottom + 24,
                 ),
                 decoration: const BoxDecoration(
                   color: Colors.white,
@@ -939,6 +1101,7 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                       controller: controller,
                       keyboardType: const TextInputType.numberWithOptions(decimal: false),
                       textAlign: TextAlign.center,
+                      enabled: !isSubmitting,
                       style: GoogleFonts.outfit(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
@@ -976,45 +1139,51 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                     const SizedBox(height: 8),
 
                     // Quick price adjustment buttons
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: <int>[-10, -5, 5, 10].map((int amount) {
-                        final bool isNegative = amount < 0;
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: GestureDetector(
-                            onTap: () {
-                              final current = double.tryParse(controller.text) ?? offer.price;
-                              final double minFare = (GlobalState.instance.appSettings['minFare'] as num?)?.toDouble() ?? 10.0;
-                              final double maxFare = (GlobalState.instance.appSettings['maxFare'] as num?)?.toDouble() ?? 500.0;
-                              final newValue = (current + amount).clamp(minFare, maxFare);
-                              controller.text = newValue.round().toString();
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: isNegative
-                                    ? AppColors.error.withValues(alpha: 0.08)
-                                    : AppColors.success.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: isNegative
-                                      ? AppColors.error.withValues(alpha: 0.3)
-                                      : AppColors.success.withValues(alpha: 0.3),
+                    IgnorePointer(
+                      ignoring: isSubmitting,
+                      child: Opacity(
+                        opacity: isSubmitting ? 0.5 : 1.0,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <int>[-10, -5, 5, 10].map((int amount) {
+                            final bool isNegative = amount < 0;
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: GestureDetector(
+                                onTap: () {
+                                  final current = double.tryParse(controller.text) ?? offer.price;
+                                  final double minFare = (GlobalState.instance.appSettings['minFare'] as num?)?.toDouble() ?? 10.0;
+                                  final double maxFare = (GlobalState.instance.appSettings['maxFare'] as num?)?.toDouble() ?? 500.0;
+                                  final newValue = (current + amount).clamp(minFare, maxFare);
+                                  controller.text = newValue.round().toString();
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: isNegative
+                                        ? AppColors.error.withValues(alpha: 0.08)
+                                        : AppColors.success.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: isNegative
+                                          ? AppColors.error.withValues(alpha: 0.3)
+                                          : AppColors.success.withValues(alpha: 0.3),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '${amount > 0 ? "+" : ""}$amount',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: isNegative ? AppColors.error : AppColors.success,
+                                    ),
+                                  ),
                                 ),
                               ),
-                              child: Text(
-                                '${amount > 0 ? "+" : ""}$amount',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: isNegative ? AppColors.error : AppColors.success,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
+                            );
+                          }).toList(),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 20),
 
@@ -1022,13 +1191,16 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                     SizedBox(
                       width: double.infinity,
                       child: GestureDetector(
-                        onTap: () async {
+                        onTap: isSubmitting ? null : () async {
                           final newPrice = double.tryParse(controller.text);
                           if (newPrice != null && newPrice > 0) {
-                            Navigator.pop(ctx);
+                            setSheetState(() => isSubmitting = true);
                             try {
                               // Send counter-offer to Firestore so driver receives it
                               await GlobalState.instance.submitCounterOffer(offer.driverId, newPrice);
+                              if (ctx.mounted) {
+                                Navigator.pop(ctx);
+                              }
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
@@ -1045,6 +1217,9 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                                 );
                               }
                             } catch (e) {
+                              if (innerCtx.mounted) {
+                                setSheetState(() => isSubmitting = false);
+                              }
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
@@ -1065,10 +1240,12 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(14),
-                            gradient: const LinearGradient(
-                              colors: AppColors.blueGradient,
+                            gradient: LinearGradient(
+                              colors: isSubmitting
+                                  ? [Colors.grey.shade400, Colors.grey.shade500]
+                                  : AppColors.blueGradient,
                             ),
-                            boxShadow: [
+                            boxShadow: isSubmitting ? [] : [
                               BoxShadow(
                                 color: AppColors.mediumBlue.withValues(alpha: 0.3),
                                 blurRadius: 10,
@@ -1077,14 +1254,37 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                             ],
                           ),
                           child: Center(
-                            child: Text(
-                              isArabic ? 'إرسال العرض' : 'Send Counter Offer',
-                              style: GoogleFonts.cairo(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
+                            child: isSubmitting
+                                ? Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        isArabic ? 'جاري الإرسال...' : 'Sending...',
+                                        style: GoogleFonts.cairo(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Text(
+                                    isArabic ? 'إرسال العرض' : 'Send Counter Offer',
+                                    style: GoogleFonts.cairo(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
                           ),
                         ),
                       ),
@@ -1092,6 +1292,8 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                   ],
                 ),
               );
+          },
+        );
       },
     );
   }

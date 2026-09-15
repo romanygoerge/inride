@@ -176,6 +176,8 @@ class AppNotificationService {
       'accept_trip', 'ride_accepted', 'delivery_accepted',
       'driver_arrived', 'captain_arrived', 'trip_started',
       'new_offer', 'driver_offer', 'counter_offer',
+      'trip_finished', 'trip_completed', 'cancel_trip',
+      'ride_cancelled', 'ride_expired',
     };
     return criticalTypes.contains(type.trim().toLowerCase());
   }

@@ -61,7 +61,18 @@ class RideRepository {
       }
     }
 
-    final resolvedPhone = passengerPhone ?? GlobalState.instance.phoneNumber;
+    String? resolvedPhone = passengerPhone ?? GlobalState.instance.phoneNumber;
+    if (resolvedPhone == null || resolvedPhone.trim().isEmpty) {
+      final curUser = _supabase.auth.currentUser;
+      if (curUser != null) {
+        resolvedPhone = curUser.phone ??
+            (curUser.userMetadata?['phone'] ?? curUser.userMetadata?['phone_number'])?.toString();
+        if (resolvedPhone == null || resolvedPhone.isEmpty) {
+          final m = RegExp(r'^phone_(\d+)@').firstMatch(curUser.email ?? '');
+          if (m != null) resolvedPhone = m.group(1);
+        }
+      }
+    }
 
     final newRequest = RideRequestModel(
       requestId: requestId,
@@ -658,8 +669,8 @@ class RideRepository {
       id: offerId,
       driverId: driverId,
       passengerId: validPassengerId,
-      driverName: userMap['name'] ?? 'سائق',
-      driverAvatar: userMap['avatar_url'] ?? '',
+      driverName: (userMap['name'] ?? userMap['full_name'] ?? driverMap['name'] ?? 'كابتن').toString(),
+      driverAvatar: (userMap['avatar_url'] ?? driverMap['avatar_url'] ?? '').toString(),
       driverRating: (userMap['rating'] as num?)?.toDouble() ?? 5.0,
       vehicleType: vehicleMap['type'] ?? 'car',
       vehicleName: vehicleMap['model'] ?? '',

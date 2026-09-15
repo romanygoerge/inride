@@ -12,6 +12,7 @@ import '../../../../core/utils/map_coordinates_helper.dart';
 import '../../../../core/utils/snappy_page_route.dart';
 import '../../../../shared/widgets/osm_map_widget.dart';
 import '../../../../shared/widgets/trip_report_dialog.dart';
+import '../../../../shared/widgets/offline_banner.dart';
 import '../../../chat/presentation/pages/chat_page.dart';
 import 'passenger_home_page.dart';
 
@@ -69,9 +70,26 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
       if (mounted) {
         setState(() {
           if (state.acceptedOffer != null) {
+            final oldAvatar = state.acceptedOffer!.driver.avatar;
+            final resolvedAvatar = (info.avatar.isNotEmpty && !info.avatar.contains('unsplash.com'))
+                ? info.avatar
+                : ((oldAvatar.isNotEmpty && !oldAvatar.contains('unsplash.com')) ? oldAvatar : '');
+
             state.acceptedOffer = DriverOffer(
               driverId: driverId,
-              driver: info,
+              driver: DriverInfo(
+                name: info.name,
+                rating: info.rating,
+                ratingCount: info.ratingCount,
+                vehicleType: info.vehicleType,
+                vehicleName: info.vehicleName,
+                vehicleColor: info.vehicleColor,
+                licensePlate: info.licensePlate,
+                avatar: resolvedAvatar,
+                phoneNumber: info.phoneNumber.isNotEmpty ? info.phoneNumber : state.acceptedOffer!.driver.phoneNumber,
+                completedTrips: info.completedTrips,
+                completedDeliveries: info.completedDeliveries,
+              ),
               price: state.acceptedOffer!.price,
               etaMinutes: state.acceptedOffer!.etaMinutes,
               status: state.acceptedOffer!.status,
@@ -432,6 +450,15 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
             child: OsmMapWidget(showPOIs: false),
           ),
 
+          // Offline Banner overlay (only visible when offline)
+          if (state.isOffline)
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: OfflineBanner(),
+            ),
+
           // 2. Header Status Alert
           Positioned(
             top: MediaQuery.of(context).padding.top + 16,
@@ -593,8 +620,31 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
                                   children: [
                                     CircleAvatar(
                                       radius: 28,
-                                      backgroundImage: CachedNetworkImageProvider(offer.driver.avatar, maxWidth: 250, maxHeight: 250),
                                       backgroundColor: AppColors.background,
+                                      backgroundImage: (offer.driver.avatar.trim().isNotEmpty && !offer.driver.avatar.contains('unsplash.com'))
+                                          ? CachedNetworkImageProvider(offer.driver.avatar.trim(), maxWidth: 250, maxHeight: 250)
+                                          : null,
+                                      child: (offer.driver.avatar.trim().isEmpty || offer.driver.avatar.contains('unsplash.com'))
+                                          ? Container(
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                gradient: LinearGradient(
+                                                  colors: [AppColors.mediumBlue.withValues(alpha: 0.15), AppColors.mediumBlue.withValues(alpha: 0.05)],
+                                                ),
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: Text(
+                                                (offer.driver.name.trim().isNotEmpty && offer.driver.name != 'كابتن inRide' && offer.driver.name != 'كابتن')
+                                                    ? offer.driver.name.trim().characters.first.toUpperCase()
+                                                    : 'ك',
+                                                style: GoogleFonts.cairo(
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: AppColors.mediumBlue,
+                                                ),
+                                              ),
+                                            )
+                                          : null,
                                     ),
                                     const SizedBox(width: 14),
                                     Expanded(

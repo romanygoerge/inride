@@ -193,9 +193,9 @@ class _TripStatusSheetState extends State<TripStatusSheet> {
         badgeBg = const Color(0xFFFEE2E2);
         badgeIcon = Icons.cancel_rounded;
         statusTitle = 'هذه الرحلة ملغاة';
-        final who = cancelledBy == 'driver' ? 'الكابتن' : (cancelledBy == 'passenger' ? 'الراكب' : '');
+        final who = cancelledBy == 'admin' ? 'الإدارة' : (cancelledBy == 'driver' ? 'الكابتن' : (cancelledBy == 'passenger' ? 'الراكب' : ''));
         statusSubtitle = who.isNotEmpty
-            ? 'قام $who بإلغاء هذه الرحلة ولا يمكن المتابعة فيها.'
+            ? (cancelledBy == 'admin' ? 'قامت إدارة inRide بإلغاء هذه الرحلة ولا يمكن المتابعة فيها.' : 'قام $who بإلغاء هذه الرحلة ولا يمكن المتابعة فيها.')
             : 'تم إلغاء هذه الرحلة ولا يمكن المتابعة فيها.';
         break;
       case TripStatusDisplayType.expired:

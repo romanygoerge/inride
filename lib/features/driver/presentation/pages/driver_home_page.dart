@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -26,6 +27,7 @@ import '../../../common/wallet_page.dart';
 import '../../../common/notifications_page.dart';
 import '../../../chat/presentation/pages/messages_center_page.dart';
 import '../../../../core/services/support_chat_service.dart';
+import '../../../../core/services/app_notification_service.dart';
 import '../../../../generated/app_localizations.dart';
 import '../../../../core/localization/locale_controller.dart';
 
@@ -45,6 +47,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
   final Set<String> _sentOffersRequests = {};
   final Set<String> _dismissedRequestIds = {};
+  final Set<String> _notifiedCounterKeys = {};
   final Map<String, Future<Map<String, dynamic>?>> _passengerFutures = {};
   final GlobalKey _panelKey = GlobalKey();
   double _panelHeight = 260.0;
@@ -72,7 +75,21 @@ class _DriverHomePageState extends State<DriverHomePage> {
   Future<Map<String, dynamic>?> _getPassengerFuture(String passengerId) {
     return _passengerFutures.putIfAbsent(
       passengerId,
-      () => Supabase.instance.client.from('users').select().eq('id', passengerId).maybeSingle(),
+      () async {
+        try {
+          final rpcRes = await Supabase.instance.client.rpc('get_public_user_profile', params: {
+            'p_user_id': passengerId,
+          });
+          if (rpcRes != null) {
+            return Map<String, dynamic>.from(rpcRes is String ? jsonDecode(rpcRes) : rpcRes);
+          }
+        } catch (_) {}
+        try {
+          return await Supabase.instance.client.from('users').select().eq('id', passengerId).maybeSingle();
+        } catch (_) {
+          return null;
+        }
+      },
     );
   }
 
@@ -232,8 +249,28 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
     AppLogger.rideLog('DriverHome', 'Filtered to ${filteredRequests.length} matching requests for driver vehicle: $driverVehicleType');
 
+    final myUid = state.userUid;
     for (var req in filteredRequests) {
       debugPrint('[Ride] New ride received: ride_id=${req.requestId}');
+      // If customer sent a counter-offer specifically to this driver
+      if (myUid != null && req.lastCounterDriverId == myUid) {
+        final counterKey = '${req.requestId}_counter_${req.offeredFare.round()}';
+        if (!_notifiedCounterKeys.contains(counterKey)) {
+          _notifiedCounterKeys.add(counterKey);
+          AppNotificationService.instance.showLocalNotification(
+            id: (req.requestId.hashCode.abs() + req.offeredFare.toInt()) % 100000,
+            title: 'تفاوض جديد من العميل 💰',
+            body: 'اقترح العميل أجرة جديدة: ${req.offeredFare.round()} ج.م',
+            type: 'counter_offer',
+            data: {
+              'requestId': req.requestId,
+              'tripId': req.requestId,
+              'price': req.offeredFare.toString(),
+              'type': 'counter_offer',
+            },
+          );
+        }
+      }
     }
 
     final newIds = filteredRequests.map((r) => '${r.requestId}_${r.offeredFare}_${r.status}').join(',');
@@ -300,6 +337,11 @@ class _DriverHomePageState extends State<DriverHomePage> {
     final isCounter = (fare - req.offeredFare).abs() > 0.01;
     
     if (isCounter) {
+      // Guard: skip if already submitting for this request
+      if (_sentOffersRequests.contains(req.requestId)) {
+        debugPrint('[DriverHome] Already submitted offer for ${req.requestId}, skipping duplicate');
+        return;
+      }
       // Inline status for counter offers
       setState(() {
         _sentOffersRequests.add(req.requestId);

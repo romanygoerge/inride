@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -25,6 +26,7 @@ import '../../../../core/localization/locale_controller.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
 import '../../../../core/data/sadat_city_geo_data.dart';
 import '../../../../shared/widgets/trip_report_dialog.dart';
+import '../../../../shared/widgets/offline_banner.dart';
 
 class DriverRideActivePage extends StatefulWidget {
   const DriverRideActivePage({super.key});
@@ -44,6 +46,7 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
 
   String? _passengerName;
   String? _passengerPhone;
+  String? _passengerAvatarUrl;
   String? _lastPassengerId;
 
   void _openReportDialog({String tripStatus = 'in_progress'}) {
@@ -72,12 +75,37 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
     );
   }
 
+  String? _formatDisplayPhone(String? raw) {
+    if (raw == null) return null;
+    String cleaned = raw.trim().replaceAll(RegExp(r'[^\d+]'), '');
+    if (cleaned.isEmpty) return null;
+    if (cleaned.startsWith('+20')) {
+      cleaned = cleaned.substring(3);
+      if (!cleaned.startsWith('0')) cleaned = '0$cleaned';
+    } else if (cleaned.startsWith('20') && cleaned.length >= 12) {
+      cleaned = cleaned.substring(2);
+      if (!cleaned.startsWith('0')) cleaned = '0$cleaned';
+    } else if (!cleaned.startsWith('0') &&
+        (cleaned.startsWith('10') ||
+            cleaned.startsWith('11') ||
+            cleaned.startsWith('12') ||
+            cleaned.startsWith('15'))) {
+      cleaned = '0$cleaned';
+    }
+    return cleaned;
+  }
+
   @override
   void initState() {
     super.initState();
     GlobalState.instance.addListener(_onStateChange);
     sl<NavigationController>().addListener(_onNavigationUpdate);
     _lastRideStatus = GlobalState.instance.rideStatus;
+    _passengerPhone = _formatDisplayPhone(
+      GlobalState.instance.activePassengerPhone ??
+          GlobalState.instance.currentRideRequest?.passengerPhone ??
+          GlobalState.instance.currentRideRequest?.recipientPhone,
+    );
     _fetchPassengerDetails();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -127,12 +155,46 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
   void _fetchPassengerDetails() async {
     final state = GlobalState.instance;
 
-    // 1. First check in-memory state values
     String? foundPhone = state.activePassengerPhone ??
         state.currentRideRequest?.passengerPhone ??
         state.currentRideRequest?.recipientPhone;
 
     String? pId = state.activePassengerId ?? state.currentRideRequest?.passengerId;
+    String? foundName = _passengerName;
+    String? foundAvatar = _passengerAvatarUrl;
+
+    // 1. Try secure RPC get_trip_passenger_details first (bypasses RLS, returns real name, phone & avatar)
+    if (state.currentRequestId != null && state.currentRequestId!.isNotEmpty) {
+      try {
+        final rpcDetails = await Supabase.instance.client.rpc(
+          'get_trip_passenger_details',
+          params: {'p_request_id': state.currentRequestId},
+        );
+        if (rpcDetails != null) {
+          final map = Map<String, dynamic>.from(rpcDetails is String ? jsonDecode(rpcDetails) : rpcDetails);
+          final rpcName = (map['name'] ?? '').toString().trim();
+          final rpcPhone = (map['phone'] ?? '').toString().trim();
+          final rpcAvatar = (map['avatar_url'] ?? '').toString().trim();
+          final rpcPid = (map['passenger_id'] ?? '').toString().trim();
+
+          if (rpcName.isNotEmpty && rpcName != 'الراكب' && rpcName != 'مستخدم') {
+            foundName = rpcName;
+          }
+          if (rpcPhone.isNotEmpty) {
+            foundPhone = rpcPhone;
+          }
+          if (rpcAvatar.isNotEmpty) {
+            foundAvatar = rpcAvatar;
+          }
+          if (rpcPid.isNotEmpty) {
+            pId = rpcPid;
+            state.activePassengerId = rpcPid;
+          }
+        }
+      } catch (e) {
+        debugPrint('[DriverPage] RPC get_trip_passenger_details error: $e');
+      }
+    }
 
     // 2. If passenger phone or ID is missing, query ride_requests by currentRequestId
     if ((foundPhone == null || foundPhone.isEmpty || pId == null || pId.isEmpty) &&
@@ -161,46 +223,61 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
       }
     }
 
-    // 3. Query users table by pId
-    if (pId != null && pId.isNotEmpty) {
+    // 3. Security Definer RPC fallback to fetch phone bypassing RLS
+    if ((foundPhone == null || foundPhone.isEmpty) &&
+        state.currentRequestId != null &&
+        state.currentRequestId!.isNotEmpty) {
       try {
-        final uRes = await Supabase.instance.client
-            .from('users')
-            .select('name, phone_number, phone')
-            .eq('id', pId)
-            .maybeSingle();
-
-        if (uRes != null) {
-          final name = (uRes['name'] ?? '').toString();
-          if (name.isNotEmpty) {
-            _passengerName = name;
-          }
-          final phone = (uRes['phone_number'] ?? uRes['phone'])?.toString();
-          if (phone != null && phone.isNotEmpty) {
-            foundPhone = phone;
-          }
+        final rpcPhone = await Supabase.instance.client.rpc(
+          'get_trip_passenger_phone',
+          params: {'p_request_id': state.currentRequestId},
+        );
+        if (rpcPhone != null && rpcPhone.toString().trim().isNotEmpty) {
+          foundPhone = rpcPhone.toString().trim();
         }
       } catch (e) {
-        debugPrint('[DriverPage] Error fetching users details: $e');
+        debugPrint('[DriverPage] RPC get_trip_passenger_phone error: $e');
+      }
+    }
+
+    // 4. Try get_public_user_profile for avatar and name
+    if (pId != null && pId.isNotEmpty) {
+      if (foundAvatar == null || foundAvatar.isEmpty || foundName == null || foundName.isEmpty || foundName == 'الراكب') {
+        try {
+          final uRpc = await Supabase.instance.client.rpc('get_public_user_profile', params: {'p_user_id': pId});
+          if (uRpc != null) {
+            final uMap = Map<String, dynamic>.from(uRpc is String ? jsonDecode(uRpc) : uRpc);
+            final uAvatar = (uMap['avatar_url'] ?? '').toString().trim();
+            final uName = (uMap['name'] ?? '').toString().trim();
+            if (uAvatar.isNotEmpty) foundAvatar = uAvatar;
+            if (uName.isNotEmpty && uName != 'مستخدم') foundName = uName;
+          }
+        } catch (e) {
+          debugPrint('[DriverPage] RPC get_public_user_profile error: $e');
+        }
       }
 
-      // 4. Fallback: check passengers table if users didn't return phone
+      // 5. Fallback: check passengers table if users didn't return phone
       if (foundPhone == null || foundPhone.isEmpty) {
         try {
           final pRes = await Supabase.instance.client
               .from('passengers')
-              .select('name, phone')
+              .select('name, phone, avatar_url')
               .eq('id', pId)
               .maybeSingle();
 
           if (pRes != null) {
-            final name = (pRes['name'] ?? '').toString();
+            final name = (pRes['name'] ?? '').toString().trim();
             if (name.isNotEmpty && (_passengerName == null || _passengerName!.isEmpty)) {
-              _passengerName = name;
+              foundName = name;
             }
             final phone = (pRes['phone'])?.toString();
             if (phone != null && phone.isNotEmpty) {
               foundPhone = phone;
+            }
+            final pAv = (pRes['avatar_url'])?.toString().trim();
+            if (pAv != null && pAv.isNotEmpty && (foundAvatar == null || foundAvatar.isEmpty)) {
+              foundAvatar = pAv;
             }
           }
         } catch (e) {
@@ -209,15 +286,20 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
       }
     }
 
-    if (foundPhone != null && foundPhone.isNotEmpty) {
-      state.activePassengerPhone = foundPhone;
-      if (mounted) {
-        setState(() {
-          _passengerPhone = foundPhone;
-        });
-      }
-    } else if (mounted) {
-      setState(() {});
+    if (mounted) {
+      setState(() {
+        if (foundPhone != null && foundPhone.isNotEmpty) {
+          final formatted = _formatDisplayPhone(foundPhone) ?? foundPhone;
+          state.activePassengerPhone = formatted;
+          _passengerPhone = formatted;
+        }
+        if (foundName != null && foundName.isNotEmpty) {
+          _passengerName = foundName;
+        }
+        if (foundAvatar != null && foundAvatar.isNotEmpty) {
+          _passengerAvatarUrl = foundAvatar;
+        }
+      });
     }
   }
 
@@ -513,6 +595,15 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
             child: OsmMapWidget(showPOIs: false),
           ),
 
+          // Offline Banner overlay (only visible when offline)
+          if (state.isOffline)
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: OfflineBanner(),
+            ),
+
           // 2. Header Alert Card or Navigation HUD
           Positioned(
             top: MediaQuery.of(context).padding.top + 16,
@@ -645,10 +736,33 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                 // Rider Info Row
                                 Row(
                                   children: [
-                                    const CircleAvatar(
+                                    CircleAvatar(
                                       radius: 24,
                                       backgroundColor: AppColors.background,
-                                      child: Icon(Icons.person, color: AppColors.textSecondary),
+                                      backgroundImage: (_passengerAvatarUrl != null && _passengerAvatarUrl!.trim().isNotEmpty && !_passengerAvatarUrl!.contains('unsplash.com'))
+                                          ? CachedNetworkImageProvider(_passengerAvatarUrl!.trim(), maxWidth: 200, maxHeight: 200)
+                                          : null,
+                                      child: (_passengerAvatarUrl == null || _passengerAvatarUrl!.trim().isEmpty || _passengerAvatarUrl!.contains('unsplash.com'))
+                                          ? Container(
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                gradient: LinearGradient(
+                                                  colors: [AppColors.mediumBlue.withValues(alpha: 0.15), AppColors.mediumBlue.withValues(alpha: 0.05)],
+                                                ),
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: Text(
+                                                (_passengerName != null && _passengerName!.trim().isNotEmpty && _passengerName != 'الراكب' && _passengerName != 'مستخدم')
+                                                    ? _passengerName!.trim().characters.first.toUpperCase()
+                                                    : 'ر',
+                                                style: GoogleFonts.cairo(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: AppColors.mediumBlue,
+                                                ),
+                                              ),
+                                            )
+                                          : null,
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
@@ -731,20 +845,26 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                                   .maybeSingle();
                                               if (reqRes != null) {
                                                 phone = (reqRes['passenger_phone'] ?? reqRes['recipient_phone'])?.toString();
-                                                final pId = reqRes['passenger_id']?.toString() ?? state.activePassengerId;
-                                                if ((phone == null || phone.isEmpty) && pId != null) {
-                                                  final uRes = await Supabase.instance.client
-                                                      .from('users')
-                                                      .select('phone_number, phone')
-                                                      .eq('id', pId)
-                                                      .maybeSingle();
-                                                  phone = (uRes?['phone_number'] ?? uRes?['phone'])?.toString();
-                                                }
                                               }
                                             } catch (_) {}
                                           }
 
-                                          // 2. Direct lookup from users / passengers
+                                          // 2. RPC call (Security Definer) to reliably get passenger phone bypassing RLS
+                                          if ((phone == null || phone.trim().isEmpty) &&
+                                              state.currentRequestId != null &&
+                                              state.currentRequestId!.isNotEmpty) {
+                                            try {
+                                              final rpcPhone = await Supabase.instance.client.rpc(
+                                                'get_trip_passenger_phone',
+                                                params: {'p_request_id': state.currentRequestId},
+                                              );
+                                              if (rpcPhone != null && rpcPhone.toString().trim().isNotEmpty) {
+                                                phone = rpcPhone.toString().trim();
+                                              }
+                                            } catch (_) {}
+                                          }
+
+                                          // 3. Direct lookup from users / passengers
                                           if (phone == null || phone.trim().isEmpty) {
                                             final pId = state.activePassengerId ?? state.currentRideRequest?.passengerId;
                                             if (pId != null && pId.isNotEmpty) {
@@ -766,6 +886,11 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                                               } catch (_) {}
                                             }
                                           }
+                                        }
+
+                                        final formatted = _formatDisplayPhone(phone);
+                                        if (formatted != null && formatted.isNotEmpty) {
+                                          phone = formatted;
                                         }
 
                                         if (phone != null && phone.trim().isNotEmpty) {

@@ -373,6 +373,7 @@ const mockData = {
   trips: [],
   drivers: [],
   passengers: [],
+  accountDeletions: [],
   transactions: [],
   weeklyActivity: [
     { day: 'السبت', trips: 0 },
@@ -1274,7 +1275,7 @@ function renderTrips() {
     : baseTrips.filter(t => {
       if (currentFilter === 'completed') return t.status === 'مكتملة';
       if (currentFilter === 'cancelled') return t.status === 'ملغاة';
-      if (currentFilter === 'active') return t.status === 'جارية';
+      if (currentFilter === 'active') return t.status === 'جارية' || t.status === 'بانتظار سائق' || t.status === 'تم القبول';
       return true;
     })).filter(t => {
       return t.id.toLowerCase().includes(searchQuery) ||
@@ -1286,7 +1287,7 @@ function renderTrips() {
 
   const completedCount = baseTrips.filter(t => t.status === 'مكتملة').length;
   const cancelledCount = baseTrips.filter(t => t.status === 'ملغاة').length;
-  const activeCount = baseTrips.filter(t => t.status === 'جارية').length;
+  const activeCount = baseTrips.filter(t => t.status === 'جارية' || t.status === 'بانتظار سائق' || t.status === 'تم القبول').length;
 
   const page = currentPages['trips'] || 1;
   const totalItems = filteredTrips.length;
@@ -1367,6 +1368,15 @@ function renderTrips() {
                 <span class="status-dot"></span>
                 ${trip.status}
               </span>
+              ${trip.status === 'ملغاة' ? `
+                <div style="margin-top:3px;">
+                  ${(trip.cancelledBy === 'admin' || (trip.cancelReason && trip.cancelReason.includes('إدارة'))) ? `
+                    <span class="badge" style="background:#FEE2E2;color:#991B1B;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;display:inline-flex;align-items:center;gap:3px;"><i class="ri-shield-user-line"></i> من قبل الإدارة</span>
+                  ` : `
+                    <span class="badge" style="background:#F1F5F9;color:#475569;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;display:inline-flex;align-items:center;gap:3px;"><i class="ri-user-line"></i> إلغاء عادي</span>
+                  `}
+                </div>
+              ` : ''}
               ${(liveTripReports || []).some(r => r.trip_id === trip.requestId) ? `
                 <div style="margin-top:4px;">
                   <span class="badge" style="background:#FEE2E2;color:#DC2626;font-size:10px;cursor:pointer;font-weight:700;" onclick="navigateTo('reports')" title="يوجد بلاغ مقدم على هذه الرحلة">🚨 بلاغ مسجل</span>
@@ -1374,11 +1384,12 @@ function renderTrips() {
               ` : ''}
             </td>
             <td>
-              <div style="display:flex;gap:4px;align-items:center;">
-                <button class="btn btn-outline btn-sm" style="padding:4px 8px;font-size:11px;" onclick="changeTripPricePrompt('${trip.requestId}')"><i class="ri-edit-line"></i> تسعير</button>
-                ${trip.status === 'جارية' ? `
-                  <button class="btn btn-outline btn-sm" style="color:var(--error);border-color:var(--error);padding:4px 8px;font-size:11px;" onclick="modifyTripStatus('${trip.requestId}', 'Cancelled')"><i class="ri-close-line"></i> إلغاء</button>
-                  <button class="btn btn-success btn-sm" style="padding:4px 8px;font-size:11px;background:var(--success);" onclick="modifyTripStatus('${trip.requestId}', 'Completed')"><i class="ri-check-line"></i> إنهاء</button>
+              <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+                <button class="btn btn-outline btn-sm" style="padding:4px 8px;font-size:11px;" onclick="changeTripPricePrompt('${trip.requestId}')" title="تعديل سعر الرحلة"><i class="ri-edit-line"></i> تسعير</button>
+                ${(trip.status === 'جارية' || trip.status === 'بانتظار سائق' || trip.status === 'تم القبول' || (trip.rawStatus && !['completed', 'finished', 'cancelled', 'expired'].includes(trip.rawStatus.toLowerCase()))) ? `
+                  <button class="btn btn-outline btn-sm" style="color:#DC2626;border-color:#DC2626;padding:4px 8px;font-size:11px;display:inline-flex;align-items:center;gap:3px;" onclick="modifyTripStatus('${trip.requestId}', 'Cancelled', 'normal')" title="إلغاء عادي للرحلة"><i class="ri-close-circle-line"></i> إلغاء عادي</button>
+                  <button class="btn btn-sm" style="background:#991B1B;color:#FFFFFF;border:none;padding:4px 8px;font-size:11px;display:inline-flex;align-items:center;gap:3px;" onclick="modifyTripStatus('${trip.requestId}', 'Cancelled', 'admin')" title="إلغاء رسمي للرحلة من قبل إدارة inRide"><i class="ri-shield-cross-line"></i> إلغاء من قبل الإدارة</button>
+                  <button class="btn btn-success btn-sm" style="padding:4px 8px;font-size:11px;background:var(--success);display:inline-flex;align-items:center;gap:3px;" onclick="modifyTripStatus('${trip.requestId}', 'Completed')" title="إنهاء واكتمال الرحلة"><i class="ri-check-line"></i> إنهاء</button>
                 ` : ''}
               </div>
             </td>
@@ -2840,19 +2851,42 @@ function submitDeleteUser(uid, role) {
   if (supabaseClient) {
     (async () => {
       try {
-        if (isDriver) {
-          const { data: driverData } = await supabaseClient.from('drivers').select('vehicle_id').eq('id', uid).maybeSingle();
-          await supabaseClient.from('drivers').delete().eq('id', uid);
-          if (driverData && driverData.vehicle_id) {
-            await supabaseClient.from('vehicles').delete().eq('id', driverData.vehicle_id);
+        let rpcWorked = false;
+        try {
+          const { data: rpcRes, error: rpcError } = await supabaseClient.rpc('admin_delete_user_account', {
+            p_target_user_id: uid,
+            p_scope: isDriver ? 'driver' : 'both',
+            p_reason: 'تم الحذف بواسطة إدارة النظام'
+          });
+          if (!rpcError && rpcRes && rpcRes.success) {
+            rpcWorked = true;
           }
+        } catch (_) { }
+
+        if (!rpcWorked) {
+          if (isDriver) {
+            const { data: driverData } = await supabaseClient.from('drivers').select('vehicle_id').eq('id', uid).maybeSingle();
+            await supabaseClient.from('drivers').delete().eq('id', uid);
+            if (driverData && driverData.vehicle_id) {
+              await supabaseClient.from('vehicles').delete().eq('id', driverData.vehicle_id);
+            }
+          }
+
+          const { error: userDeleteError } = await supabaseClient.from('users').delete().eq('id', uid);
+          if (userDeleteError) throw userDeleteError;
+
+          try {
+            await supabaseClient.from('account_deletion_logs').insert({
+              user_id: uid,
+              deleted_scope: isDriver ? 'driver' : 'both',
+              deleted_by: 'admin',
+              reason: 'تم الحذف بواسطة إدارة النظام'
+            });
+          } catch (_) { }
         }
 
-        const { error: userDeleteError } = await supabaseClient.from('users').delete().eq('id', uid);
-        if (userDeleteError) throw userDeleteError;
-
-        logAction(`حذف حساب مستخدم نهائياً: ${uid} (دور: ${role})`);
-        showToast('❌ تم حذف حساب المستخدم بنجاح');
+        logAction(`حذف حساب مستخدم نهائياً بواسطة الإدارة: ${uid} (دور: ${role})`);
+        showToast('❌ تم حذف حساب المستخدم بنجاح وتوثيقه في السجل');
         if (typeof window.runBulkSync === 'function') {
           window.runBulkSync();
         }
@@ -7555,6 +7589,8 @@ function saveMinVersion() {
 
 // ---- AUDIT LOGS & ACCESS PERMISSIONS (RBAC) ----
 function renderLogs() {
+  const accountDeletions = mockData.accountDeletions || [];
+
   return `
     <div class="page-section">
       <div style="display:grid;grid-template-columns: 2fr 1fr; gap:24px;">
@@ -7616,6 +7652,90 @@ function renderLogs() {
           </div>
         </div>
       </div>
+
+      <!-- Deleted Accounts Section -->
+      <div class="card" style="margin-top:24px;">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="width:36px; height:36px; border-radius:10px; background:rgba(239,68,68,0.12); color:#EF4444; display:flex; align-items:center; justify-content:center; font-size:18px;">
+              <i class="ri-user-unfollow-fill"></i>
+            </div>
+            <div>
+              <h3 style="margin:0; font-size:16px;">سجل الحسابات المحذوفة وتفريغ البيانات (Deleted Accounts Archive)</h3>
+              <p style="margin:0; font-size:12px; color:var(--text-light);">توثيق رسمي لكافة عمليات حذف الحسابات وتفريغ البيانات، موضحاً هل تم الحذف من المستخدم نفسه أم من قبل إدارة النظام</p>
+            </div>
+          </div>
+          <div>
+            <span class="badge" style="background:#EF4444; color:#fff; font-size:12px; padding:4px 10px; border-radius:12px;">${accountDeletions.length} حساب محذوف</span>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0; overflow-x:auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>المستخدم</th>
+                <th>رقم الهاتف</th>
+                <th>الدور وقت الحذف</th>
+                <th>نوع الحذف (النطاق)</th>
+                <th>تم الحذف بواسطة</th>
+                <th>السبب / الملاحظات</th>
+                <th>التاريخ والوقت</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${accountDeletions.length > 0 ? accountDeletions.map(del => {
+                const isByAdmin = del.deleted_by === 'admin';
+                const scopeAr = del.deleted_scope === 'driver' ? 'حساب كابتن فقط 🚗' : (del.deleted_scope === 'rider' ? 'حساب راكب فقط 👤' : 'الحساب بالكامل ⚠️');
+                const roleAr = del.role_at_deletion === 'driver' ? 'كابتن' : (del.role_at_deletion === 'rider' ? 'راكب' : (del.role_at_deletion || 'مستخدم'));
+                const dateStr = del.created_at ? new Date(del.created_at).toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+                return `
+                  <tr>
+                    <td>
+                      <div style="display:flex; align-items:center; gap:8px;">
+                        <div style="width:32px; height:32px; border-radius:50%; background:#F3F4F6; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; color:#374151;">
+                          ${(del.user_name || 'م').charAt(0)}
+                        </div>
+                        <span style="font-weight:700; color:var(--text-primary);">${del.user_name || 'مستخدم محذوف'}</span>
+                      </div>
+                    </td>
+                    <td><span dir="ltr" style="font-family:Outfit, monospace; font-weight:600; color:var(--text-secondary);">${del.phone_number || '—'}</span></td>
+                    <td><span style="font-size:12px; font-weight:600; color:var(--text-secondary);">${roleAr}</span></td>
+                    <td>
+                      <span class="badge" style="${del.deleted_scope === 'both' ? 'background:rgba(239,68,68,0.15); color:#DC2626;' : (del.deleted_scope === 'driver' ? 'background:rgba(245,158,11,0.15); color:#D97706;' : 'background:rgba(59,130,246,0.15); color:#2563EB;')} padding:4px 8px; border-radius:8px; font-weight:700;">
+                        ${scopeAr}
+                      </span>
+                    </td>
+                    <td>
+                      ${isByAdmin ? `
+                        <span class="badge" style="background:#991B1B; color:#FFFFFF; padding:4px 8px; border-radius:8px; display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700;">
+                          <i class="ri-shield-user-fill"></i> إدارة النظام (Admin)
+                        </span>
+                      ` : `
+                        <span class="badge" style="background:rgba(16,185,129,0.15); color:#059669; padding:4px 8px; border-radius:8px; display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700;">
+                          <i class="ri-user-line"></i> المستخدم نفسه (من التطبيق)
+                        </span>
+                      `}
+                    </td>
+                    <td>
+                      <span style="font-size:12px; color:var(--text-secondary);">${del.reason || 'طلب المستخدم حذف الحساب نهائياً'}</span>
+                    </td>
+                    <td>
+                      <span dir="ltr" class="font-outfit" style="font-size:12px; color:var(--text-light); font-weight:600;">${dateStr}</span>
+                    </td>
+                  </tr>
+                `;
+              }).join('') : `
+                <tr>
+                  <td colspan="7" style="text-align:center; padding:32px; color:var(--text-light); font-size:13px;">
+                    <i class="ri-checkbox-circle-line" style="font-size:24px; display:block; margin-bottom:6px; color:var(--success);"></i>
+                    لا توجد حسابات تم حذفها حتى الآن. السجل نظيف وموثق بالكامل.
+                  </td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -7623,14 +7743,40 @@ function renderLogs() {
 // ---- INTERACTION HANDLERS FOR OTHER SECTIONS ----
 
 // In-line actions for trips manually (Trip cancel/complete)
-function modifyTripStatus(requestId, newStatus) {
+function modifyTripStatus(requestId, newStatus, cancelType = 'normal') {
   const trip = mockData.trips.find(t => t.requestId === requestId || t.id === requestId);
   const previousStatus = trip ? trip.status : null;
   const previousRawStatus = trip ? trip.rawStatus : null;
 
+  let adminCancelReason = '';
+  if (newStatus === 'Cancelled') {
+    if (cancelType === 'admin') {
+      if (!confirm(`هل أنت متأكد من إلغاء الرحلة (${(trip ? trip.id : requestId)}) من قبل الإدارة رسمياً؟\nسيتم إشعار الراكب والسائق بإلغاء إداري وتفريغ الكابتن.`)) {
+        return;
+      }
+      const promptReason = prompt('سبب الإلغاء الإداري (اختياري، يمكنك تركه أو كتابة سبب محدد):', 'تم الإلغاء بواسطة إدارة النظام');
+      if (promptReason === null) {
+        return; // إلغاء العملية
+      }
+      adminCancelReason = promptReason.trim() || 'تم الإلغاء بواسطة إدارة النظام';
+    } else {
+      if (!confirm(`هل تريد تأكيد الإلغاء العادي للرحلة (${(trip ? trip.id : requestId)})؟`)) {
+        return;
+      }
+    }
+  } else if (newStatus === 'Completed') {
+    if (!confirm(`هل تريد تأكيد إنهاء واكتمال الرحلة (${(trip ? trip.id : requestId)})؟`)) {
+      return;
+    }
+  }
+
   if (trip) {
     trip.status = newStatus === 'Completed' ? 'مكتملة' : (newStatus === 'Cancelled' ? 'ملغاة' : 'جارية');
     trip.rawStatus = newStatus;
+    if (newStatus === 'Cancelled') {
+      trip.cancelledBy = cancelType === 'admin' ? 'admin' : 'passenger';
+      trip.cancelReason = cancelType === 'admin' ? adminCancelReason : 'إلغاء عادي';
+    }
   }
   renderPage(currentPage);
 
@@ -7642,26 +7788,49 @@ function modifyTripStatus(requestId, newStatus) {
     };
     if (newStatus === 'Cancelled') {
       updatePayload.cancelled_at = nowIso;
-      updatePayload.cancelled_by = 'admin';
-      updatePayload.cancellation_reason = 'تم الإلغاء بواسطة إدارة النظام';
-      updatePayload.cancel_reason = 'تم الإلغاء بواسطة إدارة النظام';
+      if (cancelType === 'admin') {
+        updatePayload.cancelled_by = 'admin';
+        updatePayload.cancellation_reason = adminCancelReason;
+        updatePayload.cancel_reason = adminCancelReason;
+      } else {
+        updatePayload.cancelled_by = 'passenger';
+        updatePayload.cancellation_reason = 'إلغاء عادي';
+        updatePayload.cancel_reason = 'إلغاء عادي';
+      }
     }
 
     supabaseClient.from('ride_requests').update(updatePayload).eq('id', requestId)
       .then(async ({ error }) => {
         if (!error) {
-          logAction(`تغيير حالة الرحلة ${requestId} إلى ${newStatus} يدوياً من الإدارة`);
-          showToast(`✅ تم تحديث حالة الرحلة بنجاح إلى ${newStatus}`);
+          const actionMsg = newStatus === 'Cancelled'
+            ? (cancelType === 'admin' ? `إلغاء الرحلة ${requestId} من قبل الإدارة (السبب: ${adminCancelReason})` : `إلغاء عادي للرحلة ${requestId}`)
+            : `إنهاء الرحلة ${requestId} يدوياً`;
+          logAction(actionMsg);
+          showToast(newStatus === 'Cancelled'
+            ? (cancelType === 'admin' ? '✅ تم إلغاء الرحلة من قبل الإدارة بنجاح' : '✅ تم الإلغاء العادي للرحلة بنجاح')
+            : '✅ تم إنهاء الرحلة بنجاح');
           if (typeof window.runBulkSync === 'function') {
             window.runBulkSync();
           }
 
-          // Push Notification: إبلاغ الراكب والكابتن بتغيير حالة الرحلة من الإدارة
+          // Push Notification & Freeing driver availability
           try {
             const { data: tripData } = await supabaseClient.from('ride_requests')
               .select('passenger_id, driver_id').eq('id', requestId).maybeSingle();
 
             if (tripData) {
+              // Free the driver if assigned upon cancellation
+              if (tripData.driver_id && newStatus === 'Cancelled') {
+                try {
+                  await supabaseClient.from('drivers').update({
+                    is_available: true,
+                    updated_at: nowIso
+                  }).eq('id', tripData.driver_id);
+                } catch (drvErr) {
+                  console.warn('[DriverRelease] Failed to restore availability:', drvErr);
+                }
+              }
+
               if (newStatus === 'Completed') {
                 if (tripData.passenger_id) {
                   await sendPushNotificationBackend({
@@ -7681,19 +7850,25 @@ function modifyTripStatus(requestId, newStatus) {
                   });
                 }
               } else if (newStatus === 'Cancelled') {
+                const isAdmin = cancelType === 'admin';
+                const notifTitle = 'تم إلغاء الرحلة ❌';
+                const notifBody = isAdmin
+                  ? `تم إلغاء الرحلة من قبل إدارة inRide.${adminCancelReason ? ' (' + adminCancelReason + ')' : ''}`
+                  : 'تم إلغاء الرحلة.';
+
                 if (tripData.passenger_id) {
                   await sendPushNotificationBackend({
                     recipientId: tripData.passenger_id,
-                    title: 'تم إلغاء الرحلة ❌',
-                    body: 'تم إلغاء الرحلة بواسطة إدارة inRide.',
+                    title: notifTitle,
+                    body: notifBody,
                     type: 'cancel_trip'
                   });
                 }
                 if (tripData.driver_id) {
                   await sendPushNotificationBackend({
                     recipientId: tripData.driver_id,
-                    title: 'تم إلغاء الرحلة ❌',
-                    body: 'تم إلغاء الرحلة بواسطة إدارة inRide.',
+                    title: notifTitle,
+                    body: notifBody,
                     type: 'cancel_trip',
                     targetRole: 'driver'
                   });
@@ -8135,7 +8310,7 @@ function initSupabaseSync() {
     try {
       console.log(`[InRide DataStore] Starting sync generation #${thisGeneration} at ${new Date().toISOString()}...`);
 
-      const [usersRes, driversRes, vehiclesRes, ridesRes, ratingsRes, settingsRes, passengersRes, reportsRes] = await Promise.all([
+      const [usersRes, driversRes, vehiclesRes, ridesRes, ratingsRes, settingsRes, passengersRes, reportsRes, deletionsRes] = await Promise.all([
         supabaseClient.from('users').select('*'),
         supabaseClient.from('drivers').select('*'),
         supabaseClient.from('vehicles').select('*'),
@@ -8143,7 +8318,8 @@ function initSupabaseSync() {
         supabaseClient.from('ratings').select('*').order('created_at', { ascending: false }),
         (async () => { try { return await supabaseClient.from('app_settings').select('*').eq('id', 'default').maybeSingle(); } catch (_) { return { data: null }; } })(),
         (async () => { try { return await supabaseClient.from('passengers').select('*'); } catch (_) { return { data: [] }; } })(),
-        (async () => { try { return await supabaseClient.from('trip_reports').select('*').order('created_at', { ascending: false }); } catch (_) { return { data: [] }; } })()
+        (async () => { try { return await supabaseClient.from('trip_reports').select('*').order('created_at', { ascending: false }); } catch (_) { return { data: [] }; } })(),
+        (async () => { try { return await supabaseClient.from('account_deletion_logs').select('*').order('created_at', { ascending: false }); } catch (_) { return { data: [] }; } })()
       ]);
 
       // Check for race conditions before applying state
@@ -8161,6 +8337,7 @@ function initSupabaseSync() {
       const passengersList = passengersRes?.data || [];
       liveTripReports = reportsRes?.data || [];
       updateReportsBadge();
+      mockData.accountDeletions = deletionsRes?.data || [];
 
       // 1. Index users
       const usersMap = {};
@@ -8501,6 +8678,8 @@ function initSupabaseSync() {
           rawStatus: data.status || 'Pending',
           vehicle: data.vehicle_type === 'scooter' ? 'اسكوتر' : (data.vehicle_type === 'motorcycle' ? 'موتوسيكل' : 'عربية'),
           isDeliveryLocationConfirmed: data.is_delivery_location_confirmed || false,
+          cancelledBy: data.cancelled_by || data.cancelledBy || '',
+          cancelReason: data.cancel_reason || data.cancellation_reason || '',
         });
       });
 

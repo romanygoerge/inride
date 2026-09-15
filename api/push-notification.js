@@ -29,7 +29,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { recipientId, target, title, body, type, data } = req.body || {};
+    const { recipientId, target, title, body, type, data, tokens } = req.body || {};
 
     if (!body) {
       return res.status(400).json({ error: 'Missing required parameter: body' });
@@ -50,6 +50,14 @@ module.exports = async function handler(req, res) {
 
     // Fetch active device tokens from Supabase user_devices via REST API (Zero dependency)
     let activeTokens = [];
+    if (Array.isArray(tokens)) {
+      tokens.forEach(t => {
+        if (t && typeof t === 'string' && t.length > 10 && !activeTokens.includes(t)) {
+          activeTokens.push(t);
+        }
+      });
+    }
+
     try {
       const url = isBroadcast
         ? `${SUPABASE_URL}/rest/v1/user_devices?is_active=eq.true&select=device_token`
@@ -90,7 +98,13 @@ module.exports = async function handler(req, res) {
       contents: { en: body, ar: body },
       data: stringifiedData,
       android_accent_color: 'FF1976D2',
+      android_channel_id: 'high_importance_channel',
+      android_sound: 'notification',
+      ios_sound: 'default',
+      sound: 'default',
       priority: 10,
+      android_visibility: 1,
+      ios_interruption_level: 'time-sensitive',
       ttl: 86400,
       small_icon: 'ic_launcher',
     };

@@ -146,7 +146,13 @@ module.exports = async function handler(req, res) {
     contents: { en: body || '', ar: body || '' },
     data: stringifiedData,
     android_accent_color: 'FF1976D2',
+    android_channel_id: 'high_importance_channel',
+    android_sound: 'notification',
+    ios_sound: 'default',
+    sound: 'default',
     priority: 10,
+    android_visibility: 1,
+    ios_interruption_level: 'time-sensitive',
     ttl: 86400,
     small_icon: 'ic_launcher',
   };

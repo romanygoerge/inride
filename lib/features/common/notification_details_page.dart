@@ -241,9 +241,9 @@ class _NotificationDetailsPageState extends State<NotificationDetailsPage> {
       badgeIcon = Icons.cancel_rounded;
       statusTitle = isAr ? 'الرحلة ملغاة 🔴' : 'Trip Cancelled';
       final cancelledBy = (_tripData?['cancelled_by'] ?? '').toString();
-      final who = cancelledBy == 'driver' ? 'الكابتن' : (cancelledBy == 'passenger' ? 'الراكب' : '');
+      final who = cancelledBy == 'admin' ? 'الإدارة' : (cancelledBy == 'driver' ? 'الكابتن' : (cancelledBy == 'passenger' ? 'الراكب' : ''));
       statusNote = who.isNotEmpty
-          ? 'قام $who بإلغاء هذه الرحلة.'
+          ? (cancelledBy == 'admin' ? 'قامت إدارة inRide بإلغاء هذه الرحلة.' : 'قام $who بإلغاء هذه الرحلة.')
           : (isAr ? 'تم إلغاء هذه الرحلة ولا يمكن المتابعة فيها.' : 'This trip has been cancelled.');
     } else if (isExpired) {
       badgeColor = const Color(0xFFD97706);

@@ -44,6 +44,11 @@ final adminRouterProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const AdminDashboardPage(subTab: 'reports'),
           ),
           GoRoute(
+            path: 'deleted_accounts',
+            name: 'dashboard_deleted_accounts',
+            builder: (context, state) => const AdminDashboardPage(subTab: 'deleted_accounts'),
+          ),
+          GoRoute(
             path: 'settings',
             name: 'dashboard_settings',
             builder: (context, state) => const AdminDashboardPage(subTab: 'settings'),

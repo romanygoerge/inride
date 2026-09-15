@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart' show LatLng;
 import 'location_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/map_coordinates_helper.dart';
+import '../state/global_state.dart';
 
 class DriverLocationService {
   static final DriverLocationService instance = DriverLocationService._internal();
@@ -54,6 +56,7 @@ class DriverLocationService {
   }
 
   /// Internal helper to fetch current position and update Supabase with valid PostgreSQL columns.
+  /// If the device is offline, the location is cached in GlobalState and flushed on reconnection.
   Future<void> _updateDriverLocation(String driverId) async {
     try {
       Position? position;
@@ -69,6 +72,18 @@ class DriverLocationService {
 
       double? latitude = position?.latitude ?? MapCoordinatesHelper.deviceLocation?.latitude;
       double? longitude = position?.longitude ?? MapCoordinatesHelper.deviceLocation?.longitude;
+
+      // If offline, cache the location and skip Supabase write
+      if (GlobalState.instance.isOffline) {
+        if (latitude != null && longitude != null) {
+          GlobalState.instance.cacheDriverLocation(LatLng(latitude, longitude));
+          AppLogger.rideLog('DriverLocation', 'Offline – cached location for driver $driverId', extra: {
+            'lat': latitude,
+            'lng': longitude,
+          });
+        }
+        return;
+      }
 
       final updateData = <String, dynamic>{
         'id': driverId,
@@ -88,6 +103,34 @@ class DriverLocationService {
       });
     } catch (e, stack) {
       AppLogger.error('DriverLocation', 'Error updating location for driver $driverId', e, stack);
+    }
+  }
+
+  /// Called on reconnection to send the latest cached location to Supabase.
+  /// Only sends the most recent location for efficiency.
+  Future<void> flushCachedLocations(String driverId) async {
+    final cachedLocations = GlobalState.instance.getCachedDriverLocations();
+    if (cachedLocations.isEmpty) return;
+
+    // Only send the latest location (most relevant)
+    final latest = cachedLocations.last;
+    try {
+      final updateData = <String, dynamic>{
+        'id': driverId,
+        'is_online': true,
+        'current_latitude': latest.latitude,
+        'current_longitude': latest.longitude,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      };
+      await _supabase.from('drivers').upsert(updateData);
+      GlobalState.instance.clearCachedDriverLocations();
+      AppLogger.rideLog('DriverLocation', 'Flushed cached location for driver $driverId', extra: {
+        'lat': latest.latitude,
+        'lng': latest.longitude,
+        'discarded': cachedLocations.length - 1,
+      });
+    } catch (e, stack) {
+      AppLogger.error('DriverLocation', 'Error flushing cached locations for $driverId', e, stack);
     }
   }
 }

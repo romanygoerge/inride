@@ -116,6 +116,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
   }
 
+  /// Public method to trigger listeners update
+  void notify() => notifyListeners();
+
   static const _lifecycleChannel = MethodChannel('com.inride.app/lifecycle');
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -678,6 +681,26 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   StreamSubscription? _passengerDocSubscription;
   double? passengerCounterPrice;
   Timer? _appBackgroundTimer;
+
+  // ==== Connectivity resilience fields ==== 
+  bool _isReconnecting = false; // indicates we are handling reconnection
+  bool get isReconnecting => _isReconnecting;
+  final List<Future<void> Function()> _pendingActions = []; // queue of actions performed while offline
+  final List<LatLng> _cachedDriverLocations = []; // buffer of driver locations when offline
+
+  /// Cache a driver location while offline (max 50 entries)
+  void cacheDriverLocation(LatLng location) {
+    if (_cachedDriverLocations.length >= 50) {
+      _cachedDriverLocations.removeAt(0);
+    }
+    _cachedDriverLocations.add(location);
+  }
+
+  /// Get a copy of the cached driver locations
+  List<LatLng> getCachedDriverLocations() => List<LatLng>.unmodifiable(_cachedDriverLocations);
+
+  /// Clear the cached driver locations (after flushing)
+  void clearCachedDriverLocations() => _cachedDriverLocations.clear();
   Timer? _rideTimeoutTimer;
   Timer? _connectivityTimer;
   bool isDriverOnline = false;
@@ -702,8 +725,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         notifyListeners();
         _showConnectivitySnackBar(hasNet);
         if (wasOffline && hasNet) {
-          debugPrint('[CaptainStatus] Network reconnected! Triggering immediate heartbeat & presence refresh');
-          _sendPresenceHeartbeat();
+          // Network just came back – handle reconnection
+          _handleReconnection();
         }
       }
     });
@@ -755,6 +778,74 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('[GlobalState] Error saving profile to cache: $e');
     }
+  }
+
+  // ------------ Connectivity Helper Methods ------------
+  void _enqueuePendingAction(Future<void> Function() action) {
+    if (_pendingActions.length >= 20) {
+      // Drop oldest to keep size bounded
+      _pendingActions.removeAt(0);
+    }
+    _pendingActions.add(action);
+    debugPrint('[Connectivity] Action enqueued, queue size: ${_pendingActions.length}');
+  }
+
+  Future<void> _processPendingActions() async {
+    if (_pendingActions.isEmpty) return;
+    debugPrint('[Connectivity] Processing ${_pendingActions.length} pending actions');
+    final actions = List<Future<void> Function()>.from(_pendingActions);
+    _pendingActions.clear();
+    for (final act in actions) {
+      try {
+        await act();
+      } catch (e) {
+        debugPrint('[Connectivity] Pending action failed: $e');
+        // Re‑enqueue failed action for next attempt
+        _enqueuePendingAction(act);
+      }
+    }
+  }
+
+  Future<void> _handleReconnection() async {
+    if (_isReconnecting) return;
+    _isReconnecting = true;
+    notifyListeners();
+    debugPrint('[Connectivity] Handling reconnection – re‑subscribing streams');
+    // Re‑subscribe to ride updates if a ride is active
+    if (currentRequestId != null) {
+      // Cancel any existing subscription
+      _rideSubscription?.cancel();
+      _rideSubscription = null;
+      // Re‑subscribe using the same request ID
+      final listenedId = currentRequestId!;
+      _rideSubscription = RideRepository.instance.streamRideRequest(listenedId).listen((request) async {
+        if (_isCancelling) return;
+        if (currentRequestId != listenedId) return;
+        if (request == null) return;
+        // Update state as before
+        currentRideRequest = request;
+        activeRidePaymentMethod = request.paymentMethod;
+        currentPassengerCount = request.passengerCount;
+        currentPickupPhotoUrl = request.pickupPhotoUrl;
+        currentDeliveryPhotoUrl = request.deliveryPhotoUrl;
+        // Preserve existing status handling logic (omitted for brevity)
+      });
+    }
+    // Restart driver location updates if driver is online
+    if (currentRole == UserRole.driver && isDriverOnline && userUid != null) {
+      try {
+        await DriverLocationService.instance.startLocationUpdates(userUid!);
+      } catch (_) {}
+      // Flush cached locations using the public API
+      try {
+        await DriverLocationService.instance.flushCachedLocations(userUid!);
+      } catch (_) {}
+    }
+    // Process queued actions
+    await _processPendingActions();
+    _isReconnecting = false;
+    notifyListeners();
+    debugPrint('[Connectivity] Reconnection handling complete');
   }
 
   Future<void> _loadProfileFromCache() async {
@@ -958,8 +1049,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     referralCode = data['referral_code']?.toString();
     final rawRat = data['rating'];
     userRating = (rawRat is num) ? rawRat.toDouble() : (double.tryParse(rawRat?.toString() ?? '0') ?? 0.0);
-    if (phoneNumber == null || phoneNumber!.isEmpty) {
-      phoneNumber = data['phone_number'] ?? data['phone'];
+    final dbPhone = (data['phone_number'] ?? data['phone'])?.toString().trim();
+    if (dbPhone != null && dbPhone.isNotEmpty) {
+      phoneNumber = dbPhone;
     }
 
     if (savedRoleInDb == 'driver' && verificationStatus == DriverVerificationStatus.verified) {
@@ -1021,7 +1113,29 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _handleUserAuth(User user, Session? session) async {
     userUid = user.id;
-    phoneNumber = user.phone;
+    String? resolvedPhone = user.phone;
+    if (resolvedPhone == null || resolvedPhone.isEmpty) {
+      final metaPhone = user.userMetadata?['phone'] ?? user.userMetadata?['phone_number'];
+      if (metaPhone != null && metaPhone.toString().trim().isNotEmpty) {
+        resolvedPhone = metaPhone.toString().trim();
+      }
+    }
+    if (resolvedPhone == null || resolvedPhone.isEmpty) {
+      final email = user.email ?? '';
+      final phoneMatch = RegExp(r'^phone_(\d+)@').firstMatch(email);
+      if (phoneMatch != null) {
+        resolvedPhone = phoneMatch.group(1);
+      }
+    }
+    if (resolvedPhone == null || resolvedPhone.isEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        resolvedPhone = prefs.getString('cached_phone_number') ?? prefs.getString('last_phone_number');
+      } catch (_) {}
+    }
+    if (resolvedPhone != null && resolvedPhone.isNotEmpty) {
+      phoneNumber = resolvedPhone;
+    }
     isLoggedIn = true;
 
     unawaited(MetaAnalyticsService.instance.logLogin(
@@ -1729,7 +1843,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     currentRequestId = null;
     currentRecipientToken = null;
     activePassengerId = null;
+    activePassengerPhone = null;
     _lastNotifiedMessageId = null;
+    _lastCounterOfferKey = null;
+    _lastBidKey = null;
+    _notifiedOfferKeys.clear();
 
     if (userUid != null && currentRole == UserRole.driver) {
       _supabase.from('drivers').update({
@@ -1760,6 +1878,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         final reqMap = Map<String, dynamic>.from(activeReqRes.first);
         currentRequestId = reqMap['id'];
         currentRideRequest = RideRequestModel.fromMap(reqMap, reqMap['id']);
+        activePassengerId = (reqMap['passenger_id'] ?? reqMap['passengerId'])?.toString();
+        activePassengerPhone = (reqMap['passenger_phone'] ?? reqMap['recipient_phone'])?.toString();
         fromAddress = reqMap['pickup_address'] ?? reqMap['pickupAddress'];
         toAddress = reqMap['destination_address'] ?? reqMap['destinationAddress'];
         offeredFare = ((reqMap['offered_fare'] ?? reqMap['offeredFare']) as num? ?? 0.0).toDouble();
@@ -2259,9 +2379,25 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     }
     currentRecipientToken = recipientToken;
 
+    String? phoneToPass = phoneNumber;
+    if (phoneToPass == null || phoneToPass.isEmpty) {
+      final curUser = _supabase.auth.currentUser;
+      if (curUser != null) {
+        phoneToPass = curUser.phone ??
+            (curUser.userMetadata?['phone'] ?? curUser.userMetadata?['phone_number'])?.toString();
+        if (phoneToPass == null || phoneToPass.isEmpty) {
+          final m = RegExp(r'^phone_(\d+)@').firstMatch(curUser.email ?? '');
+          if (m != null) phoneToPass = m.group(1);
+        }
+      }
+      if (phoneToPass != null && phoneToPass.isNotEmpty) {
+        phoneNumber = phoneToPass;
+      }
+    }
+
     currentRequestId = await RideRepository.instance.createRideRequest(
       passengerId: userUid!,
-      passengerPhone: phoneNumber,
+      passengerPhone: phoneToPass,
       pickupLat: startLatLng.latitude,
       pickupLng: startLatLng.longitude,
       pickupAddress: finalPickupAddress,
@@ -2363,6 +2499,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           return;
         }
 
+        final previousStatus = rideStatus;
+
         if (request.status == 'Pending' || request.status == 'Searching') {
           rideStatus = RideStatus.searching;
         } else if (request.status == 'Accepted') {
@@ -2374,14 +2512,54 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
             fare: request.offeredFare,
             serviceType: request.serviceType,
           ));
+          if (previousStatus != RideStatus.driverOnWay) {
+            AppNotificationService.instance.showLocalNotification(
+              id: request.requestId.hashCode.abs() % 100000,
+              title: 'تم قبول طلب الرحلة 🎉',
+              body: 'وافق الكابتن على رحلتك وهو في الطريق إليك الآن.',
+              type: 'ride_accepted',
+              data: {
+                'requestId': request.requestId,
+                'tripId': request.requestId,
+                'driverId': request.driverId ?? '',
+                'type': 'ride_accepted',
+              },
+            );
+          }
         } else if (request.status == 'DriverArriving') {
           rideStatus = RideStatus.arrived;
+          if (previousStatus != RideStatus.arrived) {
+            AppNotificationService.instance.showLocalNotification(
+              id: (request.requestId.hashCode.abs() + 10) % 100000,
+              title: 'الكابتن وصل 📍',
+              body: 'كابتن الرحلة وصل إلى نقطة الاستلام وهو بانتظارك.',
+              type: 'captain_arrived',
+              data: {
+                'requestId': request.requestId,
+                'tripId': request.requestId,
+                'type': 'captain_arrived',
+              },
+            );
+          }
         } else if (request.status == 'TripStarted') {
           rideStatus = RideStatus.tripStarted;
           unawaited(MetaAnalyticsService.instance.logRideStarted(
             rideId: request.requestId,
             serviceType: request.serviceType,
           ));
+          if (previousStatus != RideStatus.tripStarted) {
+            AppNotificationService.instance.showLocalNotification(
+              id: (request.requestId.hashCode.abs() + 20) % 100000,
+              title: 'بدأت الرحلة 🚀',
+              body: 'رحلتك بدأت الآن مع الكابتن. نتمنى لك رحلة سعيدة وآمنة.',
+              type: 'trip_started',
+              data: {
+                'requestId': request.requestId,
+                'tripId': request.requestId,
+                'type': 'trip_started',
+              },
+            );
+          }
         } else if (request.status == 'Completed') {
           rideStatus = RideStatus.completed;
           unawaited(MetaAnalyticsService.instance.logRideCompleted(
@@ -2389,6 +2567,22 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
             fare: request.offeredFare > 0 ? request.offeredFare : offeredFare,
             paymentMethod: request.paymentMethod,
           ));
+          if (previousStatus != RideStatus.completed) {
+            final double finalFare = request.offeredFare > 0 ? request.offeredFare : offeredFare;
+            AppNotificationService.instance.showLocalNotification(
+              id: (request.requestId.hashCode.abs() + 30) % 100000,
+              title: 'اكتملت الرحلة 🏁',
+              body: 'تم إنهاء الرحلة بنجاح. الأجرة: ${finalFare.round()} ج.م. شكراً لاستخدامك inRide.',
+              type: 'trip_finished',
+              data: {
+                'requestId': request.requestId,
+                'tripId': request.requestId,
+                'price': finalFare.toString(),
+                'paymentMethod': request.paymentMethod,
+                'type': 'trip_finished',
+              },
+            );
+          }
           try {
             final userRes = await _supabase.from('users').select('wallet_balance').eq('id', userUid!).maybeSingle();
             if (_isCancelling || currentRequestId != listenedRequestId) return;
@@ -2403,6 +2597,19 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           if (!_isCancelling) {
             lastCancelReason = request.cancelReason ?? 'تم إلغاء الرحلة';
             lastCancelledBy = request.cancelledBy ?? 'driver';
+            if (lastCancelledBy != 'passenger' && previousStatus != RideStatus.cancelled) {
+              AppNotificationService.instance.showLocalNotification(
+                id: (request.requestId.hashCode.abs() + 40) % 100000,
+                title: 'تم إلغاء الرحلة ❌',
+                body: 'قام الكابتن بإلغاء الرحلة: $lastCancelReason',
+                type: 'cancel_trip',
+                data: {
+                  'requestId': request.requestId,
+                  'tripId': request.requestId,
+                  'type': 'cancel_trip',
+                },
+              );
+            }
             _stopAllLocationAndTimers();
             _rideSubscription?.cancel();
             _rideSubscription = null;
@@ -2476,7 +2683,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
               vehicleName: map['vehicle_name'] ?? map['vehicleName'] ?? 'سيارة',
               vehicleColor: map['vehicle_color'] ?? map['vehicleColor'] ?? '',
               licensePlate: map['license_plate'] ?? map['licensePlate'] ?? '',
-              avatar: map['driver_avatar'] ?? map['driverAvatar'] ?? 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=200',
+              avatar: (map['driver_avatar'] ?? map['driverAvatar'] ?? '').toString(),
             ),
             price: (map['price'] as num? ?? offeredFare).toDouble(),
             etaMinutes: (map['eta_minutes'] ?? map['etaMinutes'] as int? ?? 5),
@@ -2498,6 +2705,27 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
             rideStatus = RideStatus.searching;
           }
         }
+        // Notify passenger with local heads-up notification banner for new or updated offers
+        for (final o in offers) {
+          final offerKey = '${o.driverId}_${o.price.round()}';
+          if (!_notifiedOfferKeys.contains(offerKey)) {
+            _notifiedOfferKeys.add(offerKey);
+            AppNotificationService.instance.showLocalNotification(
+              id: (o.driverId.hashCode.abs() + o.price.toInt()) % 100000,
+              title: 'عرض جديد من الكابتن 💰',
+              body: 'قدّم الكابتن ${o.driver.name} عرضاً بقيمة ${o.price.round()} ج.م',
+              type: 'new_offer',
+              data: {
+                'requestId': currentRequestId!,
+                'tripId': currentRequestId!,
+                'driverId': o.driverId,
+                'price': o.price.toString(),
+                'type': 'new_offer',
+              },
+            );
+          }
+        }
+
         if (!_isCancelling) {
           notifyListeners();
         }
@@ -2508,6 +2736,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   final Set<String> _skippedDriverIds = {};
+  final Set<String> _notifiedOfferKeys = {};
+
+  /// Guards for counter-offer deduplication
+  bool _isSubmittingCounterOffer = false;
+  String? _lastCounterOfferKey;
 
   void skipDriver(String driverId) {
     _skippedDriverIds.add(driverId);
@@ -2516,6 +2749,22 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> submitCounterOffer(String driverId, double counterPrice) async {
     if (currentRequestId == null || userUid == null) return;
+
+    // Deduplication: skip if same offer is already being submitted
+    final offerKey = '${currentRequestId}_${driverId}_${counterPrice.round()}';
+    if (_isSubmittingCounterOffer) {
+      debugPrint('[counterOffer] Already submitting, skipping duplicate tap');
+      // Update the pending key so the in-flight request knows a newer one arrived
+      _lastCounterOfferKey = offerKey;
+      return;
+    }
+    if (_lastCounterOfferKey == offerKey) {
+      debugPrint('[counterOffer] Identical offer already sent, ignoring');
+      return;
+    }
+
+    _isSubmittingCounterOffer = true;
+    _lastCounterOfferKey = offerKey;
 
     try {
       // 1. Update ride_offers record
@@ -2563,6 +2812,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('[counterOffer] Error submitting counter-offer: $e');
       rethrow;
+    } finally {
+      _isSubmittingCounterOffer = false;
     }
   }
 
@@ -2625,6 +2876,34 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   /// Fetch comprehensive real-time driver profile info directly from Supabase
   Future<DriverInfo> fetchDriverInfo(String driverId, {String? defaultVehicleType}) async {
     try {
+      // 1. Try secure RPC that bypasses RLS and returns driver real avatar and full profile
+      try {
+        final rpcRes = await _supabase.rpc('get_driver_full_profile', params: {
+          'p_driver_id': driverId,
+        });
+        if (rpcRes != null) {
+          final pMap = Map<String, dynamic>.from(rpcRes is String ? jsonDecode(rpcRes) : rpcRes);
+          final vTypeRaw = (pMap['vehicle_type'] ?? defaultVehicleType ?? 'car').toString().toLowerCase();
+          final vType = vTypeRaw.contains('scooter') ? 'اسكوتر' : (vTypeRaw.contains('motorcycle') ? 'موتوسيكل' : 'سيارة');
+          return DriverInfo(
+            name: (pMap['name'] ?? 'كابتن inRide').toString(),
+            rating: ((pMap['rating'] as num?) ?? 5.0).toDouble(),
+            ratingCount: ((pMap['rating_count'] as num?) ?? 0).toInt(),
+            vehicleType: vType,
+            vehicleName: (pMap['vehicle_name'] ?? 'سيارة').toString(),
+            vehicleColor: (pMap['vehicle_color'] ?? 'أبيض').toString(),
+            licensePlate: (pMap['license_plate'] ?? '').toString(),
+            avatar: (pMap['avatar_url'] ?? '').toString(),
+            phoneNumber: (pMap['phone'] ?? '').toString(),
+            completedTrips: ((pMap['completed_trips'] as num?) ?? 0).toInt(),
+            completedDeliveries: ((pMap['completed_deliveries'] as num?) ?? 0).toInt(),
+          );
+        }
+      } catch (e) {
+        debugPrint('[fetchDriverInfo] RPC get_driver_full_profile error: $e');
+      }
+
+      // 2. Fallback direct query
       final driverUserRes = await _supabase.from('users').select().eq('id', driverId).maybeSingle();
       final driverRes = await _supabase.from('drivers').select().eq('id', driverId).maybeSingle();
 
@@ -2669,11 +2948,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       final vColor = (dMap['vehicle_color'] ?? vMap['color'] ?? 'أبيض').toString();
       final licensePlate = (dMap['vehicle_number'] ?? dMap['license_plate'] ?? vMap['number_plate'] ?? '').toString();
 
-      // Avatar resolution
+      // Avatar resolution (real avatar only, no Unsplash)
       String avatar = (uMap['avatar_url'] ?? uMap['avatar'] ?? dMap['avatar_url'] ?? '').toString();
-      if (avatar.isEmpty) {
-        avatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200';
-      }
 
       // Completed Trips & Deliveries resolution
       int completedTrips = (dMap['completed_trips'] ?? dMap['completedTrips'] ?? dMap['total_trips'] as num?)?.toInt() ?? 0;
@@ -2722,11 +2998,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       return DriverInfo(
         name: 'كابتن inRide',
         rating: 5.0,
-        vehicleType: 'سيارة',
+        vehicleType: defaultVehicleType ?? 'سيارة',
         vehicleName: 'سيارة',
         vehicleColor: 'أبيض',
         licensePlate: '',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200',
+        avatar: '',
       );
     }
   }
@@ -2928,6 +3204,15 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> completeTrip() async {
+    if (isOffline) {
+      _enqueuePendingAction(() async => await _completeTripInternal());
+      return;
+    }
+    await _completeTripInternal();
+  }
+
+  // Internal implementation without offline check
+  Future<void> _completeTripInternal() async {
     rideStatus = RideStatus.completed;
     notifyListeners();
 
@@ -3116,6 +3401,18 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     String cancelledBy = 'passenger',
     String? reason,
   }) async {
+    if (isOffline) {
+      _enqueuePendingAction(() async => await _cancelRideInternal(cancelledBy: cancelledBy, reason: reason));
+      return;
+    }
+    await _cancelRideInternal(cancelledBy: cancelledBy, reason: reason);
+  }
+
+  // Internal implementation without offline check
+  Future<void> _cancelRideInternal({
+    required String cancelledBy,
+    String? reason,
+  }) async {
     if (_isCancelling) return;
     _isCancelling = true;
 
@@ -3184,6 +3481,10 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           if (statusLower == 'accepted' || statusLower == 'driverarriving' || statusLower == 'driver_arriving' || statusLower == 'tripstarted' || statusLower == 'trip_started' || statusLower == 'in_progress') {
             currentRequestId = reqId;
             activePassengerId = map['passenger_id'] as String?;
+            final pPhone = (map['passenger_phone'] ?? map['recipient_phone'])?.toString();
+            if (pPhone != null && pPhone.isNotEmpty) {
+              activePassengerPhone = pPhone;
+            }
             currentRideRequest = RideRequestModel.fromMap(map, reqId);
             fromAddress = map['pickup_address'] as String? ?? map['pickupAddress'] as String? ?? '';
             toAddress = map['destination_address'] as String? ?? map['destinationAddress'] as String? ?? '';
@@ -3204,9 +3505,23 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
             }
           } else if (statusLower == 'cancelled') {
             if (currentRequestId == reqId) {
+              final prevStatus = rideStatus;
               rideStatus = RideStatus.cancelled;
               lastCancelReason = map['cancel_reason'] as String? ?? 'تم إلغاء الرحلة';
               lastCancelledBy = map['cancelled_by'] as String? ?? 'passenger';
+              if (lastCancelledBy == 'passenger' && prevStatus != RideStatus.cancelled) {
+                AppNotificationService.instance.showLocalNotification(
+                  id: (reqId.hashCode.abs() + 50) % 100000,
+                  title: 'تم إلغاء الرحلة ❌',
+                  body: 'قام الراكب بإلغاء الرحلة: $lastCancelReason',
+                  type: 'cancel_trip',
+                  data: {
+                    'requestId': reqId,
+                    'tripId': reqId,
+                    'type': 'cancel_trip',
+                  },
+                );
+              }
               notifyListeners();
             }
           }
@@ -3260,6 +3575,10 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           if (pId.isEmpty) {
             activePassengerId = rideMap['passenger_id'] as String? ?? '';
           }
+          final pPhone = (rideMap['passenger_phone'] ?? rideMap['recipient_phone'])?.toString();
+          if (pPhone != null && pPhone.isNotEmpty) {
+            activePassengerPhone = pPhone;
+          }
         }
       } catch (fetchErr) {
         // Non-fatal: we still proceed with navigation; stream will populate later
@@ -3303,58 +3622,81 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Guards for driver bid deduplication
+  bool _isSubmittingBid = false;
+  String? _lastBidKey;
+
   Future<void> driverSubmitBid(String requestId, double fare, {String? passengerId}) async {
     if (userUid == null) return;
+
+    // Deduplication: skip if same bid is already being submitted
+    final bidKey = '${requestId}_${userUid}_${fare.round()}';
+    if (_isSubmittingBid) {
+      debugPrint('[driverSubmitBid] Already submitting bid, skipping duplicate tap');
+      _lastBidKey = bidKey;
+      return;
+    }
+    if (_lastBidKey == bidKey) {
+      debugPrint('[driverSubmitBid] Identical bid already sent, ignoring');
+      return;
+    }
+
+    _isSubmittingBid = true;
+    _lastBidKey = bidKey;
     currentRequestId = requestId;
-    
-    String finalPassengerId = passengerId ?? activePassengerId ?? '';
-    if (finalPassengerId.isEmpty) {
-      try {
-        final reqDoc = await _supabase.from('ride_requests').select('passenger_id').eq('id', requestId).maybeSingle();
-        if (reqDoc != null) {
-          finalPassengerId = reqDoc['passenger_id'] ?? '';
-        }
-      } catch (e) {
-        AppLogger.error('driverSubmitBid', 'Error fetching passenger_id', e);
-      }
-    }
 
-    activePassengerId = finalPassengerId;
-
-    final offerId = await RideRepository.instance.sendOffer(
-      driverId: userUid!,
-      passengerId: finalPassengerId,
-      requestId: requestId,
-      price: fare,
-      eta: const Duration(minutes: 5),
-    );
-
-    // Reset last_counter_driver_id since driver has replied with a counter-offer
     try {
-      await _supabase.from('ride_requests').update({
-        'last_counter_driver_id': null,
-      }).eq('id', requestId);
-    } catch (e) {
-      AppLogger.error('driverSubmitBid', 'Error clearing last_counter_driver_id', e);
-    }
+      String finalPassengerId = passengerId ?? activePassengerId ?? '';
+      if (finalPassengerId.isEmpty) {
+        try {
+          final reqDoc = await _supabase.from('ride_requests').select('passenger_id').eq('id', requestId).maybeSingle();
+          if (reqDoc != null) {
+            finalPassengerId = reqDoc['passenger_id'] ?? '';
+          }
+        } catch (e) {
+          AppLogger.error('driverSubmitBid', 'Error fetching passenger_id', e);
+        }
+      }
 
-    if (finalPassengerId.isNotEmpty) {
-      unawaited(NotificationService.instance.sendNotification(
-        recipientId: finalPassengerId,
-        title: 'عرض جديد من الكابتن 💰',
-        body: 'قدم الكابتن عرض سعر جديد: ${fare.toInt()} ج.م',
-        type: 'new_offer',
-        data: {
-          'requestId': requestId,
-          'tripId': requestId,
-          'driverId': userUid!,
-          'price': fare.toString(),
-        },
-      ));
-    }
+      activePassengerId = finalPassengerId;
 
-    _listenToDriverAssignedRides();
-    AppLogger.rideLog('DriverBid', 'Submitted counter-offer $offerId for request $requestId to passenger $finalPassengerId ($fare EGP)');
+      final offerId = await RideRepository.instance.sendOffer(
+        driverId: userUid!,
+        passengerId: finalPassengerId,
+        requestId: requestId,
+        price: fare,
+        eta: const Duration(minutes: 5),
+      );
+
+      // Reset last_counter_driver_id since driver has replied with a counter-offer
+      try {
+        await _supabase.from('ride_requests').update({
+          'last_counter_driver_id': null,
+        }).eq('id', requestId);
+      } catch (e) {
+        AppLogger.error('driverSubmitBid', 'Error clearing last_counter_driver_id', e);
+      }
+
+      if (finalPassengerId.isNotEmpty) {
+        unawaited(NotificationService.instance.sendNotification(
+          recipientId: finalPassengerId,
+          title: 'عرض جديد من الكابتن 💰',
+          body: 'قدم الكابتن عرض سعر جديد: ${fare.toInt()} ج.م',
+          type: 'new_offer',
+          data: {
+            'requestId': requestId,
+            'tripId': requestId,
+            'driverId': userUid!,
+            'price': fare.toString(),
+          },
+        ));
+      }
+
+      _listenToDriverAssignedRides();
+      AppLogger.rideLog('DriverBid', 'Submitted counter-offer $offerId for request $requestId to passenger $finalPassengerId ($fare EGP)');
+    } finally {
+      _isSubmittingBid = false;
+    }
   }
 
   Future<void> reloadUserProfile() async {

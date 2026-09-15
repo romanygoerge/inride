@@ -20,7 +20,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
   bool _isUpcoming = false;
   String _countdownText = '';
   String _startTimeFormatted = '';
-  String _title = 'تحدي اليوم 🚀';
+  String _title = 'تحدي اليوم';
   String _timeWindowText = 'طوال اليوم';
   int _targetTrips = 5;
   double _rewardAmount = 50.0;
@@ -148,9 +148,10 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
         final completed = res['is_completed'] == true || done >= target;
         final started = res['is_started'] == true || done > 0;
         final rewarded = res['is_rewarded'] == true;
-        final titleStr = (res['title'] as String?)?.isNotEmpty == true
+        final rawTitle = (res['title'] as String?)?.isNotEmpty == true
             ? res['title'] as String
-            : 'تحدي اليوم 🚀';
+            : 'تحدي اليوم';
+        final titleStr = rawTitle.replaceAll(RegExp(r'[\u{1F300}-\u{1F9FF}|🚀|🏆|🔥|⭐|⏳|⏰]', unicode: true), '').trim();
 
         String timeWindow = (res['time_window_text'] as String?)?.isNotEmpty == true
             ? res['time_window_text'] as String
@@ -449,23 +450,43 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
     }
   }
 
+  Widget _buildStatItem(String label, String value) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$label: ',
+          style: GoogleFonts.cairo(
+            fontSize: 12,
+            color: Colors.white.withValues(alpha: 0.85),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        Text(
+          value,
+          style: GoogleFonts.cairo(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildPausedMissionCard() {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF334155), width: 1.2),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.25),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -475,82 +496,64 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFF64748B), width: 1.5),
-                    ),
-                    child: const Center(
-                      child: Icon(Icons.pause_circle_outline_rounded, color: Color(0xFF94A3B8), size: 26),
+                  Text(
+                    'تحديات وبونص الرحلات',
+                    style: GoogleFonts.cairo(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF1E293B),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'تحديات وبونص الرحلات',
-                        style: GoogleFonts.cairo(
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
-                      ),
-                      Text(
-                        'متوقفة حالياً بقرار من الإدارة',
-                        style: GoogleFonts.cairo(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF94A3B8),
-                        ),
-                      ),
-                    ],
+                  Text(
+                    'متوقفة حالياً بقرار من الإدارة',
+                    style: GoogleFonts.cairo(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF64748B),
+                    ),
                   ),
                 ],
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF334155),
+                  color: const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF475569)),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
                 ),
                 child: Text(
-                  'متوقف ⚪',
+                  'متوقف مؤقتاً',
                   style: GoogleFonts.cairo(
                     fontSize: 10.5,
                     fontWeight: FontWeight.bold,
-                    color: const Color(0xFFE2E8F0),
+                    color: const Color(0xFF64748B),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.25),
+              color: const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.info_outline_rounded, color: Color(0xFF94A3B8), size: 20),
-                const SizedBox(width: 10),
+                const Icon(Icons.info_outline_rounded, color: Color(0xFF64748B), size: 16),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'تم إيقاف تفعيل فترات التحدي والبونص مؤقتاً عبر الداش بورد. تابع الإشعارات للتعرف على مواعيد انطلاق التحديات القادمة!',
+                    'تم إيقاف تفعيل فترات التحدي والبونص مؤقتاً. تابع الإشعارات لمواعيد الانطلاق.',
                     style: GoogleFonts.cairo(
-                      fontSize: 11.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: const Color(0xFFCBD5E1),
-                      height: 1.5,
+                      color: const Color(0xFF475569),
                     ),
                   ),
                 ),
@@ -567,166 +570,67 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF1E3A8A)],
+          colors: [Color(0xFF1E88E5), Color(0xFF0D47A1)],
           begin: Alignment.topRight,
           end: Alignment.bottomLeft,
         ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: const Color(0xFF3B82F6).withValues(alpha: 0.4),
-          width: 1.2,
-        ),
+        borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1E3A8A).withValues(alpha: 0.35),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
+            color: const Color(0xFF1E88E5).withValues(alpha: 0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header Row
+          // Top Row (Exact Match with Referral Banner)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.12),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: const Color(0xFFFDE047),
-                          width: 1.5,
-                        ),
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.hourglass_top_rounded,
-                          color: Color(0xFFFDE047),
-                          size: 24,
-                        ),
-                      ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _title.replaceAll('🚀', '').trim(),
+                    style: GoogleFonts.cairo(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.85),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Wrap(
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: 6,
-                            runSpacing: 2,
-                            children: [
-                              Text(
-                                _title,
-                                style: GoogleFonts.cairo(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: const Color(0xFFFBBF24),
-                                    width: 0.8,
-                                  ),
-                                ),
-                                child: Text(
-                                  'يبدأ قريباً ⏳',
-                                  style: GoogleFonts.cairo(
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFFFDE047),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 3),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.3),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.access_time_filled_rounded, color: Color(0xFF93C5FD), size: 12),
-                                const SizedBox(width: 4),
-                                Flexible(
-                                  child: Text(
-                                    _timeWindowText,
-                                    style: GoogleFonts.cairo(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: const Color(0xFFBFDBFE),
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(width: 10),
-
-              // Reward Pill
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFFDE047), Color(0xFFF59E0B)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
+                  Text(
+                    '+${_rewardAmount.toInt()} ج.م',
+                    style: GoogleFonts.cairo(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
                     ),
-                  ],
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Column(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
+                    const Icon(Icons.schedule_rounded, color: Color(0xFFFDE047), size: 16),
+                    const SizedBox(width: 4),
                     Text(
-                      '+${_rewardAmount.toInt()} ج.م',
-                      style: GoogleFonts.outfit(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF0F172A),
-                        height: 1.1,
-                      ),
-                    ),
-                    Text(
-                      'بونص كاش',
+                      'الفترة القادمة • $target رحلات',
                       style: GoogleFonts.cairo(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF0F172A),
-                        height: 1.1,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
                       ),
                     ),
                   ],
@@ -735,73 +639,25 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
             ],
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
 
-          // Countdown Info Box
+          // Bottom Stats Container (Exact Match with Referral Banner)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
+              color: Colors.black.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
             ),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                const Icon(Icons.alarm_on_rounded, color: Color(0xFFFDE047), size: 22),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _countdownText.isNotEmpty
-                            ? '$_countdownText ⏰'
-                            : 'سيبدأ التحدي القادم قريباً ⏰',
-                        style: GoogleFonts.cairo(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFFFDE047),
-                        ),
-                      ),
-                      Text(
-                        'الهدف: إنجاز $target رحلات خلال الفترة للحصول على ${_rewardAmount.toInt()} ج.م كاش بمحفظتك.',
-                        style: GoogleFonts.cairo(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white.withValues(alpha: 0.85),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 10),
-
-          // Disabled Waiting Button
-          Container(
-            height: 42,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.lock_clock_rounded, size: 18, color: Color(0xFFCBD5E1)),
-                const SizedBox(width: 8),
-                Text(
-                  _startTimeFormatted.isNotEmpty
-                      ? 'يبدأ التحدي عند الساعة $_startTimeFormatted'
-                      : 'سيبدأ التحدي عند انطلاق الفترة',
-                  style: GoogleFonts.cairo(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFFCBD5E1),
-                  ),
+                _buildStatItem('الموعد', _timeWindowText.isNotEmpty ? _timeWindowText : 'طوال اليوم'),
+                Container(width: 1, height: 20, color: Colors.white.withValues(alpha: 0.2)),
+                _buildStatItem(
+                  'الانطلاق',
+                  _countdownText.isNotEmpty
+                      ? _countdownText.replaceAll('⏰', '').trim()
+                      : (_startTimeFormatted.isNotEmpty ? 'الساعة $_startTimeFormatted' : 'قريباً'),
                 ),
               ],
             ),
@@ -819,7 +675,7 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: const Color(0xFFEFF6FF),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: const Color(0xFFBFDBFE)),
         ),
         child: const Center(
@@ -838,191 +694,87 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
       return _buildUpcomingMissionCard();
     }
 
-    final int target = _targetTrips > 0 ? _targetTrips : 10;
+    final int target = _targetTrips > 0 ? _targetTrips : 5;
     final int done = _completedTrips;
-    final double progress = (done / target).clamp(0.0, 1.0);
     final bool reached = done >= target || _isCompleted;
     final int remaining = _remainingTrips;
 
-    // Card Colors based on state
+    // Card Gradient based on completion status
     final gradientColors = reached
-        ? [const Color(0xFF064E3B), const Color(0xFF059669)]
-        : (_isShift
-            ? [const Color(0xFF0A192F), const Color(0xFF153A7B), const Color(0xFF1E4E9E)]
-            : [const Color(0xFF0D47A1), const Color(0xFF1976D2), const Color(0xFF42A5F5)]);
+        ? [const Color(0xFF059669), const Color(0xFF064E3B)]
+        : [const Color(0xFF1E88E5), const Color(0xFF0D47A1)];
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: gradientColors,
           begin: Alignment.topRight,
           end: Alignment.bottomLeft,
         ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: reached ? const Color(0xFF34D399) : Colors.white.withValues(alpha: 0.2),
-          width: 1.2,
-        ),
+        borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: (reached ? const Color(0xFF059669) : const Color(0xFF1E4E9E)).withValues(alpha: 0.35),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
+            color: (reached ? const Color(0xFF059669) : const Color(0xFF1E88E5)).withValues(alpha: 0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header Row
+          // Top Row (Exact Match with Referral Banner)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.18),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: const Color(0xFFFDE047),
-                          width: 1.5,
-                        ),
-                      ),
-                      child: Center(
-                        child: Icon(
-                          reached
-                              ? Icons.military_tech_rounded
-                              : (_isShift ? Icons.schedule_rounded : Icons.emoji_events_rounded),
-                          color: const Color(0xFFFDE047),
-                          size: 26,
-                        ),
-                      ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _title.replaceAll('🚀', '').trim(),
+                    style: GoogleFonts.cairo(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.85),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Wrap(
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: 6,
-                            runSpacing: 2,
-                            children: [
-                              Text(
-                                reached
-                                    ? (_isRewarded ? '$_title (تم الصرف) 🏆' : '$_title (مكتمل) 🏆')
-                                    : _title,
-                                style: GoogleFonts.cairo(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                                decoration: BoxDecoration(
-                                  color: reached
-                                      ? (_isRewarded ? const Color(0xFF047857) : const Color(0xFFD97706))
-                                      : const Color(0xFF10B981).withValues(alpha: 0.3),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: reached
-                                        ? (_isRewarded ? const Color(0xFF34D399) : const Color(0xFFFBBF24))
-                                        : const Color(0xFF34D399),
-                                    width: 0.8,
-                                  ),
-                                ),
-                                child: Text(
-                                  reached
-                                      ? (_isRewarded ? 'تم الصرف 🏆' : 'بانتظار الإرسال ⏳')
-                                      : 'نشط الآن 🟢',
-                                  style: GoogleFonts.cairo(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 3),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.25),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.access_time_filled_rounded, color: Color(0xFFFDE047), size: 12),
-                                const SizedBox(width: 4),
-                                Flexible(
-                                  child: Text(
-                                    _timeWindowText,
-                                    style: GoogleFonts.cairo(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: const Color(0xFFFDE047),
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(width: 10),
-
-              // Reward Pill
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFFDE047), Color(0xFFF59E0B)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
+                  Text(
+                    '+${_rewardAmount.toInt()} ج.م',
+                    style: GoogleFonts.cairo(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
                     ),
-                  ],
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Column(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      '+${_rewardAmount.toInt()} ج.م',
-                      style: GoogleFonts.outfit(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF0F172A),
-                        height: 1.1,
-                      ),
+                    Icon(
+                      reached
+                          ? Icons.check_circle_rounded
+                          : (_isShift ? Icons.schedule_rounded : Icons.stars_rounded),
+                      color: reached ? const Color(0xFF34D399) : const Color(0xFFFDE047),
+                      size: 16,
                     ),
+                    const SizedBox(width: 4),
                     Text(
-                      'بونص كاش',
+                      reached
+                          ? (_isRewarded ? 'تم الصرف' : 'مكتمل')
+                          : 'نشط الآن • $target رحلات',
                       style: GoogleFonts.cairo(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF0F172A),
-                        height: 1.1,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
                       ),
                     ),
                   ],
@@ -1031,144 +783,68 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
             ],
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
 
-          // User not started yet -> Show invitation with "بدء التحدي الآن" button
-          if (!_isStarted && !reached) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline_rounded, color: Color(0xFF93C5FD), size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'أكمل $target رحلات خلال المواعيد المحددة واحصل على ${_rewardAmount.toInt()} ج.م في محفظتك!',
-                      style: GoogleFonts.cairo(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white.withValues(alpha: 0.95),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+          // Bottom Stats Container (Exact Match with Referral Banner)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 42,
-              child: ElevatedButton(
-                onPressed: _isStarting ? null : _startMission,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFDE047),
-                  foregroundColor: const Color(0xFF0A192F),
-                  elevation: 4,
-                  shadowColor: const Color(0xFFF59E0B).withValues(alpha: 0.5),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                ),
-                child: _isStarting
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFF0A192F)),
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.play_arrow_rounded, size: 22, color: Color(0xFF0A192F)),
-                          const SizedBox(width: 6),
-                          Text(
-                            'بدء التحدي الآن 🎯',
-                            style: GoogleFonts.cairo(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                              color: const Color(0xFF0A192F),
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
-          ] else ...[
-            // Live Progress Box: "أنجز كذا وفاضل كذا"
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: reached
-                    ? Colors.white.withValues(alpha: 0.18)
-                    : Colors.white.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    reached ? Icons.check_circle_rounded : Icons.flag_rounded,
-                    color: reached ? const Color(0xFFFDE047) : const Color(0xFF60A5FA),
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      reached
-                          ? (_isRewarded
-                              ? 'تهانينا يا كابتن! حققت التحدي وتم إيداع المكافأة في محفظتك بنجاح 🎉'
-                              : 'تهانينا يا كابتن! حققت تارجت التحدي بنجاح 🏆 — جاري مراجعة وصرف البونص إلى محفظتك من قِبل الإدارة!')
-                          : 'أنجزت $done من $target رحلات — باقي $remaining رحلات للحصول على البونص! 🚀',
-                      style: GoogleFonts.cairo(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            // Progress Bar
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 8,
-                backgroundColor: Colors.white.withValues(alpha: 0.22),
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  reached ? const Color(0xFFFDE047) : const Color(0xFF38BDF8),
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
-
-            // Progress Footer
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                Text(
-                  reached ? '100% تم الإنجاز 🏆' : '${(progress * 100).round()}% من الهدف',
-                  style: GoogleFonts.cairo(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white.withValues(alpha: 0.9),
-                  ),
-                ),
-                Text(
-                  '$done / $target رحلة مكتملة',
-                  style: GoogleFonts.outfit(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
+                _buildStatItem('الرحلات المكتملة', '$done / $target'),
+                Container(width: 1, height: 20, color: Colors.white.withValues(alpha: 0.2)),
+                _buildStatItem(
+                  reached ? 'حالة التحدي' : 'المتبقي للهدف',
+                  reached ? 'مكتمل بنجاح' : '$remaining رحلات',
                 ),
               ],
+            ),
+          ),
+
+          // If user has not started yet -> Clean, sleek start action button
+          if (!_isStarted && !reached) ...[
+            const SizedBox(height: 12),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _isStarting ? null : _startMission,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                  ),
+                  child: Center(
+                    child: _isStarting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.play_arrow_rounded, color: Color(0xFFFDE047), size: 18),
+                              const SizedBox(width: 4),
+                              Text(
+                                'بدء التحدي واحتساب الرحلات',
+                                style: GoogleFonts.cairo(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
             ),
           ],
         ],

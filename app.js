@@ -388,6 +388,16 @@ const mockData = {
     defaultFareCar: 45,
     defaultFareScooter: 20,
     defaultFareMotorcycle: 15,
+    first_km_fare: 20,
+    extra_km_fare: 5,
+    ac_km_fare: 1,
+    heat_hour_km_fare: 1,
+    heat_start_hour: 11,
+    heat_end_hour: 15,
+    out_of_city_threshold_km: 5,
+    out_of_city_extra_fare: 20,
+    out_of_city_pricing_enabled: true,
+    surge_enabled: true,
     commissionRate: 10,
     minFare: 10,
     maxFare: 500,
@@ -779,7 +789,7 @@ function initDashboardAnimations() {
 // ============================================
 
 function navigateTo(page) {
-  const validPages = ['rewards', 'dashboard', 'trips', 'drivers', 'passengers', 'ratings', 'driver-profile', 'passenger-profile', 'wallet', 'pricing', 'places', 'banners', 'communication', 'messages', 'support', 'reports', 'content', 'monitoring', 'logs', 'settings'];
+  const validPages = ['promos', 'rewards', 'dashboard', 'trips', 'drivers', 'passengers', 'ratings', 'driver-profile', 'passenger-profile', 'wallet', 'pricing', 'places', 'banners', 'communication', 'messages', 'support', 'reports', 'content', 'monitoring', 'logs', 'settings'];
   if (!validPages.includes(page)) {
     page = 'dashboard';
   }
@@ -826,6 +836,7 @@ function updateHeaderTitle(page) {
     places: { title: 'أماكن ومحلات مدينة السادات', sub: 'دليل شامل وقابل للتوسع للمحلات والخدمات والمولات مقسمة إلى 25 تصنيفاً' },
     banners: { title: 'إعلانات وبانرات التطبيق اللحظية', sub: 'إدارة وتخصيص البانرات المتحركة في القائمة الجانبية للتطبيق مع محاكاة حية' },
     rewards: { title: 'نظام المكافآت والإحالات', sub: 'التحكم الكامل في تشغيل وإيقاف الإحالات وبونص الكباتن وتعديل المعايير لحظياً' },
+    promos: { title: 'مولد وإدارة البرومو كود والباركود 🎟️', sub: 'إنشاء وتعديل الأكواد الترويجية بباركود وصلاحية محددة والتحكم في تفعيلها وظهورها في بانر التطبيق' },
     communication: { title: 'مركز التواصل والمحادثات', sub: 'عرض وإدارة محادثات العملاء والكباتن والدعم الفني والتحكم بالتذاكر' },
     messages: { title: 'الإشعارات والرسائل', sub: 'إرسال الإشعارات الجماعية والمستهدفة وجدولة التنبيهات' },
     support: { title: 'الدعم الفني والشكاوى', sub: 'استقبال شكاوى المستخدمين والرد عليها وإغلاق التذاكر' },
@@ -911,6 +922,10 @@ function renderPage(page) {
       case 'rewards':
         container.innerHTML = renderRewardsPage();
         initRewardsPage();
+        break;
+      case 'promos':
+        container.innerHTML = renderPromoCodesPage();
+        initPromoCodesPage();
         break;
       case 'banners':
         container.innerHTML = renderBannersPage();
@@ -5426,6 +5441,70 @@ function renderSettings() {
             </div>
           </div>
         </div>
+
+        <!-- Out-of-City & Distance Pricing Rules -->
+        <div class="card" style="grid-column: 1 / -1; border: 1.5px solid #93C5FD; background: linear-gradient(180deg, #EFF6FF 0%, #FFFFFF 100%);">
+          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <h3><i class="ri-route-fill text-blue" style="margin-left:8px; font-size:20px;"></i> نظام تسعير المسافات وخارج المدينة (قاعدة الـ 5 كم)</h3>
+              <span class="badge" style="background:${mockData.settings.out_of_city_pricing_enabled !== false ? '#DCFCE7' : '#F1F5F9'}; color:${mockData.settings.out_of_city_pricing_enabled !== false ? '#15803D' : '#64748B'}; font-weight:700; font-size:11.5px;">
+                ${mockData.settings.out_of_city_pricing_enabled !== false ? '🟢 مفعل بالتطبيق' : '⚪ معطل'}
+              </span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="font-size:12px; font-weight:700; color:var(--text-secondary);">تفعيل الحساب التلقائي:</span>
+              <label class="toggle-switch">
+                <input type="checkbox" ${mockData.settings.out_of_city_pricing_enabled !== false ? 'checked' : ''} onchange="toggleOutOfCityPricing(this.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="card-body">
+            <p style="font-size:12.5px; color:var(--text-secondary); margin-bottom:14px; line-height:1.6;">
+              أي مشوار تتجاوز مسافته <strong>${mockData.settings.out_of_city_threshold_km || 5} كم</strong> يُعتبر خارج المدينة ويتم احتساب الكيلومترات الزائدة بقيمة <strong>+${mockData.settings.out_of_city_extra_fare || 20} ج.م/كم</strong> بشكل لحظي في التطبيق.
+            </p>
+            <div class="settings-group" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
+              <div class="settings-item" style="border:1px solid #E2E8F0; border-radius:12px; padding:12px 16px; background:#fff;">
+                <div class="settings-item-info">
+                  <div class="settings-item-icon" style="background:rgba(124,58,237,0.12); color:#7C3AED;">
+                    <i class="ri-map-pin-range-fill"></i>
+                  </div>
+                  <div class="settings-item-text">
+                    <h5>حد مسافة المدينة</h5>
+                    <p>المشوار فوق هذا الحد يعتبر خارج المدينة</p>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <input type="number" step="0.5" min="1" class="settings-input" style="font-family:'Outfit',sans-serif; font-weight:800; color:#7C3AED; width:80px;" value="${mockData.settings.out_of_city_threshold_km ?? 5}" id="outOfCityThresholdKm" oninput="updateSetting('out_of_city_threshold_km', this.value)" onchange="updateSetting('out_of_city_threshold_km', this.value)">
+                  <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">كم</span>
+                </div>
+              </div>
+              <div class="settings-item" style="border:1px solid #E2E8F0; border-radius:12px; padding:12px 16px; background:#fff;">
+                <div class="settings-item-info">
+                  <div class="settings-item-icon" style="background:rgba(239,68,68,0.12); color:#EF4444;">
+                    <i class="ri-money-dollar-circle-fill"></i>
+                  </div>
+                  <div class="settings-item-text">
+                    <h5>تسعيرة كم خارج المدينة</h5>
+                    <p>مبلغ يضاف لكل كم يتجاوز حد الـ 5 كم</p>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <input type="number" step="1" min="1" class="settings-input" style="font-family:'Outfit',sans-serif; font-weight:800; color:#EF4444; width:80px;" value="${mockData.settings.out_of_city_extra_fare ?? 20}" id="outOfCityExtraFare" oninput="updateSetting('out_of_city_extra_fare', this.value)" onchange="updateSetting('out_of_city_extra_fare', this.value)">
+                  <span style="font-size:12px;font-weight:700;color:var(--text-secondary);">ج.م</span>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(37,99,235,0.06); border-radius:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+              <div style="font-size:11.5px; color:#1E40AF; font-weight:600;">
+                <i class="ri-information-line"></i> متزامن لحظياً مع شاشات الركاب والكباتن وقسم التسعير والمناطق.
+              </div>
+              <button class="btn btn-sm btn-outline" onclick="navigateTo('pricing')" style="font-size:11.5px; font-weight:700;">
+                <i class="ri-calculator-line"></i> فتح محاكي التسعير التفصيلي
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Application Options -->
@@ -6003,6 +6082,9 @@ async function saveSettings() {
         heat_hour_km_fare: Number(mockData.settings.heat_hour_km_fare ?? 1),
         heat_start_hour: parseInt(mockData.settings.heat_start_hour ?? 11),
         heat_end_hour: parseInt(mockData.settings.heat_end_hour ?? 15),
+        out_of_city_threshold_km: Number(mockData.settings.out_of_city_threshold_km ?? 5),
+        out_of_city_extra_fare: Number(mockData.settings.out_of_city_extra_fare ?? 20),
+        out_of_city_pricing_enabled: mockData.settings.out_of_city_pricing_enabled !== false,
         surge_enabled: mockData.settings.surge_enabled !== false,
         region_fares: mockData.settings.region_fares || [],
         demo_mode_enabled: mockData.settings.demo_mode_enabled === true,
@@ -6137,132 +6219,348 @@ function logAction(action) {
 }
 
 // ---- PRICING & REGIONS ----
+function calculateSimulatedPrice(distKm) {
+  const firstKm = Number(mockData.settings.first_km_fare ?? 20);
+  const extraKm = Number(mockData.settings.extra_km_fare ?? 5);
+  const outOfCityThreshold = Number(mockData.settings.out_of_city_threshold_km ?? 5);
+  const outOfCityRate = Number(mockData.settings.out_of_city_extra_fare ?? 20);
+  const outOfCityEnabled = mockData.settings.out_of_city_pricing_enabled !== false;
+
+  distKm = Math.max(0.5, parseFloat(distKm) || 1);
+
+  let fare = 0;
+  let insideCityKm = 0;
+  let insideCityFare = 0;
+  let outsideCityKm = 0;
+  let outsideCityFare = 0;
+  let isOutOfCity = false;
+
+  if (distKm <= 1.0) {
+    fare = firstKm;
+    insideCityKm = distKm;
+    insideCityFare = firstKm;
+  } else if (outOfCityEnabled && distKm > outOfCityThreshold) {
+    isOutOfCity = true;
+    insideCityKm = outOfCityThreshold;
+    const insideCityExtra = outOfCityThreshold > 1 ? (outOfCityThreshold - 1) : 0;
+    insideCityFare = firstKm + (insideCityExtra * extraKm);
+
+    outsideCityKm = distKm - outOfCityThreshold;
+    outsideCityFare = outsideCityKm * outOfCityRate;
+
+    fare = insideCityFare + outsideCityFare;
+  } else {
+    insideCityKm = distKm;
+    const extra = distKm - 1;
+    insideCityFare = firstKm + (extra * extraKm);
+    fare = insideCityFare;
+  }
+
+  const minFare = Number(mockData.settings.minFare ?? 10);
+  const maxFare = Number(mockData.settings.maxFare ?? 500);
+  fare = Math.min(maxFare, Math.max(minFare, fare));
+
+  return {
+    distKm,
+    fare,
+    insideCityKm,
+    insideCityFare,
+    outsideCityKm,
+    outsideCityFare,
+    isOutOfCity,
+    outOfCityThreshold,
+    outOfCityRate
+  };
+}
+
+function updatePricingSimulator(val) {
+  const distInput = document.getElementById('simDistanceInput');
+  const distVal = val !== undefined ? parseFloat(val) : (parseFloat(distInput?.value) || 8);
+  const sim = calculateSimulatedPrice(distVal);
+
+  const resContainer = document.getElementById('pricingSimResult');
+  if (resContainer) {
+    resContainer.innerHTML = `
+      <div style="background:#FFFFFF; border:1px solid ${sim.isOutOfCity ? '#93C5FD' : '#E2E8F0'}; border-radius:14px; padding:16px; margin-top:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="badge" style="background:${sim.isOutOfCity ? '#EFF6FF' : '#F1F5F9'}; color:${sim.isOutOfCity ? '#1D4ED8' : '#475569'}; font-weight:800; font-size:12px; padding:4px 10px; border-radius:8px;">
+              ${sim.isOutOfCity ? '🛣️ مشوار خارج المدينة (> ' + sim.outOfCityThreshold + ' كم)' : '🏙️ مشوار داخل المدينة (أقل من ' + sim.outOfCityThreshold + ' كم)'}
+            </span>
+            <span style="font-weight:700; font-size:13px; color:var(--text-secondary);">المسافة: ${sim.distKm.toFixed(1)} كم</span>
+          </div>
+          <div style="text-align:left;">
+            <div style="font-size:11px; color:var(--text-light); font-weight:600;">الأجرة المقدرة بالتطبيق</div>
+            <div style="font-size:22px; font-weight:900; color:#059669; font-family:'Outfit',sans-serif;">${sim.fare.toFixed(0)} ج.م</div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:12px; background:#F8FAFC; padding:10px 14px; border-radius:10px;">
+          <div>
+            <span style="color:#64748B;">داخل المدينة (${sim.insideCityKm.toFixed(1)} كم):</span>
+            <strong style="color:#1E293B; margin-right:4px;">${sim.insideCityFare.toFixed(0)} ج.م</strong>
+          </div>
+          <div>
+            <span style="color:${sim.isOutOfCity ? '#DC2626' : '#64748B'};">خارج المدينة (${sim.outsideCityKm.toFixed(1)} كم × ${sim.outOfCityRate} ج.م):</span>
+            <strong style="color:${sim.isOutOfCity ? '#DC2626' : '#64748B'}; margin-right:4px;">+${sim.outsideCityFare.toFixed(0)} ج.م</strong>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+}
+
+async function toggleOutOfCityPricing(enabled) {
+  mockData.settings.out_of_city_pricing_enabled = !!enabled;
+  settingsDirty = true;
+  await saveSettings();
+  showToast(enabled ? '✅ تم تفعيل تسعيرة المشاوير خارج المدينة تلقائياً' : '⚠️ تم تعطيل تسعيرة خارج المدينة');
+  if (currentPage === 'pricing' || currentPage === 'settings') {
+    renderPage(currentPage);
+  }
+}
+
 function renderPricing() {
+  const initialSim = calculateSimulatedPrice(8);
   return `
     <div class="page-section">
-      <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
+      <!-- 4 Top KPI Cards -->
+      <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
         <div class="stat-card blue">
           <div class="stat-card-label">سعر الكيلومتر الأول</div>
           <div class="stat-card-value font-outfit">${mockData.settings.first_km_fare || 20} <span style="font-size:16px;">ج.م</span></div>
+          <div style="font-size:11px; color:#3B82F6; font-weight:600; margin-top:4px;">شامل بداية فتح العداد</div>
         </div>
         <div class="stat-card green">
-          <div class="stat-card-label">سعر الكيلومتر الإضافي</div>
+          <div class="stat-card-label">سعر الكيلومتر بالمدينة</div>
           <div class="stat-card-value font-outfit">${mockData.settings.extra_km_fare || 5} <span style="font-size:16px;">ج.م</span></div>
+          <div style="font-size:11px; color:#10B981; font-weight:600; margin-top:4px;">للمسافات داخل حدود المدينة</div>
+        </div>
+        <div class="stat-card" style="background:#FFFFFF; border:1px solid #E2E8F0; border-right:4px solid #8B5CF6; border-radius:var(--radius-lg); padding:20px;">
+          <div class="stat-card-label" style="font-size:12px; color:var(--text-secondary); font-weight:600;">حد مسافة داخل المدينة</div>
+          <div class="stat-card-value font-outfit" style="font-size:26px; font-weight:800; color:#7C3AED;">${mockData.settings.out_of_city_threshold_km || 5} <span style="font-size:16px;">كم</span></div>
+          <div style="font-size:11px; color:#8B5CF6; font-weight:600; margin-top:4px;">ما بعدها يعتبر خارج المدينة 🛣️</div>
         </div>
         <div class="stat-card red">
-          <div class="stat-card-label">إضافة ساعة الحر (11-3)</div>
-          <div class="stat-card-value font-outfit">+${mockData.settings.heat_hour_km_fare || 1} <span style="font-size:16px;">ج.م</span></div>
+          <div class="stat-card-label">تسعيرة كم خارج المدينة</div>
+          <div class="stat-card-value font-outfit">+${mockData.settings.out_of_city_extra_fare || 20} <span style="font-size:16px;">ج.م</span></div>
+          <div style="font-size:11px; color:#EF4444; font-weight:600; margin-top:4px;">تضاف لكل كم بعد الـ 5 كم</div>
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns: 2fr 1fr; gap:24px;">
+      <div style="display:grid; grid-template-columns: 1.8fr 1.2fr; gap:24px;">
         <!-- Pricing settings form -->
-        <div class="card">
-          <div class="card-header">
-            <h3><i class="ri-price-tag-3-line text-blue" style="margin-left:8px;"></i> إدارة قواعد التسعير والعمولات الديناميكية</h3>
+        <div class="card" style="border-radius:var(--radius-xl); padding:24px; box-shadow:var(--shadow-sm);">
+          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:14px; margin-bottom:18px;">
+            <h3 style="margin:0; font-size:16px; font-weight:800;"><i class="ri-price-tag-3-line text-blue" style="margin-left:8px;"></i> إدارة قواعد التسعير والعمولات الديناميكية</h3>
+            <span class="badge" style="background:#DCFCE7; color:#15803D; font-weight:700; font-size:11.5px;">متزامن مع التطبيق 🟢</span>
           </div>
-          <div class="card-body">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px;">
+
+          <div class="card-body" style="padding:0;">
+            
+            <!-- Out-of-city Highlight Box -->
+            <div style="background:linear-gradient(135deg, #0A192F 0%, #1565C0 100%); color:#fff; padding:18px 20px; border-radius:16px; margin-bottom:24px; box-shadow:0 8px 25px rgba(21,101,192,0.25);">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <div style="width:34px; height:34px; border-radius:8px; background:rgba(255,255,255,0.2); display:flex; align-items:center; justify-content:center; font-size:18px;">
+                    <i class="ri-route-line"></i>
+                  </div>
+                  <div>
+                    <h4 style="margin:0; font-size:14px; font-weight:800; color:#fff;">نظام تسعير المشاوير خارج المدينة (قاعدة الـ 5 كم)</h4>
+                    <div style="font-size:11px; color:rgba(255,255,255,0.8);">تطبيق إضافة مالية لكل كم إذا زادت مسافة الرحلة عن حد المدينة</div>
+                  </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="font-size:11.5px; font-weight:700; color:#93C5FD;">تفعيل تلقائي</span>
+                  <label class="switch" style="transform:scale(0.85);">
+                    <input type="checkbox" ${mockData.settings.out_of_city_pricing_enabled !== false ? 'checked' : ''} onchange="toggleOutOfCityPricing(this.checked)">
+                    <span class="slider round"></span>
+                  </label>
+                </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; background:rgba(255,255,255,0.1); padding:12px; border-radius:12px; backdrop-filter:blur(6px);">
+                <div>
+                  <label style="font-size:11.5px; font-weight:700; color:rgba(255,255,255,0.9); display:block; margin-bottom:4px;">
+                    حد مسافة المشوار بالمدينة (كم)
+                  </label>
+                  <div style="position:relative;">
+                    <input type="number" step="0.5" min="1" class="form-control" 
+                           style="width:100%; padding:8px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.3); background:#fff; color:#0F172A; font-weight:800; font-family:'Outfit',sans-serif;" 
+                           value="${mockData.settings.out_of_city_threshold_km ?? 5}" 
+                           oninput="updateSetting('out_of_city_threshold_km', this.value); updatePricingSimulator();" 
+                           onchange="updateSetting('out_of_city_threshold_km', this.value); updatePricingSimulator();">
+                  </div>
+                </div>
+                <div>
+                  <label style="font-size:11.5px; font-weight:700; color:rgba(255,255,255,0.9); display:block; margin-bottom:4px;">
+                    سعر الكيلومتر خارج المدينة (ج.م/كم)
+                  </label>
+                  <div style="position:relative;">
+                    <input type="number" step="1" min="1" class="form-control" 
+                           style="width:100%; padding:8px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.3); background:#fff; color:#059669; font-weight:800; font-family:'Outfit',sans-serif;" 
+                           value="${mockData.settings.out_of_city_extra_fare ?? 20}" 
+                           oninput="updateSetting('out_of_city_extra_fare', this.value); updatePricingSimulator();" 
+                           onchange="updateSetting('out_of_city_extra_fare', this.value); updatePricingSimulator();">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Standard Pricing Grid -->
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;">
               <div>
-                <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">تسعيرة الكيلومتر الأول شامل الأول (First 1 Km)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.first_km_fare ?? 20}" oninput="updateSetting('first_km_fare', this.value)" onchange="updateSetting('first_km_fare', this.value)">
+                <label class="form-label" style="display:block;margin-bottom:6px;font-weight:700;font-size:12.5px;">تسعيرة الكيلومتر الأول (First 1 Km)</label>
+                <input type="number" class="form-control" style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-weight:700;" value="${mockData.settings.first_km_fare ?? 20}" oninput="updateSetting('first_km_fare', this.value); updatePricingSimulator();" onchange="updateSetting('first_km_fare', this.value); updatePricingSimulator();">
               </div>
               <div>
-                <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">سعر الكيلومتر الإضافي (Extra Km Fare)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.extra_km_fare ?? 5}" oninput="updateSetting('extra_km_fare', this.value)" onchange="updateSetting('extra_km_fare', this.value)">
+                <label class="form-label" style="display:block;margin-bottom:6px;font-weight:700;font-size:12.5px;">سعر الكيلومتر بالمدينة (Extra Km Fare)</label>
+                <input type="number" class="form-control" style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-weight:700;" value="${mockData.settings.extra_km_fare ?? 5}" oninput="updateSetting('extra_km_fare', this.value); updatePricingSimulator();" onchange="updateSetting('extra_km_fare', this.value); updatePricingSimulator();">
               </div>
               <div>
-                <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">إضافة تكييف السيارة لكل كم (Car AC Surcharge)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.ac_km_fare ?? 1}" oninput="updateSetting('ac_km_fare', this.value)" onchange="updateSetting('ac_km_fare', this.value)">
+                <label class="form-label" style="display:block;margin-bottom:6px;font-weight:700;font-size:12.5px;">إضافة تكييف السيارة لكل كم (AC Surcharge)</label>
+                <input type="number" class="form-control" style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-weight:700;" value="${mockData.settings.ac_km_fare ?? 1}" oninput="updateSetting('ac_km_fare', this.value)" onchange="updateSetting('ac_km_fare', this.value)">
               </div>
               <div>
-                <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">إضافة ساعة الحر لكل كم (Heat Surge Surcharge)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.heat_hour_km_fare ?? 1}" oninput="updateSetting('heat_hour_km_fare', this.value)" onchange="updateSetting('heat_hour_km_fare', this.value)">
+                <label class="form-label" style="display:block;margin-bottom:6px;font-weight:700;font-size:12.5px;">إضافة ساعة الحر لكل كم (Heat Surge)</label>
+                <input type="number" class="form-control" style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-weight:700;" value="${mockData.settings.heat_hour_km_fare ?? 1}" oninput="updateSetting('heat_hour_km_fare', this.value)" onchange="updateSetting('heat_hour_km_fare', this.value)">
               </div>
               <div>
-                <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">ساعة بدء الحر (تبدأ من: 11 مثلاً)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.heat_start_hour ?? 11}" oninput="updateSetting('heat_start_hour', this.value)" onchange="updateSetting('heat_start_hour', this.value)">
+                <label class="form-label" style="display:block;margin-bottom:6px;font-weight:700;font-size:12.5px;">ساعة بدء ذروة الحر (مثلاً 11 ظهراً)</label>
+                <input type="number" class="form-control" style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.heat_start_hour ?? 11}" oninput="updateSetting('heat_start_hour', this.value)" onchange="updateSetting('heat_start_hour', this.value)">
               </div>
               <div>
-                <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">ساعة انتهاء الحر (تنتهي في: 15 مثلاً)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.heat_end_hour ?? 15}" oninput="updateSetting('heat_end_hour', this.value)" onchange="updateSetting('heat_end_hour', this.value)">
-              </div>
-              
-              <div>
-                <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">تسعيرة السيارة الافتراضية (Car Base)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.defaultFareCar ?? 45}" oninput="updateSetting('defaultFareCar', this.value)" onchange="updateSetting('defaultFareCar', this.value)">
+                <label class="form-label" style="display:block;margin-bottom:6px;font-weight:700;font-size:12.5px;">ساعة انتهاء ذروة الحر (مثلاً 15 عصراً)</label>
+                <input type="number" class="form-control" style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.heat_end_hour ?? 15}" oninput="updateSetting('heat_end_hour', this.value)" onchange="updateSetting('heat_end_hour', this.value)">
               </div>
               <div>
-                <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">تسعيرة الاسكوتر الافتراضية (Scooter Base)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.defaultFareScooter ?? 20}" oninput="updateSetting('defaultFareScooter', this.value)" onchange="updateSetting('defaultFareScooter', this.value)">
+                <label class="form-label" style="display:block;margin-bottom:6px;font-weight:700;font-size:12.5px;">تسعيرة السيارة الافتراضية (Car Base)</label>
+                <input type="number" class="form-control" style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-weight:700;" value="${mockData.settings.defaultFareCar ?? 45}" oninput="updateSetting('defaultFareCar', this.value)" onchange="updateSetting('defaultFareCar', this.value)">
               </div>
               <div>
-                <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">تسعيرة الموتوسيكل الافتراضية (Motorcycle Base)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.defaultFareMotorcycle ?? 15}" oninput="updateSetting('defaultFareMotorcycle', this.value)" onchange="updateSetting('defaultFareMotorcycle', this.value)">
+                <label class="form-label" style="display:block;margin-bottom:6px;font-weight:700;font-size:12.5px;">تسعيرة الاسكوتر الافتراضية (Scooter Base)</label>
+                <input type="number" class="form-control" style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-weight:700;" value="${mockData.settings.defaultFareScooter ?? 20}" oninput="updateSetting('defaultFareScooter', this.value)" onchange="updateSetting('defaultFareScooter', this.value)">
               </div>
               <div>
-                <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">عمولة التطبيق (Platform Commission %)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.commissionRate ?? 10}" oninput="updateSetting('commissionRate', this.value)" onchange="updateSetting('commissionRate', this.value)">
+                <label class="form-label" style="display:block;margin-bottom:6px;font-weight:700;font-size:12.5px;">عمولة التطبيق (Commission %)</label>
+                <input type="number" class="form-control" style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-weight:700;" value="${mockData.settings.commissionRate ?? 10}" oninput="updateSetting('commissionRate', this.value)" onchange="updateSetting('commissionRate', this.value)">
               </div>
               <div>
-                <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">الحد الأدنى للأجرة (Min Fare)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.minFare ?? 10}" oninput="updateSetting('minFare', this.value)" onchange="updateSetting('minFare', this.value)">
-              </div>
-              <div>
-                <label class="form-label" style="display:block;margin-bottom:8px;font-weight:700;">الحد الأقصى للأجرة (Max Fare)</label>
-                <input type="number" class="form-control" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:var(--radius-md);" value="${mockData.settings.maxFare ?? 500}" oninput="updateSetting('maxFare', this.value)" onchange="updateSetting('maxFare', this.value)">
+                <label class="form-label" style="display:block;margin-bottom:6px;font-weight:700;font-size:12.5px;">الحد الأدنى للأجرة (Min Fare)</label>
+                <input type="number" class="form-control" style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-weight:700;" value="${mockData.settings.minFare ?? 10}" oninput="updateSetting('minFare', this.value)" onchange="updateSetting('minFare', this.value)">
               </div>
             </div>
             
-            <div id="pricing-save-container" style="display:${settingsDirty ? 'flex' : 'none'};justify-content:flex-end;">
-              <button class="btn btn-primary" onclick="saveSettings(); logAction('تحديث إعدادات التسعير والعمولات');">
-                <i class="ri-save-line"></i> حفظ إعدادات الأسعار
+            <div id="pricing-save-container" style="display:${settingsDirty ? 'flex' : 'none'}; justify-content:flex-end;">
+              <button class="btn btn-primary" onclick="saveSettings(); logAction('تحديث إعدادات التسعير وخارج المدينة');" style="padding:10px 22px; font-weight:800; border-radius:12px;">
+                <i class="ri-save-line"></i> حفظ إعدادات الأسعار وتزامنها مع التطبيق 🚀
               </button>
             </div>
           </div>
         </div>
 
-        <!-- Surge Pricing and Regions -->
-        <div class="card">
-          <div class="card-header">
-            <h3><i class="ri-map-pin-2-line text-blue" style="margin-left:8px;"></i> ذروة الأسعار (Surge) والمناطق</h3>
-          </div>
-          <div class="card-body">
-            <div style="background:var(--bg-primary);padding:14px;border-radius:var(--radius-md);margin-bottom:16px;">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-                <span style="font-weight:700;font-size:13px;">تفعيل ذروة الأسعار الذكي (Surge)</span>
-                <input type="checkbox" ${mockData.settings.surge_enabled !== false ? 'checked' : ''} style="width:20px;height:20px;cursor:pointer;" onchange="toggleSurgePricing(this.checked)">
+        <!-- Right Column: Interactive Simulator + Surge & Regions -->
+        <div style="display:flex; flex-direction:column; gap:20px;">
+          
+          <!-- Live Interactive Fare Simulator -->
+          <div class="card" style="border-radius:var(--radius-xl); padding:20px; border:1px solid #CBD5E1; background:linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 100%);">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+              <div style="width:32px; height:32px; border-radius:8px; background:rgba(16,185,129,0.15); color:#059669; display:flex; align-items:center; justify-content:center; font-size:17px;">
+                <i class="ri-calculator-line"></i>
               </div>
-              <p style="font-size:11px;color:var(--text-secondary);margin:0;">يقوم برفع الأسعار بنسبة 1.2x إلى 1.8x تلقائياً في حالة زيادة طلبات العملاء عن السائقين المتاحين.</p>
+              <div>
+                <h4 style="margin:0; font-size:14px; font-weight:800; color:var(--text-primary);">حاسبة ومحاكي تسعير المشاوير اللحظي</h4>
+                <div style="font-size:11px; color:var(--text-secondary);">اختبر تسعير أي مشوار وتأثير قاعدة الـ 5 كم</div>
+              </div>
             </div>
 
-            <div style="border-top:1px solid var(--border-color);padding-top:14px;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                <h4 style="font-size:13px;font-weight:700;margin:0;">تسعير خاص بالمناطق (تزامن الداتا بيس)</h4>
-                <button class="btn btn-sm btn-outline" style="font-size:11px;padding:3px 10px;font-weight:700;color:var(--medium-blue);" onclick="addRegionPricing()">+ إضافة منطقة</button>
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <label style="font-size:12px; font-weight:700; color:var(--text-primary);">مسافة المشوار التجريبي (كم):</label>
+                <span id="simDistLabel" style="font-weight:800; font-size:13px; color:#2563EB; font-family:'Outfit',sans-serif;">8 كم</span>
               </div>
-              <div style="display:flex;gap:8px;flex-direction:column;">
-                ${(mockData.settings.region_fares || [
-      { id: '1', name: 'القاهرة الكبرى', surcharge: 0, is_default: true },
-      { id: '2', name: 'الإسكندرية (الساحل)', surcharge: 5, is_default: false }
-    ]).map(reg => `
-                  <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:10px 12px;background:var(--bg-primary);border-radius:8px;border:1px solid var(--border-color);">
-                    <div>
-                      <strong style="color:var(--text-primary);">${reg.name}</strong>
-                      ${reg.is_default ? '<span style="font-size:10.5px;color:var(--text-light);margin-right:6px;">(الافتراضي)</span>' : ''}
-                    </div>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                      <span style="font-weight:800;font-size:12px;color:${reg.surcharge > 0 ? 'var(--success)' : 'var(--medium-blue)'};">
-                        ${reg.surcharge > 0 ? `+${reg.surcharge} ج.م (إضافي)` : 'افتراضي'}
-                      </span>
-                      <button class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:10px;font-weight:700;" onclick="editRegionPricing('${reg.id}')">تعديل</button>
-                      ${!reg.is_default ? `<button class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:10px;color:var(--error);border-color:var(--error);font-weight:700;" onclick="deleteRegionPricing('${reg.id}')">حذف</button>` : ''}
-                    </div>
+              <input type="range" min="1" max="30" step="0.5" value="8" id="simDistanceSlider" 
+                     oninput="document.getElementById('simDistanceInput').value = this.value; document.getElementById('simDistLabel').textContent = this.value + ' كم'; updatePricingSimulator(this.value);" 
+                     style="width:100%; cursor:pointer; accent-color:#2563EB;">
+              <div style="display:flex; gap:8px; margin-top:8px;">
+                <input type="number" id="simDistanceInput" value="8" min="0.5" step="0.5" 
+                       oninput="document.getElementById('simDistanceSlider').value = this.value; document.getElementById('simDistLabel').textContent = this.value + ' كم'; updatePricingSimulator(this.value);" 
+                       style="width:100%; padding:8px 12px; border-radius:10px; border:1px solid #CBD5E1; font-weight:700; font-size:13px;">
+              </div>
+            </div>
+
+            <div id="pricingSimResult">
+              <div style="background:#FFFFFF; border:1px solid #93C5FD; border-radius:14px; padding:16px; margin-top:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="badge" style="background:#EFF6FF; color:#1D4ED8; font-weight:800; font-size:12px; padding:4px 10px; border-radius:8px;">
+                      🛣️ مشوار خارج المدينة (> 5 كم)
+                    </span>
+                    <span style="font-weight:700; font-size:13px; color:var(--text-secondary);">المسافة: 8.0 كم</span>
                   </div>
-                `).join('')}
+                  <div style="text-align:left;">
+                    <div style="font-size:11px; color:var(--text-light); font-weight:600;">الأجرة المقدرة بالتطبيق</div>
+                    <div style="font-size:22px; font-weight:900; color:#059669; font-family:'Outfit',sans-serif;">${initialSim.fare.toFixed(0)} ج.م</div>
+                  </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:12px; background:#F8FAFC; padding:10px 14px; border-radius:10px;">
+                  <div>
+                    <span style="color:#64748B;">داخل المدينة (5.0 كم):</span>
+                    <strong style="color:#1E293B; margin-right:4px;">${initialSim.insideCityFare.toFixed(0)} ج.م</strong>
+                  </div>
+                  <div>
+                    <span style="color:#DC2626;">خارج المدينة (3.0 كم × 20 ج.م):</span>
+                    <strong style="color:#DC2626; margin-right:4px;">+${initialSim.outsideCityFare.toFixed(0)} ج.م</strong>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
+
+          <!-- Surge Pricing and Regions -->
+          <div class="card" style="border-radius:var(--radius-xl); padding:20px;">
+            <div class="card-header" style="padding-bottom:12px; margin-bottom:14px; border-bottom:1px solid var(--border-color);">
+              <h3 style="margin:0; font-size:15px; font-weight:800;"><i class="ri-map-pin-2-line text-blue" style="margin-left:8px;"></i> ذروة الأسعار (Surge) والمناطق</h3>
+            </div>
+            <div class="card-body" style="padding:0;">
+              <div style="background:var(--bg-primary);padding:14px;border-radius:var(--radius-md);margin-bottom:16px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                  <span style="font-weight:700;font-size:13px;">تفعيل ذروة الأسعار الذكي (Surge)</span>
+                  <input type="checkbox" ${mockData.settings.surge_enabled !== false ? 'checked' : ''} style="width:20px;height:20px;cursor:pointer;" onchange="toggleSurgePricing(this.checked)">
+                </div>
+                <p style="font-size:11px;color:var(--text-secondary);margin:0;">يقوم برفع الأسعار بنسبة 1.2x إلى 1.8x تلقائياً في حالة زيادة طلبات العملاء عن السائقين المتاحين.</p>
+              </div>
+
+              <div style="border-top:1px solid var(--border-color);padding-top:14px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                  <h4 style="font-size:13px;font-weight:700;margin:0;">تسعير خاص بالمناطق (تزامن الداتا بيس)</h4>
+                  <button class="btn btn-sm btn-outline" style="font-size:11px;padding:3px 10px;font-weight:700;color:var(--medium-blue);" onclick="addRegionPricing()">+ إضافة منطقة</button>
+                </div>
+                <div style="display:flex;gap:8px;flex-direction:column;">
+                  ${(mockData.settings.region_fares || [
+                    { id: '1', name: 'مدينة السادات (النطاق الرئيسي)', surcharge: 0, is_default: true },
+                    { id: '2', name: 'المناطق والقرى المجاورة', surcharge: 10, is_default: false }
+                  ]).map(reg => `
+                    <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:10px 12px;background:var(--bg-primary);border-radius:8px;border:1px solid var(--border-color);">
+                      <div>
+                        <strong style="color:var(--text-primary);">${reg.name}</strong>
+                        ${reg.is_default ? '<span style="font-size:10.5px;color:var(--text-light);margin-right:6px;">(الافتراضي)</span>' : ''}
+                      </div>
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-weight:800;font-size:12px;color:${reg.surcharge > 0 ? 'var(--success)' : 'var(--medium-blue)'};">
+                          ${reg.surcharge > 0 ? `+${reg.surcharge} ج.م (إضافي)` : 'افتراضي'}
+                        </span>
+                        <button class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:10px;font-weight:700;" onclick="editRegionPricing('${reg.id}')">تعديل</button>
+                        ${!reg.is_default ? `<button class="btn btn-sm btn-outline" style="padding:2px 8px;font-size:10px;color:var(--error);border-color:var(--error);font-weight:700;" onclick="deleteRegionPricing('${reg.id}')">حذف</button>` : ''}
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -8729,6 +9027,9 @@ function initSupabaseSync() {
           heat_hour_km_fare: settingsData.heat_hour_km_fare !== undefined && settingsData.heat_hour_km_fare !== null ? parseFloat(settingsData.heat_hour_km_fare) : 1,
           heat_start_hour: settingsData.heat_start_hour !== undefined && settingsData.heat_start_hour !== null ? parseInt(settingsData.heat_start_hour) : 11,
           heat_end_hour: settingsData.heat_end_hour !== undefined && settingsData.heat_end_hour !== null ? parseInt(settingsData.heat_end_hour) : 15,
+          out_of_city_threshold_km: settingsData.out_of_city_threshold_km !== undefined && settingsData.out_of_city_threshold_km !== null ? parseFloat(settingsData.out_of_city_threshold_km) : 5,
+          out_of_city_extra_fare: settingsData.out_of_city_extra_fare !== undefined && settingsData.out_of_city_extra_fare !== null ? parseFloat(settingsData.out_of_city_extra_fare) : 20,
+          out_of_city_pricing_enabled: settingsData.out_of_city_pricing_enabled !== false,
           surge_enabled: settingsData.surge_enabled !== false,
           region_fares: Array.isArray(settingsData.region_fares) ? settingsData.region_fares : [],
           demo_mode_enabled: settingsData.demo_mode_enabled === true,
@@ -8768,10 +9069,17 @@ function initSupabaseSync() {
         if (typeof renderCommConversationsList === 'function' && document.getElementById('commConvListContainer')) {
           renderCommConversationsList();
         }
-      } else if (currentPage === 'driver-profile' || currentPage === 'passenger-profile' || currentPage === 'banners') {
-        // Keep active profile view and banners view open without full DOM destructive rebuild
+      } else if (currentPage === 'driver-profile' || currentPage === 'passenger-profile' || currentPage === 'banners' || currentPage === 'promos') {
+        // Keep active profile view, banners view, and promos view open without full DOM destructive rebuild
+        if (currentPage === 'promos') {
+          const isPromoModalOpen = document.querySelector('.modal-overlay, #promoCodeModalContainer > *, #barcodeViewModalContainer > *');
+          if (!isPromoModalOpen && typeof updatePromoCodesKPIs === 'function' && typeof renderPromoCodesTableRows === 'function') {
+            updatePromoCodesKPIs();
+            renderPromoCodesTableRows();
+          }
+        }
       } else {
-        const isModalOpen = document.querySelector('.modal[style*="display: flex"], .modal.open, .modal-backdrop, #bannerModal[style*="display: flex"]');
+        const isModalOpen = document.querySelector('.modal[style*="display: flex"], .modal.open, .modal-backdrop, .modal-overlay, .modal-card, #bannerModal[style*="display: flex"], #promoCodeModalContainer > *, #barcodeViewModalContainer > *, .swal2-container');
         const isUserTyping = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'SELECT');
         if (!isModalOpen && !isUserTyping) {
           renderPage(currentPage);
@@ -16716,6 +17024,41 @@ function renderPlaces() {
         </div>
       </div>
 
+      <!-- Intercity & Out-of-City Boundary Rules Banner -->
+      <div class="card" style="background:linear-gradient(135deg, #0F172A 0%, #1E293B 100%); color:#fff; border-radius:14px; padding:18px 22px; margin-bottom:20px; border:1px solid #334155; box-shadow:0 6px 20px rgba(0,0,0,0.12);">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+          <div style="display:flex; align-items:center; gap:14px;">
+            <div style="width:46px; height:46px; border-radius:12px; background:rgba(37,99,235,0.25); color:#60A5FA; display:flex; align-items:center; justify-content:center; font-size:24px; border:1px solid rgba(96,165,250,0.3);">
+              <i class="ri-pin-distance-fill"></i>
+            </div>
+            <div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <h4 style="margin:0; font-size:14.5px; font-weight:800; color:#fff;">قواعد نطاق المدينة والمشاوير الخارجية (Out-of-City Boundary)</h4>
+                <span class="badge" style="background:${mockData.settings.out_of_city_pricing_enabled !== false ? '#22C55E' : '#64748B'}; color:#fff; font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px;">
+                  ${mockData.settings.out_of_city_pricing_enabled !== false ? '🟢 نظام نشط ومفعل' : '⚪ معطل'}
+                </span>
+              </div>
+              <p style="margin:4px 0 0 0; font-size:12px; color:#94A3B8; line-height:1.5;">
+                المشاوير داخل نطاق مدينة السادات (حتى <strong>${mockData.settings.out_of_city_threshold_km || 5} كم</strong>) تُحسب بالتسعيرة الداخلية. عند زيادة المسافة عن <strong>${mockData.settings.out_of_city_threshold_km || 5} كم</strong>، يُصنف المشوار كـ <strong>"مشوار خارج المدينة"</strong> ويُضاف تلقائياً <strong>+${mockData.settings.out_of_city_extra_fare || 20} ج.م</strong> لكل كم إضافي.
+              </p>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div style="background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:10px; padding:6px 12px; text-align:center;">
+              <div style="font-size:10.5px; color:#94A3B8; font-weight:600;">حد مسافة المدينة</div>
+              <div style="font-size:16px; font-weight:900; color:#60A5FA; font-family:'Outfit',sans-serif;">${mockData.settings.out_of_city_threshold_km || 5} كم</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:10px; padding:6px 12px; text-align:center;">
+              <div style="font-size:10.5px; color:#94A3B8; font-weight:600;">تسعيرة كم خارج المدينة</div>
+              <div style="font-size:16px; font-weight:900; color:#34D399; font-family:'Outfit',sans-serif;">+${mockData.settings.out_of_city_extra_fare || 20} ج.م</div>
+            </div>
+            <button class="btn btn-primary" onclick="navigateTo('pricing')" style="padding:8px 16px; font-weight:700; font-size:12px; border-radius:10px; white-space:nowrap;">
+              <i class="ri-settings-4-line"></i> تعديل التسعير
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Categories Filter Bar (Horizontal Chips) -->
       <div class="card" style="margin-bottom: 20px; border-radius: 12px;">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
@@ -18372,6 +18715,23 @@ function renderRewardsPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Promo Code & Barcode Quick Access Card -->
+      <div class="card" style="background:#FFFFFF; border:1px solid #E2E8F0; border-right:5px solid #3B82F6; border-radius:var(--radius-lg); padding:16px 20px; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div style="width:44px; height:44px; border-radius:12px; background:rgba(59,130,246,0.1); color:#3B82F6; display:flex; align-items:center; justify-content:center; font-size:22px;">
+            <i class="ri-barcode-box-fill"></i>
+          </div>
+          <div>
+            <div style="font-size:14px; font-weight:800; color:var(--text-primary);">مولد وإدارة البرومو كود والباركود 🎟️</div>
+            <div style="font-size:12px; color:var(--text-secondary);">أنشئ أكواد بباركود وصلاحية تظهر تلقائياً في بانر صفحة "اكسب فلوس أكتر" بالتطبيق</div>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-primary" onclick="navigateTo('promos')" style="font-weight:700; border-radius:10px; display:inline-flex; align-items:center; gap:6px; background:#1E88E5;">
+          <span>فتح مولد البرومو كود والباركود 🚀</span>
+          <i class="ri-arrow-left-line"></i>
+        </button>
       </div>
 
       <!-- KPI Stat Cards -->
@@ -20998,5 +21358,1008 @@ function renderReportsTableRows() {
     `;
   }).join('');
 }
+
+// =============================================================================
+// PROMO CODES & BARCODE GENERATOR SYSTEM (inRide Brand Edition)
+// =============================================================================
+
+let promoCodesList = [];
+let promoCodesFilterStatus = 'all'; // 'all', 'active', 'paused', 'expired'
+let promoCodesSearchQuery = '';
+let promoCodesRealtimeChannel = null;
+let activeEditingPromoId = null;
+
+/**
+ * Generates an authentic SVG Barcode in pure JS
+ */
+function generateBarcodeSVG(code, width = 200, height = 50, showText = true) {
+  if (!code) code = 'INRIDE';
+  const clean = String(code).toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+  
+  let bars = [2, 1, 2, 1]; // start quiet / guard
+  for (let i = 0; i < clean.length; i++) {
+    const c = clean.charCodeAt(i);
+    const w1 = (c % 3) + 1;
+    const w2 = ((c >> 1) % 2) + 1;
+    const w3 = ((c >> 2) % 3) + 1;
+    const w4 = ((c >> 3) % 2) + 1;
+    bars.push(w1, w2, w3, w4);
+  }
+  bars.push(2, 1, 1, 2, 3); // stop guard
+
+  const totalUnits = bars.reduce((acc, v) => acc + v, 0);
+  const unitWidth = (width - 16) / totalUnits;
+  const barHeight = showText ? height - 16 : height;
+
+  let x = 8;
+  let rects = '';
+  for (let i = 0; i < bars.length; i++) {
+    const w = bars[i] * unitWidth;
+    if (i % 2 === 0) {
+      rects += `<rect x="${x.toFixed(1)}" y="3" width="${w.toFixed(1)}" height="${barHeight}" fill="#0F172A" rx="0.5" />`;
+    }
+    x += w;
+  }
+
+  const textElement = showText ? `
+    <text x="${(width / 2).toFixed(1)}" y="${height - 2}" text-anchor="middle" font-family="'Courier New', Courier, monospace" font-size="10.5" font-weight="bold" fill="#334155" letter-spacing="1.5">
+      ${clean}
+    </text>
+  ` : '';
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="display:block;">
+      ${rects}
+      ${textElement}
+    </svg>
+  `;
+}
+
+function generateRandomPromoCode() {
+  const prefixes = ['INRIDE', 'RIDE', 'SADAT', 'BONUS', 'VIP', 'OFFER', 'SUPER'];
+  const numbers = ['20', '25', '50', '100', '2026', '77', '99'];
+  const p = prefixes[Math.floor(Math.random() * prefixes.length)];
+  const n = numbers[Math.floor(Math.random() * numbers.length)];
+  const input = document.getElementById('inputPromoCode');
+  if (input) {
+    input.value = `${p}${n}`;
+    updateModalBarcodePreview();
+  }
+}
+
+function updateModalBarcodePreview() {
+  const codeVal = document.getElementById('inputPromoCode')?.value?.trim() || 'INRIDE50';
+  const preview = document.getElementById('modalBarcodePreviewContainer');
+  if (preview) {
+    preview.innerHTML = generateBarcodeSVG(codeVal, 240, 60, true);
+  }
+}
+
+function renderPromoCodesPage() {
+  return `
+    <div class="promos-container" style="display:flex; flex-direction:column; gap:24px; padding-bottom:40px;">
+      
+      <!-- Top Hero Banner -->
+      <div class="card" style="background:linear-gradient(135deg, #0A192F 0%, #0D3268 45%, #1565C0 100%); color:#fff; padding:26px 28px; border-radius:var(--radius-xl); box-shadow:0 12px 36px rgba(13,71,161,0.3); position:relative; overflow:hidden; border:1px solid rgba(255,255,255,0.15);">
+        <div style="position:absolute; right:-25px; top:-25px; font-size:160px; color:rgba(255,255,255,0.04); pointer-events:none;">
+          <i class="ri-barcode-box-fill"></i>
+        </div>
+        
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:20px; position:relative; z-index:1;">
+          <div>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+              <span style="background:rgba(255,255,255,0.18); padding:4px 14px; border-radius:20px; font-size:12px; font-weight:700; letter-spacing:0.3px;">🎟️ نظام البرومو كود والباركود</span>
+              <span id="promoCodesSystemBadge" style="background:#10B981; padding:4px 14px; border-radius:20px; font-size:12px; font-weight:700;">متصل ولحظي ✅</span>
+            </div>
+            <h2 style="font-size:24px; font-weight:800; margin:0 0 8px 0; color:#fff;">مولد وإدارة البرومو كود والباركود الذكي</h2>
+            <p style="margin:0; font-size:14px; color:rgba(255,255,255,0.85); max-width:680px; line-height:1.7;">
+              أنشئ أكواد خصم ترويجية مع باركود بصلاحية محددة وقيمة مالية، وتحكم في تفعيلها أو إيقافها وتعديلها أو حذفها لتظهر تلقائياً في بانر تطبيق inRide بصفحة "اكسب فلوس أكتر".
+            </p>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="showCreatePromoModal()" style="background:linear-gradient(135deg, #10B981, #059669); border:none; padding:12px 22px; font-size:14px; font-weight:800; border-radius:14px; box-shadow:0 6px 20px rgba(16,185,129,0.35); display:inline-flex; align-items:center; gap:8px;">
+              <i class="ri-add-circle-fill" style="font-size:18px;"></i>
+              <span>+ إنشاء برومو كود جديد</span>
+            </button>
+            <button class="btn btn-outline" onclick="loadPromoCodesData(true)" style="background:rgba(255,255,255,0.12); color:#fff; border-color:rgba(255,255,255,0.25); padding:12px 18px; font-size:13px; font-weight:700; border-radius:14px; backdrop-filter:blur(8px); display:inline-flex; align-items:center; gap:6px;">
+              <i class="ri-refresh-line"></i>
+              <span>تحديث</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI Stat Cards -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px;">
+        
+        <div class="card" style="padding:20px; display:flex; align-items:center; gap:16px; border-right:4px solid #3B82F6; border-radius:var(--radius-lg);">
+          <div style="width:52px; height:52px; border-radius:14px; background:rgba(59,130,246,0.1); color:#3B82F6; display:flex; align-items:center; justify-content:center; font-size:26px;">
+            <i class="ri-ticket-2-line"></i>
+          </div>
+          <div>
+            <div style="font-size:12px; color:var(--text-secondary); font-weight:600;">إجمالي الأكواد</div>
+            <div id="kpiTotalPromoCodes" style="font-size:26px; font-weight:800; color:var(--text-primary); font-family:'Outfit',sans-serif;">--</div>
+            <div style="font-size:11px; color:#3B82F6; font-weight:600;">أكواد تم إنشاؤها</div>
+          </div>
+        </div>
+
+        <div class="card" style="padding:20px; display:flex; align-items:center; gap:16px; border-right:4px solid #10B981; border-radius:var(--radius-lg);">
+          <div style="width:52px; height:52px; border-radius:14px; background:rgba(16,185,129,0.1); color:#10B981; display:flex; align-items:center; justify-content:center; font-size:26px;">
+            <i class="ri-checkbox-circle-line"></i>
+          </div>
+          <div>
+            <div style="font-size:12px; color:var(--text-secondary); font-weight:600;">الأكواد النشطة</div>
+            <div id="kpiActivePromoCodes" style="font-size:26px; font-weight:800; color:#059669; font-family:'Outfit',sans-serif;">--</div>
+            <div style="font-size:11px; color:#10B981; font-weight:600;">تعمل وتظهر بالتطبيق</div>
+          </div>
+        </div>
+
+        <div class="card" style="padding:20px; display:flex; align-items:center; gap:16px; border-right:4px solid #F59E0B; border-radius:var(--radius-lg);">
+          <div style="width:52px; height:52px; border-radius:14px; background:rgba(245,158,11,0.1); color:#F59E0B; display:flex; align-items:center; justify-content:center; font-size:26px;">
+            <i class="ri-pause-circle-line"></i>
+          </div>
+          <div>
+            <div style="font-size:12px; color:var(--text-secondary); font-weight:600;">الأكواد المتوقفة</div>
+            <div id="kpiPausedPromoCodes" style="font-size:26px; font-weight:800; color:#D97706; font-family:'Outfit',sans-serif;">--</div>
+            <div style="font-size:11px; color:var(--text-light); font-weight:600;">معطلة مؤقتاً</div>
+          </div>
+        </div>
+
+        <div class="card" style="padding:20px; display:flex; align-items:center; gap:16px; border-right:4px solid #8B5CF6; border-radius:var(--radius-lg);">
+          <div style="width:52px; height:52px; border-radius:14px; background:rgba(139,92,246,0.1); color:#8B5CF6; display:flex; align-items:center; justify-content:center; font-size:26px;">
+            <i class="ri-user-star-line"></i>
+          </div>
+          <div>
+            <div style="font-size:12px; color:var(--text-secondary); font-weight:600;">مرات الاستخدام</div>
+            <div id="kpiTotalRedemptions" style="font-size:26px; font-weight:800; color:#7C3AED; font-family:'Outfit',sans-serif;">--</div>
+            <div style="font-size:11px; color:#8B5CF6; font-weight:600;">أودعت بمحافظ المستخدمين</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Main Card: Table & Controls -->
+      <div class="card" style="padding:24px; border-radius:var(--radius-xl); box-shadow:var(--shadow-md);">
+        
+        <!-- Controls Bar -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; margin-bottom:20px;">
+          
+          <!-- Filter Tabs -->
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <button class="filter-tab-btn active" id="tabAllPromos" onclick="setPromoCodesFilter('all')">الكل (<span id="countAllPromos">0</span>)</button>
+            <button class="filter-tab-btn" id="tabActivePromos" onclick="setPromoCodesFilter('active')">نشط 🟢 (<span id="countActivePromos">0</span>)</button>
+            <button class="filter-tab-btn" id="tabPausedPromos" onclick="setPromoCodesFilter('paused')">متوقف ⏸️ (<span id="countPausedPromos">0</span>)</button>
+            <button class="filter-tab-btn" id="tabExpiredPromos" onclick="setPromoCodesFilter('expired')">منتهي الصلاحية ⏳ (<span id="countExpiredPromos">0</span>)</button>
+          </div>
+
+          <!-- Search Input -->
+          <div style="display:flex; align-items:center; gap:10px; min-width:280px; flex:1; max-width:400px;">
+            <div style="position:relative; width:100%;">
+              <i class="ri-search-line" style="position:absolute; right:12px; top:50%; transform:translateY(-50%); color:var(--text-light);"></i>
+              <input type="text" id="inputSearchPromoCodes" placeholder="بحث بالكود، العنوان، أو الوصف..." 
+                     oninput="handlePromoCodesSearch(this.value)"
+                     style="width:100%; padding:9px 36px 9px 12px; border-radius:12px; border:1px solid var(--border-color); font-size:13px; font-family:inherit;">
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Table Container -->
+        <div class="table-responsive" style="overflow-x:auto;">
+          <table class="table" style="width:100%; text-align:right; border-collapse:separate; border-spacing:0 8px;">
+            <thead>
+              <tr style="background:#F8FAFC; color:var(--text-secondary); font-size:12px;">
+                <th style="padding:12px 16px; border-radius:0 12px 12px 0;">الباركود والكود</th>
+                <th style="padding:12px 16px;">تفاصيل العرض</th>
+                <th style="padding:12px 16px;">القيمة المالية</th>
+                <th style="padding:12px 16px;">الصلاحية والانتهاء</th>
+                <th style="padding:12px 16px;">الاستخدامات</th>
+                <th style="padding:12px 16px;">الفئة</th>
+                <th style="padding:12px 16px;">بانر التطبيق</th>
+                <th style="padding:12px 16px;">الحالة</th>
+                <th style="padding:12px 16px; text-align:center; border-radius:12px 0 0 12px;">الإجراءات</th>
+              </tr>
+            </thead>
+            <tbody id="promoCodesTableBody">
+              <tr>
+                <td colspan="9" style="text-align:center; padding:40px; color:var(--text-light);">
+                  <i class="ri-loader-4-line ri-spin" style="font-size:24px; color:var(--medium-blue);"></i>
+                  <div style="margin-top:8px; font-weight:600;">جاري تحميل الأكواد والباركود...</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Modal Containers -->
+    <div id="promoCodeModalContainer"></div>
+    <div id="barcodeViewModalContainer"></div>
+  `;
+}
+
+async function initPromoCodesPage() {
+  setupPromoCodesRealtime();
+  await loadPromoCodesData();
+}
+
+function setupPromoCodesRealtime() {
+  if (promoCodesRealtimeChannel || !supabaseClient) return;
+  try {
+    promoCodesRealtimeChannel = supabaseClient
+      .channel('public:promo_codes_realtime_admin')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'promo_codes' }, (payload) => {
+        console.log('[PromoCodes Realtime]', payload);
+        const hasOpenModal = document.querySelector('.modal-overlay, #promoCodeModalContainer > *, #barcodeViewModalContainer > *');
+        if (!hasOpenModal) {
+          loadPromoCodesData();
+        } else {
+          // If modal is open, refresh background list and KPIs smoothly without disturbing open modal
+          supabaseClient.from('promo_codes').select('*').order('created_at', { ascending: false }).then(({ data }) => {
+            if (data) {
+              promoCodesList = data;
+              updatePromoCodesKPIs();
+              renderPromoCodesTableRows();
+            }
+          });
+        }
+      })
+      .subscribe();
+  } catch (e) {
+    console.warn('[PromoCodes Realtime Error]:', e);
+  }
+}
+
+async function loadPromoCodesData(showToast = false) {
+  if (!supabaseClient) return;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('promo_codes')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    promoCodesList = data || [];
+    updatePromoCodesKPIs();
+    renderPromoCodesTableRows();
+
+    if (showToast && typeof showNotification === 'function') {
+      showNotification('تم تحديث قائمة البرومو كود والباركود بنجاح 🔄', 'success');
+    }
+  } catch (err) {
+    console.error('[loadPromoCodesData Error]:', err);
+    const tbody = document.getElementById('promoCodesTableBody');
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="9" style="text-align:center; padding:30px; color:#DC2626;">
+            <i class="ri-error-warning-line" style="font-size:22px;"></i>
+            <div style="margin-top:6px; font-weight:700;">تعذر تحميل بيانات الأكواد: ${escapeHtml(err.message || String(err))}</div>
+            <button class="btn btn-sm btn-outline" onclick="loadPromoCodesData(true)" style="margin-top:10px;">إعادة المحاولة</button>
+          </td>
+        </tr>
+      `;
+    }
+  }
+}
+
+function updatePromoCodesKPIs() {
+  const now = new Date();
+  let activeCount = 0;
+  let pausedCount = 0;
+  let expiredCount = 0;
+  let totalUses = 0;
+
+  promoCodesList.forEach(p => {
+    const isExpired = p.expires_at && new Date(p.expires_at) < now;
+    if (isExpired) {
+      expiredCount++;
+    } else if (p.is_active) {
+      activeCount++;
+    } else {
+      pausedCount++;
+    }
+    totalUses += (p.current_uses || 0);
+  });
+
+  const elTotal = document.getElementById('kpiTotalPromoCodes');
+  const elActive = document.getElementById('kpiActivePromoCodes');
+  const elPaused = document.getElementById('kpiPausedPromoCodes');
+  const elUses = document.getElementById('kpiTotalRedemptions');
+
+  if (elTotal) elTotal.textContent = promoCodesList.length;
+  if (elActive) elActive.textContent = activeCount;
+  if (elPaused) elPaused.textContent = pausedCount;
+  if (elUses) elUses.textContent = totalUses;
+
+  const cAll = document.getElementById('countAllPromos');
+  const cActive = document.getElementById('countActivePromos');
+  const cPaused = document.getElementById('countPausedPromos');
+  const cExpired = document.getElementById('countExpiredPromos');
+
+  if (cAll) cAll.textContent = promoCodesList.length;
+  if (cActive) cActive.textContent = activeCount;
+  if (cPaused) cPaused.textContent = pausedCount;
+  if (cExpired) cExpired.textContent = expiredCount;
+
+  const badge = document.getElementById('promosBadge');
+  if (badge) {
+    badge.textContent = activeCount > 0 ? `${activeCount} نشط` : '0';
+    badge.style.background = activeCount > 0 ? '#10B981' : '#64748B';
+  }
+}
+
+function setPromoCodesFilter(status) {
+  promoCodesFilterStatus = status;
+  document.querySelectorAll('.filter-tab-btn').forEach(btn => {
+    if (btn.id.startsWith('tab') && btn.id.endsWith('Promos')) {
+      btn.classList.remove('active');
+    }
+  });
+  const map = { all: 'tabAllPromos', active: 'tabActivePromos', paused: 'tabPausedPromos', expired: 'tabExpiredPromos' };
+  const targetId = map[status];
+  if (targetId) {
+    const btn = document.getElementById(targetId);
+    if (btn) btn.classList.add('active');
+  }
+  renderPromoCodesTableRows();
+}
+
+function handlePromoCodesSearch(val) {
+  promoCodesSearchQuery = (val || '').trim().toLowerCase();
+  renderPromoCodesTableRows();
+}
+
+function renderPromoCodesTableRows() {
+  const tbody = document.getElementById('promoCodesTableBody');
+  if (!tbody) return;
+
+  const now = new Date();
+
+  let filtered = promoCodesList.filter(p => {
+    const isExpired = p.expires_at && new Date(p.expires_at) < now;
+    if (promoCodesFilterStatus === 'active') return p.is_active && !isExpired;
+    if (promoCodesFilterStatus === 'paused') return !p.is_active && !isExpired;
+    if (promoCodesFilterStatus === 'expired') return isExpired;
+    return true;
+  });
+
+  if (promoCodesSearchQuery) {
+    filtered = filtered.filter(p => {
+      const code = (p.code || '').toLowerCase();
+      const title = (p.title || '').toLowerCase();
+      const desc = (p.description || '').toLowerCase();
+      return code.includes(promoCodesSearchQuery) || title.includes(promoCodesSearchQuery) || desc.includes(promoCodesSearchQuery);
+    });
+  }
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="9" style="text-align:center; padding:48px 20px; color:var(--text-light);">
+          <div style="width:60px; height:60px; border-radius:50%; background:rgba(59,130,246,0.08); display:flex; align-items:center; justify-content:center; margin:0 auto 14px; color:#3B82F6; font-size:28px;">
+            <i class="ri-ticket-line"></i>
+          </div>
+          <div style="font-weight:700; font-size:15px; color:var(--text-primary); margin-bottom:4px;">لا توجد أكواد برومو كود مطابقة</div>
+          <div style="font-size:12px; color:var(--text-secondary); max-width:320px; margin:0 auto 16px;">
+            لم يتم العثور على أي أكواد في هذا التصنيف. يمكنك إنشاء كود جديد بضغطة زر.
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="showCreatePromoModal()" style="font-weight:700; border-radius:10px;">
+            <i class="ri-add-line"></i> إنشاء كود جديد الآن
+          </button>
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(p => {
+    const isExpired = p.expires_at && new Date(p.expires_at) < now;
+    const barcodeSvg = generateBarcodeSVG(p.code, 150, 42, false);
+    
+    // Status Badge
+    let statusBadge = '';
+    if (isExpired) {
+      statusBadge = `<span class="badge" style="background:#FEE2E2; color:#DC2626; border-radius:8px; font-weight:700; font-size:11px;">منتهي ⏳</span>`;
+    } else if (p.is_active) {
+      statusBadge = `<span class="badge" style="background:#DCFCE7; color:#15803D; border-radius:8px; font-weight:700; font-size:11px;">مفعل 🟢</span>`;
+    } else {
+      statusBadge = `<span class="badge" style="background:#FEF3C7; color:#B45309; border-radius:8px; font-weight:700; font-size:11px;">متوقف ⏸️</span>`;
+    }
+
+    // Expiration Display
+    let expiryDisplay = '';
+    if (!p.expires_at) {
+      expiryDisplay = `<span style="font-size:11.5px; color:#64748B; font-weight:600;">بدون تاريخ انتهاء ♾️</span>`;
+    } else {
+      const expDate = new Date(p.expires_at);
+      const diffDays = Math.ceil((expDate - now) / (1000 * 60 * 60 * 24));
+      if (isExpired) {
+        expiryDisplay = `<div style="font-size:11px; color:#DC2626; font-weight:700;">انتهى في: ${expDate.toLocaleDateString('ar-EG')}</div>`;
+      } else {
+        expiryDisplay = `
+          <div style="font-size:11.5px; color:var(--text-primary); font-weight:700;">${expDate.toLocaleDateString('ar-EG')}</div>
+          <div style="font-size:10px; color:${diffDays <= 3 ? '#DC2626' : '#059669'}; font-weight:700;">(متبقي ${diffDays} يوم)</div>
+        `;
+      }
+    }
+
+    // Role Target
+    let roleBadge = '';
+    if (p.target_role === 'driver') {
+      roleBadge = `<span class="badge" style="background:#E0F2FE; color:#0369A1; font-size:11px; font-weight:700;">كباتن فقط 🚗</span>`;
+    } else if (p.target_role === 'rider') {
+      roleBadge = `<span class="badge" style="background:#F3E8FF; color:#7E22CE; font-size:11px; font-weight:700;">ركاب فقط 👤</span>`;
+    } else {
+      roleBadge = `<span class="badge" style="background:#F1F5F9; color:#475569; font-size:11px; font-weight:700;">الجميع 👥</span>`;
+    }
+
+    // Banner display badge
+    const bannerBadge = p.show_in_app_banner
+      ? `<span style="display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; color:#0284C7; background:#E0F2FE; padding:3px 8px; border-radius:6px;">
+          <i class="ri-smartphone-line"></i> في البانر ✅
+        </span>`
+      : `<span style="font-size:11px; color:#94A3B8;">مخفي</span>`;
+
+    return `
+      <tr style="background:#FFFFFF; box-shadow:0 1px 4px rgba(0,0,0,0.03); border-radius:12px; transition:all 0.15s ease;">
+        
+        <!-- Barcode & Code -->
+        <td style="padding:14px 16px; border-radius:0 12px 12px 0;">
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            <div style="cursor:pointer;" onclick="showBarcodeModal('${p.id}')" title="انقر لتكبير وطباعة الباركود">
+              ${barcodeSvg}
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span class="promo-code-badge" onclick="copyPromoCode('${escapeHtml(p.code)}')">
+                <span>${escapeHtml(p.code)}</span>
+                <i class="ri-file-copy-line" style="font-size:12px; color:#64748B;"></i>
+              </span>
+            </div>
+          </div>
+        </td>
+
+        <!-- Details -->
+        <td style="padding:14px 16px;">
+          <div style="font-weight:800; font-size:13.5px; color:var(--text-primary); margin-bottom:2px;">
+            ${escapeHtml(p.title || p.code)}
+          </div>
+          <div style="font-size:11.5px; color:var(--text-secondary); max-width:240px; line-height:1.4;">
+            ${escapeHtml(p.description || 'لا يوجد وصف')}
+          </div>
+        </td>
+
+        <!-- Value -->
+        <td style="padding:14px 16px;">
+          <div style="font-weight:900; font-size:15px; color:#059669; font-family:'Outfit',sans-serif;">
+            ${p.discount_type === 'percent' ? `${p.discount_amount}% خصم` : `+${p.discount_amount} ج.م`}
+          </div>
+          <div style="font-size:10px; color:var(--text-light);">رصيد مباشر بالمحفظة</div>
+        </td>
+
+        <!-- Expiry -->
+        <td style="padding:14px 16px;">
+          ${expiryDisplay}
+        </td>
+
+        <!-- Uses -->
+        <td style="padding:14px 16px;">
+          <div style="font-weight:800; font-size:13px; font-family:'Outfit',sans-serif; color:var(--text-primary);">
+            ${p.current_uses || 0} ${p.max_uses ? `/ ${p.max_uses}` : 'استخدام'}
+          </div>
+          ${p.max_uses ? `
+            <div style="width:70px; height:4px; background:#E2E8F0; border-radius:2px; margin-top:4px; overflow:hidden;">
+              <div style="width:${Math.min(100, Math.round(((p.current_uses || 0) / p.max_uses) * 100))}%; height:100%; background:#3B82F6;"></div>
+            </div>
+          ` : ''}
+        </td>
+
+        <!-- Target -->
+        <td style="padding:14px 16px;">
+          ${roleBadge}
+        </td>
+
+        <!-- Banner -->
+        <td style="padding:14px 16px;">
+          ${bannerBadge}
+        </td>
+
+        <!-- Active Toggle -->
+        <td style="padding:14px 16px;">
+          <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
+            ${statusBadge}
+            <label class="switch" style="transform:scale(0.8); margin-top:2px;" title="${p.is_active ? 'إيقاف الكود' : 'تفعيل الكود'}">
+              <input type="checkbox" ${p.is_active ? 'checked' : ''} onchange="togglePromoCodeStatus('${p.id}', this.checked)">
+              <span class="slider round"></span>
+            </label>
+          </div>
+        </td>
+
+        <!-- Actions -->
+        <td style="padding:14px 16px; text-align:center; border-radius:12px 0 0 12px;">
+          <div style="display:inline-flex; align-items:center; gap:6px;">
+            <button class="btn btn-sm btn-outline" onclick="showBarcodeModal('${p.id}')" title="عرض وطباعة الباركود" style="padding:6px 9px; border-radius:8px; color:#1E88E5;">
+              <i class="ri-qr-code-line" style="font-size:15px;"></i>
+            </button>
+            <button class="btn btn-sm btn-outline" onclick="showEditPromoModal('${p.id}')" title="تعديل الكود" style="padding:6px 9px; border-radius:8px; color:#D97706;">
+              <i class="ri-edit-line" style="font-size:15px;"></i>
+            </button>
+            <button class="btn btn-sm btn-outline" onclick="deletePromoCode('${p.id}')" title="حذف الكود" style="padding:6px 9px; border-radius:8px; color:#DC2626;">
+              <i class="ri-delete-bin-line" style="font-size:15px;"></i>
+            </button>
+          </div>
+        </td>
+
+      </tr>
+    `;
+  }).join('');
+}
+
+function copyPromoCode(code) {
+  navigator.clipboard.writeText(code).then(() => {
+    if (typeof showNotification === 'function') {
+      showNotification(`تم نسخ الكود: ${code} 📋 بنجاح`, 'success');
+    }
+  });
+}
+
+function showCreatePromoModal() {
+  activeEditingPromoId = null;
+  openPromoModal({
+    code: '',
+    title: '',
+    description: '',
+    discount_amount: 50,
+    discount_type: 'fixed',
+    expires_at: '',
+    is_active: true,
+    max_uses: '',
+    target_role: 'all',
+    show_in_app_banner: true,
+    banner_tagline: 'عرض خاص لمستخدمي inRide 🎉'
+  });
+}
+
+function showEditPromoModal(id) {
+  const p = promoCodesList.find(x => x.id === id);
+  if (!p) return;
+  activeEditingPromoId = id;
+  openPromoModal(p);
+}
+
+function openPromoModal(data) {
+  const container = document.getElementById('promoCodeModalContainer');
+  if (!container) return;
+
+  const isEdit = !!activeEditingPromoId;
+  let formattedExpiry = '';
+  if (data.expires_at) {
+    try {
+      const d = new Date(data.expires_at);
+      formattedExpiry = d.toISOString().slice(0, 16);
+    } catch (_) {}
+  }
+
+  container.innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target === this) closePromoModal()" style="position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;">
+      <div class="modal-card" onclick="event.stopPropagation()" style="background:#FFFFFF; width:100%; max-width:620px; border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,0.25); overflow:hidden; display:flex; flex-direction:column; max-height:92vh; animation:fadeInUp 0.2s ease;">
+        
+        <!-- Modal Header -->
+        <div style="background:linear-gradient(135deg, #0A192F 0%, #1565C0 100%); color:#fff; padding:20px 24px; display:flex; justify-content:space-between; align-items:center;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="width:38px; height:38px; border-radius:10px; background:rgba(255,255,255,0.18); display:flex; align-items:center; justify-content:center; font-size:18px;">
+              <i class="${isEdit ? 'ri-edit-2-line' : 'ri-barcode-box-line'}"></i>
+            </div>
+            <div>
+              <h3 style="margin:0; font-size:17px; font-weight:800;">${isEdit ? 'تعديل البرومو كود والباركود ✏️' : 'إنشاء برومو كود ومولد باركود جديد 🎟️'}</h3>
+              <div style="font-size:11.5px; color:rgba(255,255,255,0.8);">${isEdit ? 'تعديل القيمة، الصلاحية، وإعدادات العرض' : 'إصدار كود ترويجي جديد بباركود فوري للتطبيق'}</div>
+            </div>
+          </div>
+          <button onclick="closePromoModal()" style="background:transparent; border:none; color:#fff; font-size:20px; cursor:pointer; opacity:0.8;">
+            <i class="ri-close-line"></i>
+          </button>
+        </div>
+
+        <!-- Modal Body Form -->
+        <form id="promoCodeForm" onsubmit="event.preventDefault(); savePromoCode();" style="padding:24px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:18px;">
+          
+          <!-- Code + Generator Button -->
+          <div>
+            <label style="font-size:12.5px; font-weight:800; color:var(--text-primary); display:block; margin-bottom:6px;">
+              رمز الكود (Code) <span style="color:#DC2626;">*</span>
+            </label>
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="inputPromoCode" required 
+                     value="${escapeHtml(data.code || '')}" 
+                     placeholder="مثال: INRIDE50" 
+                     oninput="this.value = this.value.toUpperCase(); updateModalBarcodePreview();"
+                     style="flex:1; padding:10px 14px; border-radius:12px; border:2px solid #CBD5E1; font-family:'Courier New', Courier, monospace; font-size:16px; font-weight:800; letter-spacing:2px; text-transform:uppercase;">
+              <button type="button" class="btn btn-outline" onclick="generateRandomPromoCode()" style="font-weight:700; font-size:12px; border-radius:12px; padding:0 14px; white-space:nowrap; display:inline-flex; align-items:center; gap:4px;">
+                <i class="ri-shuffle-line"></i> توليد عشوائي 🎲
+              </button>
+            </div>
+          </div>
+
+          <!-- Live Barcode Preview Box -->
+          <div>
+            <div style="font-size:11.5px; font-weight:700; color:var(--text-secondary); margin-bottom:4px;">معاينة الباركود اللحظية:</div>
+            <div class="barcode-preview-box" id="modalBarcodePreviewContainer">
+              ${generateBarcodeSVG(data.code || 'INRIDE50', 240, 60, true)}
+            </div>
+          </div>
+
+          <!-- Title & Tagline -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+              <label style="font-size:12.5px; font-weight:800; color:var(--text-primary); display:block; margin-bottom:6px;">
+                عنوان العرض <span style="color:#DC2626;">*</span>
+              </label>
+              <input type="text" id="inputPromoTitle" required 
+                     value="${escapeHtml(data.title || '')}" 
+                     placeholder="مثال: عرض الترحيب 50 ج.م" 
+                     style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid #CBD5E1; font-size:13px; font-family:inherit;">
+            </div>
+            <div>
+              <label style="font-size:12.5px; font-weight:800; color:var(--text-primary); display:block; margin-bottom:6px;">
+                شارة البانر (Tagline)
+              </label>
+              <input type="text" id="inputPromoTagline" 
+                     value="${escapeHtml(data.banner_tagline || 'عرض خاص لمستخدمي inRide 🎉')}" 
+                     placeholder="مثال: هدية مجانية بمحفظتك" 
+                     style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid #CBD5E1; font-size:13px; font-family:inherit;">
+            </div>
+          </div>
+
+          <!-- Description -->
+          <div>
+            <label style="font-size:12.5px; font-weight:800; color:var(--text-primary); display:block; margin-bottom:6px;">
+              وصف العرض والشروط
+            </label>
+            <textarea id="inputPromoDescription" rows="2" 
+                      placeholder="اكتب وصفاً جذاباً يظهر للمستخدم في بانر التطبيق..."
+                      style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid #CBD5E1; font-size:12.5px; font-family:inherit; resize:vertical;">${escapeHtml(data.description || '')}</textarea>
+          </div>
+
+          <!-- Value & Type -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+              <label style="font-size:12.5px; font-weight:800; color:var(--text-primary); display:block; margin-bottom:6px;">
+                قيمة المكافأة بالمحفظة <span style="color:#DC2626;">*</span>
+              </label>
+              <input type="number" step="0.5" min="1" id="inputPromoAmount" required 
+                     value="${data.discount_amount || 50}" 
+                     style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid #CBD5E1; font-size:14px; font-family:'Outfit',sans-serif; font-weight:700;">
+            </div>
+            <div>
+              <label style="font-size:12.5px; font-weight:800; color:var(--text-primary); display:block; margin-bottom:6px;">
+                نوع الخصم
+              </label>
+              <select id="inputPromoDiscountType" style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid #CBD5E1; font-size:13px; font-family:inherit;">
+                <option value="fixed" ${data.discount_type === 'fixed' ? 'selected' : ''}>مبلغ نقدي مباشر (ج.م)</option>
+                <option value="percent" ${data.discount_type === 'percent' ? 'selected' : ''}>نسبة مئوية (%)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Expiry Date with Presets -->
+          <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <label style="font-size:12.5px; font-weight:800; color:var(--text-primary);">
+                صلاحية الكود (تاريخ الانتهاء) ⏳
+              </label>
+              <div style="display:flex; gap:4px;">
+                <button type="button" class="preset-chip-btn" onclick="setExpiryPreset(7)">+أسبوع</button>
+                <button type="button" class="preset-chip-btn" onclick="setExpiryPreset(30)">+شهر</button>
+                <button type="button" class="preset-chip-btn" onclick="setExpiryPreset(90)">+3 أشهر</button>
+                <button type="button" class="preset-chip-btn" onclick="clearExpiryDate()">بدون انتهاء</button>
+              </div>
+            </div>
+            <input type="datetime-local" id="inputPromoExpiry" 
+                   value="${formattedExpiry}" 
+                   style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid #CBD5E1; font-size:13px; font-family:inherit;">
+            <div style="font-size:11px; color:#64748B; margin-top:4px;">اتركه فارغاً إذا كنت تريد أن يكون الكود سارياً دائماً دون انتهاء.</div>
+          </div>
+
+          <!-- Target & Max Uses -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+              <label style="font-size:12.5px; font-weight:800; color:var(--text-primary); display:block; margin-bottom:6px;">
+                الفئة المستهدفة
+              </label>
+              <select id="inputPromoTargetRole" style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid #CBD5E1; font-size:13px; font-family:inherit;">
+                <option value="all" ${data.target_role === 'all' ? 'selected' : ''}>الجميع (ركاب وكباتن)</option>
+                <option value="rider" ${data.target_role === 'rider' ? 'selected' : ''}>الركاب فقط 👤</option>
+                <option value="driver" ${data.target_role === 'driver' ? 'selected' : ''}>الكباتن فقط 🚗</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12.5px; font-weight:800; color:var(--text-primary); display:block; margin-bottom:6px;">
+                الحد الأقصى لمرات الاستخدام
+              </label>
+              <input type="number" id="inputPromoMaxUses" min="1" 
+                     value="${data.max_uses || ''}" 
+                     placeholder="فارغ = غير محدود" 
+                     style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid #CBD5E1; font-size:13px; font-family:inherit;">
+            </div>
+          </div>
+
+          <!-- Toggles: Active & App Banner -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; background:#F8FAFC; padding:14px; border-radius:14px; border:1px solid #E2E8F0;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <div style="font-size:12.5px; font-weight:800; color:var(--text-primary);">تفعيل الكود فوراً</div>
+                <div style="font-size:10.5px; color:var(--text-secondary);">جاهز للاستخدام</div>
+              </div>
+              <label class="switch" style="transform:scale(0.85);">
+                <input type="checkbox" id="inputPromoIsActive" ${data.is_active ? 'checked' : ''}>
+                <span class="slider round"></span>
+              </label>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <div style="font-size:12.5px; font-weight:800; color:var(--text-primary);">إظهار في بانر التطبيق</div>
+                <div style="font-size:10.5px; color:var(--text-secondary);">صفحة اكسب فلوس</div>
+              </div>
+              <label class="switch" style="transform:scale(0.85);">
+                <input type="checkbox" id="inputPromoShowBanner" ${data.show_in_app_banner ? 'checked' : ''}>
+                <span class="slider round"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:8px; border-top:1px solid #E2E8F0; padding-top:16px;">
+            <button type="button" class="btn btn-outline" onclick="closePromoModal()" style="font-weight:700; padding:10px 20px; border-radius:12px;">
+              إلغاء
+            </button>
+            <button type="submit" id="btnSubmitPromo" class="btn btn-primary" style="background:linear-gradient(135deg, #10B981, #059669); border:none; font-weight:800; padding:10px 26px; border-radius:12px; box-shadow:0 4px 14px rgba(16,185,129,0.3);">
+              ${isEdit ? 'حفظ التعديلات ✅' : 'إنشاء الكود وتوليد الباركود 🚀'}
+            </button>
+          </div>
+
+        </form>
+
+      </div>
+    </div>
+  `;
+}
+
+function setExpiryPreset(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const input = document.getElementById('inputPromoExpiry');
+  if (input) {
+    input.value = d.toISOString().slice(0, 16);
+  }
+}
+
+function clearExpiryDate() {
+  const input = document.getElementById('inputPromoExpiry');
+  if (input) input.value = '';
+}
+
+function closePromoModal() {
+  const container = document.getElementById('promoCodeModalContainer');
+  if (container) container.innerHTML = '';
+}
+
+async function savePromoCode() {
+  const code = document.getElementById('inputPromoCode')?.value?.trim().toUpperCase();
+  const title = document.getElementById('inputPromoTitle')?.value?.trim();
+  const tagline = document.getElementById('inputPromoTagline')?.value?.trim() || 'عرض خاص لمستخدمي inRide 🎉';
+  const description = document.getElementById('inputPromoDescription')?.value?.trim() || '';
+  const amount = parseFloat(document.getElementById('inputPromoAmount')?.value || '0');
+  const discountType = document.getElementById('inputPromoDiscountType')?.value || 'fixed';
+  const expiryVal = document.getElementById('inputPromoExpiry')?.value;
+  const targetRole = document.getElementById('inputPromoTargetRole')?.value || 'all';
+  const maxUsesVal = document.getElementById('inputPromoMaxUses')?.value;
+  const isActive = document.getElementById('inputPromoIsActive')?.checked ?? true;
+  const showBanner = document.getElementById('inputPromoShowBanner')?.checked ?? true;
+
+  if (!code) {
+    alert('يرجى إدخال رمز الكود');
+    return;
+  }
+  if (!title) {
+    alert('يرجى إدخال عنوان العرض');
+    return;
+  }
+  if (isNaN(amount) || amount <= 0) {
+    alert('يرجى إدخال قيمة صحيحة للخصم');
+    return;
+  }
+
+  const btn = document.getElementById('btnSubmitPromo');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> جاري الحفظ...';
+  }
+
+  const payload = {
+    code: code,
+    title: title,
+    banner_tagline: tagline,
+    description: description,
+    discount_amount: amount,
+    discount_type: discountType,
+    expires_at: expiryVal ? new Date(expiryVal).toISOString() : null,
+    target_role: targetRole,
+    max_uses: maxUsesVal ? parseInt(maxUsesVal, 10) : null,
+    is_active: isActive,
+    show_in_app_banner: showBanner,
+    updated_at: new Date().toISOString()
+  };
+
+  try {
+    if (activeEditingPromoId) {
+      // Update
+      const { error } = await supabaseClient
+        .from('promo_codes')
+        .update(payload)
+        .eq('id', activeEditingPromoId);
+
+      if (error) throw error;
+      if (typeof showNotification === 'function') {
+        showNotification('تم تحديث البرومو كود والباركود بنجاح ✅', 'success');
+      }
+    } else {
+      // Insert
+      const { error } = await supabaseClient
+        .from('promo_codes')
+        .insert([payload]);
+
+      if (error) throw error;
+      if (typeof showNotification === 'function') {
+        showNotification('تم إنشاء البرومو كود والباركود الجديد بنجاح 🎉', 'success');
+      }
+    }
+
+    closePromoModal();
+    await loadPromoCodesData();
+  } catch (err) {
+    console.error('[savePromoCode Error]:', err);
+    alert('حدث خطأ أثناء حفظ الكود: ' + (err.message || String(err)));
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'حفظ الكود';
+    }
+  }
+}
+
+async function togglePromoCodeStatus(id, newStatus) {
+  try {
+    const { error } = await supabaseClient
+      .from('promo_codes')
+      .update({ is_active: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+
+    // Local optimistic update
+    const p = promoCodesList.find(x => x.id === id);
+    if (p) p.is_active = newStatus;
+    updatePromoCodesKPIs();
+    renderPromoCodesTableRows();
+
+    if (typeof showNotification === 'function') {
+      showNotification(newStatus ? 'تم تفعيل البرومو كود 🟢' : 'تم إيقاف البرومو كود مؤقتاً ⏸️', 'success');
+    }
+  } catch (err) {
+    console.error('[togglePromoCodeStatus Error]:', err);
+    alert('تعذر تغيير حالة الكود: ' + (err.message || String(err)));
+    loadPromoCodesData();
+  }
+}
+
+async function deletePromoCode(id) {
+  const p = promoCodesList.find(x => x.id === id);
+  const codeName = p ? p.code : 'هذا الكود';
+
+  if (!confirm(`هل أنت متأكد من حذف البرومو كود (${codeName}) نهائياً؟`)) {
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from('promo_codes')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    if (typeof showNotification === 'function') {
+      showNotification(`تم حذف الكود (${codeName}) بنجاح 🗑️`, 'success');
+    }
+
+    await loadPromoCodesData();
+  } catch (err) {
+    console.error('[deletePromoCode Error]:', err);
+    alert('حدث خطأ أثناء حذف الكود: ' + (err.message || String(err)));
+  }
+}
+
+function showBarcodeModal(id) {
+  const p = promoCodesList.find(x => x.id === id);
+  if (!p) return;
+
+  const container = document.getElementById('barcodeViewModalContainer');
+  if (!container) return;
+
+  const barcodeSvgLarge = generateBarcodeSVG(p.code, 320, 80, true);
+  const expDateStr = p.expires_at ? new Date(p.expires_at).toLocaleDateString('ar-EG') : 'صالح بدون انتهاء';
+
+  container.innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target === this) closeBarcodeModal()" style="position:fixed; inset:0; background:rgba(0,0,0,0.65); backdrop-filter:blur(5px); display:flex; align-items:center; justify-content:center; z-index:99999; padding:16px;">
+      <div class="modal-card" onclick="event.stopPropagation()" style="background:#FFFFFF; width:100%; max-width:440px; border-radius:24px; box-shadow:0 25px 60px rgba(0,0,0,0.3); overflow:hidden; text-align:center;">
+        
+        <!-- Ticket Header -->
+        <div style="background:linear-gradient(135deg, #0D47A1, #1E88E5); color:#fff; padding:24px 20px; position:relative;">
+          <button onclick="closeBarcodeModal()" style="position:absolute; top:16px; left:16px; background:rgba(255,255,255,0.2); border:none; color:#fff; width:32px; height:32px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+            <i class="ri-close-line" style="font-size:18px;"></i>
+          </button>
+          
+          <div style="font-size:12px; font-weight:700; color:#93C5FD; letter-spacing:1px; margin-bottom:4px;">inRide Official Promo Voucher</div>
+          <h3 style="margin:0 0 6px 0; font-size:20px; font-weight:900;">${escapeHtml(p.title || p.code)}</h3>
+          <div style="font-size:12px; color:rgba(255,255,255,0.85);">${escapeHtml(p.banner_tagline || '')}</div>
+        </div>
+
+        <!-- Ticket Body with Cutouts -->
+        <div style="padding:28px 24px; position:relative; background:#FFFFFF;">
+          
+          <!-- Large Barcode Graphic -->
+          <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:16px; padding:20px 14px; margin-bottom:20px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+            ${barcodeSvgLarge}
+            <div style="margin-top:10px; font-size:11px; color:#64748B; font-weight:600;">امسح الباركود أو أدخل الرمز في التطبيق</div>
+          </div>
+
+          <!-- Code Badge -->
+          <div style="display:flex; justify-content:center; margin-bottom:18px;">
+            <div class="promo-code-badge" style="font-size:18px; padding:8px 18px; border-radius:12px; border:2px solid #3B82F6;" onclick="copyPromoCode('${escapeHtml(p.code)}')">
+              <span>${escapeHtml(p.code)}</span>
+              <i class="ri-file-copy-line" style="font-size:16px; color:#3B82F6;"></i>
+            </div>
+          </div>
+
+          <!-- Info Details -->
+          <div style="background:#F1F5F9; border-radius:14px; padding:12px 16px; margin-bottom:20px; display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:right; font-size:12px;">
+            <div>
+              <div style="color:#64748B; font-size:10.5px;">القيمة:</div>
+              <div style="font-weight:800; color:#059669; font-size:14px;">+${p.discount_amount} ج.م</div>
+            </div>
+            <div>
+              <div style="color:#64748B; font-size:10.5px;">الصلاحية:</div>
+              <div style="font-weight:800; color:#1E293B;">${expDateStr}</div>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div style="display:flex; gap:10px;">
+            <button class="btn btn-outline" onclick="window.print()" style="flex:1; border-radius:12px; font-weight:700; padding:10px; display:inline-flex; align-items:center; justify-content:center; gap:6px;">
+              <i class="ri-printer-line"></i> طباعة
+            </button>
+            <button class="btn btn-primary" onclick="copyPromoCode('${escapeHtml(p.code)}')" style="flex:1; border-radius:12px; font-weight:800; padding:10px; background:#1E88E5; border:none; display:inline-flex; align-items:center; justify-content:center; gap:6px;">
+              <i class="ri-file-copy-line"></i> نسخ الرمز
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  `;
+}
+
+function closeBarcodeModal() {
+  const container = document.getElementById('barcodeViewModalContainer');
+  if (container) container.innerHTML = '';
+}
+
 
 

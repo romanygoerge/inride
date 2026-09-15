@@ -58,6 +58,10 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
   RealtimeChannel? _shiftsChannel;
   RealtimeChannel? _settingsChannel;
 
+  // Active Promo Codes for In-App Banner
+  List<Map<String, dynamic>> _activePromoCodes = [];
+  RealtimeChannel? _promoCodesChannel;
+
   @override
   void initState() {
     super.initState();
@@ -77,6 +81,7 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
     _promoController.dispose();
     _shiftsChannel?.unsubscribe();
     _settingsChannel?.unsubscribe();
+    _promoCodesChannel?.unsubscribe();
     super.dispose();
   }
 
@@ -99,6 +104,16 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
             schema: 'public',
             table: 'driver_mission_shifts',
             callback: (_) => _loadAllRewardsData(),
+          )
+          .subscribe();
+
+      _promoCodesChannel = _supabase
+          .channel('public:promo_codes_earn_page')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'promo_codes',
+            callback: (_) => _loadActivePromoCodes(),
           )
           .subscribe();
     } catch (e) {
@@ -197,6 +212,9 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
         debugPrint('[EarnMoreMoney] Error fetching shifts: $shiftsErr');
       }
 
+      // 4. Fetch active promo codes for in-app banner
+      await _loadActivePromoCodes();
+
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -208,8 +226,35 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
     }
   }
 
-  Future<void> _applyPromoCode() async {
-    final code = _promoController.text.trim().toUpperCase();
+  Future<void> _loadActivePromoCodes() async {
+    try {
+      final nowStr = DateTime.now().toUtc().toIso8601String();
+      final isDriver = GlobalState.instance.currentRole == UserRole.driver;
+      final roleStr = isDriver ? 'driver' : 'rider';
+
+      final res = await _supabase
+          .from('promo_codes')
+          .select()
+          .eq('is_active', true)
+          .eq('show_in_app_banner', true)
+          .or('expires_at.is.null,expires_at.gt.$nowStr')
+          .order('created_at', ascending: false);
+
+      if (mounted) {
+        setState(() {
+          _activePromoCodes = List<Map<String, dynamic>>.from(res).where((p) {
+            final target = (p['target_role'] ?? 'all').toString().toLowerCase();
+            return target == 'all' || target == roleStr;
+          }).toList();
+        });
+      }
+    } catch (e) {
+      debugPrint('[EarnMoreMoney] Error loading promo codes: $e');
+    }
+  }
+
+  Future<void> _applyPromoCode([String? directCode]) async {
+    final code = (directCode ?? _promoController.text).trim().toUpperCase();
     if (code.isEmpty) {
       _showCustomSnackBar('يرجى كتابة كود الدعوة أو البرومو كود أولاً', isError: true);
       return;
@@ -231,10 +276,43 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
 
     try {
       final isDriver = GlobalState.instance.currentRole == UserRole.driver;
+      final userType = isDriver ? 'driver' : 'rider';
+
+      // 1. First, check if it's an active Promo Code
+      try {
+        final promoRes = await _supabase.rpc('apply_promo_code', params: {
+          'p_user_id': uid,
+          'p_code': code,
+          'p_user_type': userType,
+        });
+
+        if (promoRes != null && promoRes is Map) {
+          if (promoRes['is_promo'] == true) {
+            final isSuccess = promoRes['success'] == true;
+            final msg = promoRes['message']?.toString() ??
+                (isSuccess ? 'تم تفعيل البرومو كود بنجاح!' : 'تعذر تطبيق الكود');
+
+            if (isSuccess) {
+              _promoController.clear();
+              await GlobalState.instance.reloadUserProfile();
+              _showCustomSnackBar(msg, isError: false);
+              await _loadAllRewardsData();
+              return;
+            } else {
+              _showCustomSnackBar(msg, isError: true);
+              return;
+            }
+          }
+        }
+      } catch (promoErr) {
+        debugPrint('[EarnMoreMoney] apply_promo_code check notice: $promoErr');
+      }
+
+      // 2. Fallback to referral code
       final res = await _supabase.rpc('apply_referral_code', params: {
         'p_referred_id': uid,
         'p_code': code,
-        'p_user_type': isDriver ? 'driver' : 'rider',
+        'p_user_type': userType,
       });
 
       if (!mounted) return;
@@ -246,6 +324,7 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
 
         if (isSuccess) {
           _promoController.clear();
+          await GlobalState.instance.reloadUserProfile();
           _showCustomSnackBar(msg, isError: false);
           await _loadAllRewardsData();
         } else {
@@ -253,6 +332,7 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
         }
       } else {
         _showCustomSnackBar('تم إرسال الطلب، يرجى التحديث', isError: false);
+        await GlobalState.instance.reloadUserProfile();
         await _loadAllRewardsData();
       }
     } catch (e) {
@@ -750,6 +830,12 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // ── Active Promo Codes Banner Section ──
+          if (_activePromoCodes.isNotEmpty) ...[
+            _buildActivePromoCodesBanner(),
+            const SizedBox(height: 18),
+          ],
+
           if (_hasRedeemedCode) ...[
             // Status Card for already redeemed referral code
             Container(
@@ -1005,6 +1091,296 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
   // ===========================================================================
   // BRANDED REUSABLE WIDGETS (Matching inRide Design Language)
   // ===========================================================================
+
+  /// Builds a branded banner section showing all active promo codes.
+  /// Each code is displayed as a stunning inRide-branded card with a
+  /// gradient, the discount value, tagline, and a one-tap auto-apply button.
+  Widget _buildActivePromoCodesBanner() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Section Header
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.local_offer_rounded,
+                  color: Color(0xFF2563EB), size: 17),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'عروض وكوبونات حصرية',
+                style: GoogleFonts.cairo(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${_activePromoCodes.length} متاح',
+                style: GoogleFonts.cairo(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF059669),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Promo Cards - Horizontal Scrollable
+        if (_activePromoCodes.length == 1)
+          _buildSinglePromoBannerCard(_activePromoCodes[0])
+        else
+          SizedBox(
+            height: 195,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: _activePromoCodes.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                return SizedBox(
+                  width: MediaQuery.of(context).size.width * 0.85,
+                  child: _buildSinglePromoBannerCard(_activePromoCodes[index]),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Builds a single promo code banner card with sleek inRide branding.
+  Widget _buildSinglePromoBannerCard(Map<String, dynamic> promo) {
+    final code = promo['code']?.toString() ?? '';
+    final title = promo['title']?.toString() ?? 'عرض خاص';
+    final tagline = (promo['banner_tagline']?.toString() ?? 'عرض خاص لمستخدمي inRide').replaceAll('🎉', '').trim();
+    final amount = (promo['discount_amount'] is num)
+        ? (promo['discount_amount'] as num).toDouble()
+        : (double.tryParse(promo['discount_amount']?.toString() ?? '0') ?? 0);
+    final expiresAt = promo['expires_at'] != null
+        ? DateTime.tryParse(promo['expires_at'].toString())
+        : null;
+
+    // Calculate remaining time
+    String expiryLabel = '';
+    if (expiresAt != null) {
+      final diff = expiresAt.difference(DateTime.now());
+      if (diff.inDays > 0) {
+        expiryLabel = 'باقي ${diff.inDays} يوم';
+      } else if (diff.inHours > 0) {
+        expiryLabel = 'باقي ${diff.inHours} ساعة';
+      } else if (diff.inMinutes > 0) {
+        expiryLabel = 'باقي ${diff.inMinutes} دقيقة';
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E88E5), Color(0xFF0D47A1)],
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1E88E5).withValues(alpha: 0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Top row: Tagline + Expiry
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  tagline,
+                  style: GoogleFonts.cairo(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (expiryLabel.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.timer_outlined, color: Color(0xFFFDE047), size: 12),
+                      const SizedBox(width: 4),
+                      Text(
+                        expiryLabel,
+                        style: GoogleFonts.cairo(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Title & Amount
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Reward Icon
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                ),
+                child: const Center(
+                  child: Icon(Icons.local_offer_rounded, color: Color(0xFFFDE047), size: 22),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.cairo(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        height: 1.2,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      amount > 0
+                          ? 'احصل على +${amount.toStringAsFixed(0)} ج.م رصيد فوري بمحفظتك'
+                          : 'خصم خاص يطبق تلقائياً على رحلتك القادمة',
+                      style: GoogleFonts.cairo(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFFBFDBFE),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Bottom: Code chip + Apply Button
+          Row(
+            children: [
+              // Code chip
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.confirmation_number_outlined,
+                        color: Color(0xFFFDE047), size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      code,
+                      style: GoogleFonts.outfit(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              // Auto-Apply Button
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _applyPromoCode(code),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF10B981), Color(0xFF059669)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.bolt_rounded, color: Colors.white, size: 16),
+                        const SizedBox(width: 5),
+                        Text(
+                          'تفعيل فوري',
+                          style: GoogleFonts.cairo(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildBrandedEarningsBanner(double referralReward) {
     return Container(
@@ -1266,36 +1642,50 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.schedule_rounded, color: AppColors.mediumBlue, size: 18),
-                  const SizedBox(width: 6),
-                  Text(
-                    'فترات وتحديات بونص مدينة السادات',
-                    style: GoogleFonts.cairo(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.schedule_rounded, color: Color(0xFF2563EB), size: 16),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'فترات وتحديات بونص مدينة السادات',
+                  style: GoogleFonts.cairo(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                 decoration: BoxDecoration(
                   color: !_isMissionsActive
                       ? const Color(0xFFF1F5F9)
                       : (hasLiveShift ? const Color(0xFFDCFCE7) : const Color(0xFFEFF6FF)),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: !_isMissionsActive
                         ? const Color(0xFFCBD5E1)
@@ -1303,6 +1693,7 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
                   ),
                 ),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
                       !_isMissionsActive
@@ -1310,18 +1701,18 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
                           : (hasLiveShift ? Icons.fiber_manual_record_rounded : Icons.schedule_rounded),
                       color: !_isMissionsActive
                           ? const Color(0xFF64748B)
-                          : (hasLiveShift ? const Color(0xFF166534) : AppColors.mediumBlue),
-                      size: 12,
+                          : (hasLiveShift ? const Color(0xFF166534) : const Color(0xFF2563EB)),
+                      size: 11,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       !_isMissionsActive ? 'متوقف مؤقتاً' : (hasLiveShift ? 'نشط الآن' : 'مجدول'),
                       style: GoogleFonts.cairo(
-                        fontSize: 10,
+                        fontSize: 10.5,
                         fontWeight: FontWeight.bold,
                         color: !_isMissionsActive
                             ? const Color(0xFF64748B)
-                            : (hasLiveShift ? const Color(0xFF166534) : AppColors.mediumBlue),
+                            : (hasLiveShift ? const Color(0xFF166534) : const Color(0xFF2563EB)),
                       ),
                     ),
                   ],
@@ -1329,36 +1720,45 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           if (_shifts.isEmpty) ...[
             _buildShiftRow(
-              name: 'فترة الصباح ☀️',
+              name: 'فترة الصباح',
               time: '06:00 ص - 12:00 م',
               trips: 'أكمل 5 رحلات',
               bonus: '+50 ج.م',
-              statusBadge: !_isMissionsActive ? 'متوقفة ⚪' : 'مجدولة ⏰',
+              statusBadge: !_isMissionsActive ? 'متوقفة' : 'مجدولة',
               statusColor: const Color(0xFFF1F5F9),
               statusTextColor: const Color(0xFF64748B),
+              icon: Icons.wb_sunny_rounded,
+              iconBgColor: const Color(0xFFFEF3C7),
+              iconColor: const Color(0xFFD97706),
             ),
-            const Divider(height: 14),
+            const Divider(height: 18, color: Color(0xFFF1F5F9)),
             _buildShiftRow(
-              name: 'فترة الظهيرة ☀️',
+              name: 'فترة الظهيرة',
               time: '12:00 م - 06:00 م',
               trips: 'أكمل 5 رحلات',
               bonus: '+50 ج.م',
-              statusBadge: !_isMissionsActive ? 'متوقفة ⚪' : 'مجدولة ⏰',
+              statusBadge: !_isMissionsActive ? 'متوقفة' : 'مجدولة',
               statusColor: const Color(0xFFF1F5F9),
               statusTextColor: const Color(0xFF64748B),
+              icon: Icons.light_mode_rounded,
+              iconBgColor: const Color(0xFFE0F2FE),
+              iconColor: const Color(0xFF0284C7),
             ),
-            const Divider(height: 14),
+            const Divider(height: 18, color: Color(0xFFF1F5F9)),
             _buildShiftRow(
-              name: 'فترة المساء 🌙',
+              name: 'فترة المساء',
               time: '06:00 م - 12:00 منتصف الليل',
               trips: 'أكمل 6 رحلات',
               bonus: '+60 ج.م',
-              statusBadge: !_isMissionsActive ? 'متوقفة ⚪' : 'مجدولة ⏰',
+              statusBadge: !_isMissionsActive ? 'متوقفة' : 'مجدولة',
               statusColor: const Color(0xFFF1F5F9),
               statusTextColor: const Color(0xFF64748B),
+              icon: Icons.nights_stay_rounded,
+              iconBgColor: const Color(0xFFEDE9FE),
+              iconColor: const Color(0xFF7C3AED),
             ),
           ] else ...[
             for (int i = 0; i < _shifts.length; i++) ...[
@@ -1373,31 +1773,55 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
                 Color badgeFg = const Color(0xFF64748B);
 
                 if (!isShiftActiveInDb) {
-                  badgeText = 'متوقفة ⚪';
+                  badgeText = 'متوقفة';
                   badgeBg = const Color(0xFFF1F5F9);
                   badgeFg = const Color(0xFF64748B);
                 } else if (isCurrentlyRunning) {
-                  badgeText = 'نشط الآن 🟢';
+                  badgeText = 'نشط الآن';
                   badgeBg = const Color(0xFFDCFCE7);
                   badgeFg = const Color(0xFF166534);
                 } else if (isNextUpcoming) {
-                  badgeText = 'الفترة القادمة ⏳';
+                  badgeText = 'الفترة القادمة';
                   badgeBg = const Color(0xFFFEF3C7);
                   badgeFg = const Color(0xFFB45309);
+                }
+
+                final rawTitle = shift['title']?.toString() ?? 'فترة مخصصة';
+                final cleanTitle = rawTitle.replaceAll(RegExp(r'[\u{1F300}-\u{1F9FF}|☀️|🌙|⏰|🟢|⚪|⏳|🚀|🏆]', unicode: true), '').trim();
+
+                IconData shiftIcon = Icons.access_time_rounded;
+                Color iconBg = const Color(0xFFEFF6FF);
+                Color iconColor = const Color(0xFF2563EB);
+
+                if (cleanTitle.contains('صباح')) {
+                  shiftIcon = Icons.wb_sunny_rounded;
+                  iconBg = const Color(0xFFFEF3C7);
+                  iconColor = const Color(0xFFD97706);
+                } else if (cleanTitle.contains('ظهر') || cleanTitle.contains('ظهير')) {
+                  shiftIcon = Icons.light_mode_rounded;
+                  iconBg = const Color(0xFFE0F2FE);
+                  iconColor = const Color(0xFF0284C7);
+                } else if (cleanTitle.contains('مساء') || cleanTitle.contains('ليل')) {
+                  shiftIcon = Icons.nights_stay_rounded;
+                  iconBg = const Color(0xFFEDE9FE);
+                  iconColor = const Color(0xFF7C3AED);
                 }
 
                 return Column(
                   children: [
                     _buildShiftRow(
-                      name: shift['title']?.toString() ?? 'فترة مخصصة',
+                      name: cleanTitle,
                       time: '${_formatShiftTime(shift['start_time']?.toString())} - ${_formatShiftTime(shift['end_time']?.toString())}',
                       trips: 'أكمل ${shift['target_trips'] ?? 5} رحلات',
                       bonus: '+${(shift['reward_amount'] as num?)?.toInt() ?? 50} ج.م',
                       statusBadge: badgeText,
                       statusColor: badgeBg,
                       statusTextColor: badgeFg,
+                      icon: shiftIcon,
+                      iconBgColor: iconBg,
+                      iconColor: iconColor,
                     ),
-                    if (i < _shifts.length - 1) const Divider(height: 14),
+                    if (i < _shifts.length - 1) const Divider(height: 18, color: Color(0xFFF1F5F9)),
                   ],
                 );
               }(),
@@ -1416,10 +1840,24 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
     required String? statusBadge,
     required Color statusColor,
     required Color statusTextColor,
+    required IconData icon,
+    required Color iconBgColor,
+    required Color iconColor,
   }) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: iconBgColor,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Center(
+            child: Icon(icon, color: iconColor, size: 18),
+          ),
+        ),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1440,7 +1878,7 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
                   if (statusBadge != null) ...[
                     const SizedBox(width: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                       decoration: BoxDecoration(
                         color: statusColor,
                         borderRadius: BorderRadius.circular(6),

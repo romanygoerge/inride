@@ -2692,3 +2692,91 @@ input:checked + .slider:before {
   border-color: var(--medium-blue);
   box-shadow: var(--shadow-sm);
 }
+
+/* ==========================================================================
+   PROMO CODES & BARCODE GENERATOR STYLES
+   ========================================================================== */
+.barcode-preview-box {
+  background: #FFFFFF;
+  border: 1px dashed #CBD5E1;
+  border-radius: 12px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+.barcode-preview-box:hover {
+  border-color: #3B82F6;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.12);
+}
+
+.promo-ticket-card {
+  position: relative;
+  background: linear-gradient(135deg, #0D47A1 0%, #1565C0 60%, #1E88E5 100%);
+  color: #FFFFFF;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 10px 25px rgba(13, 71, 161, 0.25);
+  overflow: hidden;
+}
+.promo-ticket-card::before,
+.promo-ticket-card::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  background: var(--bg-primary, #F8FAFC);
+  border-radius: 50%;
+  transform: translateY(-50%);
+}
+.promo-ticket-card::before { left: -12px; }
+.promo-ticket-card::after { right: -12px; }
+
+.barcode-svg-container svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.promo-code-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #F1F5F9;
+  color: #0F172A;
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.promo-code-badge:hover {
+  background: #E2E8F0;
+  border-color: #3B82F6;
+  color: #1D4ED8;
+}
+
+.preset-chip-btn {
+  background: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  color: #475569;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.preset-chip-btn:hover {
+  background: #3B82F6;
+  border-color: #3B82F6;
+  color: #FFFFFF;
+}
+

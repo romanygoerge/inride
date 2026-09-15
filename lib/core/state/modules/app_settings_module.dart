@@ -12,6 +12,9 @@ class AppSettingsModule {
     'heat_hour_km_fare': 1.0,
     'heat_start_hour': 11,
     'heat_end_hour': 15,
+    'out_of_city_threshold_km': 5.0,
+    'out_of_city_extra_fare': 20.0,
+    'out_of_city_pricing_enabled': true,
     'defaultFareCar': 45.0,
     'defaultFareScooter': 20.0,
     'defaultFareMotorcycle': 15.0,
@@ -31,6 +34,13 @@ class AppSettingsModule {
     'maintenance_title': 'التطبيق تحت الصيانة حالياً',
     'maintenance_message': 'نعمل على تحسين وتحديث خدمات inRide لنقدم لكم تجربة أفضل وأسرع. سنعود للعمل قريباً جداً.',
   };
+
+  double get outOfCityThresholdKm =>
+      (appSettings['out_of_city_threshold_km'] as num?)?.toDouble() ?? 5.0;
+  double get outOfCityExtraFare =>
+      (appSettings['out_of_city_extra_fare'] as num?)?.toDouble() ?? 20.0;
+  bool get isOutOfCityPricingEnabled =>
+      appSettings['out_of_city_pricing_enabled'] != false;
 
   bool get isMaintenanceMode => appSettings['is_maintenance_mode'] == true;
   String get maintenanceTitle =>

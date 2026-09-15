@@ -1436,6 +1436,9 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       'heat_hour_km_fare': 1.0,
       'heat_start_hour': 11,
       'heat_end_hour': 15,
+      'out_of_city_threshold_km': 5.0,
+      'out_of_city_extra_fare': 20.0,
+      'out_of_city_pricing_enabled': true,
       'defaultFareCar': 25.0,
       'defaultFareScooter': 19.0,
       'defaultFareMotorcycle': 20.0,
@@ -1503,6 +1506,17 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  double get outOfCityThresholdKm =>
+      (appSettings['out_of_city_threshold_km'] as num?)?.toDouble() ?? 5.0;
+  double get outOfCityExtraFare =>
+      (appSettings['out_of_city_extra_fare'] as num?)?.toDouble() ?? 20.0;
+  bool get isOutOfCityPricingEnabled =>
+      appSettings['out_of_city_pricing_enabled'] != false;
+  bool isTripOutOfCity(double distanceInKm) =>
+      isOutOfCityPricingEnabled && distanceInKm > outOfCityThresholdKm;
+  double getOutOfCityDistance(double distanceInKm) =>
+      isTripOutOfCity(distanceInKm) ? (distanceInKm - outOfCityThresholdKm) : 0.0;
+
   /// Calculates dynamic estimation of ride fare based on DB setting values
   double calculateEstimatedFare({
     required double distanceInKm,
@@ -1518,11 +1532,14 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     final heatStart = (appSettings['heat_start_hour'] as num?)?.toInt() ?? 11;
     final heatEnd = (appSettings['heat_end_hour'] as num?)?.toInt() ?? 15;
 
+    final outOfCityEnabled = isOutOfCityPricingEnabled;
+    final outOfCityThreshold = outOfCityThresholdKm;
+    final outOfCityRate = outOfCityExtraFare;
+
     double fare = 0.0;
     if (distanceInKm <= 1.0) {
       fare = firstKmFare;
     } else {
-      final extraKm = distanceInKm - 1.0;
       double perKmRate = extraKmFare;
 
       // Apply AC surge if vehicle is a car and AC is on
@@ -1538,7 +1555,20 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         }
       }
 
-      fare = firstKmFare + (extraKm * perKmRate);
+      if (outOfCityEnabled && distanceInKm > outOfCityThreshold) {
+        // Distance within city limit (up to threshold): First 1km + remaining city km
+        final insideCityExtraKm = outOfCityThreshold > 1.0 ? (outOfCityThreshold - 1.0) : 0.0;
+        final insideCityFare = firstKmFare + (insideCityExtraKm * perKmRate);
+
+        // Distance outside city (> threshold): 20 EGP per km
+        final outsideCityKm = distanceInKm - outOfCityThreshold;
+        final outsideCityFare = outsideCityKm * outOfCityRate;
+
+        fare = insideCityFare + outsideCityFare;
+      } else {
+        final extraKm = distanceInKm - 1.0;
+        fare = firstKmFare + (extraKm * perKmRate);
+      }
     }
 
     // Apply region surcharge if provided

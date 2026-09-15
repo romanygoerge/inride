@@ -29,6 +29,7 @@ class InAppNotificationWidget extends StatefulWidget {
     required String body,
     String type = 'info',
     required VoidCallback onTap,
+    VoidCallback? onClose,
   }) {
     final overlayState = Overlay.of(context);
     late OverlayEntry overlayEntry;
@@ -48,6 +49,9 @@ class InAppNotificationWidget extends StatefulWidget {
           onClose: () {
             if (overlayEntry.mounted) {
               overlayEntry.remove();
+            }
+            if (onClose != null) {
+              onClose();
             }
           },
         );

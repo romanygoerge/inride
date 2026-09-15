@@ -12,6 +12,8 @@ import '../models/notification_model.dart';
 import '../state/global_state.dart';
 import '../../main.dart' show navigatorKey;
 import '../../shared/widgets/in_app_notification.dart';
+import '../DI/injection_container.dart';
+import 'ride_sound_service.dart';
 
 
 const AndroidNotificationChannel highImportanceChannel = AndroidNotificationChannel(
@@ -102,19 +104,30 @@ class AppNotificationService {
         return;
       }
 
-      // Generate integer ID from the string notificationId
-      final int notifIntId = notif.notificationId.hashCode.abs() % 100000;
+      // Professional Banner Notification System:
+      // When the app is in the foreground, we DO NOT show the OS-level local notification
+      // to avoid redundant and unprofessional double-notifications.
+      // Instead, we show a highly polished custom in-app banner and play a sound.
+      
+      // Play appropriate sound based on notification type
+      try {
+        final soundService = sl<RideSoundService>();
+        if (_isTripCritical(type)) {
+          if (type == 'new_trip' || type == 'new_ride') {
+            soundService.playIncomingRide();
+          } else {
+            soundService.playSuccess();
+          }
+        } else if (type == 'cancel_trip' || type == 'ride_cancelled') {
+          soundService.playCancel();
+        } else {
+          soundService.playNotification();
+        }
+      } catch (e) {
+        debugPrint('[AppNotificationService] Error playing notification sound: $e');
+      }
 
-      // 1. Display system heads-up notification banner with sound & vibration
-      showLocalNotification(
-        id: notifIntId,
-        title: title,
-        body: body,
-        type: type,
-        data: data,
-      );
-
-      // 2. Show interactive floating in-app notification banner
+      // Show interactive floating in-app notification banner
       final context = navigatorKey.currentContext;
       if (context != null && context.mounted) {
         InAppNotificationWidget.show(
@@ -123,13 +136,23 @@ class AppNotificationService {
           body: body,
           type: type,
           onTap: () {
-            debugPrint('[Notification] Notification opened: $data');
+            debugPrint('[Notification] Notification banner tapped: $data');
+            // Stop incoming ride sound if playing
+            try {
+              sl<RideSoundService>().stopIncomingRide();
+            } catch (_) {}
             NotificationService.instance.handleNotificationClick(data);
+          },
+          onClose: () {
+            // Stop incoming ride sound if playing when dismissed
+            try {
+              sl<RideSoundService>().stopIncomingRide();
+            } catch (_) {}
           },
         );
       }
 
-      debugPrint('[AppNotificationService] Foreground notification handled with banner: type=$type, title=$title');
+      debugPrint('[AppNotificationService] Foreground notification handled with premium banner: type=$type, title=$title');
     });
 
     // ── 4. Notification Tap Handler (Background / Terminated) ──

@@ -31,6 +31,7 @@ class UnifiedConversationItem {
   final String? statusLabel;
   final Color? statusColor;
   final VoidCallback onTap;
+  final bool isPinned;
 
   UnifiedConversationItem({
     required this.id,
@@ -44,6 +45,7 @@ class UnifiedConversationItem {
     this.statusLabel,
     this.statusColor,
     required this.onTap,
+    this.isPinned = false,
   });
 }
 
@@ -186,13 +188,13 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                       .where((r) => r.type == 'trip')
                       .toList();
 
-                  // 1. Build Support Item
+                  // 1. Build Support Item (Permanently pinned at top #1)
                   final supportMsgs = _supportChatService.currentMessages;
                   final hasSupportMsgs = supportMsgs.isNotEmpty;
                   final lastSupportMsg = hasSupportMsgs
                       ? supportMsgs.first.message
                       : (isArabic ? 'تواصل مع فريق الدعم الفني لحل استفسارك 24/7' : 'Contact customer support 24/7');
-                  final supportTime = hasSupportMsgs ? supportMsgs.first.createdAt : DateTime.now().subtract(const Duration(days: 365));
+                  final supportTime = hasSupportMsgs ? supportMsgs.first.createdAt : DateTime.now();
                   final supportUnread = _supportChatService.unreadCount;
 
                   final supportItem = UnifiedConversationItem(
@@ -205,6 +207,7 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                     unreadCount: supportUnread,
                     statusLabel: isArabic ? 'خدمة 24/7' : '24/7 Support',
                     statusColor: AppColors.mediumBlue,
+                    isPinned: true,
                     onTap: _openSupportChat,
                   );
 
@@ -237,6 +240,7 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                       avatarUrl: room.getRoomAvatar(_myId),
                       statusLabel: tripStatusStr,
                       statusColor: tripStatusColor,
+                      isPinned: room.isPinned,
                       onTap: () async {
                         await _notifController.markMessagesForRoomAsRead(room.id);
                         if (context.mounted) {
@@ -276,6 +280,7 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                       unreadCount: notif.isRead ? 0 : 1,
                       statusLabel: isArabic ? 'إشعار' : 'Alert',
                       statusColor: AppColors.mediumBlue,
+                      isPinned: false,
                       onTap: () {
                         _notifController.markAsRead(notif.id);
                         NotificationService.instance.handleNotificationClick(notif.data);
@@ -283,26 +288,111 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                     );
                   }).toList();
 
-                  // 4. Combine and sort strictly from NEWEST to OLDEST
-                  final allItems = <UnifiedConversationItem>[
-                    supportItem,
+                  // 4. Sort other conversations chronologically from newest to oldest
+                  final otherItems = <UnifiedConversationItem>[
                     ...tripChatItems,
                     ...standaloneNotifItems,
                   ];
 
-                  allItems.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+                  otherItems.sort((a, b) {
+                    if (a.isPinned != b.isPinned) {
+                      return a.isPinned ? -1 : 1;
+                    }
+                    return b.timestamp.compareTo(a.timestamp);
+                  });
 
-                  if (allItems.isEmpty) {
-                    return _buildEmptyState(isArabic);
-                  }
+                  // 5. Pin Technical Support at the very top (index 0) leading all conversations
+                  final allItems = <UnifiedConversationItem>[
+                    supportItem,
+                    ...otherItems,
+                  ];
 
                   return ListView.separated(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     itemCount: allItems.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    separatorBuilder: (_, index) {
+                      // Visual divider between pinned Support chat and subsequent conversations
+                      if (index == 0 && otherItems.isNotEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8, bottom: 4),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: AppColors.textSecondary),
+                              const SizedBox(width: 6),
+                              Text(
+                                isArabic ? 'محادثات الرحلات والتنبيهات' : 'Trip Chats & Alerts',
+                                style: GoogleFonts.cairo(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Divider(
+                                  color: AppColors.border.withValues(alpha: 0.8),
+                                  thickness: 0.8,
+                                  height: 1,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      return const SizedBox(height: 10);
+                    },
                     itemBuilder: (context, index) {
                       final item = allItems[index];
-                      return _buildConversationCard(item, isArabic);
+                      final card = _buildConversationCard(item, isArabic);
+
+                      // If there are no other chats yet, display a subtle friendly note below the support chat
+                      if (index == 0 && otherItems.isEmpty) {
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            card,
+                            Container(
+                              margin: const EdgeInsets.only(top: 36),
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                              alignment: Alignment.center,
+                              child: Column(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.mediumBlue.withValues(alpha: 0.06),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.forum_outlined, size: 36, color: AppColors.mediumBlue),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    isArabic ? 'لا توجد محادثات رحلات سابقة' : 'No previous trip conversations',
+                                    style: GoogleFonts.cairo(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    isArabic
+                                        ? 'ستظهر محادثاتك مع الكباتن والتنبيهات هنا فور بدئها'
+                                        : 'Your trip conversations with drivers and alerts will appear here automatically',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.cairo(
+                                      fontSize: 11.5,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+
+                      return card;
                     },
                   );
                 },
@@ -316,22 +406,27 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
 
   Widget _buildConversationCard(UnifiedConversationItem item, bool isArabic) {
     final hasUnread = item.unreadCount > 0;
+    final isPinned = item.isPinned;
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isPinned ? const Color(0xFFF9FBFF) : Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: hasUnread
-              ? AppColors.mediumBlue.withValues(alpha: 0.35)
-              : AppColors.border.withValues(alpha: 0.7),
-          width: hasUnread ? 1.5 : 1.0,
+              ? AppColors.mediumBlue.withValues(alpha: 0.45)
+              : isPinned
+                  ? AppColors.mediumBlue.withValues(alpha: 0.3)
+                  : AppColors.border.withValues(alpha: 0.7),
+          width: (hasUnread || isPinned) ? 1.5 : 1.0,
         ),
         boxShadow: [
           BoxShadow(
             color: hasUnread
-                ? AppColors.mediumBlue.withValues(alpha: 0.06)
-                : Colors.black.withValues(alpha: 0.02),
+                ? AppColors.mediumBlue.withValues(alpha: 0.08)
+                : isPinned
+                    ? AppColors.mediumBlue.withValues(alpha: 0.04)
+                    : Colors.black.withValues(alpha: 0.02),
             blurRadius: 8,
             offset: const Offset(0, 3),
           ),
@@ -380,6 +475,36 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                                 if (item.type == ConversationType.support) ...[
                                   const SizedBox(width: 4),
                                   const Icon(Icons.verified, color: AppColors.mediumBlue, size: 15),
+                                ],
+                                if (isPinned) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.mediumBlue.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.push_pin_rounded,
+                                          color: AppColors.mediumBlue,
+                                          size: 10.5,
+                                        ),
+                                        const SizedBox(width: 2.5),
+                                        Text(
+                                          isArabic ? 'مثبتة' : 'Pinned',
+                                          style: GoogleFonts.cairo(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppColors.mediumBlue,
+                                            height: 1.1,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ],
                               ],
                             ),
@@ -549,61 +674,6 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
     );
   }
 
-  Widget _buildEmptyState(bool isArabic) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppColors.mediumBlue.withValues(alpha: 0.08),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.forum_outlined, size: 48, color: AppColors.mediumBlue),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              isArabic ? 'لا توجد محادثات بعد' : 'No messages yet',
-              style: GoogleFonts.cairo(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              isArabic
-                  ? 'ستظهر هنا جميع رسائل الرحلات والدعم الفني مرتبة من الأحدث إلى الأقدم'
-                  : 'All trip messages and customer support chats will appear here ordered from newest to oldest',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.cairo(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: _openSupportChat,
-              icon: const Icon(Icons.support_agent, size: 18),
-              label: Text(
-                isArabic ? 'محادثة مع الدعم الفني' : 'Chat with Support',
-                style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.mediumBlue,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   String _formatRelativeTime(DateTime time, bool isArabic) {
     final now = DateTime.now();

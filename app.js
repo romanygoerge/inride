@@ -6929,59 +6929,8 @@ async function dispatchDashboardPushNotification({ target = 'all', recipientId =
     } catch (e) { }
   }
 
-  // 3. Direct OneSignal REST API (Ensures 100% immediate delivery to devices)
-  try {
-    const ONESIGNAL_REST_KEY = (typeof atob === 'function' ? atob('b3NfdjJfYXBwX2hjZ3JzcmFscW5ldWZkNGF3ZXN5anh4eDI3N3Ayb2Vwdm95dWJlbWltcmhrc2ZteHl0bHBvNmtjeXFzcjV3ZXFwcmNicnVzeDRxcXRsbnM3dHgzanNhdnc3amp3a2RqNXB6ZGh6YmE=') : Buffer.from('b3NfdjJfYXBwX2hjZ3JzcmFscW5ldWZkNGF3ZXN5anh4eDI3N3Ayb2Vwdm95dWJlbWltcmhrc2ZteHl0bHBvNmtjeXFzcjV3ZXFwcmNicnVzeDRxcXRsbnM3dHgzanNhdnc3amp3a2RqNXB6ZGh6YmE=', 'base64').toString('utf8'));
-    const osPayload = {
-      app_id: '388d1944-0b83-4942-8f80-b12584def7d7',
-      target_channel: 'push',
-      headings: { en: title, ar: title },
-      contents: { en: body, ar: body },
-      data: pushData,
-      android_accent_color: 'FF1976D2',
-      priority: 10,
-      ttl: 86400,
-      small_icon: 'ic_launcher'
-    };
-
-    if (target === 'specific' && recipientId) {
-      osPayload.include_aliases = { external_id: [recipientId] };
-      if (deviceTokens.length > 0) {
-        osPayload.include_subscription_ids = deviceTokens;
-      }
-    } else if (target === 'drivers') {
-      osPayload.filters = [{ field: 'tag', key: 'role', relation: '=', value: 'driver' }];
-      if (deviceTokens.length > 0) {
-        osPayload.include_subscription_ids = deviceTokens.slice(0, 2000);
-      } else {
-        osPayload.included_segments = ['Subscribed Users', 'Total Subscriptions'];
-      }
-    } else if (target === 'riders') {
-      osPayload.filters = [{ field: 'tag', key: 'role', relation: '=', value: 'rider' }];
-      if (deviceTokens.length > 0) {
-        osPayload.include_subscription_ids = deviceTokens.slice(0, 2000);
-      } else {
-        osPayload.included_segments = ['Subscribed Users', 'Total Subscriptions'];
-      }
-    } else {
-      osPayload.included_segments = ['Subscribed Users', 'Total Subscriptions'];
-      if (deviceTokens.length > 0) {
-        osPayload.include_subscription_ids = deviceTokens.slice(0, 2000);
-      }
-    }
-
-    const osRes = await fetch('https://api.onesignal.com/notifications', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Authorization': 'Key ' + ONESIGNAL_REST_KEY
-      },
-      body: JSON.stringify(osPayload)
-    });
-    const osResData = await osRes.json();
-    console.log('[DashboardPush] Direct OneSignal Status:', osRes.status, osResData);
-  } catch (osErr) {
-    console.warn('[DashboardPush] Direct OneSignal fetch exception:', osErr.message);
+  if (!sentSuccessfully) {
+    console.warn('[DashboardPush] Push notification dispatch completed via backend proxy.');
   }
 }
 

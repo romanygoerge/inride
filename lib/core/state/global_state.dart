@@ -759,6 +759,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  Future<void> saveProfileToCache() => _saveProfileToCache();
+
   Future<void> _saveProfileToCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();

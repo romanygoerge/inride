@@ -65,7 +65,14 @@ class MapController extends ChangeNotifier {
     _lastMapCenter = center;
   }
 
-  LatLng? get currentMapCenter => _lastMapCenter ?? _flutterMapController?.camera.center;
+  LatLng? get currentMapCenter {
+    if (_lastMapCenter != null) return _lastMapCenter;
+    try {
+      return _flutterMapController?.camera.center;
+    } catch (_) {
+      return null;
+    }
+  }
 
   void unbind() {
     _flutterMapController = null;
@@ -115,57 +122,63 @@ class MapController extends ChangeNotifier {
   Future<void> easeCamera(CameraOptions cameraOptions, {MapAnimationOptions? animationOptions}) async {
     if (!isBound || _vsync == null) return;
 
-    final targetCenter = cameraOptions.center ?? _flutterMapController!.camera.center;
-    final targetZoom = cameraOptions.zoom ?? _flutterMapController!.camera.zoom;
-    final targetBearing = cameraOptions.bearing ?? _flutterMapController!.camera.rotation;
+    try {
+      final startCenter = _flutterMapController!.camera.center;
+      final startZoom = _flutterMapController!.camera.zoom;
+      final startBearing = _flutterMapController!.camera.rotation;
 
-    final duration = Duration(milliseconds: animationOptions?.duration ?? 600);
+      final targetCenter = cameraOptions.center ?? startCenter;
+      final targetZoom = cameraOptions.zoom ?? startZoom;
+      final targetBearing = cameraOptions.bearing ?? startBearing;
 
-    // Stop current camera animations before starting a new one
-    _cameraAnimationController?.stop();
-    _cameraAnimationController?.dispose();
+      final duration = Duration(milliseconds: animationOptions?.duration ?? 600);
 
-    _cameraAnimationController = AnimationController(vsync: _vsync!, duration: duration);
+      // Stop current camera animations before starting a new one
+      _cameraAnimationController?.stop();
+      _cameraAnimationController?.dispose();
 
-    final startCenter = _flutterMapController!.camera.center;
-    final startZoom = _flutterMapController!.camera.zoom;
-    final startBearing = _flutterMapController!.camera.rotation;
+      _cameraAnimationController = AnimationController(vsync: _vsync!, duration: duration);
 
-    // Normalize bearing to find shortest angle rotation path
-    double diff = (targetBearing - startBearing) % 360;
-    if (diff > 180) diff -= 360;
-    if (diff < -180) diff += 360;
-    final endBearing = startBearing + diff;
+      // Normalize bearing to find shortest angle rotation path
+      double diff = (targetBearing - startBearing) % 360;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+      final endBearing = startBearing + diff;
 
-    final animation = CurvedAnimation(
-      parent: _cameraAnimationController!,
-      curve: Curves.easeOutCubic,
-    );
+      final animation = CurvedAnimation(
+        parent: _cameraAnimationController!,
+        curve: Curves.easeOutCubic,
+      );
 
-    final completer = Completer<void>();
+      final completer = Completer<void>();
 
-    _cameraAnimationController!.addListener(() {
-      final t = animation.value;
-      final lat = startCenter.latitude + (targetCenter.latitude - startCenter.latitude) * t;
-      final lng = startCenter.longitude + (targetCenter.longitude - startCenter.longitude) * t;
-      final zoom = startZoom + (targetZoom - startZoom) * t;
-      final bearing = startBearing + (endBearing - startBearing) * t;
+      _cameraAnimationController!.addListener(() {
+        final t = animation.value;
+        final lat = startCenter.latitude + (targetCenter.latitude - startCenter.latitude) * t;
+        final lng = startCenter.longitude + (targetCenter.longitude - startCenter.longitude) * t;
+        final zoom = startZoom + (targetZoom - startZoom) * t;
+        final bearing = startBearing + (endBearing - startBearing) * t;
 
-      if (isBound) {
-        _flutterMapController!.move(LatLng(lat, lng), zoom);
-        _flutterMapController!.rotate(bearing % 360);
-      }
-    });
+        if (isBound) {
+          try {
+            _flutterMapController!.move(LatLng(lat, lng), zoom);
+            _flutterMapController!.rotate(bearing % 360);
+          } catch (_) {}
+        }
+      });
 
-    _cameraAnimationController!.addStatusListener((status) {
-      if (status == AnimationStatus.completed || status == AnimationStatus.dismissed) {
-        if (!completer.isCompleted) completer.complete();
-      }
-    });
+      _cameraAnimationController!.addStatusListener((status) {
+        if (status == AnimationStatus.completed || status == AnimationStatus.dismissed) {
+          if (!completer.isCompleted) completer.complete();
+        }
+      });
 
-    _cameraAnimationController!.forward();
+      _cameraAnimationController!.forward();
 
-    return completer.future;
+      return completer.future;
+    } catch (e) {
+      debugPrint('[MapController] easeCamera notice: $e');
+    }
   }
 
   /// Alias for easeCamera to support flight transitions
@@ -176,12 +189,20 @@ class MapController extends ChangeNotifier {
   /// Moves and rotates the camera instantly without animation
   Future<void> setCamera(CameraOptions cameraOptions) async {
     if (!isBound) return;
-    final targetCenter = cameraOptions.center ?? _flutterMapController!.camera.center;
-    final targetZoom = cameraOptions.zoom ?? _flutterMapController!.camera.zoom;
-    final targetBearing = cameraOptions.bearing ?? _flutterMapController!.camera.rotation;
+    try {
+      final startCenter = _flutterMapController!.camera.center;
+      final startZoom = _flutterMapController!.camera.zoom;
+      final startBearing = _flutterMapController!.camera.rotation;
 
-    _flutterMapController!.move(targetCenter, targetZoom);
-    _flutterMapController!.rotate(targetBearing % 360);
+      final targetCenter = cameraOptions.center ?? startCenter;
+      final targetZoom = cameraOptions.zoom ?? startZoom;
+      final targetBearing = cameraOptions.bearing ?? startBearing;
+
+      _flutterMapController!.move(targetCenter, targetZoom);
+      _flutterMapController!.rotate(targetBearing % 360);
+    } catch (e) {
+      debugPrint('[MapController] setCamera notice: $e');
+    }
   }
 
   /// Calculates the camera options required to fit the coordinate bounds with padding

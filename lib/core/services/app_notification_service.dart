@@ -78,6 +78,9 @@ class AppNotificationService {
     OneSignal.initialize(OneSignalConfig.appId);
     await OneSignal.Notifications.requestPermission(true);
 
+    // Disable all In-App Messages / popup banners from OneSignal
+    OneSignal.InAppMessages.paused(true);
+
     // ── 3. Foreground Notification Handler ──
     OneSignal.Notifications.addForegroundWillDisplayListener((event) {
       event.preventDefault();

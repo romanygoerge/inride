@@ -7,6 +7,7 @@ import 'core/config/supabase_config.dart';
 import 'core/localization/locale_controller.dart';
 import 'generated/app_localizations.dart';
 
+import 'package:google_fonts/google_fonts.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/pages/login_page.dart';
 
@@ -106,6 +107,82 @@ void main() async {
     return true; // Prevents app crash from unhandled async errors
   };
 
+  // Global ErrorWidget builder to permanently prevent the Flutter grey screen (Grey Screen of Death)
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    AppLogger.error('WidgetBuildError', details.exceptionAsString(), details.exception, details.stack);
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: AppColors.mediumBlue.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: CircularProgressIndicator(
+                          color: AppColors.mediumBlue,
+                          strokeWidth: 3,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'جاري استعادة بيانات التطبيق...',
+                    style: GoogleFonts.cairo(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'يرجى الانتظار لحظات أو الضغط للتحديث',
+                    style: GoogleFonts.cairo(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      GlobalState.instance.notify();
+                    },
+                    icon: const Icon(Icons.refresh_rounded, color: Colors.white, size: 18),
+                    label: Text(
+                      'تحديث',
+                      style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.mediumBlue,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  };
+
   try {
     await SupabaseConfig.init();
   } catch (e) {
@@ -195,14 +272,20 @@ class _AuthGateState extends State<AuthGate> {
     DeepLinkService.instance.init();
     
     if (!kIsWeb) {
-      // Listen to overlay window messages
-      FlutterOverlayWindow.overlayListener.listen((event) {
-        if (event == 'arrive_at_pickup') {
-          GlobalState.instance.arriveAtPickup();
-        } else if (event == 'return_to_app') {
-          import_url.launchUrl(Uri.parse('inride://confirm-delivery-location'));
-        }
-      });
+      // Listen to overlay window messages safely
+      try {
+        FlutterOverlayWindow.overlayListener.listen((event) {
+          if (event == 'arrive_at_pickup') {
+            GlobalState.instance.arriveAtPickup();
+          } else if (event == 'return_to_app') {
+            import_url.launchUrl(Uri.parse('inride://confirm-delivery-location'));
+          }
+        }, onError: (e) {
+          debugPrint('[AuthGate] Overlay listener error: $e');
+        });
+      } catch (e) {
+        debugPrint('[AuthGate] Error attaching overlay listener: $e');
+      }
     }
   }
 

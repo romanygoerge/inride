@@ -222,13 +222,15 @@ class _PassengerProfileSetupPageState extends State<PassengerProfileSetupPage> {
           state.passengerAddress = addressText;
           state.phoneNumber = e164Phone;
 
+          await state.saveProfileToCache();
+
           unawaited(MetaAnalyticsService.instance.logCompleteRegistration(
             userId: uid,
             role: 'passenger',
             method: 'phone',
           ));
 
-          debugPrint('[ProfileSetup] ✓ Profile saved — navigating to PassengerHomePage');
+          debugPrint('[ProfileSetup] ✓ Profile saved & cached — navigating to PassengerHomePage');
 
           if (!mounted) return;
           // Route to home

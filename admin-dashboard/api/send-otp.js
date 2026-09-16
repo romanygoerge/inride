@@ -257,7 +257,10 @@ module.exports = async function handler(req, res) {
       });
     } else {
       console.error('[SendOtp] WA Pilot delivery error:', waResponse);
-      const errMsg = (waResponse.data && waResponse.data.message) ? waResponse.data.message : 'فشل إرسال كود التحقق عبر الواتساب';
+      let errMsg = (waResponse.data && waResponse.data.message) ? waResponse.data.message : 'فشل إرسال كود التحقق عبر الواتساب';
+      if (errMsg.includes('Invalid API token') || errMsg.includes('Unauthorized')) {
+        errMsg = 'مفتاح خدمة الواتساب غير صالح أو تم تغييره. يرجى تحديث WAPILOT_API_TOKEN في Vercel.';
+      }
       return res.status(502).json({ success: false, error: errMsg });
     }
   } catch (err) {

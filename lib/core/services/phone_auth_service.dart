@@ -146,9 +146,12 @@ class PhoneAuthService {
             : 'يرجى الانتظار دقيقة واحدة قبل طلب رمز جديد.';
         throw Exception(errorMsg);
       } else {
-        final errorMsg = (resData is Map && resData['error'] != null)
+        String errorMsg = (resData is Map && resData['error'] != null)
             ? resData['error']
             : 'فشل في إرسال رمز التحقق عبر الواتساب (${response.statusCode})';
+        if (errorMsg.contains('Invalid API token') || errorMsg.contains('Unauthorized')) {
+          errorMsg = 'مفتاح خدمة الواتساب غير صالح، يرجى تحديث WAPILOT_API_TOKEN في Vercel.';
+        }
         throw Exception(errorMsg);
       }
     } catch (e, stack) {

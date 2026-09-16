@@ -8,7 +8,7 @@ class GoogleMapsConfig {
   /// Backend Places Proxy URL (Keeps Google API Key strictly on the server)
   static String get backendPlacesProxyUrl => const String.fromEnvironment(
     'BACKEND_PLACES_PROXY_URL',
-    defaultValue: 'https://inride-dashboard.vercel.app/api/places-search',
+    defaultValue: 'https://inride-5efp.vercel.app/api/places-search',
   );
 
   /// Always true since the secure backend proxy handles place queries

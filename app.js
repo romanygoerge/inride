@@ -6895,7 +6895,7 @@ async function dispatchDashboardPushNotification({ target = 'all', recipientId =
 
   // 1. Try Vercel backend with Bearer secret
   try {
-    const response = await fetch('https://inride-dashboard.vercel.app/api/push-notification', {
+    const response = await fetch('https://inride-5efp.vercel.app/api/push-notification', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -17580,7 +17580,7 @@ async function broadcastMaintenancePushNotification(isEnabling) {
 
   // Try Vercel Backend
   try {
-    const response = await fetch('https://inride-dashboard.vercel.app/api/push-notification', {
+    const response = await fetch('https://inride-5efp.vercel.app/api/push-notification', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

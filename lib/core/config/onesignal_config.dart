@@ -18,7 +18,7 @@ class OneSignalConfig {
   /// Backend Push Server URL for dispatching push notifications securely
   static String get backendPushUrl => const String.fromEnvironment(
     'BACKEND_PUSH_URL',
-    defaultValue: 'https://inride-dashboard.vercel.app/api/push-notification',
+    defaultValue: 'https://inride-5efp.vercel.app/api/push-notification',
   );
 
   /// Optional Secret Header Key for dev/server override (never commit secret values here)

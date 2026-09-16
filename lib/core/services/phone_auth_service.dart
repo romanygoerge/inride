@@ -29,7 +29,7 @@ class PhoneAuthService {
   static String get _apiBaseUrl {
     const override = String.fromEnvironment('BACKEND_BASE_URL');
     if (override.isNotEmpty) return override;
-    return 'https://inride-dashboard.vercel.app';
+    return 'https://inride-5efp.vercel.app';
   }
 
   static const String _appIntegritySalt = 'inRide_2026_Otp_Integrity_Salt_#99v88x77';

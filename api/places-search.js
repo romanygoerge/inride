@@ -23,9 +23,10 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ status: 'OK', results: [] });
     }
 
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyCl2BCra6ezC8AgOFa4XvRAMvv3kKJ02yw';
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: 'GOOGLE_MAPS_API_KEY not configured on server' });
+      console.error('[PlacesSearch] CRITICAL: GOOGLE_MAPS_API_KEY is not configured in Vercel environment variables.');
+      return res.status(500).json({ error: 'GOOGLE_MAPS_API_KEY is not configured on server' });
     }
 
     const encodedQuery = encodeURIComponent(query);

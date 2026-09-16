@@ -155,7 +155,14 @@ serve(async (req: Request) => {
 
     // 5. Send WA Pilot
     const instanceId = Deno.env.get("WAPILOT_INSTANCE_ID") || "instance4905";
-    const token = Deno.env.get("WAPILOT_API_TOKEN") || "zDQpqez1foUUWQptGgFabIPXmOdc28BVL4nXY0sSje";
+    const token = Deno.env.get("WAPILOT_API_TOKEN");
+
+    if (!token) {
+      return new Response(JSON.stringify({ success: false, error: "WAPILOT_API_TOKEN is not configured in Supabase secrets." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const message = `رمز التحقق الخاص بك لتطبيق inRide هو: *${otp}*\n\nيرجى عدم مشاركة هذا الرمز مع أي شخص.`;
 

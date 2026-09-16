@@ -19,7 +19,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGci
 const SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
 
 const WAPILOT_INSTANCE_ID = process.env.WAPILOT_INSTANCE_ID || 'instance4905';
-const WAPILOT_API_TOKEN = process.env.WAPILOT_API_TOKEN || 'zDQpqez1foUUWQptGgFabIPXmOdc28BVL4nXY0sSje';
+const WAPILOT_API_TOKEN = process.env.WAPILOT_API_TOKEN;
 
 const APP_INTEGRITY_SALT = process.env.APP_INTEGRITY_SALT || 'inRide_2026_Otp_Integrity_Salt_#99v88x77';
 const OTP_HASH_SALT = process.env.OTP_HASH_SALT || 'inRide_2026_Secure_OTP_Salt_99x';
@@ -237,6 +237,14 @@ module.exports = async function handler(req, res) {
     }
 
     // 7. Dispatch Message via WA Pilot
+    if (!WAPILOT_API_TOKEN) {
+      console.error('[SendOtp] CRITICAL: WAPILOT_API_TOKEN environment variable is not configured in Vercel.');
+      return res.status(500).json({
+        success: false,
+        error: 'إعدادات خدمة الواتساب غير مكتملة على السيرفر: يرجى إضافة WAPILOT_API_TOKEN في متغيرات البيئة (Environment Variables) في Vercel.'
+      });
+    }
+
     const chatId = `${cleanPhone}@c.us`;
     const lockedMessageText = `رمز التحقق الخاص بك في تطبيق inRide هو: ${otpCode}\nيرجى عدم مشاركة هذا الرمز مع أي شخص.`;
 

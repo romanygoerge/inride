@@ -37,7 +37,7 @@ module.exports = async function handler(req, res) {
   }
 
   const appId = process.env.ONESIGNAL_APP_ID || '388d1944-0b83-4942-8f80-b12584def7d7';
-  const restApiKey = process.env.ONESIGNAL_REST_API_KEY || Buffer.from('b3NfdjJfYXBwX2hjZ3JzcmFscW5ldWZkNGF3ZXN5anh4eDI3N3Ayb2Vwdm95dWJlbWltcmhrc2ZteHl0bHBvNmtjeXFzcjV3ZXFwcmNicnVzeDRxcXRsbnM3dHgzanNhdnc3amp3a2RqNXB6ZGh6YmE=', 'base64').toString('utf8');
+  const restApiKey = process.env.ONESIGNAL_REST_API_KEY;
 
   console.log(`[Notification] Using OneSignal App ID: ${appId.substring(0, 8)}...`);
 

@@ -18,18 +18,44 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Authentication check: Strictly enforce APP_SECRET_KEY header or valid Bearer token
+  // Authentication check: Accepts Supabase User Auth JWT or Server Secret Key
   const authHeader = req.headers['authorization'] || '';
   const secretKey = process.env.APP_SECRET_KEY || process.env.APP_PUSH_SECRET_KEY || 'inride_secure_push_secret_2026_prod';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-  if (!token || token !== secretKey) {
+  let isAuthorized = false;
+
+  if (token) {
+    if (token === secretKey) {
+      isAuthorized = true;
+    } else if (token.startsWith('eyJ')) {
+      // Validate Supabase User JWT session
+      try {
+        const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'apikey': SUPABASE_KEY
+          }
+        });
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          if (userData && userData.id) {
+            isAuthorized = true;
+          }
+        }
+      } catch (authErr) {
+        console.warn('[PushNotification] JWT validation error:', authErr.message);
+      }
+    }
+  }
+
+  if (!isAuthorized) {
     console.warn('[PushNotification] Blocked unauthorized request attempt.');
-    return res.status(401).json({ error: 'Unauthorized: Valid Authorization header required.' });
+    return res.status(401).json({ error: 'Unauthorized: Valid User Session or Authorization header required.' });
   }
 
   try {
-    const { recipientId, target, title, body, type, data } = req.body || {};
+    const { recipientId, target, title, body, type, data, tokens } = req.body || {};
 
     if (!body) {
       return res.status(400).json({ error: 'Missing required parameter: body' });
@@ -38,7 +64,7 @@ module.exports = async function handler(req, res) {
     // A notification is a broadcast if explicitly targeted to all, drivers, riders, or city!
     const isBroadcast = (target === 'all' || target === 'drivers' || target === 'riders' || target === 'city' || recipientId === 'ALL_USERS' || recipientId === 'broadcast' || recipientId === 'DRIVERS' || recipientId === 'RIDERS');
 
-    // For non-broadcast notifications, recipientId is strictly required to prevent any accidental leakage to other users!
+    // For non-broadcast notifications, recipientId is strictly required
     if (!isBroadcast) {
       if (!recipientId || typeof recipientId !== 'string' || recipientId.trim() === '' || recipientId === 'null' || recipientId === 'undefined') {
         console.warn('[PushNotification] BLOCKED: recipientId is missing or invalid for private notification.');
@@ -50,6 +76,14 @@ module.exports = async function handler(req, res) {
 
     // Fetch active device tokens from Supabase user_devices via REST API (Zero dependency)
     let activeTokens = [];
+    if (Array.isArray(tokens)) {
+      tokens.forEach(t => {
+        if (t && typeof t === 'string' && t.length > 10 && !activeTokens.includes(t)) {
+          activeTokens.push(t);
+        }
+      });
+    }
+
     try {
       const url = isBroadcast
         ? `${SUPABASE_URL}/rest/v1/user_devices?is_active=eq.true&select=device_token`
@@ -90,7 +124,13 @@ module.exports = async function handler(req, res) {
       contents: { en: body, ar: body },
       data: stringifiedData,
       android_accent_color: 'FF1976D2',
+      android_channel_id: 'high_importance_channel',
+      android_sound: 'notification',
+      ios_sound: 'default',
+      sound: 'default',
       priority: 10,
+      android_visibility: 1,
+      ios_interruption_level: 'time-sensitive',
       ttl: 86400,
       small_icon: 'ic_launcher',
     };

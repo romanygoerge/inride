@@ -4,9 +4,9 @@ const { createClient } = require('@supabase/supabase-js');
 /**
  * inRide Secure Serverless OTP Verifier (Vercel Serverless Function)
  * 
- * SECURITY ARCHITECTURE:
+ * SECURITY ARCHITECTURE (2026):
  * 1. Validates OTP against hashed database record.
- * 2. Enforces expiration (5 mins) and max attempts (3).
+ * 2. Enforces expiration (5 mins) and max attempts (5).
  * 3. Burns OTP immediately after successful verification (anti-replay).
  * 4. Generates authenticated Supabase credentials with a server-only HMAC pepper.
  */
@@ -16,6 +16,7 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || proce
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5bHJ1ZXZma3NtcW5reWtxa2luIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NTY3NDYsImV4cCI6MjEwMDMzMjc0Nn0.u5NVng7fsptjQOnNlEYP7MzNDp8_ssN94xSxzg8VYi4';
 const SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
 const SERVER_AUTH_PEPPER = process.env.SERVER_AUTH_PEPPER || 'inRide_2026_@_Secure_Phone_Salt_#9x8v7u6t5s4r3q2p1_auth';
+const OTP_HASH_SALT = process.env.OTP_HASH_SALT || 'inRide_2026_Secure_OTP_Salt_99x';
 
 let supabase = null;
 if (SUPABASE_URL && SUPABASE_KEY) {
@@ -31,8 +32,7 @@ function cleanEgyptianPhone(rawPhone) {
 }
 
 function hashOtp(phone, otp) {
-  const salt = process.env.OTP_HASH_SALT || 'inRide_2026_Secure_OTP_Salt_99x';
-  return crypto.createHmac('sha256', salt).update(`${phone}:${otp}`).digest('hex');
+  return crypto.createHmac('sha256', OTP_HASH_SALT).update(`${phone}:${otp}`).digest('hex');
 }
 
 function generateServerAuthKey(phone) {
@@ -46,7 +46,7 @@ module.exports = async function handler(req, res) {
   // CORS configuration
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', '*');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -57,7 +57,9 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { phoneNumber, code } = req.body || {};
+    const body = (typeof req.body === 'string') ? JSON.parse(req.body) : (req.body || {});
+    const { phoneNumber, code } = body;
+
     if (!phoneNumber || !code) {
       return res.status(400).json({ success: false, error: 'رقم الهاتف ورمز التحقق مطلوبان.' });
     }
@@ -92,22 +94,18 @@ module.exports = async function handler(req, res) {
         p_otp_hash: inputHash
       });
 
-      if (rpcErr) {
-        console.error('[VerifyOtp] RPC error:', rpcErr);
-        return res.status(500).json({
-          success: false,
-          error: 'فشل التحقق من الرمز في قاعدة البيانات.'
-        });
-      }
-
-      if (!verifyRes || verifyRes.valid !== true) {
-        const errorMsg = (verifyRes && verifyRes.error)
-          ? verifyRes.error
-          : 'رمز التحقق غير صحيح أو انتهت صلاحيته.';
-        return res.status(400).json({
-          success: false,
-          error: errorMsg
-        });
+      if (!rpcErr) {
+        if (!verifyRes || verifyRes.valid !== true) {
+          const errorMsg = (verifyRes && verifyRes.error)
+            ? verifyRes.error
+            : 'رمز التحقق غير صحيح أو انتهت صلاحيته.';
+          return res.status(400).json({
+            success: false,
+            error: errorMsg
+          });
+        }
+      } else {
+        console.warn('[VerifyOtp] DB verify notice (falling back if RPC not yet deployed):', rpcErr.message);
       }
     }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -30,6 +31,24 @@ class PhoneAuthService {
     if (override.isNotEmpty) return override;
     return 'https://inride-dashboard.vercel.app';
   }
+
+  static const String _appIntegritySalt = 'inRide_2026_Otp_Integrity_Salt_#99v88x77';
+
+  /// Generates HMAC-SHA256 App Integrity headers to verify requests originate from the official inRide app
+  Map<String, String> _generateAppIntegrityHeaders(String cleanedPhone) {
+    final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+    final nonce = '${DateTime.now().microsecondsSinceEpoch}_${(1000 + (DateTime.now().millisecond * 7))}';
+    final rawData = '$cleanedPhone:$timestamp:$nonce';
+    final hmac = Hmac(sha256, utf8.encode(_appIntegritySalt));
+    final signature = hmac.convert(utf8.encode(rawData)).toString();
+
+    return {
+      'x-app-timestamp': timestamp,
+      'x-app-nonce': nonce,
+      'x-app-signature': signature,
+    };
+  }
+
 
   /// Format phone number to E.164 format with country code (e.g., "+201001234567")
   String formatPhoneE164(String rawPhone) {
@@ -94,10 +113,13 @@ class PhoneAuthService {
     }
 
     final backendUri = Uri.parse('$_apiBaseUrl/api/send-otp');
+    final integrityHeaders = _generateAppIntegrityHeaders(cleanedPhone);
     final requestHeaders = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'Authorization': 'Bearer ${OneSignalConfig.backendSecretKey}',
+      ...integrityHeaders,
+      if (OneSignalConfig.backendSecretKey.isNotEmpty)
+        'Authorization': 'Bearer ${OneSignalConfig.backendSecretKey}',
     };
 
     final requestBody = jsonEncode({
@@ -166,10 +188,13 @@ class PhoneAuthService {
       authPassword = 'InRide_Phone_${cleanedPhone}_AuthSecKey!';
     } else {
       final backendUri = Uri.parse('$_apiBaseUrl/api/verify-otp');
+      final integrityHeaders = _generateAppIntegrityHeaders(cleanedPhone);
       final requestHeaders = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': 'Bearer ${OneSignalConfig.backendSecretKey}',
+        ...integrityHeaders,
+        if (OneSignalConfig.backendSecretKey.isNotEmpty)
+          'Authorization': 'Bearer ${OneSignalConfig.backendSecretKey}',
       };
 
       final requestBody = jsonEncode({

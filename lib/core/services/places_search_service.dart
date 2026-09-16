@@ -271,22 +271,35 @@ class PlacesSearchService {
     return textScore + proxScore + cityBonus + historyBonus;
   }
 
-  /// Google Places Search across Egypt with proximity bias
+  /// Google Places Search across Egypt via secure Backend Proxy / Supabase Edge Function
   Future<List<PlaceLocation>> _searchGooglePlaces(String query, double userLat, double userLng) async {
     final List<PlaceLocation> list = [];
-    final apiKey = GoogleMapsConfig.apiKey;
-    if (apiKey.isEmpty) return list;
+    final proxyUrl = GoogleMapsConfig.backendPlacesProxyUrl;
+    final fallbackKey = GoogleMapsConfig.apiKey;
 
     try {
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/textsearch/json'
-        '?query=${Uri.encodeComponent(query)}'
-        '&location=$userLat,$userLng'
-        '&radius=50000'
-        '&language=ar'
-        '&region=eg'
-        '&key=$apiKey',
-      );
+      Uri url;
+      if (proxyUrl.isNotEmpty) {
+        url = Uri.parse(
+          '$proxyUrl'
+          '?query=${Uri.encodeComponent(query)}'
+          '&lat=$userLat'
+          '&lng=$userLng'
+          '&radius=50000',
+        );
+      } else if (fallbackKey.isNotEmpty) {
+        url = Uri.parse(
+          'https://maps.googleapis.com/maps/api/place/textsearch/json'
+          '?query=${Uri.encodeComponent(query)}'
+          '&location=$userLat,$userLng'
+          '&radius=50000'
+          '&language=ar'
+          '&region=eg'
+          '&key=$fallbackKey',
+        );
+      } else {
+        return list;
+      }
 
       final response = await http.get(url).timeout(const Duration(seconds: 4));
       if (response.statusCode == 200) {

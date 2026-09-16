@@ -18,14 +18,40 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Authentication check: Strictly enforce APP_SECRET_KEY header or valid Bearer token
+  // Authentication check: Accepts Supabase User Auth JWT or Server Secret Key
   const authHeader = req.headers['authorization'] || '';
   const secretKey = process.env.APP_SECRET_KEY || process.env.APP_PUSH_SECRET_KEY || 'inride_secure_push_secret_2026_prod';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-  if (!token || token !== secretKey) {
+  let isAuthorized = false;
+
+  if (token) {
+    if (token === secretKey) {
+      isAuthorized = true;
+    } else if (token.startsWith('eyJ')) {
+      // Validate Supabase User JWT session
+      try {
+        const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'apikey': SUPABASE_KEY
+          }
+        });
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          if (userData && userData.id) {
+            isAuthorized = true;
+          }
+        }
+      } catch (authErr) {
+        console.warn('[PushNotification] JWT validation error:', authErr.message);
+      }
+    }
+  }
+
+  if (!isAuthorized) {
     console.warn('[PushNotification] Blocked unauthorized request attempt.');
-    return res.status(401).json({ error: 'Unauthorized: Valid Authorization header required.' });
+    return res.status(401).json({ error: 'Unauthorized: Valid User Session or Authorization header required.' });
   }
 
   try {
@@ -38,7 +64,7 @@ module.exports = async function handler(req, res) {
     // A notification is a broadcast if explicitly targeted to all, drivers, riders, or city!
     const isBroadcast = (target === 'all' || target === 'drivers' || target === 'riders' || target === 'city' || recipientId === 'ALL_USERS' || recipientId === 'broadcast' || recipientId === 'DRIVERS' || recipientId === 'RIDERS');
 
-    // For non-broadcast notifications, recipientId is strictly required to prevent any accidental leakage to other users!
+    // For non-broadcast notifications, recipientId is strictly required
     if (!isBroadcast) {
       if (!recipientId || typeof recipientId !== 'string' || recipientId.trim() === '' || recipientId === 'null' || recipientId === 'undefined') {
         console.warn('[PushNotification] BLOCKED: recipientId is missing or invalid for private notification.');

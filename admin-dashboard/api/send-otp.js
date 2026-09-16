@@ -3,29 +3,40 @@ const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
 /**
- * inRide Secure Serverless OTP Sender (Vercel Serverless Function)
+ * inRide Hardened Serverless OTP Sender (Vercel Serverless Function)
  * 
- * SECURITY ARCHITECTURE:
- * 1. Master WA Pilot token is kept strictly on the server (never exposed to client).
- * 2. Rate limiting: strictly 1 OTP per 60 seconds per phone, max 5 per hour.
- * 3. Locked message template: clients cannot supply or customize message text.
- * 4. Cryptographic OTP generation and storage of salted SHA-256 hash in Supabase.
+ * SECURITY ARCHITECTURE (2026):
+ * 1. App Integrity Check: Enforces HMAC-SHA256 signature with nonces and timestamps.
+ * 2. Anti-Bot / Anti-Replay: Blocks requests older than 2 minutes and burns nonces.
+ * 3. Atomic Database Rate Limiting: 60s cooldown, max 4/hour, max 8/day per phone, max 12/hour per IP.
+ * 4. Audit Logging: Every request, IP, user-agent, and status is logged.
+ * 5. Locked message template: Fixed text only, cannot be customized by caller.
  */
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fylruevfksmqnkykqkin.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5bHJ1ZXZma3NtcW5reWtxa2luIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NTY3NDYsImV4cCI6MjEwMDMzMjc0Nn0.u5NVng7fsptjQOnNlEYP7MzNDp8_ssN94xSxzg8VYi4';
 const SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+
 const WAPILOT_INSTANCE_ID = process.env.WAPILOT_INSTANCE_ID || 'instance4905';
 const WAPILOT_API_TOKEN = process.env.WAPILOT_API_TOKEN || 'zDQpqez1foUUWQptGgFabIPXmOdc28BVL4nXY0sSje';
+
+const APP_INTEGRITY_SALT = process.env.APP_INTEGRITY_SALT || 'inRide_2026_Otp_Integrity_Salt_#99v88x77';
+const OTP_HASH_SALT = process.env.OTP_HASH_SALT || 'inRide_2026_Secure_OTP_Salt_99x';
 
 let supabase = null;
 if (SUPABASE_URL && SUPABASE_KEY) {
   supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 }
 
-// In-memory rate limiting fallback cache
+// Memory caches for anti-replay and in-memory rate limiting
+const usedNonces = new Set();
 const rateLimitMap = new Map();
+
+// Periodic cleanup of expired nonces (every 10 minutes)
+setInterval(() => {
+  if (usedNonces.size > 10000) usedNonces.clear();
+}, 600000);
 
 function cleanEgyptianPhone(rawPhone) {
   let cleaned = String(rawPhone || '').replace(/[^\d]/g, '');
@@ -36,8 +47,48 @@ function cleanEgyptianPhone(rawPhone) {
 }
 
 function hashOtp(phone, otp) {
-  const salt = process.env.OTP_HASH_SALT || 'inRide_2026_Secure_OTP_Salt_99x';
-  return crypto.createHmac('sha256', salt).update(`${phone}:${otp}`).digest('hex');
+  return crypto.createHmac('sha256', OTP_HASH_SALT).update(`${phone}:${otp}`).digest('hex');
+}
+
+function verifyAppIntegrity(req, phone) {
+  // Check headers
+  const timestamp = req.headers['x-app-timestamp'];
+  const nonce = req.headers['x-app-nonce'];
+  const signature = req.headers['x-app-signature'];
+
+  // If internal dashboard/admin secret is provided, bypass app signature
+  const authHeader = req.headers['authorization'] || '';
+  const serverSecret = process.env.APP_SECRET_KEY || 'inride_secure_push_secret_2026_prod';
+  if (authHeader.replace(/^Bearer\s+/i, '').trim() === serverSecret) {
+    return { valid: true, reason: 'server_secret' };
+  }
+
+  if (!timestamp || !nonce || !signature) {
+    return { valid: false, error: 'طلب غير مصرح به: ترويسات التحقق مفقودة.' };
+  }
+
+  // 1. Clock skew check (maximum 2 minutes)
+  const reqTime = parseInt(timestamp, 10);
+  const now = Date.now();
+  if (isNaN(reqTime) || Math.abs(now - reqTime) > 120000) {
+    return { valid: false, error: 'طلب غير صالح: انتهت صلاحية توقيع الطلب.' };
+  }
+
+  // 2. Anti-replay check
+  if (usedNonces.has(nonce)) {
+    return { valid: false, error: 'طلب مكرر غير مسموح به (Replay Attack Detected).' };
+  }
+
+  // 3. Verify HMAC-SHA256 signature
+  const rawData = `${phone}:${timestamp}:${nonce}`;
+  const expectedSignature = crypto.createHmac('sha256', APP_INTEGRITY_SALT).update(rawData).digest('hex');
+
+  if (signature !== expectedSignature) {
+    return { valid: false, error: 'طلب غير مصرح به: توقيع التطبيق غير مطابق.' };
+  }
+
+  usedNonces.add(nonce);
+  return { valid: true };
 }
 
 function postWaPilot(instanceId, token, payload) {
@@ -77,10 +128,9 @@ function postWaPilot(instanceId, token, payload) {
 }
 
 module.exports = async function handler(req, res) {
-  // CORS configuration
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', '*');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -91,7 +141,9 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { phoneNumber } = req.body || {};
+    const body = (typeof req.body === 'string') ? JSON.parse(req.body) : (req.body || {});
+    const { phoneNumber } = body;
+
     if (!phoneNumber) {
       return res.status(400).json({ success: false, error: 'رقم الهاتف مطلوب.' });
     }
@@ -101,9 +153,19 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'رقم الهاتف غير صالح.' });
     }
 
+    const clientIp = (req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+    const userAgent = req.headers['user-agent'] || 'Unknown';
+
+    // 1. App Integrity Check: Validates signature from official inRide Flutter app
+    const integrityResult = verifyAppIntegrity(req, cleanPhone);
+    if (!integrityResult.valid) {
+      console.warn(`[SendOtp] Blocked unauthorized request from IP ${clientIp} for ${cleanPhone}: ${integrityResult.error}`);
+      return res.status(403).json({ success: false, error: integrityResult.error });
+    }
+
     const now = Date.now();
 
-    // 1. Rate Limiting Check (Server Memory Sliding Window)
+    // 2. In-memory Rate Limiting (Primary Serverless Defense)
     const rateData = rateLimitMap.get(cleanPhone) || { lastRequest: 0, countPerHour: 0, windowStart: now };
     if (now - rateData.windowStart > 3600000) {
       rateData.countPerHour = 0;
@@ -118,36 +180,35 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    if (rateData.countPerHour >= 5) {
+    if (rateData.countPerHour >= 4) {
       return res.status(429).json({
         success: false,
-        error: 'لقد تجاوزت الحد الأقصى للمحاولات (5 محاولات بالساعة). يرجى المحاولة لاحقاً.'
+        error: 'تم تجاوز الحد الأقصى للمحاولات لهذا الرقم (4 محاولات بالساعة). يرجى المحاولة لاحقاً.'
       });
     }
 
-    // 2. Database Rate Limiting Check (if Supabase Service Role is active)
+    // 3. Database Rate Limiting & Audit Logging (Persistent PostgreSQL Defense)
     if (supabase) {
       try {
-        const sixtySecAgo = new Date(now - 60000).toISOString();
-        const { data: recentRequests } = await supabase
-          .from('otp_requests')
-          .select('created_at')
-          .eq('phone_number', cleanPhone)
-          .gte('created_at', sixtySecAgo)
-          .limit(1);
+        const { data: dbCheck, error: dbErr } = await supabase.rpc('verify_and_record_otp_request', {
+          p_phone: cleanPhone,
+          p_ip: clientIp,
+          p_user_agent: userAgent
+        });
 
-        if (recentRequests && recentRequests.length > 0) {
+        if (!dbErr && dbCheck && dbCheck.allowed === false) {
+          console.warn(`[SendOtp] DB rate limit triggered for ${cleanPhone} from ${clientIp}`);
           return res.status(429).json({
             success: false,
-            error: 'يرجى الانتظار دقيقة واحدة قبل طلب رمز جديد.'
+            error: dbCheck.error || 'يرجى الانتظار دقيقة واحدة قبل طلب رمز جديد.'
           });
         }
-      } catch (dbErr) {
-        console.warn('[SendOtp] DB check notice:', dbErr.message);
+      } catch (err) {
+        console.warn('[SendOtp] DB check notice:', err.message);
       }
     }
 
-    // 3. Demo Account Fast-Path
+    // 4. Demo Account Fast-Path
     const isDemoNumber = (cleanPhone === '201000000000' || cleanPhone.endsWith('000000000'));
     if (isDemoNumber) {
       return res.status(200).json({
@@ -157,31 +218,25 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // 4. Generate Cryptographically Secure 6-Digit OTP
+    // 5. Generate Cryptographically Secure 6-Digit OTP
     const otpCode = crypto.randomInt(100000, 999999).toString();
     const otpHash = hashOtp(cleanPhone, otpCode);
-    const expiresAt = new Date(now + 5 * 60 * 1000).toISOString(); // 5 minutes expiration
+    const expiresAt = new Date(now + 5 * 60 * 1000).toISOString();
 
-    // 5. Store OTP in Database via secure RPC
+    // 6. Store OTP in Database
     if (supabase) {
       try {
-        const { data: rpcRes, error: rpcErr } = await supabase.rpc('store_phone_otp', {
+        await supabase.rpc('store_phone_otp', {
           p_phone: cleanPhone,
           p_otp_hash: otpHash,
           p_expires_at: expiresAt
         });
-        if (rpcRes && rpcRes.rate_limited) {
-          return res.status(429).json({
-            success: false,
-            error: rpcRes.error || 'يرجى الانتظار دقيقة واحدة قبل طلب رمز جديد.'
-          });
-        }
-      } catch (insErr) {
-        console.warn('[SendOtp] DB insert notice:', insErr.message);
+      } catch (err) {
+        console.warn('[SendOtp] Store OTP notice:', err.message);
       }
     }
 
-    // 6. Send OTP via WA Pilot using LOCKED template
+    // 7. Dispatch Message via WA Pilot
     const chatId = `${cleanPhone}@c.us`;
     const lockedMessageText = `رمز التحقق الخاص بك في تطبيق inRide هو: ${otpCode}\nيرجى عدم مشاركة هذا الرمز مع أي شخص.`;
 
@@ -191,12 +246,11 @@ module.exports = async function handler(req, res) {
     });
 
     if (waResponse.status === 200 || waResponse.status === 201) {
-      // Update rate limiter on success
       rateData.lastRequest = now;
       rateData.countPerHour += 1;
       rateLimitMap.set(cleanPhone, rateData);
 
-      console.log(`[SendOtp] Successfully dispatched OTP to ${chatId}`);
+      console.log(`[SendOtp] Successfully dispatched OTP to ${chatId} (IP: ${clientIp})`);
       return res.status(200).json({
         success: true,
         message: 'تم إرسال رمز التحقق بنجاح 📲'

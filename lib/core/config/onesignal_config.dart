@@ -21,10 +21,10 @@ class OneSignalConfig {
     defaultValue: 'https://inride-dashboard.vercel.app/api/push-notification',
   );
 
-  /// Secret Header Key used between Flutter client and Backend Push Server
+  /// Optional Secret Header Key for dev/server override (never commit secret values here)
   static String get backendSecretKey => const String.fromEnvironment(
     'APP_PUSH_SECRET_KEY',
-    defaultValue: 'inride_secure_push_secret_2026_prod',
+    defaultValue: '',
   );
 
   /// Check if client App ID is configured

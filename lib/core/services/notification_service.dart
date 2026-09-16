@@ -433,10 +433,12 @@ class NotificationService {
     try {
       final backendUrl = Uri.parse(OneSignalConfig.backendPushUrl);
       final secretKey = OneSignalConfig.backendSecretKey;
+      final sessionToken = Supabase.instance.client.auth.currentSession?.accessToken ?? '';
+      final authToken = sessionToken.isNotEmpty ? sessionToken : secretKey;
       
       final headers = <String, String>{
         'Content-Type': 'application/json; charset=utf-8',
-        if (secretKey.isNotEmpty) 'Authorization': 'Bearer $secretKey',
+        if (authToken.isNotEmpty) 'Authorization': 'Bearer $authToken',
       };
 
       final payload = {

@@ -1,6 +1,17 @@
+/// Google Maps & Places Service Configuration
+/// Google Maps API Web Service keys must NEVER be stored inside Flutter client APK/IPA.
+/// All text searches and geocoding queries are proxied via secure Backend / Supabase Edge Functions.
 class GoogleMapsConfig {
-  /// Google Maps / Places API Key for inRide
-  static const String apiKey = 'AIzaSyCl2BCra6ezC8AgOFa4XvRAMvv3kKJ02yw';
+  /// Optional client API key override (only if restricted by Android/iOS Bundle ID in Native SDKs)
+  static const String apiKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY', defaultValue: '');
 
-  static bool get isConfigured => apiKey.isNotEmpty;
+  /// Backend Places Proxy URL (Keeps Google API Key strictly on the server)
+  static String get backendPlacesProxyUrl => const String.fromEnvironment(
+    'BACKEND_PLACES_PROXY_URL',
+    defaultValue: 'https://inride-dashboard.vercel.app/api/places-search',
+  );
+
+  /// Always true since the secure backend proxy handles place queries
+  static bool get isConfigured => true;
 }
+

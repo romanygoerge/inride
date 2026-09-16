@@ -29,9 +29,8 @@ if (SUPABASE_URL && SUPABASE_KEY) {
   supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 }
 
-// Memory caches for anti-replay and in-memory rate limiting
+// Memory cache for anti-replay
 const usedNonces = new Set();
-const rateLimitMap = new Map();
 
 // Periodic cleanup of expired nonces (every 10 minutes)
 setInterval(() => {
@@ -165,47 +164,16 @@ module.exports = async function handler(req, res) {
 
     const now = Date.now();
 
-    // 2. In-memory Rate Limiting (Primary Serverless Defense)
-    const rateData = rateLimitMap.get(cleanPhone) || { lastRequest: 0, countPerHour: 0, windowStart: now };
-    if (now - rateData.windowStart > 3600000) {
-      rateData.countPerHour = 0;
-      rateData.windowStart = now;
-    }
-
-    if (now - rateData.lastRequest < 60000) {
-      const waitSeconds = Math.ceil((60000 - (now - rateData.lastRequest)) / 1000);
-      return res.status(429).json({
-        success: false,
-        error: `يرجى الانتظار ${waitSeconds} ثانية قبل طلب رمز جديد.`
-      });
-    }
-
-    if (rateData.countPerHour >= 4) {
-      return res.status(429).json({
-        success: false,
-        error: 'تم تجاوز الحد الأقصى للمحاولات لهذا الرقم (4 محاولات بالساعة). يرجى المحاولة لاحقاً.'
-      });
-    }
-
-    // 3. Database Rate Limiting & Audit Logging (Persistent PostgreSQL Defense)
+    // 2. Rate Limiting Removed per user request (unlimited OTP sends & registration)
     if (supabase) {
       try {
-        const { data: dbCheck, error: dbErr } = await supabase.rpc('verify_and_record_otp_request', {
-          p_phone: cleanPhone,
-          p_ip: clientIp,
-          p_user_agent: userAgent
-        });
-
-        if (!dbErr && dbCheck && dbCheck.allowed === false) {
-          console.warn(`[SendOtp] DB rate limit triggered for ${cleanPhone} from ${clientIp}`);
-          return res.status(429).json({
-            success: false,
-            error: dbCheck.error || 'يرجى الانتظار دقيقة واحدة قبل طلب رمز جديد.'
-          });
-        }
-      } catch (err) {
-        console.warn('[SendOtp] DB check notice:', err.message);
-      }
+        await supabase.from('otp_audit_logs').insert({
+          phone_number: cleanPhone,
+          ip_address: clientIp,
+          user_agent: userAgent,
+          status: 'sent'
+        }).then(() => {}).catch(() => {});
+      } catch (_) {}
     }
 
     // 4. Demo Account Fast-Path
@@ -254,10 +222,6 @@ module.exports = async function handler(req, res) {
     });
 
     if (waResponse.status === 200 || waResponse.status === 201) {
-      rateData.lastRequest = now;
-      rateData.countPerHour += 1;
-      rateLimitMap.set(cleanPhone, rateData);
-
       console.log(`[SendOtp] Successfully dispatched OTP to ${chatId} (IP: ${clientIp})`);
       return res.status(200).json({
         success: true,

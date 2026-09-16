@@ -24,8 +24,7 @@ if (SUPABASE_URL && SUPABASE_KEY) {
   supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 }
 
-// In-memory rate limiting fallback cache
-const rateLimitMap = new Map();
+
 
 function cleanEgyptianPhone(rawPhone) {
   let cleaned = String(rawPhone || '').replace(/[^\d]/g, '');
@@ -103,49 +102,7 @@ module.exports = async function handler(req, res) {
 
     const now = Date.now();
 
-    // 1. Rate Limiting Check (Server Memory Sliding Window)
-    const rateData = rateLimitMap.get(cleanPhone) || { lastRequest: 0, countPerHour: 0, windowStart: now };
-    if (now - rateData.windowStart > 3600000) {
-      rateData.countPerHour = 0;
-      rateData.windowStart = now;
-    }
-
-    if (now - rateData.lastRequest < 60000) {
-      const waitSeconds = Math.ceil((60000 - (now - rateData.lastRequest)) / 1000);
-      return res.status(429).json({
-        success: false,
-        error: `يرجى الانتظار ${waitSeconds} ثانية قبل طلب رمز جديد.`
-      });
-    }
-
-    if (rateData.countPerHour >= 5) {
-      return res.status(429).json({
-        success: false,
-        error: 'لقد تجاوزت الحد الأقصى للمحاولات (5 محاولات بالساعة). يرجى المحاولة لاحقاً.'
-      });
-    }
-
-    // 2. Database Rate Limiting Check (if Supabase Service Role is active)
-    if (supabase) {
-      try {
-        const sixtySecAgo = new Date(now - 60000).toISOString();
-        const { data: recentRequests } = await supabase
-          .from('otp_requests')
-          .select('created_at')
-          .eq('phone_number', cleanPhone)
-          .gte('created_at', sixtySecAgo)
-          .limit(1);
-
-        if (recentRequests && recentRequests.length > 0) {
-          return res.status(429).json({
-            success: false,
-            error: 'يرجى الانتظار دقيقة واحدة قبل طلب رمز جديد.'
-          });
-        }
-      } catch (dbErr) {
-        console.warn('[SendOtp] DB check notice:', dbErr.message);
-      }
-    }
+    // Rate limiting removed per user request
 
     // 3. Demo Account Fast-Path
     const isDemoNumber = (cleanPhone === '201000000000' || cleanPhone.endsWith('000000000'));
@@ -191,10 +148,7 @@ module.exports = async function handler(req, res) {
     });
 
     if (waResponse.status === 200 || waResponse.status === 201) {
-      // Update rate limiter on success
-      rateData.lastRequest = now;
-      rateData.countPerHour += 1;
-      rateLimitMap.set(cleanPhone, rateData);
+
 
       console.log(`[SendOtp] Successfully dispatched OTP to ${chatId}`);
       return res.status(200).json({

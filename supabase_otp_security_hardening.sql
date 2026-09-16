@@ -53,15 +53,6 @@ SECURITY DEFINER
 AS $$
 DECLARE
     v_clean_phone TEXT;
-    v_now TIMESTAMPTZ := NOW();
-    v_last_request TIMESTAMPTZ;
-    v_count_hour INT;
-    v_count_day INT;
-    v_ip_count_hour INT;
-    v_cooldown_seconds INT := 60;
-    v_max_per_hour INT := 4;
-    v_max_per_day INT := 8;
-    v_max_ip_per_hour INT := 12;
 BEGIN
     -- Standardize Egyptian phone
     v_clean_phone := regexp_replace(p_phone, '[^\d]', '', 'g');
@@ -74,84 +65,7 @@ BEGIN
         v_clean_phone := '20' || substr(v_clean_phone, 2);
     END IF;
 
-    -- Allow Demo Account fast pass
-    IF v_clean_phone = '201000000000' OR v_clean_phone LIKE '%000000000' THEN
-        RETURN jsonb_build_object(
-            'allowed', true,
-            'is_demo', true,
-            'message', 'Demo account fast pass'
-        );
-    END IF;
-
-    -- A. Check 60-second cooldown on Phone Number
-    SELECT created_at INTO v_last_request
-    FROM public.otp_audit_logs
-    WHERE phone_number = v_clean_phone AND status = 'sent'
-    ORDER BY created_at DESC
-    LIMIT 1;
-
-    IF v_last_request IS NOT NULL AND v_now - v_last_request < (v_cooldown_seconds || ' seconds')::INTERVAL THEN
-        INSERT INTO public.otp_audit_logs(phone_number, ip_address, user_agent, status)
-        VALUES (v_clean_phone, p_ip, p_user_agent, 'blocked_rate_limit');
-
-        RETURN jsonb_build_object(
-            'allowed', false,
-            'retry_after', EXTRACT(EPOCH FROM (v_last_request + (v_cooldown_seconds || ' seconds')::INTERVAL - v_now))::INT,
-            'error', 'يرجى الانتظار دقيقة واحدة قبل طلب رمز جديد.'
-        );
-    END IF;
-
-    -- B. Check Hourly Limit on Phone Number
-    SELECT COUNT(*) INTO v_count_hour
-    FROM public.otp_audit_logs
-    WHERE phone_number = v_clean_phone AND status = 'sent'
-      AND created_at >= v_now - INTERVAL '1 hour';
-
-    IF v_count_hour >= v_max_per_hour THEN
-        INSERT INTO public.otp_audit_logs(phone_number, ip_address, user_agent, status)
-        VALUES (v_clean_phone, p_ip, p_user_agent, 'blocked_rate_limit');
-
-        RETURN jsonb_build_object(
-            'allowed', false,
-            'error', 'تم تجاوز الحد الأقصى للمحاولات لهذا الرقم (4 محاولات بالساعة). يرجى المحاولة لاحقاً.'
-        );
-    END IF;
-
-    -- C. Check Daily Limit on Phone Number
-    SELECT COUNT(*) INTO v_count_day
-    FROM public.otp_audit_logs
-    WHERE phone_number = v_clean_phone AND status = 'sent'
-      AND created_at >= v_now - INTERVAL '24 hours';
-
-    IF v_count_day >= v_max_per_day THEN
-        INSERT INTO public.otp_audit_logs(phone_number, ip_address, user_agent, status)
-        VALUES (v_clean_phone, p_ip, p_user_agent, 'blocked_rate_limit');
-
-        RETURN jsonb_build_object(
-            'allowed', false,
-            'error', 'تم تجاوز الحد الأقصى لطلبات الرمز اليومية لهذا الرقم. يرجى التواصل مع الدعم الفني.'
-        );
-    END IF;
-
-    -- D. Check IP Address Rate Limit (Prevents massive bot scraping)
-    IF p_ip IS NOT NULL AND length(p_ip) > 3 AND p_ip NOT IN ('127.0.0.1', '::1') THEN
-        SELECT COUNT(*) INTO v_ip_count_hour
-        FROM public.otp_audit_logs
-        WHERE ip_address = p_ip AND status = 'sent'
-          AND created_at >= v_now - INTERVAL '1 hour';
-
-        IF v_ip_count_hour >= v_max_ip_per_hour THEN
-            INSERT INTO public.otp_audit_logs(phone_number, ip_address, user_agent, status)
-            VALUES (v_clean_phone, p_ip, p_user_agent, 'blocked_rate_limit');
-
-            RETURN jsonb_build_object(
-                'allowed', false,
-                'error', 'تم تجاوز الحد المسموح به من هذا الاتصال. يرجى الانتظار قليلاً.'
-            );
-        END IF;
-    END IF;
-
-    -- All checks passed: Record legitimate attempt
+    -- Record in audit log for monitoring only (no rate limiting or blocking)
     INSERT INTO public.otp_audit_logs(phone_number, ip_address, user_agent, status)
     VALUES (v_clean_phone, p_ip, p_user_agent, 'sent');
 
@@ -223,9 +137,7 @@ BEGIN
         RETURN jsonb_build_object('valid', false, 'error', 'انتهت صلاحية رمز التحقق. يرجى طلب رمز جديد.');
     END IF;
 
-    IF v_rec.attempts >= 5 THEN
-        RETURN jsonb_build_object('valid', false, 'error', 'تم تجاوز الحد الأقصى للمحاولات الخاطئة. يرجى طلب رمز جديد.');
-    END IF;
+
 
     IF v_rec.otp_hash = p_otp_hash THEN
         UPDATE public.otp_requests
@@ -246,3 +158,6 @@ $$;
 GRANT EXECUTE ON FUNCTION public.verify_and_record_otp_request(TEXT, TEXT, TEXT) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.store_phone_otp(TEXT, TEXT, TIMESTAMPTZ) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.verify_phone_otp_hash(TEXT, TEXT) TO anon, authenticated, service_role;
+
+-- Reset all blocked audit logs
+TRUNCATE TABLE public.otp_audit_logs;

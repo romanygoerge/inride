@@ -4,6 +4,53 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABA
 const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID || '388d1944-0b83-4942-8f80-b12584def7d7';
 const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
 
+async function logSecurityEvent(params) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/log_security_event`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        p_event_type: params.eventType,
+        p_severity: params.severity || 'INFO',
+        p_request_id: params.requestId || null,
+        p_correlation_id: params.correlationId || null,
+        p_user_id: params.userId || null,
+        p_admin_id: params.adminId || null,
+        p_session_id: params.sessionId || null,
+        p_device_id: params.deviceId || null,
+        p_device_platform: params.devicePlatform || null,
+        p_device_manufacturer: params.deviceManufacturer || null,
+        p_device_model: params.deviceModel || null,
+        p_os_version: params.osVersion || null,
+        p_app_version: params.appVersion || null,
+        p_ip_address: params.ipAddress || null,
+        p_user_agent: params.userAgent || null,
+        p_asn: params.asn || null,
+        p_isp: params.isp || null,
+        p_country: params.country || null,
+        p_city: params.city || null,
+        p_endpoint: params.endpoint || '/api/push-notification',
+        p_http_method: params.httpMethod || 'POST',
+        p_response_status: params.responseStatus || null,
+        p_authentication_method: params.authMethod || 'BEARER_TOKEN',
+        p_authorization_result: params.authResult || null,
+        p_message_id: params.messageId || null,
+        p_provider_message_id: params.providerMessageId || null,
+        p_details: params.details || {}
+      })
+    });
+    if (!res.ok) {
+      console.warn('[PushSecurityLogger] HTTP error logging security event:', res.status);
+    }
+  } catch (err) {
+    console.error('[PushSecurityLogger] Exception:', err.message);
+  }
+}
+
 module.exports = async function handler(req, res) {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -18,16 +65,26 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const requestId = 'push_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+  const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || '127.0.0.1';
+  const userAgent = req.headers['user-agent'] || 'Unknown';
+  const country = req.headers['x-vercel-ip-country'] || 'EG';
+  const city = req.headers['x-vercel-ip-city'] || 'Cairo';
+
   // Authentication check: Accepts Supabase User Auth JWT or Server Secret Key
   const authHeader = req.headers['authorization'] || '';
   const secretKey = process.env.APP_SECRET_KEY || process.env.APP_PUSH_SECRET_KEY || 'inride_secure_push_secret_2026_prod';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
   let isAuthorized = false;
+  let isServerSecret = false;
+  let callerUserId = null;
+  let isUserAdmin = false;
 
   if (token) {
     if (token === secretKey) {
       isAuthorized = true;
+      isServerSecret = true;
     } else if (token.startsWith('eyJ')) {
       // Validate Supabase User JWT session
       try {
@@ -41,6 +98,31 @@ module.exports = async function handler(req, res) {
           const userData = await userRes.json();
           if (userData && userData.id) {
             isAuthorized = true;
+            callerUserId = userData.id;
+
+            // Check if user has admin claims or is registered in admins table
+            if (userData.app_metadata?.role === 'admin' || userData.user_metadata?.role === 'admin') {
+              isUserAdmin = true;
+            } else {
+              // Query database for admin record
+              try {
+                const adminCheckRes = await fetch(
+                  `${SUPABASE_URL}/rest/v1/admins?id=eq.${encodeURIComponent(callerUserId)}&is_active=eq.true&select=id`,
+                  {
+                    headers: {
+                      'apikey': SUPABASE_KEY,
+                      'Authorization': `Bearer ${SUPABASE_KEY}`
+                    }
+                  }
+                );
+                if (adminCheckRes.ok) {
+                  const adminRows = await adminCheckRes.json();
+                  if (Array.isArray(adminRows) && adminRows.length > 0) {
+                    isUserAdmin = true;
+                  }
+                }
+              } catch (_) {}
+            }
           }
         }
       } catch (authErr) {
@@ -50,7 +132,20 @@ module.exports = async function handler(req, res) {
   }
 
   if (!isAuthorized) {
-    console.warn('[PushNotification] Blocked unauthorized request attempt.');
+    console.warn('[PushNotification] Blocked unauthorized request attempt from IP:', ipAddress);
+    await logSecurityEvent({
+      eventType: 'UNAUTHORIZED_API_ACCESS_ATTEMPT',
+      severity: 'HIGH',
+      requestId,
+      ipAddress,
+      userAgent,
+      country,
+      city,
+      responseStatus: 401,
+      authMethod: 'BEARER_TOKEN',
+      authResult: 'DENIED',
+      details: { reason: 'missing_or_invalid_bearer_token' }
+    });
     return res.status(401).json({ error: 'Unauthorized: Valid User Session or Authorization header required.' });
   }
 
@@ -61,8 +156,35 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: 'Missing required parameter: body' });
     }
 
-    // A notification is a broadcast if explicitly targeted to all, drivers, riders, or city!
+    // A notification is a broadcast if explicitly targeted to all, drivers, riders, city, or ALL_USERS
     const isBroadcast = (target === 'all' || target === 'drivers' || target === 'riders' || target === 'city' || recipientId === 'ALL_USERS' || recipientId === 'broadcast' || recipientId === 'DRIVERS' || recipientId === 'RIDERS');
+
+    // SECURITY HARDENING: Privilege Escalation Prevention
+    // Broadcast notifications are STRICTLY reserved for Server Secrets (Admin Dashboard / Backend) or Verified Admins!
+    if (isBroadcast && !isServerSecret && !isUserAdmin) {
+      console.error(`[PushNotification] BLOCKED PRIVILEGE ESCALATION: User ${callerUserId} attempted unauthorized broadcast!`);
+      await logSecurityEvent({
+        eventType: 'PRIVILEGE_ESCALATION_ATTEMPT',
+        severity: 'CRITICAL',
+        requestId,
+        userId: callerUserId,
+        ipAddress,
+        userAgent,
+        country,
+        city,
+        responseStatus: 403,
+        authResult: 'DENIED',
+        details: {
+          reason: 'non_admin_user_attempted_broadcast_push',
+          attemptedTarget: target || recipientId,
+          title: title || '',
+          bodySnippet: String(body).substring(0, 100)
+        }
+      });
+      return res.status(403).json({
+        error: 'Forbidden: Broadcast notifications require administrator privileges.'
+      });
+    }
 
     // For non-broadcast notifications, recipientId is strictly required
     if (!isBroadcast) {
@@ -171,6 +293,27 @@ module.exports = async function handler(req, res) {
 
     const resData = await response.json();
     console.log(`[PushNotification] OneSignal API Status: ${response.status}`, resData);
+
+    // Log successful push dispatch
+    await logSecurityEvent({
+      eventType: isBroadcast ? 'PUSH_BROADCAST_DISPATCHED' : 'PUSH_NOTIFICATION_DISPATCHED',
+      severity: isBroadcast ? 'HIGH' : 'INFO',
+      requestId,
+      userId: callerUserId,
+      adminId: isUserAdmin ? callerUserId : null,
+      ipAddress,
+      userAgent,
+      country,
+      city,
+      responseStatus: 200,
+      authResult: 'ALLOWED',
+      details: {
+        isBroadcast,
+        target: target || recipientId,
+        tokensCount: activeTokens.length,
+        oneSignalId: resData?.id || null
+      }
+    });
 
     return res.status(200).json({ success: true, response: resData, tokensCount: activeTokens.length });
   } catch (err) {

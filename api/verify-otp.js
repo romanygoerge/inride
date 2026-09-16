@@ -2,13 +2,15 @@ const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
 /**
- * inRide Secure Serverless OTP Verifier (Vercel Serverless Function)
+ * inRide Hardened Serverless OTP Verifier (Vercel Serverless Function)
  * 
- * SECURITY ARCHITECTURE (2026):
- * 1. Validates OTP against hashed database record.
- * 2. Enforces expiration (5 mins) and max attempts (5).
- * 3. Burns OTP immediately after successful verification (anti-replay).
- * 4. Generates authenticated Supabase credentials with a server-only HMAC pepper.
+ * SECURITY ARCHITECTURE (2026 Hardened - Fail-Closed):
+ * 1. Strict Fail-Closed enforcement: NEVER authenticates if database/RPC errors occur.
+ * 2. Validates OTP against salted SHA-256 hash in database via stored procedure.
+ * 3. Enforces expiration (5 mins) and max attempts (5) directly at DB level.
+ * 4. Burns OTP immediately upon successful verification (anti-replay).
+ * 5. Generates authenticated Supabase credentials with a server-only HMAC pepper.
+ * 6. Cryptographic Security Logging: Logs all failures, attempts, and successes to public.security_events.
  */
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fylruevfksmqnkykqkin.supabase.co';
@@ -31,6 +33,11 @@ function cleanEgyptianPhone(rawPhone) {
   return cleaned;
 }
 
+function maskPhone(phone) {
+  if (!phone || phone.length < 6) return '***';
+  return phone.substring(0, 4) + '****' + phone.substring(phone.length - 2);
+}
+
 function hashOtp(phone, otp) {
   return crypto.createHmac('sha256', OTP_HASH_SALT).update(`${phone}:${otp}`).digest('hex');
 }
@@ -40,6 +47,43 @@ function generateServerAuthKey(phone) {
   hmac.update(phone);
   const digest = hmac.digest('hex');
   return `Sec_P_${digest.substring(0, 32)}!Aa9`;
+}
+
+async function logSecurityEvent(params) {
+  if (!supabase) return;
+  try {
+    await supabase.rpc('log_security_event', {
+      p_event_type: params.eventType,
+      p_severity: params.severity || 'INFO',
+      p_request_id: params.requestId || null,
+      p_correlation_id: params.correlationId || null,
+      p_user_id: params.userId || null,
+      p_admin_id: params.adminId || null,
+      p_session_id: params.sessionId || null,
+      p_device_id: params.deviceId || null,
+      p_device_platform: params.devicePlatform || null,
+      p_device_manufacturer: params.deviceManufacturer || null,
+      p_device_model: params.deviceModel || null,
+      p_os_version: params.osVersion || null,
+      p_app_version: params.appVersion || null,
+      p_ip_address: params.ipAddress || null,
+      p_user_agent: params.userAgent || null,
+      p_asn: params.asn || null,
+      p_isp: params.isp || null,
+      p_country: params.country || null,
+      p_city: params.city || null,
+      p_endpoint: params.endpoint || '/api/verify-otp',
+      p_http_method: params.httpMethod || 'POST',
+      p_response_status: params.responseStatus || null,
+      p_authentication_method: params.authMethod || 'HMAC_OTP',
+      p_authorization_result: params.authResult || null,
+      p_message_id: params.messageId || null,
+      p_provider_message_id: params.providerMessageId || null,
+      p_details: params.details || {}
+    });
+  } catch (err) {
+    console.error('[Security Logger Error in VerifyOtp]:', err.message);
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -56,18 +100,48 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ success: false, error: 'Method Not Allowed' });
   }
 
+  const requestId = 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+  const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || '127.0.0.1';
+  const userAgent = req.headers['user-agent'] || 'Unknown';
+  const country = req.headers['x-vercel-ip-country'] || 'EG';
+  const city = req.headers['x-vercel-ip-city'] || 'Cairo';
+
   try {
     const body = (typeof req.body === 'string') ? JSON.parse(req.body) : (req.body || {});
     const { phoneNumber, code } = body;
 
     if (!phoneNumber || !code) {
+      await logSecurityEvent({
+        eventType: 'OTP_VERIFY_INVALID_INPUT',
+        severity: 'LOW',
+        requestId,
+        ipAddress,
+        userAgent,
+        country,
+        city,
+        responseStatus: 400,
+        authResult: 'DENIED',
+        details: { reason: 'missing_phone_or_code' }
+      });
       return res.status(400).json({ success: false, error: 'رقم الهاتف ورمز التحقق مطلوبان.' });
     }
 
     const cleanPhone = cleanEgyptianPhone(phoneNumber);
     const trimmedCode = String(code).trim();
 
-    if (trimmedCode.length !== 6) {
+    if (trimmedCode.length !== 6 || !/^\d{6}$/.test(trimmedCode)) {
+      await logSecurityEvent({
+        eventType: 'OTP_VERIFY_INVALID_FORMAT',
+        severity: 'LOW',
+        requestId,
+        ipAddress,
+        userAgent,
+        country,
+        city,
+        responseStatus: 400,
+        authResult: 'DENIED',
+        details: { phone: maskPhone(cleanPhone), reason: 'code_format_not_6_digits' }
+      });
       return res.status(400).json({ success: false, error: 'رمز التحقق يجب أن يكون مكوناً من 6 أرقام.' });
     }
 
@@ -77,6 +151,19 @@ module.exports = async function handler(req, res) {
     // 1. Demo Mode Check
     const isDemoNumber = (cleanPhone === '201000000000' || cleanPhone.endsWith('000000000'));
     if (isDemoNumber && trimmedCode === '123456') {
+      await logSecurityEvent({
+        eventType: 'OTP_VERIFIED_DEMO',
+        severity: 'INFO',
+        requestId,
+        ipAddress,
+        userAgent,
+        country,
+        city,
+        responseStatus: 200,
+        authResult: 'ALLOWED',
+        details: { phone: maskPhone(cleanPhone), isDemo: true }
+      });
+
       return res.status(200).json({
         success: true,
         verified: true,
@@ -86,30 +173,100 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // 2. Database OTP Verification via secure RPC
-    if (supabase) {
-      const inputHash = hashOtp(cleanPhone, trimmedCode);
-      const { data: verifyRes, error: rpcErr } = await supabase.rpc('verify_phone_otp_hash', {
-        p_phone: cleanPhone,
-        p_otp_hash: inputHash
+    // 2. Database Connection Check (Strict Fail-Closed)
+    if (!supabase) {
+      console.error('[VerifyOtp] Supabase client is not initialized. Rejecting request.');
+      await logSecurityEvent({
+        eventType: 'DATABASE_DISCONNECTED_FAIL_CLOSED',
+        severity: 'CRITICAL',
+        requestId,
+        ipAddress,
+        userAgent,
+        country,
+        city,
+        responseStatus: 500,
+        authResult: 'DENIED',
+        details: { phone: maskPhone(cleanPhone) }
       });
-
-      if (!rpcErr) {
-        if (!verifyRes || verifyRes.valid !== true) {
-          const errorMsg = (verifyRes && verifyRes.error)
-            ? verifyRes.error
-            : 'رمز التحقق غير صحيح أو انتهت صلاحيته.';
-          return res.status(400).json({
-            success: false,
-            error: errorMsg
-          });
-        }
-      } else {
-        console.warn('[VerifyOtp] DB verify notice (falling back if RPC not yet deployed):', rpcErr.message);
-      }
+      return res.status(500).json({ success: false, error: 'فشل الاتصال بخدمة التحقق في السيرفر.' });
     }
 
-    console.log(`[VerifyOtp] OTP successfully verified for ${cleanPhone}`);
+    // 3. Secure Hash OTP Verification in Database
+    const inputHash = hashOtp(cleanPhone, trimmedCode);
+    const { data: verifyRes, error: rpcErr } = await supabase.rpc('verify_phone_otp_hash', {
+      p_phone: cleanPhone,
+      p_otp_hash: inputHash
+    });
+
+    // CRITICAL FIX (Fail-Closed): If RPC returns an error or database fails, NEVER fall through to success!
+    if (rpcErr) {
+      console.error('[VerifyOtp] Database RPC verify error:', rpcErr.message);
+      await logSecurityEvent({
+        eventType: 'OTP_VERIFY_RPC_ERROR',
+        severity: 'HIGH',
+        requestId,
+        ipAddress,
+        userAgent,
+        country,
+        city,
+        responseStatus: 500,
+        authResult: 'DENIED',
+        details: {
+          phone: maskPhone(cleanPhone),
+          errorMessage: rpcErr.message,
+          errorCode: rpcErr.code
+        }
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'حدث خطأ أثناء التحقق من رمز التأكيد في قاعدة البيانات.'
+      });
+    }
+
+    if (!verifyRes || verifyRes.valid !== true) {
+      const errorMsg = (verifyRes && verifyRes.error)
+        ? verifyRes.error
+        : 'رمز التحقق غير صحيح أو انتهت صلاحيته.';
+
+      await logSecurityEvent({
+        eventType: 'OTP_VERIFICATION_FAILED',
+        severity: 'MEDIUM',
+        requestId,
+        ipAddress,
+        userAgent,
+        country,
+        city,
+        responseStatus: 400,
+        authResult: 'DENIED',
+        details: {
+          phone: maskPhone(cleanPhone),
+          reason: errorMsg,
+          attempts: verifyRes?.attempts || null
+        }
+      });
+
+      return res.status(400).json({
+        success: false,
+        error: errorMsg
+      });
+    }
+
+    // 4. Verification Succeeded
+    console.log(`[VerifyOtp] OTP successfully verified for ${maskPhone(cleanPhone)}`);
+    await logSecurityEvent({
+      eventType: 'OTP_VERIFY_SUCCESS',
+      severity: 'INFO',
+      requestId,
+      ipAddress,
+      userAgent,
+      country,
+      city,
+      responseStatus: 200,
+      authResult: 'ALLOWED',
+      details: {
+        phone: maskPhone(cleanPhone)
+      }
+    });
 
     return res.status(200).json({
       success: true,
@@ -117,8 +274,21 @@ module.exports = async function handler(req, res) {
       authEmail,
       authKey
     });
+
   } catch (err) {
     console.error('[VerifyOtp] Internal Server Error:', err);
+    await logSecurityEvent({
+      eventType: 'OTP_VERIFY_CRASH_FAIL_CLOSED',
+      severity: 'HIGH',
+      requestId,
+      ipAddress,
+      userAgent,
+      country,
+      city,
+      responseStatus: 500,
+      authResult: 'DENIED',
+      details: { error: err.message }
+    });
     return res.status(500).json({ success: false, error: 'حدث خطأ في السيرفر أثناء التحقق من الرمز.' });
   }
 };

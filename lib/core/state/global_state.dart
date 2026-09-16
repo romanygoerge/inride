@@ -917,17 +917,12 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
   bool _isCancelling = false;
 
-  double passengerWalletBalance = 0.00;
-  double driverWalletBalance = 0.00;
-
-  double get walletBalance => currentRole == UserRole.driver ? driverWalletBalance : passengerWalletBalance;
-  set walletBalance(double val) {
-    if (currentRole == UserRole.driver) {
-      driverWalletBalance = val;
-    } else {
-      passengerWalletBalance = val;
-    }
-  }
+  // Unified single wallet for both passenger and driver accounts
+  double walletBalance = 0.00;
+  double get passengerWalletBalance => walletBalance;
+  set passengerWalletBalance(double val) => walletBalance = val;
+  double get driverWalletBalance => walletBalance;
+  set driverWalletBalance(double val) => walletBalance = val;
 
   double creditLimit = -100.0;
   bool get isCreditLimitReached => walletBalance <= creditLimit;
@@ -1032,13 +1027,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   void _applyUserData(Map<String, dynamic> data) {
     final String savedRoleInDb = (data['role'] ?? data['current_role'] ?? 'rider').toString();
 
-    final rawPassengerBal = data['wallet_balance'] ?? data['passenger_wallet_balance'] ?? data['walletBalance'];
-    passengerWalletBalance = (rawPassengerBal is num) ? rawPassengerBal.toDouble() : (double.tryParse(rawPassengerBal?.toString() ?? '0') ?? 0.0);
-
-    final rawDriverBal = data['driver_wallet_balance'] ?? data['driverWalletBalance'];
-    driverWalletBalance = (rawDriverBal is num) 
-        ? rawDriverBal.toDouble() 
-        : (rawDriverBal != null ? (double.tryParse(rawDriverBal.toString()) ?? 0.0) : passengerWalletBalance);
+    final rawBal = data['wallet_balance'] ?? data['walletBalance'] ?? data['driver_wallet_balance'] ?? data['passenger_wallet_balance'];
+    walletBalance = (rawBal is num) ? rawBal.toDouble() : (double.tryParse(rawBal?.toString() ?? '0') ?? 0.0);
 
     final rawLim = data['credit_limit'] ?? data['creditLimit'];
     creditLimit = (rawLim is num) ? rawLim.toDouble() : (double.tryParse(rawLim?.toString() ?? '-100') ?? -100.0);
@@ -3736,13 +3726,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       try {
         final res = await _supabase.from('users').select().eq('id', userUid!).maybeSingle();
         if (res != null) {
-          final rawPassengerBal = res['wallet_balance'] ?? res['passenger_wallet_balance'];
-          passengerWalletBalance = (rawPassengerBal is num) ? rawPassengerBal.toDouble() : (double.tryParse(rawPassengerBal?.toString() ?? '0') ?? 0.0);
-
-          final rawDriverBal = res['driver_wallet_balance'];
-          if (rawDriverBal != null) {
-            driverWalletBalance = (rawDriverBal is num) ? rawDriverBal.toDouble() : (double.tryParse(rawDriverBal.toString()) ?? 0.0);
-          }
+          final rawBal = res['wallet_balance'] ?? res['driver_wallet_balance'] ?? res['passenger_wallet_balance'];
+          walletBalance = (rawBal is num) ? rawBal.toDouble() : (double.tryParse(rawBal?.toString() ?? '0') ?? 0.0);
           userName = res['name'];
           userAvatarUrl = res['avatar_url'];
           notifyListeners();
@@ -3754,59 +3739,34 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> chargeWallet(double amount) async {
-    if (currentRole == UserRole.driver) {
-      driverWalletBalance += amount;
-      if (userUid != null) {
-        try {
-          await _supabase.from('users').update({'driver_wallet_balance': driverWalletBalance}).eq('id', userUid!);
-          await _supabase.from('transactions').insert({
-            'user_id': userUid!,
-            'title': 'شحن رصيد الكابتن',
-            'amount': amount,
-            'type': 'charge',
-            'balance_after': driverWalletBalance,
-          });
+    walletBalance += amount;
+    if (userUid != null) {
+      try {
+        await _supabase.from('users').update({
+          'wallet_balance': walletBalance,
+          'driver_wallet_balance': walletBalance,
+          'passenger_wallet_balance': walletBalance,
+        }).eq('id', userUid!);
+        await _supabase.from('transactions').insert({
+          'user_id': userUid!,
+          'title': 'شحن رصيد المحفظة',
+          'amount': amount,
+          'type': 'charge',
+          'balance_after': walletBalance,
+        });
 
-          unawaited(NotificationService.instance.sendNotification(
-            recipientId: userUid!,
-            title: 'تم شحن محفظة الكابتن بنجاح 💳',
-            body: 'تم إضافة ${amount.round()} ج.م إلى رصيد الكابتن. الرصيد الحالي: ${driverWalletBalance.round()} ج.م',
-            type: 'payment',
-            data: {
-              'amount': amount.toString(),
-              'balance': driverWalletBalance.toString(),
-            },
-          ));
-        } catch (e) {
-          debugPrint('Error charging driver wallet: $e');
-        }
-      }
-    } else {
-      passengerWalletBalance += amount;
-      if (userUid != null) {
-        try {
-          await _supabase.from('users').update({'wallet_balance': passengerWalletBalance, 'passenger_wallet_balance': passengerWalletBalance}).eq('id', userUid!);
-          await _supabase.from('transactions').insert({
-            'user_id': userUid!,
-            'title': 'شحن رصيد الراكب',
-            'amount': amount,
-            'type': 'charge',
-            'balance_after': passengerWalletBalance,
-          });
-
-          unawaited(NotificationService.instance.sendNotification(
-            recipientId: userUid!,
-            title: 'تم شحن محفظة الراكب بنجاح 💳',
-            body: 'تم إضافة ${amount.round()} ج.م إلى رصيد الراكب. الرصيد الحالي: ${passengerWalletBalance.round()} ج.م',
-            type: 'payment',
-            data: {
-              'amount': amount.toString(),
-              'balance': passengerWalletBalance.toString(),
-            },
-          ));
-        } catch (e) {
-          debugPrint('Error charging passenger wallet: $e');
-        }
+        unawaited(NotificationService.instance.sendNotification(
+          recipientId: userUid!,
+          title: 'تم شحن المحفظة بنجاح 💳',
+          body: 'تم إضافة ${amount.round()} ج.م إلى رصيد محفظتك. الرصيد الحالي: ${walletBalance.round()} ج.م',
+          type: 'payment',
+          data: {
+            'amount': amount.toString(),
+            'balance': walletBalance.toString(),
+          },
+        ));
+      } catch (e) {
+        debugPrint('Error charging wallet: $e');
       }
     }
     notifyListeners();
@@ -3922,13 +3882,13 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         await _supabase.from('transactions').insert({
           'id': UuidGenerator.v4(),
           'user_id': userUid!,
-          'title': 'شحن رصيد معلق ($roleTitle)',
+          'title': 'شحن رصيد معلق',
           'amount': amount,
           'type': 'charge_pending',
           'balance_after': walletBalance,
           'payment_method': method,
           'receipt_url': finalReceiptUrl,
-          'notes': 'طلب شحن محفظة $roleTitle عبر $method',
+          'notes': 'طلب شحن المحفظة عبر $method ($roleTitle)',
           'created_at': nowUtc,
         }).timeout(const Duration(seconds: 15));
       } catch (e) {
@@ -4373,8 +4333,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       vehicleNumber = 'أ ب ج 1234';
       driverVehicleColor = 'أبيض لؤلؤي';
       driverVehicleCategory = 'car';
-      driverAddress = 'مدينة السادات، المنوفية';
-      driverWalletBalance = 500.0;
+      walletBalance = 500.0;
       driverHasAC = true;
       driverMaxPassengers = 4;
     } else {
@@ -4382,7 +4341,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       passengerName = displayName;
       passengerGender = 'ذكر';
       passengerAddress = 'مدينة السادات، المنوفية';
-      passengerWalletBalance = 500.0;
+      walletBalance = 500.0;
     }
 
     await _saveProfileToCache();

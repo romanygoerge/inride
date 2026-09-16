@@ -182,7 +182,6 @@ class DeleteAccountService {
 
         GlobalState.instance.verificationStatus = DriverVerificationStatus.unregistered;
         GlobalState.instance.currentRole = UserRole.rider;
-        GlobalState.instance.driverWalletBalance = 0.0;
         GlobalState.instance.driverAddress = null;
         GlobalState.instance.driverRejectionReason = null;
         GlobalState.instance.notify();

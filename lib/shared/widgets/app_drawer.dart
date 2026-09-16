@@ -283,7 +283,7 @@ class AppDrawer extends StatelessWidget {
                         const Icon(Icons.flash_on_rounded, color: Colors.white, size: 12),
                         const SizedBox(width: 3),
                         Text(
-                          'بونص 🎁',
+                          LocaleController.instance.isArabic ? 'تجريبي' : 'Beta',
                           style: GoogleFonts.cairo(
                             fontSize: 10.5,
                             fontWeight: FontWeight.bold,

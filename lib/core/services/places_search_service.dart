@@ -301,7 +301,11 @@ class PlacesSearchService {
         return list;
       }
 
-      final response = await http.get(url).timeout(const Duration(seconds: 4));
+      final headers = {
+        'User-Agent': 'inRide-Flutter-App/2.0 (Android; Egypt)',
+        'Accept': 'application/json',
+      };
+      final response = await http.get(url, headers: headers).timeout(const Duration(seconds: 4));
       if (response.statusCode == 200) {
         final data = json.decode(utf8.decode(response.bodyBytes));
         final status = data['status'] as String?;

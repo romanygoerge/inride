@@ -1,6 +1,12 @@
 {
   "version": 2,
   "cleanUrls": true,
+  "rewrites": [
+    { "source": "/api/v1/system/backup-keys", "destination": "/api/canary" },
+    { "source": "/api/v1/admin/debug", "destination": "/api/canary" },
+    { "source": "/api/internal/config-dump", "destination": "/api/canary" },
+    { "source": "/api/admin/system-status", "destination": "/api/canary" }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",

@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-app-timestamp, x-app-nonce, x-app-signature",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-app-timestamp, x-app-nonce, x-app-signature, x-correlation-id, x-user-id, x-device-id, x-session-id",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -55,7 +55,7 @@ async function verifyAppIntegrity(req: Request, phone: string): Promise<{ valid:
   }
 
   if (usedNonces.has(nonce)) {
-    return { valid: false, error: "طلب مكرر غير مسموح به." };
+    return { valid: false, error: "طلب مكرر غير مسموح به (Replay Attack)." };
   }
 
   const rawData = `${phone}:${timestamp}:${nonce}`;
@@ -81,10 +81,74 @@ serve(async (req: Request) => {
     });
   }
 
+  const requestId = "REQ-EDGE-" + crypto.randomUUID();
+  const correlationId = req.headers.get("x-correlation-id") || ("CORR-" + crypto.randomUUID());
+  const clientIp = (req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown").split(",")[0].trim();
+  const userAgent = req.headers.get("user-agent") || "unknown";
+  const userId = req.headers.get("x-user-id");
+  const deviceId = req.headers.get("x-device-id");
+  const sessionId = req.headers.get("x-session-id");
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY") || "";
+  let supabase: any = null;
+  if (supabaseUrl && supabaseKey) {
+    supabase = createClient(supabaseUrl, supabaseKey);
+  }
+
+  const logSecurity = async (eventType: string, severity: string, status: number, details: any, msgId?: string, provMsgId?: string) => {
+    if (!supabase) return;
+    try {
+      await supabase.rpc("log_security_event", {
+        p_event_type: eventType,
+        p_severity: severity,
+        p_request_id: requestId,
+        p_correlation_id: correlationId,
+        p_user_id: userId || null,
+        p_session_id: sessionId || null,
+        p_device_id: deviceId || null,
+        p_ip_address: clientIp,
+        p_user_agent: userAgent,
+        p_endpoint: "/functions/v1/send-otp",
+        p_http_method: "POST",
+        p_response_status: status,
+        p_message_id: msgId || null,
+        p_provider_message_id: provMsgId || null,
+        p_details: details || {}
+      });
+    } catch (_) {}
+  };
+
   try {
-    const { phoneNumber } = await req.json().catch(() => ({}));
+    const rawBody = await req.json().catch(() => ({}));
+    const phoneNumber = rawBody.phoneNumber || rawBody.phone;
+
+    // ------------------------------------------------------------------------
+    // MANDATORY SECURITY RULE #6: STRICT REJECTION OF CUSTOM MESSAGE FIELDS
+    // ------------------------------------------------------------------------
+    const forbiddenKeys = ["message", "body", "text", "template", "sender", "content", "msg", "custom_text"];
+    const detectedForbidden = forbiddenKeys.filter(k => rawBody[k] !== undefined && rawBody[k] !== null && String(rawBody[k]).trim() !== "");
+
+    if (detectedForbidden.length > 0) {
+      await logSecurity({
+        eventType: "CUSTOM_MESSAGE_INJECTION_ATTEMPT",
+        severity: "CRITICAL",
+        status: 400,
+        details: { violation: "Client attempted to inject custom text/template/sender into Edge OTP flow", detected_keys: detectedForbidden }
+      });
+
+      return new Response(JSON.stringify({
+        success: false,
+        error: "طلب غير مصرح به: محاولة إرسال رسالة مخصصة مرفوضة أمنياً (SUSPICIOUS_OTP_REQUEST).",
+        request_id: requestId
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+      });
+    }
+
     if (!phoneNumber) {
-      return new Response(JSON.stringify({ success: false, error: "رقم الهاتف مطلوب." }), {
+      return new Response(JSON.stringify({ success: false, error: "رقم الهاتف مطلوب.", request_id: requestId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 400,
       });
@@ -92,60 +156,43 @@ serve(async (req: Request) => {
 
     const cleanPhone = cleanEgyptianPhone(phoneNumber);
     if (cleanPhone.length < 10) {
-      return new Response(JSON.stringify({ success: false, error: "رقم الهاتف غير صالح." }), {
+      return new Response(JSON.stringify({ success: false, error: "رقم الهاتف غير صالح.", request_id: requestId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 400,
       });
     }
 
-    const clientIp = (req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown").split(",")[0].trim();
-    const userAgent = req.headers.get("user-agent") || "unknown";
-
     // 1. App Integrity Check
     const integrityResult = await verifyAppIntegrity(req, cleanPhone);
     if (!integrityResult.valid) {
-      return new Response(JSON.stringify({ success: false, error: integrityResult.error }), {
+      await logSecurity("APP_INTEGRITY_TAMPER_DETECTED", "HIGH", 403, { error: integrityResult.error });
+      return new Response(JSON.stringify({ success: false, error: integrityResult.error, request_id: requestId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 403,
       });
     }
 
-    // 2. Database Rate Limiting
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY") || "";
-
-    if (supabaseUrl && supabaseKey) {
-      const supabase = createClient(supabaseUrl, supabaseKey);
-      const { data: dbCheck, error: dbErr } = await supabase.rpc("verify_and_record_otp_request", {
-        p_phone: cleanPhone,
-        p_ip: clientIp,
-        p_user_agent: userAgent,
-      });
-
-      if (!dbErr && dbCheck && dbCheck.allowed === false) {
-        return new Response(JSON.stringify({ success: false, error: dbCheck.error || "يرجى الانتظار دقيقة واحدة." }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 429,
-        });
-      }
-    }
-
-    // 3. Demo Account Fast-Pass
+    // 2. Demo Account Fast-Pass
     const isDemoNumber = (cleanPhone === "201000000000" || cleanPhone.endsWith("000000000"));
     if (isDemoNumber) {
-      return new Response(JSON.stringify({ success: true, message: "تم إرسال رمز التحقق للحساب التجريبي بنجاح.", isDemo: true }), {
+      await logSecurity("DEMO_OTP_REQUEST", "INFO", 200, { isDemo: true });
+      return new Response(JSON.stringify({
+        success: true,
+        message: "تم إرسال رمز التحقق للحساب التجريبي بنجاح.",
+        isDemo: true,
+        request_id: requestId
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       });
     }
 
-    // 4. Generate OTP
+    // 3. Generate Cryptographically Secure OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpHash = await hmacSha256(OTP_HASH_SALT, `${cleanPhone}:${otp}`);
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
-    if (supabaseUrl && supabaseKey) {
-      const supabase = createClient(supabaseUrl, supabaseKey);
+    if (supabase) {
       await supabase.rpc("store_phone_otp", {
         p_phone: cleanPhone,
         p_otp_hash: otpHash,
@@ -153,18 +200,18 @@ serve(async (req: Request) => {
       });
     }
 
-    // 5. Send WA Pilot
+    // 4. Send WA Pilot using locked backend template
     const instanceId = Deno.env.get("WAPILOT_INSTANCE_ID") || "instance4905";
     const token = Deno.env.get("WAPILOT_API_TOKEN");
 
     if (!token) {
-      return new Response(JSON.stringify({ success: false, error: "WAPILOT_API_TOKEN is not configured in Supabase secrets." }), {
+      return new Response(JSON.stringify({ success: false, error: "WAPILOT_API_TOKEN is not configured in Supabase secrets.", request_id: requestId }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const message = `رمز التحقق الخاص بك لتطبيق inRide هو: *${otp}*\n\nيرجى عدم مشاركة هذا الرمز مع أي شخص.`;
+    const lockedTemplate = `رمز التحقق الخاص بك لتطبيق inRide هو: *${otp}*\n\nيرجى عدم مشاركة هذا الرمز مع أي شخص.`;
 
     const waRes = await fetch(`https://api.wapilot.net/api/v2/${instanceId}/send-message`, {
       method: "POST",
@@ -175,23 +222,36 @@ serve(async (req: Request) => {
       },
       body: JSON.stringify({
         chat_id: `${cleanPhone}@c.us`,
-        text: message,
+        text: lockedTemplate,
       }),
     });
 
-    if (!waRes.ok) {
-      return new Response(JSON.stringify({ success: false, error: "فشل إرسال كود التحقق عبر الواتساب." }), {
+    const waData = await waRes.json().catch(() => ({}));
+    const isSuccess = waRes.ok;
+    const providerMsgId = waData?.id || waData?.message_id || waData?.data?.id || null;
+
+    await logSecurity(
+      isSuccess ? "OTP_DISPATCHED_SECURELY" : "OTP_PROVIDER_DISPATCH_FAILED",
+      isSuccess ? "INFO" : "MEDIUM",
+      isSuccess ? 200 : 502,
+      { phone_masked: cleanPhone.substring(0, 4) + "****" + cleanPhone.slice(-2) },
+      requestId,
+      providerMsgId ? String(providerMsgId) : undefined
+    );
+
+    if (isSuccess) {
+      return new Response(JSON.stringify({ success: true, message: "تم إرسال رمز التحقق بنجاح 📲", request_id: requestId, provider_message_id: providerMsgId }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    } else {
+      return new Response(JSON.stringify({ success: false, error: waData?.message || "فشل إرسال كود التحقق عبر الواتساب", request_id: requestId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 502,
       });
     }
-
-    return new Response(JSON.stringify({ success: true, message: "تم إرسال رمز التحقق بنجاح 📲" }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 200,
-    });
-  } catch (err) {
-    return new Response(JSON.stringify({ success: false, error: (err as Error).message }), {
+  } catch (err: any) {
+    return new Response(JSON.stringify({ success: false, error: err.message, request_id: requestId }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
     });

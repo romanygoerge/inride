@@ -11,6 +11,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 let supabaseClient = null;
 if (typeof window.supabase !== 'undefined') {
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  window.supabaseClient = supabaseClient;
 }
 
 function getSupabaseClient() {
@@ -789,7 +790,7 @@ function initDashboardAnimations() {
 // ============================================
 
 function navigateTo(page) {
-  const validPages = ['promos', 'rewards', 'dashboard', 'trips', 'drivers', 'passengers', 'ratings', 'driver-profile', 'passenger-profile', 'wallet', 'pricing', 'places', 'banners', 'communication', 'messages', 'support', 'reports', 'content', 'monitoring', 'logs', 'settings'];
+  const validPages = ['security', 'promos', 'rewards', 'dashboard', 'trips', 'drivers', 'passengers', 'ratings', 'driver-profile', 'passenger-profile', 'wallet', 'pricing', 'places', 'banners', 'communication', 'messages', 'support', 'reports', 'content', 'monitoring', 'logs', 'settings'];
   if (!validPages.includes(page)) {
     page = 'dashboard';
   }
@@ -844,6 +845,7 @@ function updateHeaderTitle(page) {
     content: { title: 'إدارة المحتوى', sub: 'التحكم في البانرات، الإعلانات، الكوبونات والأسئلة الشائعة' },
     monitoring: { title: 'مراقبة النظام والأداء', sub: 'متابعة حالة السيرفرات والأخطاء والرحلات النشطة حالياً' },
     logs: { title: 'سجلات التدقيق والصلاحيات', sub: 'متابعة سجلات عمليات الموظفين (Audit Logs) وإدارة الـ RBAC' },
+    security: { title: '🔐 مركز الأمان والتحقيق الجنائي الرقمي (Security Center)', sub: 'مراقبة التهديدات، الكشف الاستباقي عن الهجمات، تتبع سلسلة الرسائل وسجلات التدقيق المشفرة' },
     settings: { title: 'الإعدادات العامة', sub: 'التحكم في أوضاع الصيانة وميزات التطبيق (Feature Flags)' },
   };
 
@@ -954,6 +956,10 @@ function renderPage(page) {
         break;
       case 'logs':
         container.innerHTML = renderLogs();
+        break;
+      case 'security':
+        container.innerHTML = renderSecurityCenter();
+        initSecurityCenter();
         break;
       case 'settings':
         container.innerHTML = renderSettings();
@@ -8684,7 +8690,7 @@ function initSupabaseSync() {
 
         const dateObj = new Date(drv.created_at || drv.updated_at || userObj.created_at || Date.now());
 
-        const drvWallet = parseFloat(userObj.driver_wallet_balance !== undefined && userObj.driver_wallet_balance !== null ? userObj.driver_wallet_balance : (userObj.wallet_balance !== undefined && userObj.wallet_balance !== null ? userObj.wallet_balance : (drv.wallet_balance || 0)));
+        const drvWallet = parseFloat(userObj.wallet_balance !== undefined && userObj.wallet_balance !== null ? userObj.wallet_balance : (userObj.driver_wallet_balance !== undefined && userObj.driver_wallet_balance !== null ? userObj.driver_wallet_balance : (drv.wallet_balance || 0)));
 
         fullDrivers.push({
           id: 'DRV_' + drv.id.substring(0, 6).toUpperCase(),
@@ -8745,7 +8751,7 @@ function initSupabaseSync() {
           const vObj = vehiclesByDriver[u.id] || {};
           const dName = u.name || u.phone_number || ('كابتن ' + u.id.substring(0, 6));
 
-          const uDrvWallet = parseFloat(u.driver_wallet_balance !== undefined && u.driver_wallet_balance !== null ? u.driver_wallet_balance : (u.wallet_balance !== undefined && u.wallet_balance !== null ? u.wallet_balance : 0));
+          const uDrvWallet = parseFloat(u.wallet_balance !== undefined && u.wallet_balance !== null ? u.wallet_balance : (u.driver_wallet_balance !== undefined && u.driver_wallet_balance !== null ? u.driver_wallet_balance : 0));
           const uStatus = u.verification_status || (u.national_id_url || u.license_url ? 'submitted' : 'unregistered');
           let uStatusAr = 'غير مسجل';
           if (uStatus === 'verified') uStatusAr = 'معتمد';
@@ -9149,6 +9155,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       renderPage(currentPage);
     });
+  }
+
+  // Initialize Global Security Realtime Threat Listener
+  if (typeof setupSecurityRealtime === 'function') {
+    setTimeout(setupSecurityRealtime, 1500);
   }
 
   // Restore saved page state before auth check
@@ -20128,16 +20139,16 @@ async function sendCaptainMissionBonus(missionId, driverId, rewardAmount, driver
     if (!success) {
       const { data: userRow } = await supabaseClient
         .from('users')
-        .select('driver_wallet_balance')
+        .select('wallet_balance, driver_wallet_balance')
         .eq('id', driverId)
         .maybeSingle();
 
-      const currentBal = parseFloat(userRow?.driver_wallet_balance || 0);
+      const currentBal = parseFloat(userRow?.wallet_balance !== undefined && userRow?.wallet_balance !== null ? userRow.wallet_balance : (userRow?.driver_wallet_balance || 0));
       const newBal = currentBal + parseFloat(rewardAmount);
 
       await supabaseClient
         .from('users')
-        .update({ driver_wallet_balance: newBal })
+        .update({ wallet_balance: newBal, driver_wallet_balance: newBal, passenger_wallet_balance: newBal })
         .eq('id', driverId);
 
       await supabaseClient
@@ -20212,14 +20223,14 @@ async function sendAllPendingMissionBonuses() {
       } else {
         const { data: userRow } = await supabaseClient
           .from('users')
-          .select('driver_wallet_balance')
+          .select('wallet_balance, driver_wallet_balance')
           .eq('id', m.driver_id)
           .maybeSingle();
 
-        const currentBal = parseFloat(userRow?.driver_wallet_balance || 0);
+        const currentBal = parseFloat(userRow?.wallet_balance !== undefined && userRow?.wallet_balance !== null ? userRow.wallet_balance : (userRow?.driver_wallet_balance || 0));
         const newBal = currentBal + parseFloat(m.reward_amount);
 
-        await supabaseClient.from('users').update({ driver_wallet_balance: newBal }).eq('id', m.driver_id);
+        await supabaseClient.from('users').update({ wallet_balance: newBal, driver_wallet_balance: newBal, passenger_wallet_balance: newBal }).eq('id', m.driver_id);
         await supabaseClient.from('driver_mission_progress').update({
           is_completed: true,
           is_rewarded: true,

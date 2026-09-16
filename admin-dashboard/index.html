@@ -16,6 +16,7 @@
 
   <!-- Dashboard Styles -->
   <link rel="stylesheet" href="style.css?v=22">
+  <link rel="stylesheet" href="security-center.css?v=1">
 
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' stop-color='%232196F3'/><stop offset='100%25' stop-color='%230D47A1'/></linearGradient></defs><rect width='100' height='100' rx='20' fill='url(%23g)'/><text x='50' y='68' font-family='Outfit,sans-serif' font-size='45' font-weight='900' fill='white' text-anchor='middle'>iR</text></svg>">
@@ -161,6 +162,12 @@
 
         <div class="nav-section-title">المراقبة والأمان</div>
 
+        <div class="nav-item" data-page="security" id="nav-security" onclick="navigateTo('security')">
+          <i class="ri-shield-keyhole-fill" style="color:#EF4444;"></i>
+          <span>🔐 مركز الأمان (Security Center)</span>
+          <span class="badge" id="securityBadge" style="background:#EF4444; color:#fff; border-radius:10px; padding:2px 7px; font-size:11px; display:none;">0</span>
+        </div>
+
         <div class="nav-item" data-page="logs" id="nav-logs" onclick="navigateTo('logs')">
           <i class="ri-lock-2-fill"></i>
           <span>الصلاحيات وسجلات التدقيق</span>
@@ -245,6 +252,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <!-- Dashboard JS -->
-  <script src="app.js?v=30"></script>
+  <script src="app.js?v=31"></script>
+
+  <!-- Security Center & Digital Forensics Module -->
+  <script src="security-center.js?v=2"></script>
 </body>
 </html>

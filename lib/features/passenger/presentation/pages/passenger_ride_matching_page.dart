@@ -11,6 +11,8 @@ import '../../../../shared/widgets/osm_map_widget.dart';
 import 'passenger_ride_active_page.dart';
 import 'passenger_home_page.dart';
 import '../../../../generated/app_localizations.dart';
+import '../../../../core/services/ride_sound_service.dart';
+import '../../../../core/DI/injection_container.dart' show sl;
 
 
 class PassengerRideMatchingPage extends StatefulWidget {
@@ -25,10 +27,14 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
   bool _isCancelling = false;
   bool _isNavigating = false;
   bool _isAcceptingOffer = false;
+  final Set<String> _knownOfferSignatures = {};
 
   @override
   void initState() {
     super.initState();
+    _knownOfferSignatures.addAll(
+      GlobalState.instance.driverOffers.map((o) => '${o.driverId}_${o.price.round()}'),
+    );
     GlobalState.instance.addListener(_onStateChange);
   }
 
@@ -69,10 +75,25 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
     if (!mounted || _isNavigating) return;
 
     try {
+      final state = GlobalState.instance;
+
+      // Detect newly arrived or updated driver offers / negotiations
+      final currentSignatures = state.driverOffers.map((o) => '${o.driverId}_${o.price.round()}').toSet();
+      final hasNewOffer = currentSignatures.any((sig) => !_knownOfferSignatures.contains(sig));
+      if (hasNewOffer && _knownOfferSignatures.isNotEmpty) {
+        try {
+          sl<RideSoundService>().playNegotiationAlert();
+        } catch (_) {}
+      }
+      _knownOfferSignatures.clear();
+      _knownOfferSignatures.addAll(currentSignatures);
+
       setState(() {});
       
-      final state = GlobalState.instance;
-      if (state.rideStatus == RideStatus.driverOnWay && state.acceptedOffer != null) {
+      final hasActiveTrip = state.rideStatus == RideStatus.driverOnWay ||
+                            state.rideStatus == RideStatus.arrived ||
+                            state.rideStatus == RideStatus.tripStarted;
+      if (hasActiveTrip && !_isNavigating) {
         _isNavigating = true;
         Navigator.pushReplacement(
           context,
@@ -1152,8 +1173,8 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                               child: GestureDetector(
                                 onTap: () {
                                   final current = double.tryParse(controller.text) ?? offer.price;
-                                  final double minFare = (GlobalState.instance.appSettings['minFare'] as num?)?.toDouble() ?? 10.0;
-                                  final double maxFare = (GlobalState.instance.appSettings['maxFare'] as num?)?.toDouble() ?? 500.0;
+                                  final double minFare = GlobalState.instance.minFare;
+                                  final double maxFare = GlobalState.instance.maxFare;
                                   final newValue = (current + amount).clamp(minFare, maxFare);
                                   controller.text = newValue.round().toString();
                                 },
@@ -1193,10 +1214,31 @@ class _PassengerRideMatchingPageState extends State<PassengerRideMatchingPage> {
                       child: GestureDetector(
                         onTap: isSubmitting ? null : () async {
                           final newPrice = double.tryParse(controller.text);
-                          if (newPrice != null && newPrice > 0) {
+                          final minAllowed = GlobalState.instance.minFare;
+                          if (newPrice == null || newPrice < minAllowed) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    isArabic
+                                        ? 'لا يمكن تقديم عرض أقل من الحد الأدنى: ${minAllowed.round()} ج.م'
+                                        : 'Cannot offer less than minimum fare: ${minAllowed.round()} EGP',
+                                    style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+                                  ),
+                                  backgroundColor: AppColors.error,
+                                  behavior: SnackBarBehavior.floating,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                              );
+                            }
+                            controller.text = minAllowed.round().toString();
+                            return;
+                          }
+                          if (newPrice > 0) {
+                            HapticFeedback.mediumImpact();
                             setSheetState(() => isSubmitting = true);
                             try {
-                              // Send counter-offer to Firestore so driver receives it
+                              // Send counter-offer so driver receives it
                               await GlobalState.instance.submitCounterOffer(offer.driverId, newPrice);
                               if (ctx.mounted) {
                                 Navigator.pop(ctx);

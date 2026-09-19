@@ -52,13 +52,22 @@ class AppSettingsModule {
           ? appSettings['maintenance_message'] as String
           : 'نعمل على تحسين وتحديث خدمات inRide لنقدم لكم تجربة أفضل وأسرع. سنعود للعمل قريباً جداً.';
 
+  static double _parseDouble(dynamic val, double fallback) {
+    if (val == null) return fallback;
+    if (val is num) return val.toDouble();
+    return double.tryParse(val.toString()) ?? fallback;
+  }
+
+  double get minFare => _parseDouble(appSettings['min_fare'] ?? appSettings['minFare'], 35.0);
+  double get maxFare => _parseDouble(appSettings['max_fare'] ?? appSettings['maxFare'], 10000.0);
+
   Future<void> refreshSettings(VoidCallback onUpdate) async {
     try {
       final data = await _supabase.from('app_settings').select().maybeSingle();
       if (data != null) {
         appSettings.addAll(Map<String, dynamic>.from(data));
         if (data['commission_rate'] != null) {
-          appSettings['commissionRate'] = (data['commission_rate'] as num).toDouble();
+          appSettings['commissionRate'] = _parseDouble(data['commission_rate'], 10.0);
         }
         onUpdate();
       }
@@ -73,7 +82,7 @@ class AppSettingsModule {
         if (data != null) {
           appSettings.addAll(Map<String, dynamic>.from(data));
           if (data['commission_rate'] != null) {
-            appSettings['commissionRate'] = (data['commission_rate'] as num).toDouble();
+            appSettings['commissionRate'] = _parseDouble(data['commission_rate'], 10.0);
           }
           onUpdate();
         }
@@ -88,7 +97,7 @@ class AppSettingsModule {
         if (dataList.isNotEmpty) {
           appSettings.addAll(Map<String, dynamic>.from(dataList.first));
           if (dataList.first['commission_rate'] != null) {
-            appSettings['commissionRate'] = (dataList.first['commission_rate'] as num).toDouble();
+            appSettings['commissionRate'] = _parseDouble(dataList.first['commission_rate'], 10.0);
           }
           onUpdate();
         }

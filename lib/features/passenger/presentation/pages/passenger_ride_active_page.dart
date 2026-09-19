@@ -66,35 +66,33 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
     final state = GlobalState.instance;
     final driverId = state.acceptedOffer?.driverId ?? state.currentRideRequest?.driverId;
     if (driverId != null && driverId.isNotEmpty) {
-      final info = await state.fetchDriverInfo(driverId);
+      final info = await state.fetchDriverInfo(driverId, defaultVehicleType: state.selectedVehicleType);
       if (mounted) {
         setState(() {
-          if (state.acceptedOffer != null) {
-            final oldAvatar = state.acceptedOffer!.driver.avatar;
-            final resolvedAvatar = (info.avatar.isNotEmpty && !info.avatar.contains('unsplash.com'))
-                ? info.avatar
-                : ((oldAvatar.isNotEmpty && !oldAvatar.contains('unsplash.com')) ? oldAvatar : '');
+          final oldAvatar = state.acceptedOffer?.driver.avatar ?? '';
+          final resolvedAvatar = (info.avatar.isNotEmpty && !info.avatar.contains('unsplash.com'))
+              ? info.avatar
+              : ((oldAvatar.isNotEmpty && !oldAvatar.contains('unsplash.com')) ? oldAvatar : '');
 
-            state.acceptedOffer = DriverOffer(
-              driverId: driverId,
-              driver: DriverInfo(
-                name: info.name,
-                rating: info.rating,
-                ratingCount: info.ratingCount,
-                vehicleType: info.vehicleType,
-                vehicleName: info.vehicleName,
-                vehicleColor: info.vehicleColor,
-                licensePlate: info.licensePlate,
-                avatar: resolvedAvatar,
-                phoneNumber: info.phoneNumber.isNotEmpty ? info.phoneNumber : state.acceptedOffer!.driver.phoneNumber,
-                completedTrips: info.completedTrips,
-                completedDeliveries: info.completedDeliveries,
-              ),
-              price: state.acceptedOffer!.price,
-              etaMinutes: state.acceptedOffer!.etaMinutes,
-              status: state.acceptedOffer!.status,
-            );
-          }
+          state.acceptedOffer = DriverOffer(
+            driverId: driverId,
+            driver: DriverInfo(
+              name: info.name,
+              rating: info.rating,
+              ratingCount: info.ratingCount,
+              vehicleType: info.vehicleType,
+              vehicleName: info.vehicleName,
+              vehicleColor: info.vehicleColor,
+              licensePlate: info.licensePlate,
+              avatar: resolvedAvatar,
+              phoneNumber: info.phoneNumber.isNotEmpty ? info.phoneNumber : (state.acceptedOffer?.driver.phoneNumber ?? ''),
+              completedTrips: info.completedTrips,
+              completedDeliveries: info.completedDeliveries,
+            ),
+            price: state.acceptedOffer?.price ?? (state.offeredFare > 0 ? state.offeredFare : (state.currentRideRequest?.offeredFare ?? 0.0)),
+            etaMinutes: state.acceptedOffer?.etaMinutes ?? 3,
+            status: state.acceptedOffer?.status ?? 'accepted',
+          );
         });
       }
     }
@@ -192,6 +190,51 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
           (route) => false,
         );
       }
+    }
+  }
+
+  Future<void> _showCancelTripDialog(GlobalState state) async {
+    final isDelivery = state.currentServiceType == 'delivery';
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          isDelivery ? 'إلغاء طلب التوصيل؟' : 'إلغاء الرحلة؟',
+          style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        content: Text(
+          isDelivery
+              ? 'هل أنت متأكد من رغبتك في إلغاء طلب التوصيل؟ سيتوقف الكابتن عن التوجه إليك.'
+              : 'هل أنت متأكد من رغبتك في إلغاء الرحلة الحالية مع الكابتن؟',
+          style: GoogleFonts.cairo(fontSize: 14, color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'متابعة الرحلة',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: AppColors.mediumBlue),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'تأكيد الإلغاء',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      state.cancelRide(cancelledBy: 'passenger', reason: 'تم الإلغاء بواسطة العميل');
     }
   }
 
@@ -430,17 +473,71 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
     final offer = state.acceptedOffer;
     
     if (offer == null) {
-      return const Scaffold(body: Center(child: Text('خطأ: لا يوجد سائق مقبول')));
+      _refreshDriverInfo();
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: AppColors.mediumBlue,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'جاري استعادة بيانات الرحلة والكابتن...',
+                  style: GoogleFonts.cairo(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'رحلتك محفوظة ونشطة بأمان، يرجى الانتظار ثوانٍ معدودة',
+                  style: GoogleFonts.cairo(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     }
 
     final isCompleted = state.rideStatus == RideStatus.completed;
+    final hasActiveTrip = state.rideStatus == RideStatus.driverOnWay ||
+                          state.rideStatus == RideStatus.arrived ||
+                          state.rideStatus == RideStatus.tripStarted;
 
     return PopScope(
-      canPop: true,
+      canPop: !hasActiveTrip,
       onPopInvokedWithResult: (didPop, result) {
-        if (didPop && state.rideStatus != RideStatus.completed && state.rideStatus != RideStatus.cancelled) {
-          state.cancelRide();
-        }
+        if (didPop) return;
+        ScaffoldMessenger.of(context).removeCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'الرحلة جارية حالياً ومحفوظة بأمان. يمكنك تصغير التطبيق وستظل الرحلة نشطة دون إلغاء.',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            backgroundColor: AppColors.mediumBlue,
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
       },
       child: Scaffold(
         body: Stack(
@@ -929,9 +1026,7 @@ class _PassengerRideActivePageState extends State<PassengerRideActivePage> {
                                 // Option to Cancel
                                 if (state.rideStatus == RideStatus.driverOnWay || state.rideStatus == RideStatus.arrived)
                                   ElevatedButton(
-                                    onPressed: () {
-                                      state.cancelRide(cancelledBy: 'passenger', reason: 'تم الإلغاء بواسطة العميل');
-                                    },
+                                    onPressed: () => _showCancelTripDialog(state),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: AppColors.error.withValues(alpha: 0.05),
                                       foregroundColor: AppColors.error,

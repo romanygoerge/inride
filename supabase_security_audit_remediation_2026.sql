@@ -255,6 +255,15 @@ WITH CHECK (
     auth.uid() = user_id OR public.is_admin() OR public.is_active_admin()
 );
 
+DROP POLICY IF EXISTS "Users delete own notifications" ON public.notifications;
+CREATE POLICY "Users delete own notifications"
+ON public.notifications
+FOR DELETE
+TO authenticated
+USING (
+    auth.uid() = user_id OR public.is_admin() OR public.is_active_admin()
+);
+
 -- 3.3 Admin Notifications
 ALTER TABLE IF EXISTS public.admin_notifications ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow open admin_notifications access" ON public.admin_notifications;

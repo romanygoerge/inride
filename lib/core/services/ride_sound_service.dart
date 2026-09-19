@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 class RideSoundService {
   // Sound players
@@ -70,6 +71,34 @@ class RideSoundService {
   /// Plays a trip completed bell (e.g., when the trip ends).
   Future<void> playTripCompleted() async {
     await _playEffect('sounds/trip_completed.mp3');
+  }
+
+  /// Plays a distinctive sound effect AND triggers a strong multi-pulse vibration
+  /// when a negotiation or price counter-offer is received by either passenger or driver.
+  Future<void> playNegotiationAlert() async {
+    try {
+      debugPrint('[RideSoundService] Playing negotiation alert effect & haptic vibration');
+      // 1. Play attention sound effect
+      await _playEffect('sounds/notification.mp3');
+      
+      // 2. Trigger multi-pulse physical vibration
+      await triggerHapticVibration();
+    } catch (e) {
+      debugPrint('[RideSoundService] Error in playNegotiationAlert: $e');
+    }
+  }
+
+  /// Triggers a distinct double/triple-pulse physical vibration pattern on the phone
+  Future<void> triggerHapticVibration() async {
+    try {
+      await HapticFeedback.heavyImpact();
+      await Future.delayed(const Duration(milliseconds: 140));
+      await HapticFeedback.vibrate();
+      await Future.delayed(const Duration(milliseconds: 140));
+      await HapticFeedback.heavyImpact();
+    } catch (e) {
+      debugPrint('[RideSoundService] Vibration error: $e');
+    }
   }
 
   /// Helper method to play sound effects on the effects player, stopping any active effect first.

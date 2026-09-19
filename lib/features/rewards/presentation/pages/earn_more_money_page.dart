@@ -1384,6 +1384,7 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
 
   Widget _buildBrandedEarningsBanner(double referralReward) {
     return Container(
+      clipBehavior: Clip.antiAlias,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -1403,65 +1404,85 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
       child: Column(
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'إجمالي أرباحك من الدعوات',
-                    style: GoogleFonts.cairo(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white.withValues(alpha: 0.85),
-                    ),
-                  ),
-                  Text(
-                    '${_totalEarned.toStringAsFixed(2)} ج.م',
-                    style: GoogleFonts.cairo(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.stars_rounded, color: Color(0xFFFDE047), size: 16),
-                    const SizedBox(width: 4),
                     Text(
-                      '+${referralReward.toStringAsFixed(0)} ج.م / دعوة',
+                      'إجمالي أرباحك من الدعوات',
                       style: GoogleFonts.cairo(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        '${_totalEarned.toStringAsFixed(2)} ج.م',
+                        style: GoogleFonts.cairo(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                fit: FlexFit.loose,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.stars_rounded, color: Color(0xFFFDE047), size: 16),
+                        const SizedBox(width: 4),
+                        Text(
+                          '+${referralReward.toStringAsFixed(0)} ج.م / دعوة',
+                          style: GoogleFonts.cairo(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 14),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
               color: Colors.black.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildBannerMiniStat('الأصدقاء المسجلين', '$_totalInvites'),
-                Container(width: 1, height: 20, color: Colors.white.withValues(alpha: 0.2)),
-                _buildBannerMiniStat('الرحلات المكتملة', '$_completedInvites'),
+                Expanded(
+                  child: _buildBannerMiniStat('الأصدقاء المسجلين', '$_totalInvites'),
+                ),
+                Container(width: 1, height: 20, margin: const EdgeInsets.symmetric(horizontal: 4), color: Colors.white.withValues(alpha: 0.2)),
+                Expanded(
+                  child: _buildBannerMiniStat('الرحلات المكتملة', '$_completedInvites'),
+                ),
               ],
             ),
           ),
@@ -1471,24 +1492,29 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
   }
 
   Widget _buildBannerMiniStat(String label, String value) {
-    return Row(
-      children: [
-        Text(
-          '$label: ',
-          style: GoogleFonts.cairo(
-            fontSize: 12,
-            color: Colors.white.withValues(alpha: 0.85),
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            '$label: ',
+            style: GoogleFonts.cairo(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.85),
+            ),
           ),
-        ),
-        Text(
-          value,
-          style: GoogleFonts.cairo(
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-            color: Colors.white,
+          Text(
+            value,
+            style: GoogleFonts.cairo(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1639,6 +1665,7 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
     final bool hasLiveShift = _isMissionsActive && _shifts.any((s) => _isShiftCurrentlyActive(s));
 
     return Container(
+      clipBehavior: Clip.antiAlias,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1670,7 +1697,7 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
                 child: Text(
                   'فترات وتحديات بونص مدينة السادات',
                   style: GoogleFonts.cairo(
-                    fontSize: 13.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w800,
                     color: AppColors.textPrimary,
                   ),
@@ -1678,9 +1705,10 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                constraints: const BoxConstraints(maxWidth: 105),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: !_isMissionsActive
                       ? const Color(0xFFF1F5F9)
@@ -1705,14 +1733,18 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
                       size: 11,
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      !_isMissionsActive ? 'متوقف مؤقتاً' : (hasLiveShift ? 'نشط الآن' : 'مجدول'),
-                      style: GoogleFonts.cairo(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.bold,
-                        color: !_isMissionsActive
-                            ? const Color(0xFF64748B)
-                            : (hasLiveShift ? const Color(0xFF166534) : const Color(0xFF2563EB)),
+                    Flexible(
+                      child: Text(
+                        !_isMissionsActive ? 'متوقف مؤقتاً' : (hasLiveShift ? 'نشط الآن' : 'مجدول'),
+                        style: GoogleFonts.cairo(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: !_isMissionsActive
+                              ? const Color(0xFF64748B)
+                              : (hasLiveShift ? const Color(0xFF166534) : const Color(0xFF2563EB)),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -1917,18 +1949,22 @@ class _EarnMoreMoneyPageState extends State<EarnMoreMoneyPage>
             ],
           ),
         ),
+        const SizedBox(width: 8),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
             color: const Color(0xFFFEF3C7),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Text(
-            bonus,
-            style: GoogleFonts.cairo(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: const Color(0xFF92400E),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              bonus,
+              style: GoogleFonts.cairo(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF92400E),
+              ),
             ),
           ),
         ),

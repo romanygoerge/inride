@@ -94,6 +94,16 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
   void _markAllAsRead() async {
     await _notifController.markAllMessagesAsRead();
     await _supportChatService.markAllMessagesAsRead();
+    if (_myId.isNotEmpty) {
+      try {
+        final rooms = await _chatRepository.getChatRoomsStream(_myId).first;
+        for (final room in rooms) {
+          await _chatRepository.markMessagesAsRead(room.id, _myId);
+        }
+      } catch (e) {
+        debugPrint('[MessagesCenter] Error marking rooms read: $e');
+      }
+    }
     if (mounted) {
       final isArabic = LocaleController.instance.isArabic;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -243,6 +253,7 @@ class _MessagesCenterPageState extends State<MessagesCenterPage> {
                       isPinned: room.isPinned,
                       onTap: () async {
                         await _notifController.markMessagesForRoomAsRead(room.id);
+                        await _chatRepository.markMessagesAsRead(room.id, _myId);
                         if (context.mounted) {
                           Navigator.push(
                             context,

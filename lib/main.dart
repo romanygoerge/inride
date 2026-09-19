@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -18,6 +19,7 @@ import 'features/passenger/presentation/pages/passenger_home_page.dart';
 import 'features/driver_registration/presentation/pages/review_pending_page.dart';
 import 'features/driver/presentation/pages/driver_home_page.dart';
 import 'features/passenger/presentation/pages/passenger_ride_matching_page.dart';
+import 'features/passenger/presentation/pages/passenger_ride_active_page.dart';
 import 'features/driver/presentation/pages/driver_ride_active_page.dart';
 import 'shared/widgets/no_internet_screen.dart';
 
@@ -109,39 +111,39 @@ void main() async {
 
   // Global ErrorWidget builder to permanently prevent the Flutter grey screen (Grey Screen of Death)
   ErrorWidget.builder = (FlutterErrorDetails details) {
-    AppLogger.error('WidgetBuildError', details.exceptionAsString(), details.exception, details.stack);
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        backgroundColor: Colors.white,
-        body: SafeArea(
+    final errStr = details.exceptionAsString();
+    print('🚨 [CRITICAL_WIDGET_BUILD_ERROR]: $errStr\n${details.stack}');
+    AppLogger.error('WidgetBuildError', errStr, details.exception, details.stack);
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Material(
+        color: Colors.white,
+        child: SafeArea(
           child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: 64,
-                    height: 64,
+                    width: 72,
+                    height: 72,
                     decoration: BoxDecoration(
                       color: AppColors.mediumBlue.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: const Center(
-                      child: SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: CircularProgressIndicator(
-                          color: AppColors.mediumBlue,
-                          strokeWidth: 3,
-                        ),
+                      child: Icon(
+                        Icons.sync_problem_rounded,
+                        color: AppColors.mediumBlue,
+                        size: 36,
                       ),
                     ),
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    'جاري استعادة بيانات التطبيق...',
+                    'حدث خطأ غير متوقع أثناء تحميل الصفحة',
                     style: GoogleFonts.cairo(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -151,28 +153,67 @@ void main() async {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'يرجى الانتظار لحظات أو الضغط للتحديث',
+                    'اضغط على إعادة المحاولة أو الرجوع لتسجيل الدخول',
                     style: GoogleFonts.cairo(
                       fontSize: 13,
                       color: AppColors.textSecondary,
                     ),
                     textAlign: TextAlign.center,
                   ),
+                  const SizedBox(height: 14),
+                  // Error details container for instant debugging transparency
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Text(
+                      errStr.length > 200 ? '${errStr.substring(0, 200)}...' : errStr,
+                      style: GoogleFonts.outfit(fontSize: 11, color: Colors.black87),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                   const SizedBox(height: 20),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      GlobalState.instance.notify();
-                    },
-                    icon: const Icon(Icons.refresh_rounded, color: Colors.white, size: 18),
-                    label: Text(
-                      'تحديث',
-                      style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: Colors.white),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.mediumBlue,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          GlobalState.instance.isAuthResolved = true;
+                          GlobalState.instance.notify();
+                          navigatorKey.currentState?.pushNamedAndRemoveUntil('/', (route) => false);
+                        },
+                        icon: const Icon(Icons.refresh_rounded, color: Colors.white, size: 18),
+                        label: Text(
+                          'إعادة المحاولة',
+                          style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.mediumBlue,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          await GlobalState.instance.performSafeLogout();
+                          navigatorKey.currentState?.pushNamedAndRemoveUntil('/', (route) => false);
+                        },
+                        icon: const Icon(Icons.logout_rounded, color: AppColors.error, size: 18),
+                        label: Text(
+                          'تسجيل الخروج',
+                          style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: AppColors.error),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.error),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -186,23 +227,35 @@ void main() async {
   try {
     await SupabaseConfig.init();
   } catch (e) {
-    debugPrint("Supabase initialization failed: $e");
+    print("🚨 Supabase initialization failed: $e");
   }
+
+  // 1. Initialize Dependency Injection BEFORE any other services are invoked
+  try {
+    await di.init();
+    print("✓ Dependency Injection (sl) container initialized.");
+  } catch (e) {
+    print("🚨 DI initialization failed: $e");
+  }
+
+  // 2. Initialize Notification Service after DI is fully ready
   if (!kIsWeb) {
     try {
       await AppNotificationService.instance.initialize();
     } catch (e) {
-      debugPrint("AppNotificationService initialization failed: $e");
+      print("🚨 AppNotificationService initialization failed: $e");
     }
   }
-  await di.init();
+
+  // 3. Initialize Analytics
   if (!kIsWeb) {
     try {
       await MetaAnalyticsService.instance.init();
     } catch (e) {
-      debugPrint("MetaAnalyticsService initialization failed: $e");
+      print("🚨 MetaAnalyticsService initialization failed: $e");
     }
   }
+
   runApp(
     const ProviderScope(
       child: InRideApp(),
@@ -238,15 +291,25 @@ class InRideApp extends ConsumerWidget {
             '/': (context) => const AuthGate(),
           },
           builder: (context, child) {
-            return ListenableBuilder(
-              listenable: GlobalState.instance,
-              builder: (context, _) {
-                final state = GlobalState.instance;
-                if (state.isMaintenanceMode && !state.isAdmin) {
-                  return const MaintenancePage();
-                }
-                return child ?? const SizedBox.shrink();
-              },
+            final mediaQuery = MediaQuery.of(context);
+            // Strictly clamp text scale factor between 0.85 and 1.0 to permanently prevent UI breakage,
+            // word overlapping, and container collisions when users enable extra-large system fonts on their devices
+            final clampedScaler = mediaQuery.textScaler.clamp(
+              minScaleFactor: 0.85,
+              maxScaleFactor: 1.0,
+            );
+            return MediaQuery(
+              data: mediaQuery.copyWith(textScaler: clampedScaler),
+              child: ListenableBuilder(
+                listenable: GlobalState.instance,
+                builder: (context, _) {
+                  final state = GlobalState.instance;
+                  if (state.isMaintenanceMode && !state.isAdmin) {
+                    return const MaintenancePage();
+                  }
+                  return child ?? const SizedBox.shrink();
+                },
+              ),
             );
           },
         );
@@ -346,11 +409,14 @@ class _AuthGateState extends State<AuthGate> {
               }
               return const PassengerProfileSetupPage();
             }
-            if (state.rideStatus == RideStatus.searching ||
-                state.rideStatus == RideStatus.driverOnWay ||
-                state.rideStatus == RideStatus.arrived ||
-                state.rideStatus == RideStatus.tripStarted) {
+            if (state.rideStatus == RideStatus.searching || state.rideStatus == RideStatus.driverBidding) {
               return const PassengerRideMatchingPage();
+            }
+            if (state.rideStatus == RideStatus.driverOnWay ||
+                state.rideStatus == RideStatus.arrived ||
+                state.rideStatus == RideStatus.tripStarted ||
+                state.rideStatus == RideStatus.completed) {
+              return const PassengerRideActivePage();
             }
             return const PassengerHomePage();
           } else {

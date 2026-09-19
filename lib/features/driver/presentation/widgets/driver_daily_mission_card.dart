@@ -451,23 +451,36 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
   }
 
   Widget _buildStatItem(String label, String value) {
-    return Row(
+    return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
-          '$label: ',
+          label,
           style: GoogleFonts.cairo(
-            fontSize: 12,
-            color: Colors.white.withValues(alpha: 0.85),
+            fontSize: 11,
+            color: Colors.white.withValues(alpha: 0.8),
             fontWeight: FontWeight.w600,
+            height: 1.2,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
         ),
-        Text(
-          value,
-          style: GoogleFonts.cairo(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
+        const SizedBox(height: 3),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            value,
+            style: GoogleFonts.cairo(
+              fontSize: 12.5,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              height: 1.2,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
           ),
         ),
       ],
@@ -476,8 +489,9 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
 
   Widget _buildPausedMissionCard() {
     return Container(
+      clipBehavior: Clip.antiAlias,
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -496,27 +510,34 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'تحديات وبونص الرحلات',
-                    style: GoogleFonts.cairo(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF1E293B),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'تحديات وبونص الرحلات',
+                      style: GoogleFonts.cairo(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF1E293B),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  Text(
-                    'متوقفة حالياً بقرار من الإدارة',
-                    style: GoogleFonts.cairo(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF64748B),
+                    Text(
+                      'متوقفة حالياً بقرار من الإدارة',
+                      style: GoogleFonts.cairo(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF64748B),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
@@ -524,12 +545,15 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: const Color(0xFFCBD5E1)),
                 ),
-                child: Text(
-                  'متوقف مؤقتاً',
-                  style: GoogleFonts.cairo(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF64748B),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    'متوقف مؤقتاً',
+                    style: GoogleFonts.cairo(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF64748B),
+                    ),
                   ),
                 ),
               ),
@@ -569,8 +593,9 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
     final int target = _targetTrips > 0 ? _targetTrips : 5;
 
     return Container(
+      clipBehavior: Clip.antiAlias,
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [Color(0xFF1E88E5), Color(0xFF0D47A1)],
@@ -589,32 +614,43 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Top Row (Exact Match with Referral Banner)
+          // Top Row (Responsive with flexible wrapping and scale down)
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _title.replaceAll('🚀', '').trim(),
-                    style: GoogleFonts.cairo(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white.withValues(alpha: 0.85),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _title.replaceAll('🚀', '').trim(),
+                      style: GoogleFonts.cairo(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  Text(
-                    '+${_rewardAmount.toInt()} ج.م',
-                    style: GoogleFonts.cairo(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        '+${_rewardAmount.toInt()} ج.م',
+                        style: GoogleFonts.cairo(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
+                constraints: const BoxConstraints(maxWidth: 165),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.18),
@@ -623,14 +659,18 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.schedule_rounded, color: Color(0xFFFDE047), size: 16),
+                    const Icon(Icons.schedule_rounded, color: Color(0xFFFDE047), size: 15),
                     const SizedBox(width: 4),
-                    Text(
-                      'الفترة القادمة • $target رحلات',
-                      style: GoogleFonts.cairo(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                    Flexible(
+                      child: Text(
+                        'الفترة القادمة • $target رحلات',
+                        style: GoogleFonts.cairo(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -641,25 +681,36 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
 
           const SizedBox(height: 14),
 
-          // Bottom Stats Container (Exact Match with Referral Banner)
+          // Bottom Stats Container (Responsive with Expanded items)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.12),
+              color: Colors.black.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatItem('الموعد', _timeWindowText.isNotEmpty ? _timeWindowText : 'طوال اليوم'),
-                Container(width: 1, height: 20, color: Colors.white.withValues(alpha: 0.2)),
-                _buildStatItem(
-                  'الانطلاق',
-                  _countdownText.isNotEmpty
-                      ? _countdownText.replaceAll('⏰', '').trim()
-                      : (_startTimeFormatted.isNotEmpty ? 'الساعة $_startTimeFormatted' : 'قريباً'),
-                ),
-              ],
+            child: IntrinsicHeight(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildStatItem('الموعد', _timeWindowText.isNotEmpty ? _timeWindowText : 'طوال اليوم'),
+                  ),
+                  VerticalDivider(
+                    width: 16,
+                    thickness: 1,
+                    color: Colors.white.withValues(alpha: 0.2),
+                    indent: 4,
+                    endIndent: 4,
+                  ),
+                  Expanded(
+                    child: _buildStatItem(
+                      'الانطلاق',
+                      _countdownText.isNotEmpty
+                          ? _countdownText.replaceAll('⏰', '').trim()
+                          : (_startTimeFormatted.isNotEmpty ? 'الساعة $_startTimeFormatted' : 'قريباً'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -705,8 +756,9 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
         : [const Color(0xFF1E88E5), const Color(0xFF0D47A1)];
 
     return Container(
+      clipBehavior: Clip.antiAlias,
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: gradientColors,
@@ -725,32 +777,43 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Top Row (Exact Match with Referral Banner)
+          // Top Row (Responsive)
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _title.replaceAll('🚀', '').trim(),
-                    style: GoogleFonts.cairo(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white.withValues(alpha: 0.85),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _title.replaceAll('🚀', '').trim(),
+                      style: GoogleFonts.cairo(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  Text(
-                    '+${_rewardAmount.toInt()} ج.م',
-                    style: GoogleFonts.cairo(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        '+${_rewardAmount.toInt()} ج.م',
+                        style: GoogleFonts.cairo(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
+                constraints: const BoxConstraints(maxWidth: 165),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.18),
@@ -764,17 +827,21 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
                           ? Icons.check_circle_rounded
                           : (_isShift ? Icons.schedule_rounded : Icons.stars_rounded),
                       color: reached ? const Color(0xFF34D399) : const Color(0xFFFDE047),
-                      size: 16,
+                      size: 15,
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      reached
-                          ? (_isRewarded ? 'تم الصرف' : 'مكتمل')
-                          : 'نشط الآن • $target رحلات',
-                      style: GoogleFonts.cairo(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                    Flexible(
+                      child: Text(
+                        reached
+                            ? (_isRewarded ? 'تم الصرف' : 'مكتمل')
+                            : 'نشط الآن • $target رحلات',
+                        style: GoogleFonts.cairo(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -785,23 +852,34 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
 
           const SizedBox(height: 14),
 
-          // Bottom Stats Container (Exact Match with Referral Banner)
+          // Bottom Stats Container (Responsive with Expanded items)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.12),
+              color: Colors.black.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatItem('الرحلات المكتملة', '$done / $target'),
-                Container(width: 1, height: 20, color: Colors.white.withValues(alpha: 0.2)),
-                _buildStatItem(
-                  reached ? 'حالة التحدي' : 'المتبقي للهدف',
-                  reached ? 'مكتمل بنجاح' : '$remaining رحلات',
-                ),
-              ],
+            child: IntrinsicHeight(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildStatItem('الرحلات المكتملة', '$done / $target'),
+                  ),
+                  VerticalDivider(
+                    width: 16,
+                    thickness: 1,
+                    color: Colors.white.withValues(alpha: 0.2),
+                    indent: 4,
+                    endIndent: 4,
+                  ),
+                  Expanded(
+                    child: _buildStatItem(
+                      reached ? 'حالة التحدي' : 'المتبقي للهدف',
+                      reached ? 'مكتمل بنجاح' : '$remaining رحلات',
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
 
@@ -814,7 +892,8 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
                 onTap: _isStarting ? null : _startMission,
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
-                  height: 38,
+                  constraints: const BoxConstraints(minHeight: 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(12),
@@ -829,15 +908,20 @@ class _DriverDailyMissionCardState extends State<DriverDailyMissionCard> with Si
                           )
                         : Row(
                             mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               const Icon(Icons.play_arrow_rounded, color: Color(0xFFFDE047), size: 18),
                               const SizedBox(width: 4),
-                              Text(
-                                'بدء التحدي واحتساب الرحلات',
-                                style: GoogleFonts.cairo(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
+                              Flexible(
+                                child: Text(
+                                  'بدء التحدي واحتساب الرحلات',
+                                  style: GoogleFonts.cairo(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],

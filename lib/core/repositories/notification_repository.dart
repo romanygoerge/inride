@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/notification_model.dart';
 import '../state/global_state.dart';
@@ -41,7 +42,8 @@ class NotificationRepository {
     await _supabase
         .from('notifications')
         .update({'is_read': true})
-        .eq('id', notificationId);
+        .eq('id', notificationId)
+        .eq('user_id', userId);
   }
 
   // Mark all notifications as read
@@ -54,14 +56,31 @@ class NotificationRepository {
 
   // Delete a specific notification
   Future<void> deleteNotification(String userId, String notificationId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final deleted = (prefs.getStringList('deleted_admin_notification_ids') ?? []).toSet();
+      deleted.add(notificationId);
+      await prefs.setStringList('deleted_admin_notification_ids', deleted.toList());
+    } catch (_) {}
+
     await _supabase
         .from('notifications')
         .delete()
-        .eq('id', notificationId);
+        .eq('id', notificationId)
+        .eq('user_id', userId);
   }
 
   // Delete all notifications
   Future<void> deleteAllNotifications(String userId) async {
+    try {
+      final currentList = await _supabase.from('notifications').select('id').eq('user_id', userId);
+      final ids = (currentList as List).map((r) => r['id'].toString()).toSet();
+      final prefs = await SharedPreferences.getInstance();
+      final deleted = (prefs.getStringList('deleted_admin_notification_ids') ?? []).toSet();
+      deleted.addAll(ids);
+      await prefs.setStringList('deleted_admin_notification_ids', deleted.toList());
+    } catch (_) {}
+
     await _supabase
         .from('notifications')
         .delete()
@@ -225,6 +244,12 @@ class NotificationRepository {
         }
 
         final userNotifId = 'admin_${notifId}_$userId';
+
+        final prefs = await SharedPreferences.getInstance();
+        final deletedIds = (prefs.getStringList('deleted_admin_notification_ids') ?? []).toSet();
+        if (deletedIds.contains(userNotifId) || deletedIds.contains(notifId.toString())) {
+          continue;
+        }
 
         final checkRes = await _supabase
             .from('notifications')

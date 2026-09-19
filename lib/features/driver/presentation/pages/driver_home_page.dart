@@ -38,11 +38,12 @@ class DriverHomePage extends StatefulWidget {
   State<DriverHomePage> createState() => _DriverHomePageState();
 }
 
-class _DriverHomePageState extends State<DriverHomePage> {
+class _DriverHomePageState extends State<DriverHomePage> with WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool get _isOnline => GlobalState.instance.isDriverOnline;
   List<RideRequestModel> _activeRequests = [];
   StreamSubscription<List<RideRequestModel>>? _requestsSubscription;
+  RealtimeChannel? _directRideRequestsChannel;
   Timer? _staleRequestsTimer;
 
   final Set<String> _sentOffersRequests = {};
@@ -96,10 +97,26 @@ class _DriverHomePageState extends State<DriverHomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     GlobalState.instance.addListener(_onStateChange);
     // Start active if online
     if (_isOnline) {
       _startTracking();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('[DriverHomePage] App resumed to foreground, syncing live ride requests immediately...');
+      if (_isOnline) {
+        if (_requestsSubscription == null || _staleRequestsTimer == null) {
+          _startTracking();
+        } else {
+          _fetchPendingImmediately();
+          _subscribeDirectRealtime();
+        }
+      }
     }
   }
 
@@ -131,6 +148,12 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
   void _onStateChange() {
     if (mounted) {
+      if (_isOnline && (_requestsSubscription == null || _staleRequestsTimer == null)) {
+        debugPrint('[DriverHomePage] _onStateChange: driver is online but tracking not active, auto-launching _startTracking()...');
+        _startTracking();
+      } else if (!_isOnline && _requestsSubscription != null) {
+        _stopTracking();
+      }
       setState(() {});
       _navigateToActivePageIfNeeded();
     }
@@ -150,9 +173,108 @@ class _DriverHomePageState extends State<DriverHomePage> {
     }
   }
 
+  void _removeActiveRequestById(String reqId) {
+    if (!mounted) return;
+    bool changed = false;
+    setState(() {
+      final initialLen = _activeRequests.length;
+      _activeRequests.removeWhere((r) => r.requestId == reqId);
+      if (_activeRequests.length != initialLen) {
+        changed = true;
+      }
+      _sentOffersRequests.remove(reqId);
+      _dismissedRequestIds.remove(reqId);
+    });
+    if (changed) {
+      debugPrint('[DriverHomePage] Removed request $reqId from active list, remaining: ${_activeRequests.length}');
+      _updateIncomingRideSound();
+    }
+  }
+
+  void _upsertActiveRequest(RideRequestModel req) {
+    if (!mounted || !_isOnline) return;
+    final state = GlobalState.instance;
+    final double? myLat = state.driverLatitude ?? MapCoordinatesHelper.deviceLocation?.latitude;
+    final double? myLng = state.driverLongitude ?? MapCoordinatesHelper.deviceLocation?.longitude;
+    final String rawVehicleType = state.driverVehicleCategory ?? state.vehicleName ?? 'car';
+    final String driverVehicleType = VehicleHelper.normalizeVehicleType(rawVehicleType);
+
+    // 1. Check vehicle type compatibility
+    if (!VehicleHelper.isVehicleTypeMatching(driverVehicleType, req.vehicleType, serviceType: req.serviceType)) {
+      return;
+    }
+
+    // 2. Check distance radius if coordinates are available
+    if (myLat != null && myLng != null && req.pickupLatitude != 0.0 && req.pickupLongitude != 0.0) {
+      final dist = LocationService.instance.calculateDistance(
+        req.pickupLatitude, 
+        req.pickupLongitude, 
+        myLat, 
+        myLng,
+      );
+      if (dist > 50.0) return;
+    }
+
+    // 3. Freshness check: created within the last 2 hours
+    if (DateTime.now().difference(req.createdAt).abs().inHours >= 2) return;
+
+    final myUid = state.userUid ?? Supabase.instance.client.auth.currentUser?.id;
+    if (myUid != null && req.lastCounterDriverId == myUid) {
+      final counterKey = '${req.requestId}_counter_${req.offeredFare.round()}';
+      if (!_notifiedCounterKeys.contains(counterKey)) {
+        _notifiedCounterKeys.add(counterKey);
+        AppNotificationService.instance.showLocalNotification(
+          id: (req.requestId.hashCode.abs() + req.offeredFare.toInt()) % 100000,
+          title: 'تفاوض جديد من العميل 💰',
+          body: 'اقترح العميل أجرة جديدة: ${req.offeredFare.round()} ج.م',
+          type: 'counter_offer',
+          data: {
+            'requestId': req.requestId,
+            'tripId': req.requestId,
+            'price': req.offeredFare.toString(),
+            'type': 'counter_offer',
+          },
+        );
+      }
+    }
+
+    setState(() {
+      final idx = _activeRequests.indexWhere((r) => r.requestId == req.requestId);
+      if (idx >= 0) {
+        _activeRequests[idx] = req;
+      } else {
+        _activeRequests.insert(0, req);
+      }
+    });
+    _updateIncomingRideSound();
+  }
+
+  void _startPendingRequestsStream() {
+    _requestsSubscription?.cancel();
+    _requestsSubscription = RideRepository.instance.streamPendingRequests().listen((requests) {
+      if (mounted) {
+        _processIncomingRequests(requests);
+      }
+    }, onError: (err) {
+      debugPrint('[Ride] Realtime stream error on DriverHomePage: $err');
+      _fetchPendingImmediately();
+      // Auto-reconnect stream after short delay
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted && _isOnline && _requestsSubscription == null) {
+          debugPrint('[Ride] Auto-reconnecting to streamPendingRequests...');
+          _startPendingRequestsStream();
+        }
+      });
+    });
+  }
+
   void _startTracking() async {
     final state = GlobalState.instance;
-    if (state.userUid == null) return;
+    final uid = state.userUid ?? Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) {
+      debugPrint('[DriverHomePage] _startTracking deferred: userUid is not yet ready');
+      return;
+    }
 
     // Check location permission
     final hasLocPermission = await LocationService.instance.checkPermission();
@@ -176,38 +298,107 @@ class _DriverHomePageState extends State<DriverHomePage> {
     await state.startDriverLocationTracking();
 
     // 1. Initial immediate REST fetch of pending requests
+    await _fetchPendingImmediately();
+
+    // 2. Stream pending requests via Realtime WebSocket with auto-reconnect
+    debugPrint('[Ride] Listening for new rides...');
+    _startPendingRequestsStream();
+
+    // 3. Direct CDC Realtime Channel (Instant triggers for INSERT, UPDATE, DELETE with 0ms in-memory reflection)
+    _subscribeDirectRealtime();
+
+    // 4. Ultra-responsive 3-second heartbeat fallback timer
+    _staleRequestsTimer?.cancel();
+    _staleRequestsTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      if (mounted && _isOnline) {
+        await _fetchPendingImmediately();
+      }
+    });
+  }
+
+  void _subscribeDirectRealtime() {
     try {
-      final initialRequests = await RideRepository.instance.fetchPendingRequests();
+      _directRideRequestsChannel?.unsubscribe();
+      final uid = GlobalState.instance.userUid ?? Supabase.instance.client.auth.currentUser?.id ?? 'driver';
+      _directRideRequestsChannel = Supabase.instance.client
+          .channel('public:ride_requests:live_driver_$uid')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'ride_requests',
+            callback: (payload) {
+              debugPrint('[DriverHomePage] Instant CDC event on ride_requests: ${payload.eventType}');
+              if (!mounted || !_isOnline) return;
+
+              // 1. Instant in-memory zero-lag processing
+              try {
+                if (payload.eventType == PostgresChangeEvent.delete) {
+                  final deletedId = payload.oldRecord['id']?.toString();
+                  if (deletedId != null) {
+                    _removeActiveRequestById(deletedId);
+                  }
+                } else if (payload.eventType == PostgresChangeEvent.update) {
+                  final record = payload.newRecord;
+                  final reqId = record['id']?.toString();
+                  final status = record['status']?.toString().toLowerCase().trim() ?? '';
+                  if (reqId != null) {
+                    if (status == 'cancelled' || status == 'completed' || 
+                        (status == 'accepted' && record['driver_id'] != uid)) {
+                      // Instantly remove cancelled or taken ride from screen and sound
+                      _removeActiveRequestById(reqId);
+                    } else if (status == 'pending' || status == 'searching') {
+                      // Request updated (e.g. price change or counter-offer)
+                      final updatedModel = RideRequestModel.fromMap(record, reqId);
+                      _upsertActiveRequest(updatedModel);
+                    }
+                  }
+                } else if (payload.eventType == PostgresChangeEvent.insert) {
+                  final record = payload.newRecord;
+                  final reqId = record['id']?.toString();
+                  final status = record['status']?.toString().toLowerCase().trim() ?? '';
+                  if (reqId != null && (status == 'pending' || status == 'searching')) {
+                    final newModel = RideRequestModel.fromMap(record, reqId);
+                    _upsertActiveRequest(newModel);
+                  }
+                }
+              } catch (cdcErr) {
+                debugPrint('[DriverHomePage] Error in immediate CDC processing: $cdcErr');
+              }
+
+              // 2. Full synchronization via REST to guarantee 100% data consistency
+              _fetchPendingImmediately();
+            },
+          )
+          .subscribe((status, [error]) {
+            debugPrint('[DriverHomePage] CDC channel status: $status (error: $error)');
+            if (status == RealtimeSubscribeStatus.closed || 
+                status == RealtimeSubscribeStatus.timedOut || 
+                status == RealtimeSubscribeStatus.channelError) {
+              if (mounted && _isOnline) {
+                Future.delayed(const Duration(seconds: 2), () {
+                  if (mounted && _isOnline) {
+                    debugPrint('[DriverHomePage] Auto-reconnecting CDC channel...');
+                    _subscribeDirectRealtime();
+                  }
+                });
+              }
+            }
+          });
+    } catch (e) {
+      debugPrint('[DriverHomePage] Error setting up direct CDC channel: $e');
+    }
+  }
+
+  Future<void> _fetchPendingImmediately() async {
+    if (!mounted || !_isOnline) return;
+    try {
+      final fetched = await RideRepository.instance.fetchPendingRequests();
       if (mounted) {
-        _processIncomingRequests(initialRequests);
+        _processIncomingRequests(fetched);
       }
     } catch (e) {
-      debugPrint('[DriverHomePage] Initial fetch error: $e');
+      debugPrint('[DriverHomePage] fetchPendingRequests error: $e');
     }
-
-    // 2. Stream pending requests via Realtime WebSocket
-    debugPrint('[Ride] Listening for new rides...');
-    _requestsSubscription?.cancel();
-    _requestsSubscription = RideRepository.instance.streamPendingRequests().listen((requests) {
-      if (mounted) {
-        _processIncomingRequests(requests);
-      }
-    }, onError: (err) {
-      debugPrint('[Ride] Realtime stream error on DriverHomePage: $err');
-    });
-
-    // 3. Periodic fallback timer (every 12 seconds) to ensure fresh polling & clear stale
-    _staleRequestsTimer?.cancel();
-    _staleRequestsTimer = Timer.periodic(const Duration(seconds: 12), (timer) async {
-      if (mounted && _isOnline) {
-        try {
-          final fetched = await RideRepository.instance.fetchPendingRequests();
-          if (mounted) {
-            _processIncomingRequests(fetched);
-          }
-        } catch (_) {}
-      }
-    });
   }
 
   void _processIncomingRequests(List<RideRequestModel> requests) {
@@ -222,8 +413,8 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
     final filteredRequests = requests.where((req) {
       // Check vehicle type compatibility
-      if (!VehicleHelper.isVehicleTypeMatching(driverVehicleType, req.vehicleType)) {
-        AppLogger.rideLog('DriverHomeFilter', 'Filtered out request ${req.requestId} due to vehicle mismatch ($driverVehicleType vs ${req.vehicleType})');
+      if (!VehicleHelper.isVehicleTypeMatching(driverVehicleType, req.vehicleType, serviceType: req.serviceType)) {
+        AppLogger.rideLog('DriverHomeFilter', 'Filtered out request ${req.requestId} due to vehicle mismatch ($driverVehicleType vs ${req.vehicleType}, service: ${req.serviceType})');
         return false;
       }
 
@@ -286,6 +477,8 @@ class _DriverHomePageState extends State<DriverHomePage> {
   }
 
   void _stopTracking() async {
+    _directRideRequestsChannel?.unsubscribe();
+    _directRideRequestsChannel = null;
     _requestsSubscription?.cancel();
     _requestsSubscription = null;
     _staleRequestsTimer?.cancel();
@@ -325,6 +518,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _directRideRequestsChannel?.unsubscribe();
+    _directRideRequestsChannel = null;
     _requestsSubscription?.cancel();
     _staleRequestsTimer?.cancel();
     GlobalState.instance.removeListener(_onStateChange);
@@ -474,6 +670,20 @@ class _DriverHomePageState extends State<DriverHomePage> {
               ),
               onPressed: () {
                 final double? newFare = double.tryParse(customFareController.text);
+                final minAllowed = GlobalState.instance.minFare;
+                if (newFare != null && newFare < minAllowed) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'الحد الأدنى لأي عرض سعر هو ${minAllowed.round()} ${l10n.egp}',
+                        style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+                      ),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                  customFareController.text = minAllowed.round().toString();
+                  return;
+                }
                 if (newFare != null && newFare > 0) {
                   Navigator.pop(context);
                   _submitBidInline(req, newFare);

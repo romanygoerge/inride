@@ -109,6 +109,17 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
     _fetchPassengerDetails();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final state = GlobalState.instance;
+      final isActive = state.rideStatus == RideStatus.driverOnWay ||
+          state.rideStatus == RideStatus.arrived ||
+          state.rideStatus == RideStatus.tripStarted ||
+          state.rideStatus == RideStatus.completed;
+
+      if (!isActive || state.currentRequestId == null || state.currentRequestId!.isEmpty) {
+        debugPrint('[DriverRideActivePage] Guard triggered: Page opened without active ride state! Safely returning to Home.');
+        _safeNavigateBack();
+        return;
+      }
       _checkAndStartNavigation();
     });
   }
@@ -519,6 +530,14 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
                 ],
               ),
             ),
+            if (state.rideStatus != RideStatus.driverOnWay &&
+                state.rideStatus != RideStatus.arrived &&
+                state.rideStatus != RideStatus.tripStarted)
+              IconButton(
+                icon: const Icon(Icons.close_rounded, color: AppColors.error, size: 24),
+                tooltip: 'العودة للرئيسية',
+                onPressed: () => _safeNavigateBack(),
+              ),
           ],
         ),
       ),
@@ -579,12 +598,17 @@ class _DriverRideActivePageState extends State<DriverRideActivePage> {
   Widget build(BuildContext context) {
     final state = GlobalState.instance;
     final isCompleted = state.rideStatus == RideStatus.completed || _lastRideStatus == RideStatus.completed || _isSubmittingRating;
+    final hasActiveTrip = state.rideStatus == RideStatus.driverOnWay ||
+        state.rideStatus == RideStatus.arrived ||
+        state.rideStatus == RideStatus.tripStarted;
 
     return PopScope(
-      canPop: state.canExitApplication(),
+      canPop: !hasActiveTrip,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
+        if (!didPop && hasActiveTrip) {
           showExitPreventionAlert(context);
+        } else if (!didPop) {
+          _safeNavigateBack();
         }
       },
       child: Scaffold(

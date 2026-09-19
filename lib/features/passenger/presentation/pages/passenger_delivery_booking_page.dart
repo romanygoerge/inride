@@ -48,6 +48,7 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
   DeliveryLocationMode _deliveryLocationMode = DeliveryLocationMode.map;
   bool get _recipientWillSpecifyLocation => _deliveryLocationMode == DeliveryLocationMode.recipient;
   String _selectedPaymentMethod = 'كاش'; // كاش, انستا باي
+  String _selectedDeliveryVehicle = 'motorcycle'; // 'motorcycle' or 'car'
 
   String get _fromAddress {
     final isAr = LocaleController.instance.isArabic;
@@ -109,13 +110,14 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
 
   double _getDeliveryFare() {
     final distance = _calculateDistance();
-    if (distance == 0.0) return 20.0;
+    if (distance == 0.0) return GlobalState.instance.minFare;
     
-    return GlobalState.instance.calculateEstimatedFare(
+    final fare = GlobalState.instance.calculateEstimatedFare(
       distanceInKm: distance,
-      vehicleType: 'motorcycle', // Delivery is performed by motorcycle
+      vehicleType: _selectedDeliveryVehicle,
       hasAC: false,
     );
+    return fare < GlobalState.instance.minFare ? GlobalState.instance.minFare : fare;
   }
 
   void _openSearchPickup() async {
@@ -363,7 +365,7 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
       from: _fromAddress,
       to: _toAddress,
       fare: fare,
-      vehicleType: 'delivery',
+      vehicleType: _selectedDeliveryVehicle,
       serviceType: 'delivery',
       packageDescription: packageDesc,
       deliveryNotes: notes.isNotEmpty ? notes : null,
@@ -471,7 +473,7 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
       from: _fromAddress,
       to: _toAddress,
       fare: fare,
-      vehicleType: 'delivery',
+      vehicleType: _selectedDeliveryVehicle,
       serviceType: 'delivery',
       packageDescription: packageDesc,
       deliveryNotes: notes.isNotEmpty ? notes : null,
@@ -881,6 +883,121 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
             const SizedBox(height: 16),
           ],
 
+          // Preferred Delivery Vehicle
+          Text(
+            'وسيلة التوصيل المفضلة',
+            style: GoogleFonts.cairo(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedDeliveryVehicle = 'motorcycle';
+                    });
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: _selectedDeliveryVehicle == 'motorcycle'
+                          ? AppColors.mediumBlue.withValues(alpha: 0.08)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: _selectedDeliveryVehicle == 'motorcycle'
+                            ? AppColors.mediumBlue
+                            : AppColors.border,
+                        width: _selectedDeliveryVehicle == 'motorcycle' ? 2 : 1,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.two_wheeler, color: AppColors.mediumBlue, size: 26),
+                        const SizedBox(height: 4),
+                        Text(
+                          'موتوسيكل',
+                          style: GoogleFonts.cairo(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: _selectedDeliveryVehicle == 'motorcycle'
+                                ? AppColors.mediumBlue
+                                : AppColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          'للطرود العادية والصغيرة',
+                          style: GoogleFonts.cairo(
+                            fontSize: 10,
+                            color: AppColors.textSecondary,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedDeliveryVehicle = 'car';
+                    });
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: _selectedDeliveryVehicle == 'car'
+                          ? AppColors.mediumBlue.withValues(alpha: 0.08)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: _selectedDeliveryVehicle == 'car'
+                            ? AppColors.mediumBlue
+                            : AppColors.border,
+                        width: _selectedDeliveryVehicle == 'car' ? 2 : 1,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.directions_car_rounded, color: AppColors.darkBlue, size: 26),
+                        const SizedBox(height: 4),
+                        Text(
+                          'عربية (سيارة)',
+                          style: GoogleFonts.cairo(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: _selectedDeliveryVehicle == 'car'
+                                ? AppColors.mediumBlue
+                                : AppColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          'للطرود الكبيرة أو الحساسة',
+                          style: GoogleFonts.cairo(
+                            fontSize: 10,
+                            color: AppColors.textSecondary,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
           // What are you sending?
           Text(
             'ماذا سترسل؟',
@@ -1093,9 +1210,34 @@ class _PassengerDeliveryBookingPageState extends State<PassengerDeliveryBookingP
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('المرسل', style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textLight)),
+                          Text('محتوى الطرد', style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textLight)),
                           Text(
                             _packageController.text,
+                            style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 20, color: AppColors.border),
+
+                // Vehicle Type
+                Row(
+                  children: [
+                    Icon(
+                      _selectedDeliveryVehicle == 'car' ? Icons.directions_car_rounded : Icons.two_wheeler,
+                      color: AppColors.textSecondary,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('وسيلة التوصيل', style: GoogleFonts.cairo(fontSize: 11, color: AppColors.textLight)),
+                          Text(
+                            _selectedDeliveryVehicle == 'car' ? 'عربية (سيارة)' : 'موتوسيكل',
                             style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                           ),
                         ],

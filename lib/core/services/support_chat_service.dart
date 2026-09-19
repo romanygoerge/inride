@@ -377,7 +377,7 @@ class SupportChatService {
         'status': 'read',
         'delivered_at': nowStr,
         'read_at': nowStr,
-      }).eq('user_id', userId).eq('is_admin', true).neq('status', 'read');
+      }).or('user_id.eq.$userId,conversation_id.eq.$userId').neq('sender_id', userId);
 
       // Reset unread_user_count on conversation
       await _supabase.from('support_chats').update({
@@ -385,7 +385,7 @@ class SupportChatService {
       }).eq('id', userId);
 
       for (int i = 0; i < _currentMessages.length; i++) {
-        if (_currentMessages[i].isAdmin) {
+        if (_currentMessages[i].isAdmin || _currentMessages[i].senderId != userId) {
           _currentMessages[i] = SupportChatMessage(
             id: _currentMessages[i].id,
             conversationId: _currentMessages[i].conversationId,
@@ -398,7 +398,7 @@ class SupportChatService {
             createdAt: _currentMessages[i].createdAt,
             deliveredAt: _currentMessages[i].deliveredAt,
             readAt: DateTime.now(),
-            isAdmin: true,
+            isAdmin: _currentMessages[i].isAdmin,
           );
         }
       }
@@ -408,6 +408,13 @@ class SupportChatService {
       debugPrint('[SupportChat] Unread Count Updated: reset for user $userId');
     } catch (e) {
       debugPrint('[SupportChat] Error marking messages read: $e');
+      try {
+        await _supabase.from('support_messages').update({
+          'status': 'read',
+        }).or('user_id.eq.$userId,conversation_id.eq.$userId').neq('sender_id', userId);
+        unreadCountNotifier.value = 0;
+        _notifyListeners();
+      } catch (_) {}
     }
   }
 

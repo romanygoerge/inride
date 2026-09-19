@@ -49,41 +49,39 @@ function generateServerAuthKey(phone) {
   return `Sec_P_${digest.substring(0, 32)}!Aa9`;
 }
 
-async function logSecurityEvent(params) {
-  if (!supabase) return;
-  try {
-    await supabase.rpc('log_security_event', {
-      p_event_type: params.eventType,
-      p_severity: params.severity || 'INFO',
-      p_request_id: params.requestId || null,
-      p_correlation_id: params.correlationId || null,
-      p_user_id: params.userId || null,
-      p_admin_id: params.adminId || null,
-      p_session_id: params.sessionId || null,
-      p_device_id: params.deviceId || null,
-      p_device_platform: params.devicePlatform || null,
-      p_device_manufacturer: params.deviceManufacturer || null,
-      p_device_model: params.deviceModel || null,
-      p_os_version: params.osVersion || null,
-      p_app_version: params.appVersion || null,
-      p_ip_address: params.ipAddress || null,
-      p_user_agent: params.userAgent || null,
-      p_asn: params.asn || null,
-      p_isp: params.isp || null,
-      p_country: params.country || null,
-      p_city: params.city || null,
-      p_endpoint: params.endpoint || '/api/verify-otp',
-      p_http_method: params.httpMethod || 'POST',
-      p_response_status: params.responseStatus || null,
-      p_authentication_method: params.authMethod || 'HMAC_OTP',
-      p_authorization_result: params.authResult || null,
-      p_message_id: params.messageId || null,
-      p_provider_message_id: params.providerMessageId || null,
-      p_details: params.details || {}
-    });
-  } catch (err) {
+function logSecurityEvent(params) {
+  if (!supabase) return Promise.resolve();
+  return supabase.rpc('log_security_event', {
+    p_event_type: params.eventType,
+    p_severity: params.severity || 'INFO',
+    p_request_id: params.requestId || null,
+    p_correlation_id: params.correlationId || null,
+    p_user_id: params.userId || null,
+    p_admin_id: params.adminId || null,
+    p_session_id: params.sessionId || null,
+    p_device_id: params.deviceId || null,
+    p_device_platform: params.devicePlatform || null,
+    p_device_manufacturer: params.deviceManufacturer || null,
+    p_device_model: params.deviceModel || null,
+    p_os_version: params.osVersion || null,
+    p_app_version: params.appVersion || null,
+    p_ip_address: params.ipAddress || null,
+    p_user_agent: params.userAgent || null,
+    p_asn: params.asn || null,
+    p_isp: params.isp || null,
+    p_country: params.country || null,
+    p_city: params.city || null,
+    p_endpoint: params.endpoint || '/api/verify-otp',
+    p_http_method: params.httpMethod || 'POST',
+    p_response_status: params.responseStatus || null,
+    p_authentication_method: params.authMethod || 'HMAC_OTP',
+    p_authorization_result: params.authResult || null,
+    p_message_id: params.messageId || null,
+    p_provider_message_id: params.providerMessageId || null,
+    p_details: params.details || {}
+  }).then(() => {}).catch(err => {
     console.error('[Security Logger Error in VerifyOtp]:', err.message);
-  }
+  });
 }
 
 module.exports = async function handler(req, res) {
@@ -100,19 +98,19 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ success: false, error: 'Method Not Allowed' });
   }
 
-  const requestId = 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-  const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || '127.0.0.1';
+  const requestId = 'REQ-VERIFY-' + crypto.randomUUID();
+  const ipAddress = (req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket?.remoteAddress || '').split(',')[0].trim();
   const userAgent = req.headers['user-agent'] || 'Unknown';
-  const country = req.headers['x-vercel-ip-country'] || 'EG';
-  const city = req.headers['x-vercel-ip-city'] || 'Cairo';
+  const country = req.headers['x-vercel-ip-country'] || req.headers['cf-ipcountry'] || null;
+  const city = req.headers['x-vercel-ip-city'] || null;
 
   try {
     const body = (typeof req.body === 'string') ? JSON.parse(req.body) : (req.body || {});
     const { phoneNumber, code } = body;
 
     if (!phoneNumber || !code) {
-      await logSecurityEvent({
-        eventType: 'OTP_VERIFY_INVALID_INPUT',
+      logSecurityEvent({
+        eventType: 'MISSING_VERIFICATION_PARAMS',
         severity: 'LOW',
         requestId,
         ipAddress,
@@ -120,18 +118,18 @@ module.exports = async function handler(req, res) {
         country,
         city,
         responseStatus: 400,
-        authResult: 'DENIED',
-        details: { reason: 'missing_phone_or_code' }
+        authResult: 'REJECTED_VALIDATION',
+        details: { hasPhone: !!phoneNumber, hasCode: !!code }
       });
-      return res.status(400).json({ success: false, error: 'رقم الهاتف ورمز التحقق مطلوبان.' });
+      return res.status(400).json({ success: false, error: 'رقم الهاتف وكود التحقق مطلوبان.' });
     }
 
     const cleanPhone = cleanEgyptianPhone(phoneNumber);
     const trimmedCode = String(code).trim();
 
-    if (trimmedCode.length !== 6 || !/^\d{6}$/.test(trimmedCode)) {
-      await logSecurityEvent({
-        eventType: 'OTP_VERIFY_INVALID_FORMAT',
+    if (!cleanPhone || cleanPhone.length < 10) {
+      logSecurityEvent({
+        eventType: 'INVALID_PHONE_FORMAT',
         severity: 'LOW',
         requestId,
         ipAddress,
@@ -139,10 +137,26 @@ module.exports = async function handler(req, res) {
         country,
         city,
         responseStatus: 400,
-        authResult: 'DENIED',
-        details: { phone: maskPhone(cleanPhone), reason: 'code_format_not_6_digits' }
+        authResult: 'REJECTED_VALIDATION',
+        details: { cleanPhoneLength: cleanPhone.length }
       });
-      return res.status(400).json({ success: false, error: 'رمز التحقق يجب أن يكون مكوناً من 6 أرقام.' });
+      return res.status(400).json({ success: false, error: 'صيغة رقم الهاتف غير صالحة.' });
+    }
+
+    if (trimmedCode.length !== 6 || !/^\d{6}$/.test(trimmedCode)) {
+      logSecurityEvent({
+        eventType: 'INVALID_CODE_FORMAT',
+        severity: 'LOW',
+        requestId,
+        ipAddress,
+        userAgent,
+        country,
+        city,
+        responseStatus: 400,
+        authResult: 'REJECTED_VALIDATION',
+        details: { codeLength: trimmedCode.length }
+      });
+      return res.status(400).json({ success: false, error: 'رمز التحقق يجب أن يتكون من 6 أرقام.' });
     }
 
     const authEmail = `phone_${cleanPhone}@inride.app`;
@@ -151,7 +165,7 @@ module.exports = async function handler(req, res) {
     // 1. Demo Mode Check
     const isDemoNumber = (cleanPhone === '201000000000' || cleanPhone.endsWith('000000000'));
     if (isDemoNumber && trimmedCode === '123456') {
-      await logSecurityEvent({
+      logSecurityEvent({
         eventType: 'OTP_VERIFIED_DEMO',
         severity: 'INFO',
         requestId,
@@ -169,6 +183,7 @@ module.exports = async function handler(req, res) {
         verified: true,
         authEmail,
         authKey,
+        isNewUser: false,
         isDemo: true
       });
     }
@@ -176,7 +191,7 @@ module.exports = async function handler(req, res) {
     // 2. Database Connection Check (Strict Fail-Closed)
     if (!supabase) {
       console.error('[VerifyOtp] Supabase client is not initialized. Rejecting request.');
-      await logSecurityEvent({
+      logSecurityEvent({
         eventType: 'DATABASE_DISCONNECTED_FAIL_CLOSED',
         severity: 'CRITICAL',
         requestId,
@@ -191,17 +206,29 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ success: false, error: 'فشل الاتصال بخدمة التحقق في السيرفر.' });
     }
 
-    // 3. Secure Hash OTP Verification in Database
+    // 3. Parallel Execution: Verify OTP Hash & Check Existing User
     const inputHash = hashOtp(cleanPhone, trimmedCode);
-    const { data: verifyRes, error: rpcErr } = await supabase.rpc('verify_phone_otp_hash', {
+    const verifyPromise = supabase.rpc('verify_phone_otp_hash', {
       p_phone: cleanPhone,
       p_otp_hash: inputHash
     });
 
+    const userCheckPromise = supabase
+      .from('users')
+      .select('id')
+      .or(`phone.eq.${cleanPhone},phone.eq.+${cleanPhone}`)
+      .maybeSingle()
+      .catch(() => ({ data: null }));
+
+    const [{ data: verifyRes, error: rpcErr }, userCheckRes] = await Promise.all([
+      verifyPromise,
+      userCheckPromise
+    ]);
+
     // CRITICAL FIX (Fail-Closed): If RPC returns an error or database fails, NEVER fall through to success!
     if (rpcErr) {
       console.error('[VerifyOtp] Database RPC verify error:', rpcErr.message);
-      await logSecurityEvent({
+      logSecurityEvent({
         eventType: 'OTP_VERIFY_RPC_ERROR',
         severity: 'HIGH',
         requestId,
@@ -228,7 +255,7 @@ module.exports = async function handler(req, res) {
         ? verifyRes.error
         : 'رمز التحقق غير صحيح أو انتهت صلاحيته.';
 
-      await logSecurityEvent({
+      logSecurityEvent({
         eventType: 'OTP_VERIFICATION_FAILED',
         severity: 'MEDIUM',
         requestId,
@@ -251,9 +278,11 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    const isNewUser = !userCheckRes?.data?.id;
+
     // 4. Verification Succeeded
-    console.log(`[VerifyOtp] OTP successfully verified for ${maskPhone(cleanPhone)}`);
-    await logSecurityEvent({
+    console.log(`[VerifyOtp] OTP successfully verified for ${maskPhone(cleanPhone)} (isNewUser=${isNewUser})`);
+    logSecurityEvent({
       eventType: 'OTP_VERIFY_SUCCESS',
       severity: 'INFO',
       requestId,
@@ -264,7 +293,8 @@ module.exports = async function handler(req, res) {
       responseStatus: 200,
       authResult: 'ALLOWED',
       details: {
-        phone: maskPhone(cleanPhone)
+        phone: maskPhone(cleanPhone),
+        isNewUser
       }
     });
 
@@ -272,12 +302,13 @@ module.exports = async function handler(req, res) {
       success: true,
       verified: true,
       authEmail,
-      authKey
+      authKey,
+      isNewUser
     });
 
   } catch (err) {
     console.error('[VerifyOtp] Internal Server Error:', err);
-    await logSecurityEvent({
+    logSecurityEvent({
       eventType: 'OTP_VERIFY_CRASH_FAIL_CLOSED',
       severity: 'HIGH',
       requestId,

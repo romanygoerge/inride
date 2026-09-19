@@ -27,6 +27,7 @@ import '../localization/locale_controller.dart';
 import '../utils/map_coordinates_helper.dart';
 import '../utils/uuid_generator.dart';
 import '../utils/app_logger.dart';
+import '../utils/vehicle_helper.dart';
 import '../../main.dart' show navigatorKey;
 import '../../shared/widgets/in_app_notification.dart';
 import '../../features/chat/presentation/pages/chat_page.dart';
@@ -105,15 +106,22 @@ class DriverOffer {
 }
 
 class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
-  static final GlobalState _instance = GlobalState._internal();
-  factory GlobalState() => _instance;
+  static GlobalState? _instance;
+  static GlobalState get instance {
+    _instance ??= GlobalState._internal();
+    return _instance!;
+  }
+  factory GlobalState() => instance;
+
   GlobalState._internal() {
+    _instance = this;
+    WidgetsBinding.instance.addObserver(this);
+
     _loadProfileFromCache();
     _initAuthListener();
     _initSettingsListener();
     _initPaymentMethodsListener();
     _startConnectivityMonitor();
-    WidgetsBinding.instance.addObserver(this);
   }
 
   /// Public method to trigger listeners update
@@ -152,8 +160,6 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     'minFare': 10.0,
     'maxFare': 500.0,
   };
-
-  static GlobalState get instance => _instance;
 
   // Authentication State
   String? phoneNumber;
@@ -255,6 +261,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     _presenceHeartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _sendPresenceHeartbeat();
     });
+    unawaited(_checkAndRecoverActiveRideOnResume());
   }
 
   void _onAppPaused() {
@@ -815,23 +822,10 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     debugPrint('[Connectivity] Handling reconnection – re‑subscribing streams');
     // Re‑subscribe to ride updates if a ride is active
     if (currentRequestId != null) {
-      // Cancel any existing subscription
-      _rideSubscription?.cancel();
-      _rideSubscription = null;
-      // Re‑subscribe using the same request ID
-      final listenedId = currentRequestId!;
-      _rideSubscription = RideRepository.instance.streamRideRequest(listenedId).listen((request) async {
-        if (_isCancelling) return;
-        if (currentRequestId != listenedId) return;
-        if (request == null) return;
-        // Update state as before
-        currentRideRequest = request;
-        activeRidePaymentMethod = request.paymentMethod;
-        currentPassengerCount = request.passengerCount;
-        currentPickupPhotoUrl = request.pickupPhotoUrl;
-        currentDeliveryPhotoUrl = request.deliveryPhotoUrl;
-        // Preserve existing status handling logic (omitted for brevity)
-      });
+      subscribeToRideRequest(currentRequestId!);
+      if (rideStatus == RideStatus.searching || rideStatus == RideStatus.driverBidding) {
+        subscribeToRideBids(currentRequestId!);
+      }
     }
     // Restart driver location updates if driver is online
     if (currentRole == UserRole.driver && isDriverOnline && userUid != null) {
@@ -1069,26 +1063,50 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     driverVehicleFrontUrl = dData['vehicle_front_url'];
 
     final vehicleId = dData['vehicle_id'];
+    Map<String, dynamic>? vData;
     if (vehicleId != null && vehicleId.toString().trim().isNotEmpty) {
       try {
-        final vData = await _supabase.from('vehicles').select().eq('id', vehicleId.toString().trim()).maybeSingle().timeout(const Duration(seconds: 2));
-        if (vData != null) {
-          vehicleName = vData['model'];
-          vehicleNumber = vData['number_plate'];
-          driverVehicleColor = vData['color'];
-          driverVehicleCategory = vData['vehicle_category'];
-          driverHasAC = vData['has_ac'] ?? false;
-          driverMaxPassengers = vData['max_passengers'] ?? 4;
-          driverVehicleImages = List<String>.from(vData['images'] ?? []);
-        }
+        final res = await _supabase.from('vehicles').select().eq('id', vehicleId.toString().trim()).maybeSingle().timeout(const Duration(seconds: 8));
+        if (res != null) vData = Map<String, dynamic>.from(res);
       } catch (e) {
-        debugPrint('Error fetching vehicle details: $e');
+        debugPrint('Error fetching vehicle details by id: $e');
       }
+    }
+    
+    // Fallback: If vehicle was not found by vehicle_id, query by driver_id
+    if (vData == null && userUid != null) {
+      try {
+        final res = await _supabase.from('vehicles').select().eq('driver_id', userUid!).maybeSingle().timeout(const Duration(seconds: 8));
+        if (res != null) vData = Map<String, dynamic>.from(res);
+      } catch (e) {
+        debugPrint('Error fetching vehicle details by driver_id: $e');
+      }
+    }
+
+    if (vData != null) {
+      vehicleName = vData['model'];
+      vehicleNumber = vData['number_plate'];
+      driverVehicleColor = vData['color'];
+      driverVehicleCategory = vData['vehicle_category'] ?? vData['type'] ?? dData['vehicle_category'] ?? dData['vehicle_type'];
+      driverHasAC = vData['has_ac'] ?? false;
+      driverMaxPassengers = vData['max_passengers'] ?? 4;
+      driverVehicleImages = List<String>.from(vData['images'] ?? []);
     } else {
       vehicleName = dData['vehicle_name'] ?? dData['vehicleName'];
       vehicleNumber = dData['vehicle_number'] ?? dData['vehicleNumber'];
       driverVehicleColor = dData['vehicle_color'] ?? dData['color'] ?? 'أبيض';
       driverVehicleCategory = dData['vehicle_category'] ?? dData['vehicle_type'] ?? dData['vehicleCategory'] ?? dData['vehicleType'];
+    }
+
+    // Fallback to locally cached category if database query returned null
+    if (driverVehicleCategory == null || driverVehicleCategory!.trim().isEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cached = prefs.getString('cached_vehicle_category');
+        if (cached != null && cached.trim().isNotEmpty) {
+          driverVehicleCategory = cached;
+        }
+      } catch (_) {}
     }
 
     if (verificationStatus == DriverVerificationStatus.verified && driverVehicleCategory == null) {
@@ -1170,7 +1188,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
       // Check for active ride on startup with timeout
       try {
-        await recoverActiveRideOnStartup(user.id).timeout(const Duration(seconds: 2));
+        await recoverActiveRideOnStartup(user.id).timeout(const Duration(seconds: 8));
       } catch (e) {
         debugPrint('Error recovering active ride on startup: $e');
       }
@@ -1466,7 +1484,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       if (res != null) {
         appSettings.addAll(res);
         if (res['commission_rate'] != null) {
-          appSettings['commissionRate'] = (res['commission_rate'] as num).toDouble();
+          appSettings['commissionRate'] = _parseDouble(res['commission_rate'], 10.0);
         }
         notifyListeners();
         debugPrint('[GlobalState] Initial settings fetched: $appSettings');
@@ -1485,7 +1503,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
             if (data.isNotEmpty) {
               appSettings.addAll(data.first);
               if (data.first['commission_rate'] != null) {
-                appSettings['commissionRate'] = (data.first['commission_rate'] as num).toDouble();
+                appSettings['commissionRate'] = _parseDouble(data.first['commission_rate'], 10.0);
               }
               notifyListeners();
               debugPrint('[GlobalState] Realtime settings updated: $appSettings');
@@ -1498,12 +1516,33 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  double get outOfCityThresholdKm =>
-      (appSettings['out_of_city_threshold_km'] as num?)?.toDouble() ?? 5.0;
-  double get outOfCityExtraFare =>
-      (appSettings['out_of_city_extra_fare'] as num?)?.toDouble() ?? 20.0;
-  bool get isOutOfCityPricingEnabled =>
-      appSettings['out_of_city_pricing_enabled'] != false;
+  static double _parseDouble(dynamic val, double fallback) {
+    if (val == null) return fallback;
+    if (val is num) return val.toDouble();
+    return double.tryParse(val.toString()) ?? fallback;
+  }
+
+  static int _parseInt(dynamic val, int fallback) {
+    if (val == null) return fallback;
+    if (val is num) return val.toInt();
+    return int.tryParse(val.toString()) ?? fallback;
+  }
+
+  double get minFare => _parseDouble(appSettings['min_fare'] ?? appSettings['minFare'], 35.0);
+  double get maxFare => _parseDouble(appSettings['max_fare'] ?? appSettings['maxFare'], 10000.0);
+  double get defaultFareCar => max(minFare, _parseDouble(appSettings['default_fare_car'] ?? appSettings['defaultFareCar'], 35.0));
+  double get defaultFareScooter => max(minFare, _parseDouble(appSettings['default_fare_scooter'] ?? appSettings['defaultFareScooter'], 35.0));
+  double get defaultFareMotorcycle => max(minFare, _parseDouble(appSettings['default_fare_motorcycle'] ?? appSettings['defaultFareMotorcycle'], 35.0));
+  double get commissionRate => _parseDouble(appSettings['commission_rate'] ?? appSettings['commissionRate'], 0.0);
+  double get firstKmFare => max(minFare, _parseDouble(appSettings['first_km_fare'], 30.0));
+  double get extraKmFare => _parseDouble(appSettings['extra_km_fare'], 5.0);
+  double get acKmFare => _parseDouble(appSettings['ac_km_fare'], 2.0);
+  double get heatHourKmFare => _parseDouble(appSettings['heat_hour_km_fare'], 1.0);
+  int get heatStartHour => _parseInt(appSettings['heat_start_hour'], 11);
+  int get heatEndHour => _parseInt(appSettings['heat_end_hour'], 15);
+  double get outOfCityThresholdKm => _parseDouble(appSettings['out_of_city_threshold_km'], 5.0);
+  double get outOfCityExtraFare => _parseDouble(appSettings['out_of_city_extra_fare'], 20.0);
+  bool get isOutOfCityPricingEnabled => appSettings['out_of_city_pricing_enabled'] != false;
   bool isTripOutOfCity(double distanceInKm) =>
       isOutOfCityPricingEnabled && distanceInKm > outOfCityThresholdKm;
   double getOutOfCityDistance(double distanceInKm) =>
@@ -1517,12 +1556,12 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     double regionSurcharge = 0.0,
   }) {
     final surgeEnabled = (appSettings['surge_enabled'] as bool?) ?? true;
-    final firstKmFare = (appSettings['first_km_fare'] as num?)?.toDouble() ?? 20.0;
-    final extraKmFare = (appSettings['extra_km_fare'] as num?)?.toDouble() ?? 5.0;
-    final acKmFare = (appSettings['ac_km_fare'] as num?)?.toDouble() ?? 1.0;
-    final heatHourKmFare = (appSettings['heat_hour_km_fare'] as num?)?.toDouble() ?? 1.0;
-    final heatStart = (appSettings['heat_start_hour'] as num?)?.toInt() ?? 11;
-    final heatEnd = (appSettings['heat_end_hour'] as num?)?.toInt() ?? 15;
+    final firstKm = firstKmFare;
+    final extraKm = extraKmFare;
+    final acKm = acKmFare;
+    final heatKm = heatHourKmFare;
+    final heatStart = heatStartHour;
+    final heatEnd = heatEndHour;
 
     final outOfCityEnabled = isOutOfCityPricingEnabled;
     final outOfCityThreshold = outOfCityThresholdKm;
@@ -1530,27 +1569,27 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
     double fare = 0.0;
     if (distanceInKm <= 1.0) {
-      fare = firstKmFare;
+      fare = firstKm;
     } else {
-      double perKmRate = extraKmFare;
+      double perKmRate = extraKm;
 
       // Apply AC surge if vehicle is a car and AC is on
       if (hasAC && (vehicleType == 'car' || vehicleType == 'private_car')) {
-        perKmRate += acKmFare;
+        perKmRate += acKm;
       }
 
       // Apply Heat Surge if enabled and trip time is between 11:00 AM and 3:00 PM (15:00)
       if (surgeEnabled) {
         final nowHour = DateTime.now().hour;
         if (nowHour >= heatStart && nowHour < heatEnd) {
-          perKmRate += heatHourKmFare;
+          perKmRate += heatKm;
         }
       }
 
       if (outOfCityEnabled && distanceInKm > outOfCityThreshold) {
         // Distance within city limit (up to threshold): First 1km + remaining city km
         final insideCityExtraKm = outOfCityThreshold > 1.0 ? (outOfCityThreshold - 1.0) : 0.0;
-        final insideCityFare = firstKmFare + (insideCityExtraKm * perKmRate);
+        final insideCityFare = firstKm + (insideCityExtraKm * perKmRate);
 
         // Distance outside city (> threshold): 20 EGP per km
         final outsideCityKm = distanceInKm - outOfCityThreshold;
@@ -1558,16 +1597,14 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
         fare = insideCityFare + outsideCityFare;
       } else {
-        final extraKm = distanceInKm - 1.0;
-        fare = firstKmFare + (extraKm * perKmRate);
+        final extraKmDist = distanceInKm - 1.0;
+        fare = firstKm + (extraKmDist * perKmRate);
       }
     }
 
     // Apply region surcharge if provided
     fare += regionSurcharge;
 
-    final minFare = (appSettings['min_fare'] as num?)?.toDouble() ?? (appSettings['minFare'] as num?)?.toDouble() ?? 20.0;
-    final maxFare = (appSettings['max_fare'] as num?)?.toDouble() ?? (appSettings['maxFare'] as num?)?.toDouble() ?? 10000.0;
     return fare.clamp(minFare, maxFare);
   }
 
@@ -1894,33 +1931,165 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           .from('ride_requests')
           .select()
           .eq(colName, uid)
-          .inFilter('status', ['Pending', 'Searching', 'Accepted', 'DriverArriving', 'TripStarted']);
+          .inFilter('status', [
+            'Pending', 'Searching', 'Accepted', 'DriverArriving', 'TripStarted',
+            'pending', 'searching', 'accepted', 'driverarriving', 'tripstarted',
+            'Arrived', 'arrived'
+          ])
+          .order('created_at', ascending: false)
+          .limit(1);
 
       if ((activeReqRes as List).isNotEmpty) {
         final reqMap = Map<String, dynamic>.from(activeReqRes.first);
-        currentRequestId = reqMap['id'];
-        currentRideRequest = RideRequestModel.fromMap(reqMap, reqMap['id']);
+        final reqId = reqMap['id']?.toString();
+        if (reqId == null || reqId.isEmpty) return;
+
+        currentRequestId = reqId;
+        currentRideRequest = RideRequestModel.fromMap(reqMap, reqId);
         activePassengerId = (reqMap['passenger_id'] ?? reqMap['passengerId'])?.toString();
         activePassengerPhone = (reqMap['passenger_phone'] ?? reqMap['recipient_phone'])?.toString();
         fromAddress = reqMap['pickup_address'] ?? reqMap['pickupAddress'];
         toAddress = reqMap['destination_address'] ?? reqMap['destinationAddress'];
         offeredFare = ((reqMap['offered_fare'] ?? reqMap['offeredFare']) as num? ?? 0.0).toDouble();
         selectedVehicleType = reqMap['vehicle_type'] ?? reqMap['vehicleType'] ?? 'car';
+        currentServiceType = reqMap['service_type'] ?? reqMap['serviceType'] ?? 'ride';
+        activeRidePaymentMethod = reqMap['payment_method'] ?? reqMap['paymentMethod'] ?? 'كاش';
+        currentPassengerCount = (reqMap['passenger_count'] ?? reqMap['passengerCount'] as num?)?.toInt() ?? 1;
+        currentPickupPhotoUrl = reqMap['pickup_photo_url'] ?? reqMap['pickupPhotoUrl'];
+        currentDeliveryPhotoUrl = reqMap['delivery_photo_url'] ?? reqMap['deliveryPhotoUrl'];
         
-        final status = reqMap['status'];
-        if (status == 'Pending' || status == 'Searching') {
+        final rawStatus = (reqMap['status'] ?? '').toString().toLowerCase();
+        if (rawStatus == 'pending' || rawStatus == 'searching') {
           rideStatus = RideStatus.searching;
-        } else if (status == 'Accepted') {
+        } else if (rawStatus == 'accepted') {
           rideStatus = RideStatus.driverOnWay;
-        } else if (status == 'DriverArriving') {
+        } else if (rawStatus == 'driverarriving' || rawStatus == 'arrived') {
           rideStatus = RideStatus.arrived;
-        } else if (status == 'TripStarted') {
+        } else if (rawStatus == 'tripstarted') {
           rideStatus = RideStatus.tripStarted;
         }
+
+        final assignedDriverId = (reqMap['driver_id'] ?? reqMap['driverId'])?.toString();
+        if (assignedDriverId != null && assignedDriverId.isNotEmpty) {
+          try {
+            final driverInfo = await fetchDriverInfo(assignedDriverId, defaultVehicleType: selectedVehicleType);
+            acceptedOffer = DriverOffer(
+              driverId: assignedDriverId,
+              driver: driverInfo,
+              price: offeredFare > 0 ? offeredFare : 10.0,
+              etaMinutes: 3,
+            );
+
+            _driverLocationSubscription?.cancel();
+            _driverLocationSubscription = RideRepository.instance.streamDriverLocation(assignedDriverId).listen((data) {
+              if (_isCancelling) return;
+              if (data != null) {
+                final newLat = (data['current_latitude'] ?? data['currentLatitude'] as num?)?.toDouble();
+                final newLng = (data['current_longitude'] ?? data['currentLongitude'] as num?)?.toDouble();
+                if (newLat != null && newLng != null) {
+                  if (driverLatitude == null ||
+                      (newLat - driverLatitude!).abs() > 0.00003 ||
+                      (newLng - driverLongitude!).abs() > 0.00003) {
+                    driverLatitude = newLat;
+                    driverLongitude = newLng;
+                    notifyListeners();
+                  }
+                }
+              }
+            });
+          } catch (e) {
+            debugPrint('[recoverActiveRideOnStartup] Error setting up driver info/location: $e');
+          }
+        }
+
+        subscribeToRideRequest(reqId);
+
+        if (rideStatus == RideStatus.searching) {
+          subscribeToRideBids(reqId);
+        }
+
+        unawaited(_syncSessionToNative());
         notifyListeners();
+        debugPrint('[recoverActiveRideOnStartup] Successfully restored active ride $reqId with status $rideStatus');
       }
     } catch (e) {
       debugPrint('[recoverActiveRideOnStartup] Error: $e');
+    }
+  }
+
+  Future<void> _checkAndRecoverActiveRideOnResume() async {
+    final uid = userUid ?? _supabase.auth.currentUser?.id;
+    if (uid == null) return;
+
+    try {
+      if (currentRequestId != null) {
+        debugPrint('[Lifecycle] Checking active ride $currentRequestId on app resume...');
+        final res = await _supabase
+            .from('ride_requests')
+            .select()
+            .eq('id', currentRequestId!)
+            .maybeSingle();
+
+        if (res != null) {
+          final rawStatus = (res['status'] ?? '').toString();
+          final rawStatusLower = rawStatus.toLowerCase();
+          debugPrint('[Lifecycle] Ride $currentRequestId server status on resume: $rawStatus');
+
+          if (rawStatusLower == 'completed') {
+            rideStatus = RideStatus.completed;
+            notifyListeners();
+            return;
+          } else if (rawStatusLower == 'cancelled') {
+            if (!_isCancelling) {
+              lastCancelReason = res['cancel_reason'] ?? 'تم إلغاء الرحلة';
+              lastCancelledBy = res['cancelled_by'] ?? 'driver';
+              _stopAllLocationAndTimers();
+              _rideSubscription?.cancel();
+              _rideSubscription = null;
+              rideStatus = RideStatus.cancelled;
+              notifyListeners();
+            }
+            return;
+          } else if (rawStatusLower == 'expired') {
+            if (!_isCancelling) {
+              resetRide(silent: true);
+              rideStatus = RideStatus.expired;
+              notifyListeners();
+            }
+            return;
+          }
+
+          if (rawStatusLower == 'accepted' && rideStatus != RideStatus.driverOnWay) {
+            rideStatus = RideStatus.driverOnWay;
+          } else if ((rawStatusLower == 'driverarriving' || rawStatusLower == 'arrived') && rideStatus != RideStatus.arrived) {
+            rideStatus = RideStatus.arrived;
+          } else if (rawStatusLower == 'tripstarted' && rideStatus != RideStatus.tripStarted) {
+            rideStatus = RideStatus.tripStarted;
+          }
+
+          final assignedDriverId = (res['driver_id'] ?? res['driverId'])?.toString();
+          if (assignedDriverId != null && assignedDriverId.isNotEmpty && acceptedOffer == null) {
+            try {
+              final dInfo = await fetchDriverInfo(assignedDriverId, defaultVehicleType: selectedVehicleType);
+              acceptedOffer = DriverOffer(
+                driverId: assignedDriverId,
+                driver: dInfo,
+                price: offeredFare > 0 ? offeredFare : 10.0,
+                etaMinutes: 3,
+              );
+            } catch (_) {}
+          }
+
+          if (_rideSubscription == null) {
+            subscribeToRideRequest(currentRequestId!);
+          }
+          notifyListeners();
+        }
+      } else {
+        await recoverActiveRideOnStartup(uid);
+      }
+    } catch (e) {
+      debugPrint('[Lifecycle] Error in _checkAndRecoverActiveRideOnResume: $e');
     }
   }
 
@@ -2048,7 +2217,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           'model': name,
           'number_plate': number,
           'color': vehicleColor,
-          'type': selectedVehicleType,
+          'type': VehicleHelper.normalizeVehicleType(vehicleCategory),
           'vehicle_category': vehicleCategory,
           'has_ac': hasAC,
           'max_passengers': maxPassengers,
@@ -2084,6 +2253,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         'license_back_url': driverLicenseBackUrl,
         'vehicle_front_url': vehicleLicenseFrontUrl,
         'vehicle_back_url': vehicleLicenseBackUrl,
+        'vehicle_category': vehicleCategory,
+        'vehicle_type': VehicleHelper.normalizeVehicleType(vehicleCategory),
         'is_online': false,
         'is_available': false,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
@@ -2091,6 +2262,11 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       if (vehicleId != null) {
         driverData['vehicle_id'] = vehicleId;
       }
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('cached_vehicle_category', vehicleCategory);
+      } catch (_) {}
 
       try {
         await _supabase.from('drivers').upsert(driverData);
@@ -2139,15 +2315,25 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
     if (userUid != null) {
       try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('cached_vehicle_category', vehicleCategory);
+      } catch (_) {}
+
+      try {
         final driverRes = await _supabase.from('drivers').select('vehicle_id').eq('id', userUid!).maybeSingle();
         final vehicleId = driverRes?['vehicle_id'];
         if (vehicleId != null && vehicleId.toString().trim().isNotEmpty) {
           await _supabase.from('vehicles').update({
+            'type': VehicleHelper.normalizeVehicleType(vehicleCategory),
             'vehicle_category': vehicleCategory,
             'has_ac': hasAC,
             'max_passengers': maxPassengers,
           }).eq('id', vehicleId.toString().trim());
         }
+        await _supabase.from('drivers').update({
+          'vehicle_category': vehicleCategory,
+          'vehicle_type': VehicleHelper.normalizeVehicleType(vehicleCategory),
+        }).eq('id', userUid!);
       } catch (e) {
         debugPrint('Error updating vehicle details: $e');
       }
@@ -2347,9 +2533,10 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     String? recipientFloor,
     String? recipientLandmark,
   }) async {
+    final effectiveFare = max(minFare, fare);
     fromAddress = from;
     toAddress = to;
-    offeredFare = fare;
+    offeredFare = effectiveFare;
     selectedVehicleType = vehicleType;
     rideStatus = RideStatus.searching;
     currentServiceType = serviceType;
@@ -2427,7 +2614,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       destLng: endLatLng.longitude,
       destAddress: to,
       vehicleType: vehicleType,
-      offeredFare: fare,
+      offeredFare: effectiveFare,
       distance: distance,
       paymentMethod: selectedPaymentMethod,
       serviceType: serviceType,
@@ -2453,38 +2640,42 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       ));
     }
 
-    try {
-      final nearbyDrivers = await RideRepository.instance.searchAvailableDrivers(
-        pickupLat: startLatLng.latitude,
-        pickupLng: startLatLng.longitude,
-        vehicleType: vehicleType,
-        maxRangeKm: 15.0,
-      );
-      
-      for (var d in nearbyDrivers) {
-        final driverId = d['driverId'] as String;
-        unawaited(NotificationService.instance.sendNotification(
-          recipientId: driverId,
-          title: serviceType == 'delivery' ? 'طلب توصيل طرد جديد 📦' : 'طلب رحلة جديد 🚗',
-          body: serviceType == 'delivery' ? 'يتوفر طلب توصيل طرد قريب منك. اضغط للمعاينة.' : 'يتوفر طلب رحلة قريب منك. اضغط للمعاينة.',
-          type: serviceType == 'delivery' ? 'delivery_request' : 'new_ride',
-          data: {
-            'requestId': currentRequestId!,
-            'tripId': currentRequestId!,
-            'pickupAddress': finalPickupAddress,
-            'destinationAddress': to,
-            'pickupLat': startLatLng.latitude.toString(),
-            'pickupLng': startLatLng.longitude.toString(),
-            'destLat': endLatLng.latitude.toString(),
-            'destLng': endLatLng.longitude.toString(),
-            'fare': fare.toString(),
-            'vehicleType': vehicleType,
-            'serviceType': serviceType,
-          },
-        ));
+    // Only dispatch notification immediately if regular ride OR if delivery location is already confirmed!
+    if (isDeliveryLocationConfirmed) {
+      try {
+        final nearbyDrivers = await RideRepository.instance.searchAvailableDrivers(
+          pickupLat: startLatLng.latitude,
+          pickupLng: startLatLng.longitude,
+          vehicleType: vehicleType,
+          serviceType: serviceType,
+          maxRangeKm: 20.0,
+        );
+        
+        for (var d in nearbyDrivers) {
+          final driverId = d['driverId'] as String;
+          unawaited(NotificationService.instance.sendNotification(
+            recipientId: driverId,
+            title: serviceType == 'delivery' ? 'طلب توصيل طرد جديد 📦' : 'طلب رحلة جديد 🚗',
+            body: serviceType == 'delivery' ? 'يتوفر طلب توصيل طرد قريب منك. اضغط للمعاينة.' : 'يتوفر طلب رحلة قريب منك. اضغط للمعاينة.',
+            type: serviceType == 'delivery' ? 'delivery_request' : 'new_ride',
+            data: {
+              'requestId': currentRequestId!,
+              'tripId': currentRequestId!,
+              'pickupAddress': finalPickupAddress,
+              'destinationAddress': to,
+              'pickupLat': startLatLng.latitude.toString(),
+              'pickupLng': startLatLng.longitude.toString(),
+              'destLat': endLatLng.latitude.toString(),
+              'destLng': endLatLng.longitude.toString(),
+              'fare': fare.toString(),
+              'vehicleType': vehicleType,
+              'serviceType': serviceType,
+            },
+          ));
+        }
+      } catch (e) {
+        debugPrint("Error notifying nearby drivers of new request: $e");
       }
-    } catch (e) {
-      debugPrint("Error notifying nearby drivers of new request: $e");
     }
 
     _rideTimeoutTimer?.cancel();
@@ -2500,13 +2691,18 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
     });
 
     final listenedRequestId = currentRequestId!;
+    subscribeToRideRequest(listenedRequestId);
+    subscribeToRideBids(listenedRequestId);
+  }
+
+  void subscribeToRideRequest(String requestId) {
     _rideSubscription?.cancel();
-    _rideSubscription = RideRepository.instance.streamRideRequest(listenedRequestId).listen((request) async {
+    _rideSubscription = RideRepository.instance.streamRideRequest(requestId).listen((request) async {
       if (_isCancelling) return;
-      if (currentRequestId != listenedRequestId) return;
+      if (currentRequestId != requestId) return;
       if (request == null) return;
       
-      debugPrint('[Ride] Ride update received: ride_id=$listenedRequestId, status=${request.status}');
+      debugPrint('[Ride] Ride update received: ride_id=$requestId, status=${request.status}');
 
       try {
         currentRideRequest = request;
@@ -2607,7 +2803,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
           }
           try {
             final userRes = await _supabase.from('users').select('wallet_balance').eq('id', userUid!).maybeSingle();
-            if (_isCancelling || currentRequestId != listenedRequestId) return;
+            if (_isCancelling || currentRequestId != requestId) return;
             if (userRes != null) {
               walletBalance = (userRes['wallet_balance'] as num? ?? walletBalance).toDouble();
             }
@@ -2652,7 +2848,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
             acceptedOffer = DriverOffer(
               driverId: request.driverId!,
               driver: driverInfo,
-              price: request.offeredFare,
+              price: request.offeredFare > 0 ? request.offeredFare : offeredFare,
               etaMinutes: 3,
             );
 
@@ -2677,6 +2873,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
             debugPrint('[rideListener] Error fetching driver info: $e');
           }
         }
+        unawaited(_syncSessionToNative());
         if (!_isCancelling) {
           notifyListeners();
         }
@@ -2684,13 +2881,15 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         debugPrint('[rideListener] Unexpected error: $e');
       }
     });
+  }
 
+  void subscribeToRideBids(String requestId) {
     driverOffers = [];
     _bidsSubscription?.cancel();
     _bidsSubscription = _supabase
         .from('ride_offers')
         .stream(primaryKey: ['id'])
-        .eq('request_id', currentRequestId!)
+        .eq('request_id', requestId)
         .listen((offerList) {
       if (_isCancelling) return;
       try {
@@ -2738,8 +2937,8 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
               body: 'قدّم الكابتن ${o.driver.name} عرضاً بقيمة ${o.price.round()} ج.م',
               type: 'new_offer',
               data: {
-                'requestId': currentRequestId!,
-                'tripId': currentRequestId!,
+                'requestId': requestId,
+                'tripId': requestId,
                 'driverId': o.driverId,
                 'price': o.price.toString(),
                 'type': 'new_offer',
@@ -2771,9 +2970,10 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> submitCounterOffer(String driverId, double counterPrice) async {
     if (currentRequestId == null || userUid == null) return;
+    final effectivePrice = max(minFare, counterPrice);
 
     // Deduplication: skip if same offer is already being submitted
-    final offerKey = '${currentRequestId}_${driverId}_${counterPrice.round()}';
+    final offerKey = '${currentRequestId}_${driverId}_${effectivePrice.round()}';
     if (_isSubmittingCounterOffer) {
       debugPrint('[counterOffer] Already submitting, skipping duplicate tap');
       // Update the pending key so the in-flight request knows a newer one arrived
@@ -2792,7 +2992,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       // 1. Update ride_offers record
       try {
         await _supabase.from('ride_offers').update({
-          'price': counterPrice,
+          'price': effectivePrice,
           'status': 'countered',
         }).eq('request_id', currentRequestId!).eq('driver_id', driverId);
       } catch (e) {
@@ -2802,13 +3002,13 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       // 2. Update ride_requests with offered_fare and last_counter_driver_id
       try {
         await _supabase.from('ride_requests').update({
-          'offered_fare': counterPrice,
+          'offered_fare': effectivePrice,
           'last_counter_driver_id': driverId,
         }).eq('id', currentRequestId!);
       } catch (e) {
         debugPrint('[counterOffer] Fallback updating ride_requests without last_counter_driver_id: $e');
         await _supabase.from('ride_requests').update({
-          'offered_fare': counterPrice,
+          'offered_fare': effectivePrice,
         }).eq('id', currentRequestId!);
       }
 
@@ -2817,19 +3017,19 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         unawaited(NotificationService.instance.sendNotification(
           recipientId: driverId,
           title: 'تفاوض جديد من العميل 💰',
-          body: 'اقترح العميل أجرة جديدة: ${counterPrice.round()} ج.م',
+          body: 'اقترح العميل أجرة جديدة: ${effectivePrice.round()} ج.م',
           type: 'counter_offer',
           data: {
             'requestId': currentRequestId!,
             'driverId': driverId,
-            'price': counterPrice.toString(),
+            'price': effectivePrice.toString(),
           },
         ));
       } catch (e) {
         debugPrint('[counterOffer] Warning sending notification to driver: $e');
       }
 
-      offeredFare = counterPrice;
+      offeredFare = effectivePrice;
       notifyListeners();
     } catch (e) {
       debugPrint('[counterOffer] Error submitting counter-offer: $e');
@@ -2892,6 +3092,51 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
       toAddress = address;
       offeredFare = fare;
       notifyListeners();
+    }
+
+    // After recipient confirms destination location, search and notify nearby delivery drivers!
+    try {
+      final reqRes = await _supabase.from('ride_requests').select().eq('id', requestId).maybeSingle();
+      if (reqRes != null) {
+        final rMap = Map<String, dynamic>.from(reqRes);
+        final pLat = (rMap['pickup_latitude'] as num?)?.toDouble();
+        final pLng = (rMap['pickup_longitude'] as num?)?.toDouble();
+        final pAddr = (rMap['pickup_address'] ?? fromAddress ?? '').toString();
+        final vType = (rMap['vehicle_type'] ?? 'delivery').toString();
+        if (pLat != null && pLng != null) {
+          final nearbyDrivers = await RideRepository.instance.searchAvailableDrivers(
+            pickupLat: pLat,
+            pickupLng: pLng,
+            vehicleType: vType,
+            serviceType: 'delivery',
+            maxRangeKm: 20.0,
+          );
+          for (var d in nearbyDrivers) {
+            final driverId = d['driverId'] as String;
+            unawaited(NotificationService.instance.sendNotification(
+              recipientId: driverId,
+              title: 'طلب توصيل طرد جديد 📦',
+              body: 'يتوفر طلب توصيل طرد قريب منك تم تأكيد موقعه. اضغط للمعاينة.',
+              type: 'delivery_request',
+              data: {
+                'requestId': requestId,
+                'tripId': requestId,
+                'pickupAddress': pAddr,
+                'destinationAddress': address,
+                'pickupLat': pLat.toString(),
+                'pickupLng': pLng.toString(),
+                'destLat': lat.toString(),
+                'destLng': lng.toString(),
+                'fare': fare.toString(),
+                'vehicleType': vType,
+                'serviceType': 'delivery',
+              },
+            ));
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[GlobalState] Error dispatching delivery notifications after location confirmation: $e');
     }
   }
 
@@ -3650,9 +3895,10 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> driverSubmitBid(String requestId, double fare, {String? passengerId}) async {
     if (userUid == null) return;
+    final safeFare = max(minFare, fare);
 
     // Deduplication: skip if same bid is already being submitted
-    final bidKey = '${requestId}_${userUid}_${fare.round()}';
+    final bidKey = '${requestId}_${userUid}_${safeFare.round()}';
     if (_isSubmittingBid) {
       debugPrint('[driverSubmitBid] Already submitting bid, skipping duplicate tap');
       _lastBidKey = bidKey;
@@ -3686,7 +3932,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         driverId: userUid!,
         passengerId: finalPassengerId,
         requestId: requestId,
-        price: fare,
+        price: safeFare,
         eta: const Duration(minutes: 5),
       );
 
@@ -3703,19 +3949,19 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         unawaited(NotificationService.instance.sendNotification(
           recipientId: finalPassengerId,
           title: 'عرض جديد من الكابتن 💰',
-          body: 'قدم الكابتن عرض سعر جديد: ${fare.toInt()} ج.م',
+          body: 'قدم الكابتن عرض سعر جديد: ${safeFare.toInt()} ج.م',
           type: 'new_offer',
           data: {
             'requestId': requestId,
             'tripId': requestId,
             'driverId': userUid!,
-            'price': fare.toString(),
+            'price': safeFare.toString(),
           },
         ));
       }
 
       _listenToDriverAssignedRides();
-      AppLogger.rideLog('DriverBid', 'Submitted counter-offer $offerId for request $requestId to passenger $finalPassengerId ($fare EGP)');
+      AppLogger.rideLog('DriverBid', 'Submitted counter-offer $offerId for request $requestId to passenger $finalPassengerId ($safeFare EGP)');
     } finally {
       _isSubmittingBid = false;
     }
@@ -4196,7 +4442,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         verifiedUser.id,
         this.phoneNumber ?? '',
         role,
-      );
+      ).timeout(const Duration(seconds: 4));
       // Immediately sync profile data into memory for accurate navigation
       userName = profile.name;
       if (role == UserRole.rider) {
@@ -4285,7 +4531,7 @@ class GlobalState extends ChangeNotifier with WidgetsBindingObserver {
         appSettings.addAll(res);
         if (res['commission_rate'] != null) {
           appSettings['commissionRate'] =
-              (res['commission_rate'] as num).toDouble();
+              _parseDouble(res['commission_rate'], 10.0);
         }
         notifyListeners();
         debugPrint('[GlobalState] Refreshed app settings manually: $appSettings');

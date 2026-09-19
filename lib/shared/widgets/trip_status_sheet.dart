@@ -7,6 +7,7 @@ import '../../core/utils/snappy_page_route.dart';
 import '../../features/common/history_page.dart';
 import '../../features/passenger/presentation/pages/passenger_ride_active_page.dart';
 import '../../features/driver/presentation/pages/driver_ride_active_page.dart';
+import '../../core/services/notification_service.dart';
 
 enum TripStatusDisplayType {
   completed,
@@ -409,6 +410,54 @@ class _TripStatusSheetState extends State<TripStatusSheet> {
 
   Widget _buildActionButtons(BuildContext context) {
     if (_statusType == TripStatusDisplayType.active) {
+      final isDriver = GlobalState.instance.currentRole == UserRole.driver;
+      final rawStatus = (_tripData?['status'] ?? '').toString().trim().toLowerCase();
+      final isPending = rawStatus == 'pending' || rawStatus == 'searching';
+      final myUid = GlobalState.instance.userUid;
+      final assignedDriverId = _tripData?['driver_id']?.toString();
+
+      String buttonLabel = 'متابعة الرحلة الحية الآن 🚗';
+      IconData buttonIcon = Icons.navigation_rounded;
+      VoidCallback onPressed = () {
+        Navigator.pop(context);
+        final reqId = widget.requestId ?? _tripData?['id']?.toString();
+        if (reqId != null) {
+          GlobalState.instance.currentRequestId = reqId;
+        }
+        if (GlobalState.instance.currentRole == UserRole.rider) {
+          Navigator.push(
+            context,
+            SnappyPageRoute(page: const PassengerRideActivePage()),
+          );
+        } else {
+          Navigator.push(
+            context,
+            SnappyPageRoute(page: const DriverRideActivePage()),
+          );
+        }
+      };
+
+      if (isDriver && isPending) {
+        buttonLabel = 'عرض تفاصيل الطلب وتقديم عرض 🚖';
+        buttonIcon = Icons.local_taxi_rounded;
+        onPressed = () {
+          Navigator.pop(context);
+          final reqId = widget.requestId ?? _tripData?['id']?.toString();
+          if (reqId != null) {
+            NotificationService.instance.handleNotificationClick({
+              'requestId': reqId,
+              'type': 'new_trip',
+            });
+          }
+        };
+      } else if (isDriver && assignedDriverId != myUid) {
+        buttonLabel = 'تم قبول المشوار لكابتن آخر 🚖';
+        buttonIcon = Icons.info_outline;
+        onPressed = () {
+          Navigator.pop(context);
+        };
+      }
+
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -424,29 +473,12 @@ class _TripStatusSheetState extends State<TripStatusSheet> {
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               ),
-              icon: const Icon(Icons.navigation_rounded, color: Colors.white),
+              icon: Icon(buttonIcon, color: Colors.white),
               label: Text(
-                'متابعة الرحلة الحية الآن 🚗',
+                buttonLabel,
                 style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
               ),
-              onPressed: () {
-                Navigator.pop(context);
-                final reqId = widget.requestId ?? _tripData?['id']?.toString();
-                if (reqId != null) {
-                  GlobalState.instance.currentRequestId = reqId;
-                }
-                if (GlobalState.instance.currentRole == UserRole.rider) {
-                  Navigator.push(
-                    context,
-                    SnappyPageRoute(page: const PassengerRideActivePage()),
-                  );
-                } else {
-                  Navigator.push(
-                    context,
-                    SnappyPageRoute(page: const DriverRideActivePage()),
-                  );
-                }
-              },
+              onPressed: onPressed,
             ),
           ),
           const SizedBox(height: 8),

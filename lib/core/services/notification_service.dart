@@ -9,14 +9,19 @@ import '../state/global_state.dart';
 import '../../main.dart' show navigatorKey;
 import '../../features/chat/presentation/pages/chat_page.dart';
 import '../../features/passenger/presentation/pages/passenger_ride_active_page.dart';
+import '../../features/passenger/presentation/pages/passenger_ride_matching_page.dart';
 import '../../features/driver/presentation/pages/driver_home_page.dart';
 import '../../features/driver/presentation/pages/driver_ride_active_page.dart';
+import '../../features/driver/presentation/widgets/driver_incoming_ride_modal.dart';
+import '../models/ride_request_model.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../utils/snappy_page_route.dart';
 import '../../features/common/support_chat_page.dart';
 import '../../features/common/notification_details_page.dart';
 import '../../features/common/wallet_page.dart';
 import '../../shared/widgets/trip_status_sheet.dart';
 import '../config/onesignal_config.dart';
+import '../utils/vehicle_helper.dart';
 
 class NotificationService {
   static final NotificationService instance = NotificationService._internal();
@@ -169,7 +174,7 @@ class NotificationService {
       return;
     }
 
-    // 4. فحص الإشعارات المرتبطة برحلة أو طلب معين والتحقق من حالتها اللحظية (Live Ride Status Check)
+    // 4. فحص الإشعارات المرتبطة برحلة أو طلب معين (Trip & Ride Events Handler)
     final String reqId = (data['requestId'] ??
             data['request_id'] ??
             data['tripId'] ??
@@ -178,7 +183,22 @@ class NotificationService {
         .toString()
         .trim();
 
-    final bool isRideEvent = type == 'accept_trip' ||
+    final bool isNewTripOrOffer = type == 'new_trip' ||
+        type == 'new_ride' ||
+        type == 'delivery_request' ||
+        type == 'new_offer' ||
+        type == 'driver_offer' ||
+        type == 'counter_offer' ||
+        title.contains('طلب رحلة') ||
+        title.contains('مشوار جديد') ||
+        title.contains('عرض جديد') ||
+        title.contains('رحلة جديدة') ||
+        title.contains('توصيل') ||
+        title.contains('طرد') ||
+        title.contains('ديلفري');
+
+    final bool isRideEvent = isNewTripOrOffer ||
+        type == 'accept_trip' ||
         type == 'ride_accepted' ||
         type == 'delivery_accepted' ||
         type == 'driver_arrived' ||
@@ -221,6 +241,8 @@ class NotificationService {
 
         if (tripDoc != null) {
           final String status = (tripDoc['status'] ?? '').toString().trim().toLowerCase();
+          final String? assignedDriverId = tripDoc['driver_id']?.toString();
+          final String? myUid = GlobalState.instance.userUid;
 
           // أ. إذا كانت الرحلة مكتملة بالفعل -> إظهار نافذة الحالة المكتملة
           if (status == 'completed' || status == 'finished' || status == 'ended') {
@@ -240,20 +262,108 @@ class NotificationService {
             return;
           }
 
-          // د. إذا كانت الرحلة لا تزال نشطة (قيد التنفيذ / في الطريق / بانتظار الكابتن)
-          GlobalState.instance.currentRequestId = tripIdToQuery;
-          if (GlobalState.instance.currentRole == UserRole.rider) {
-            Navigator.push(
-              context,
-              SnappyPageRoute(page: const PassengerRideActivePage()),
-            );
-          } else {
-            Navigator.push(
-              context,
-              SnappyPageRoute(page: const DriverRideActivePage()),
-            );
+          // د. حالة الكابتن (Driver / Captain):
+          if (GlobalState.instance.currentRole == UserRole.driver) {
+            final isPendingRequest = status == 'pending' || status == 'searching' || status == 'open' || isNewTripOrOffer;
+
+            if (isPendingRequest) {
+              // إذا كان الطلب لا يزال معلقاً ولم يُقبل بعد:
+              // لا نفتح شاشة DriverRideActivePage أبداً! بل نعرض تفاصيل الطلب للكابتن ليقرر قبوله أو التفاوض عليه
+              final reqModel = RideRequestModel.fromMap(tripDoc, tripIdToQuery);
+
+              // التحقق من تطابق نوع مركبة الكابتن مع فئة الطلب
+              final isDelivery = reqModel.serviceType == 'delivery' || reqModel.vehicleType == 'delivery';
+              if (!isDelivery) {
+                final driverCategory = GlobalState.instance.driverVehicleCategory ?? GlobalState.instance.vehicleName ?? 'car';
+                if (!VehicleHelper.isVehicleTypeMatching(driverCategory, reqModel.vehicleType, serviceType: reqModel.serviceType)) {
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'عفواً، هذا الطلب مخصص لمركبة أخرى (${VehicleHelper.getArabicLabel(reqModel.vehicleType)}) 🚗🏍️',
+                        style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+                      ),
+                      backgroundColor: Colors.orange.shade800,
+                    ),
+                  );
+                  return;
+                }
+              }
+
+              // 1. الانتقال إلى شاشة الكابتن الرئيسية والتأكد من إغلاق أي حوارات سابقة
+              Navigator.of(context).popUntil((route) => route.isFirst);
+
+              // 2. فتح نافذة عرض الطلب الاحترافية DriverIncomingRideModal
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                final targetContext = navigatorKey.currentContext;
+                if (targetContext != null && targetContext.mounted) {
+                  DriverIncomingRideModal.show(targetContext, request: reqModel);
+                }
+              });
+              return;
+            }
+
+            // إذا كانت الرحلة مقبولة أو جارية:
+            if (status == 'accepted' || status == 'driveronway' || status == 'driverarriving' || status == 'arrived' || status == 'tripstarted' || status == 'in_progress') {
+              if (assignedDriverId == myUid) {
+                // الكابتن الحالي هو المقبول في الرحلة -> التوجه لشاشة الرحلة النشطة
+                GlobalState.instance.currentRequestId = tripIdToQuery;
+                GlobalState.instance.currentRideRequest = RideRequestModel.fromMap(tripDoc, tripIdToQuery);
+                GlobalState.instance.fromAddress = tripDoc['pickup_address'] ?? tripDoc['pickupAddress'] ?? '';
+                GlobalState.instance.toAddress = tripDoc['destination_address'] ?? tripDoc['destinationAddress'] ?? '';
+                GlobalState.instance.offeredFare = ((tripDoc['offered_fare'] ?? tripDoc['offeredFare']) as num? ?? 0.0).toDouble();
+                GlobalState.instance.activePassengerId = tripDoc['passenger_id'];
+                final pPhone = (tripDoc['passenger_phone'] ?? tripDoc['recipient_phone'])?.toString();
+                if (pPhone != null && pPhone.isNotEmpty) {
+                  GlobalState.instance.activePassengerPhone = pPhone;
+                }
+
+                if (status == 'accepted') {
+                  GlobalState.instance.rideStatus = RideStatus.driverOnWay;
+                } else if (status == 'driverarriving' || status == 'driver_arrived' || status == 'arrived') {
+                  GlobalState.instance.rideStatus = RideStatus.arrived;
+                } else if (status == 'tripstarted' || status == 'in_progress') {
+                  GlobalState.instance.rideStatus = RideStatus.tripStarted;
+                }
+
+                Navigator.push(
+                  context,
+                  SnappyPageRoute(page: const DriverRideActivePage()),
+                );
+                return;
+              } else {
+                // الرحلة قبلها كابتن آخر
+                Navigator.of(context).popUntil((route) => route.isFirst);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'عفواً، هذه الرحلة لم تعد متاحة أو تم قبولها من كابتن آخر 🚖',
+                      style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+                    ),
+                    backgroundColor: Colors.orange.shade800,
+                  ),
+                );
+                return;
+              }
+            }
           }
-          return;
+
+          // هـ. حالة الراكب (Rider / Passenger):
+          if (GlobalState.instance.currentRole == UserRole.rider) {
+            GlobalState.instance.currentRequestId = tripIdToQuery;
+            if (status == 'pending' || status == 'searching') {
+              Navigator.push(
+                context,
+                SnappyPageRoute(page: const PassengerRideMatchingPage()),
+              );
+            } else {
+              Navigator.push(
+                context,
+                SnappyPageRoute(page: const PassengerRideActivePage()),
+              );
+            }
+            return;
+          }
         } else {
           // لم توجد الرحلة في قاعدة البيانات ولكن بيانات الإشعار تشير لاكتمالها أو إلغائها
           if (type == 'trip_finished' || type == 'cancel_trip' || type == 'ride_expired' || type == 'offer_rejected') {
@@ -280,37 +390,6 @@ class NotificationService {
           return;
         }
       }
-    }
-
-    // 5. طلب رحلة / عرض جديد (New Trip / Request / Offer)
-    final bool isNewTripOrOffer = type == 'new_trip' ||
-        type == 'new_ride' ||
-        type == 'delivery_request' ||
-        type == 'new_offer' ||
-        type == 'driver_offer' ||
-        type == 'counter_offer' ||
-        title.contains('طلب رحلة') ||
-        title.contains('عرض جديد') ||
-        title.contains('مشوار جديد');
-
-    if (isNewTripOrOffer) {
-      if (GlobalState.instance.currentRole == UserRole.driver) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => const DriverHomePage()),
-          (route) => false,
-        );
-      } else {
-        if (GlobalState.instance.currentRequestId != null) {
-          Navigator.push(
-            context,
-            SnappyPageRoute(page: const PassengerRideActivePage()),
-          );
-        } else {
-          Navigator.of(context).popUntil((route) => route.isFirst);
-        }
-      }
-      return;
     }
 
     // 6. توثيق واعتماد الكابتن (Driver Approved / Verified)

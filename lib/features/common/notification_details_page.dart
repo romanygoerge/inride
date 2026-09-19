@@ -10,6 +10,7 @@ import '../../core/utils/snappy_page_route.dart';
 import '../../features/common/history_page.dart';
 import '../../features/passenger/presentation/pages/passenger_ride_active_page.dart';
 import '../../features/driver/presentation/pages/driver_ride_active_page.dart';
+import '../../core/utils/vehicle_helper.dart';
 
 class NotificationDetailsPage extends StatefulWidget {
   final NotificationModel notification;
@@ -413,25 +414,70 @@ class _NotificationDetailsPageState extends State<NotificationDetailsPage> {
         Navigator.of(context).popUntil((route) => route.isFirst);
       };
     } else if (isActive) {
-      buttonLabel = isAr ? 'متابعة الرحلة الحية الآن 🚗' : 'Track Active Trip';
-      buttonIcon = Icons.navigation_rounded;
-      onPressed = () {
-        final reqId = (_tripData?['id'] ?? widget.notification.data['requestId'] ?? widget.notification.data['tripId'])?.toString();
-        if (reqId != null) {
-          GlobalState.instance.currentRequestId = reqId;
-        }
-        if (GlobalState.instance.currentRole == UserRole.rider) {
-          Navigator.push(
-            context,
-            SnappyPageRoute(page: const PassengerRideActivePage()),
-          );
+      final isDriver = GlobalState.instance.currentRole == UserRole.driver;
+      final isPending = status == 'pending' || status == 'searching';
+      final myUid = GlobalState.instance.userUid;
+      final assignedDriverId = _tripData?['driver_id']?.toString();
+
+      if (isDriver && isPending) {
+        final reqVehicleType = (_tripData?['vehicle_type'] ?? widget.notification.data['vehicleType'] ?? widget.notification.data['vehicle_type'])?.toString();
+        final serviceType = (_tripData?['service_type'] ?? widget.notification.data['serviceType'] ?? widget.notification.data['service_type'])?.toString();
+        final isDelivery = serviceType == 'delivery' || reqVehicleType == 'delivery';
+        final driverCategory = GlobalState.instance.driverVehicleCategory ?? GlobalState.instance.vehicleName ?? 'car';
+        final isMatch = isDelivery || VehicleHelper.isVehicleTypeMatching(driverCategory, reqVehicleType, serviceType: serviceType);
+
+        if (!isMatch) {
+          buttonLabel = isAr ? 'هذا الطلب مخصص لـ (${VehicleHelper.getArabicLabel(reqVehicleType ?? "")}) ⚠️' : 'Reserved for (${VehicleHelper.getLocalizedLabel(reqVehicleType ?? "", false)}) ⚠️';
+          buttonIcon = Icons.block_rounded;
+          onPressed = () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'عفواً، هذا الطلب مخصص لمركبة أخرى (${VehicleHelper.getArabicLabel(reqVehicleType ?? "")}) 🚗🏍️',
+                  style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+                ),
+                backgroundColor: Colors.orange.shade800,
+              ),
+            );
+          };
         } else {
-          Navigator.push(
-            context,
-            SnappyPageRoute(page: const DriverRideActivePage()),
-          );
+          buttonLabel = isAr ? 'عرض تفاصيل الطلب وتقديم عرض 🚖' : 'View Request & Make Offer 🚖';
+          buttonIcon = Icons.local_taxi_rounded;
+          onPressed = () {
+            final reqId = (_tripData?['id'] ?? widget.notification.data['requestId'] ?? widget.notification.data['tripId'])?.toString();
+            final clickData = Map<String, dynamic>.from(widget.notification.data);
+            clickData['type'] = 'new_trip';
+            if (reqId != null) clickData['requestId'] = reqId;
+            NotificationService.instance.handleNotificationClick(clickData);
+          };
         }
-      };
+      } else if (isDriver && assignedDriverId != myUid) {
+        buttonLabel = isAr ? 'تم قبول المشوار لكابتن آخر 🚖' : 'Accepted by another captain';
+        buttonIcon = Icons.info_outline;
+        onPressed = () {
+          Navigator.pop(context);
+        };
+      } else {
+        buttonLabel = isAr ? 'متابعة الرحلة الحية الآن 🚗' : 'Track Active Trip';
+        buttonIcon = Icons.navigation_rounded;
+        onPressed = () {
+          final reqId = (_tripData?['id'] ?? widget.notification.data['requestId'] ?? widget.notification.data['tripId'])?.toString();
+          if (reqId != null) {
+            GlobalState.instance.currentRequestId = reqId;
+          }
+          if (GlobalState.instance.currentRole == UserRole.rider) {
+            Navigator.push(
+              context,
+              SnappyPageRoute(page: const PassengerRideActivePage()),
+            );
+          } else {
+            Navigator.push(
+              context,
+              SnappyPageRoute(page: const DriverRideActivePage()),
+            );
+          }
+        };
+      }
     } else {
       buttonLabel = isAr ? 'الانتقال إلى الصفحة المربوطة' : 'Go to Linked Page';
       buttonIcon = Icons.arrow_forward_rounded;

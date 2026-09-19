@@ -96,12 +96,27 @@ serve(async (req: Request) => {
     supabase = createClient(supabaseUrl, supabaseKey);
   }
 
-  const logSecurity = async (eventType: string, severity: string, status: number, details: any, msgId?: string, provMsgId?: string) => {
+  const logSecurity = async (
+    eventTypeOrObj: string | { eventType: string; severity: string; status: number; details?: any; msgId?: string; provMsgId?: string },
+    severity?: string,
+    status?: number,
+    details?: any,
+    msgId?: string,
+    provMsgId?: string
+  ) => {
     if (!supabase) return;
     try {
+      const isObj = typeof eventTypeOrObj === "object" && eventTypeOrObj !== null;
+      const finalEventType = isObj ? eventTypeOrObj.eventType : eventTypeOrObj;
+      const finalSeverity = isObj ? eventTypeOrObj.severity : (severity || "INFO");
+      const finalStatus = isObj ? eventTypeOrObj.status : (status || 200);
+      const finalDetails = isObj ? eventTypeOrObj.details : (details || {});
+      const finalMsgId = isObj ? eventTypeOrObj.msgId : msgId;
+      const finalProvMsgId = isObj ? eventTypeOrObj.provMsgId : provMsgId;
+
       await supabase.rpc("log_security_event", {
-        p_event_type: eventType,
-        p_severity: severity,
+        p_event_type: finalEventType,
+        p_severity: finalSeverity,
         p_request_id: requestId,
         p_correlation_id: correlationId,
         p_user_id: userId || null,
@@ -111,10 +126,10 @@ serve(async (req: Request) => {
         p_user_agent: userAgent,
         p_endpoint: "/functions/v1/send-otp",
         p_http_method: "POST",
-        p_response_status: status,
-        p_message_id: msgId || null,
-        p_provider_message_id: provMsgId || null,
-        p_details: details || {}
+        p_response_status: finalStatus,
+        p_message_id: finalMsgId || null,
+        p_provider_message_id: finalProvMsgId || null,
+        p_details: finalDetails || {}
       });
     } catch (_) {}
   };
@@ -130,12 +145,12 @@ serve(async (req: Request) => {
     const detectedForbidden = forbiddenKeys.filter(k => rawBody[k] !== undefined && rawBody[k] !== null && String(rawBody[k]).trim() !== "");
 
     if (detectedForbidden.length > 0) {
-      await logSecurity({
-        eventType: "CUSTOM_MESSAGE_INJECTION_ATTEMPT",
-        severity: "CRITICAL",
-        status: 400,
-        details: { violation: "Client attempted to inject custom text/template/sender into Edge OTP flow", detected_keys: detectedForbidden }
-      });
+      await logSecurity(
+        "CUSTOM_MESSAGE_INJECTION_ATTEMPT",
+        "CRITICAL",
+        400,
+        { violation: "Client attempted to inject custom text/template/sender into Edge OTP flow", detected_keys: detectedForbidden }
+      );
 
       return new Response(JSON.stringify({
         success: false,

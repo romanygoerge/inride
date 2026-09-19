@@ -35,41 +35,39 @@ setInterval(() => {
   if (usedNonces.size > 10000) usedNonces.clear();
 }, 600000);
 
-async function logSecurityEvent(params) {
-  if (!supabase) return;
-  try {
-    await supabase.rpc('log_security_event', {
-      p_event_type: params.eventType,
-      p_severity: params.severity || 'INFO',
-      p_request_id: params.requestId || null,
-      p_correlation_id: params.correlationId || null,
-      p_user_id: params.userId || null,
-      p_admin_id: params.adminId || null,
-      p_session_id: params.sessionId || null,
-      p_device_id: params.deviceId || null,
-      p_device_platform: params.devicePlatform || null,
-      p_device_manufacturer: params.deviceManufacturer || null,
-      p_device_model: params.deviceModel || null,
-      p_os_version: params.osVersion || null,
-      p_app_version: params.appVersion || null,
-      p_ip_address: params.ipAddress || null,
-      p_user_agent: params.userAgent || null,
-      p_asn: params.asn || null,
-      p_isp: params.isp || null,
-      p_country: params.country || null,
-      p_city: params.city || null,
-      p_endpoint: params.endpoint || '/api/send-otp',
-      p_http_method: params.httpMethod || 'POST',
-      p_response_status: params.responseStatus || null,
-      p_authentication_method: params.authMethod || 'HMAC_INTEGRITY',
-      p_authorization_result: params.authResult || null,
-      p_message_id: params.messageId || null,
-      p_provider_message_id: params.providerMessageId || null,
-      p_details: params.details || {}
-    });
-  } catch (err) {
+function logSecurityEvent(params) {
+  if (!supabase) return Promise.resolve();
+  return supabase.rpc('log_security_event', {
+    p_event_type: params.eventType,
+    p_severity: params.severity || 'INFO',
+    p_request_id: params.requestId || null,
+    p_correlation_id: params.correlationId || null,
+    p_user_id: params.userId || null,
+    p_admin_id: params.adminId || null,
+    p_session_id: params.sessionId || null,
+    p_device_id: params.deviceId || null,
+    p_device_platform: params.devicePlatform || null,
+    p_device_manufacturer: params.deviceManufacturer || null,
+    p_device_model: params.deviceModel || null,
+    p_os_version: params.osVersion || null,
+    p_app_version: params.appVersion || null,
+    p_ip_address: params.ipAddress || null,
+    p_user_agent: params.userAgent || null,
+    p_asn: params.asn || null,
+    p_isp: params.isp || null,
+    p_country: params.country || null,
+    p_city: params.city || null,
+    p_endpoint: params.endpoint || '/api/send-otp',
+    p_http_method: params.httpMethod || 'POST',
+    p_response_status: params.responseStatus || null,
+    p_authentication_method: params.authMethod || 'HMAC_INTEGRITY',
+    p_authorization_result: params.authResult || null,
+    p_message_id: params.messageId || null,
+    p_provider_message_id: params.providerMessageId || null,
+    p_details: params.details || {}
+  }).then(() => {}).catch(err => {
     console.error('[Security Logger Error]:', err.message);
-  }
+  });
 }
 
 function cleanEgyptianPhone(rawPhone) {
@@ -193,7 +191,7 @@ module.exports = async function handler(req, res) {
     if (detectedForbidden.length > 0) {
       console.warn(`[SECURITY INCIDENT] Custom message injection attempt from ${clientIp}:`, detectedForbidden);
       
-      await logSecurityEvent({
+      logSecurityEvent({
         eventType: 'CUSTOM_MESSAGE_INJECTION_ATTEMPT',
         severity: 'CRITICAL',
         requestId,
@@ -225,7 +223,7 @@ module.exports = async function handler(req, res) {
 
     const cleanPhone = cleanEgyptianPhone(phoneNumber);
     if (!cleanPhone || cleanPhone.length < 10) {
-      await logSecurityEvent({
+      logSecurityEvent({
         eventType: 'INVALID_PHONE_SUPPLIED',
         severity: 'LOW',
         requestId,
@@ -258,7 +256,7 @@ module.exports = async function handler(req, res) {
     if (!integrityResult.valid) {
       console.warn(`[SendOtp] Blocked unauthorized request from IP ${clientIp} for ${cleanPhone}: ${integrityResult.error}`);
       
-      await logSecurityEvent({
+      logSecurityEvent({
         eventType: 'APP_INTEGRITY_TAMPER_DETECTED',
         severity: 'HIGH',
         requestId,
@@ -291,7 +289,7 @@ module.exports = async function handler(req, res) {
     // ------------------------------------------------------------------------
     const isDemoNumber = (cleanPhone === '201000000000' || cleanPhone.endsWith('000000000'));
     if (isDemoNumber) {
-      await logSecurityEvent({
+      logSecurityEvent({
         eventType: 'DEMO_OTP_REQUEST',
         severity: 'INFO',
         requestId,
@@ -325,24 +323,6 @@ module.exports = async function handler(req, res) {
     const otpHash = hashOtp(cleanPhone, otpCode);
     const expiresAt = new Date(now + 5 * 60 * 1000).toISOString();
 
-    // ------------------------------------------------------------------------
-    // 4. Store OTP in Database (Hashed only, never raw OTP)
-    // ------------------------------------------------------------------------
-    if (supabase) {
-      try {
-        await supabase.rpc('store_phone_otp', {
-          p_phone: cleanPhone,
-          p_otp_hash: otpHash,
-          p_expires_at: expiresAt
-        });
-      } catch (err) {
-        console.warn('[SendOtp] Store OTP notice:', err.message);
-      }
-    }
-
-    // ------------------------------------------------------------------------
-    // 5. Dispatch Message via WA Pilot using locked Backend-only template
-    // ------------------------------------------------------------------------
     if (!WAPILOT_API_TOKEN) {
       console.error('[SendOtp] CRITICAL: WAPILOT_API_TOKEN environment variable is not configured in Vercel.');
       return res.status(500).json({
@@ -355,18 +335,26 @@ module.exports = async function handler(req, res) {
     const chatId = `${cleanPhone}@c.us`;
     const lockedMessageText = `رمز التحقق الخاص بك في تطبيق inRide هو: ${otpCode}\nيرجى عدم مشاركة هذا الرمز مع أي شخص.`;
 
-    const waResponse = await postWaPilot(WAPILOT_INSTANCE_ID, WAPILOT_API_TOKEN, {
-      chat_id: chatId,
-      text: lockedMessageText
-    });
+    // Concurrently store OTP in Database and dispatch WhatsApp message for instant response
+    const [storeRes, waResponse] = await Promise.all([
+      supabase ? supabase.rpc('store_phone_otp', {
+        p_phone: cleanPhone,
+        p_otp_hash: otpHash,
+        p_expires_at: expiresAt
+      }).catch(err => {
+        console.warn('[SendOtp] Store OTP notice:', err.message);
+      }) : Promise.resolve(),
+      postWaPilot(WAPILOT_INSTANCE_ID, WAPILOT_API_TOKEN, {
+        chat_id: chatId,
+        text: lockedMessageText
+      })
+    ]);
 
-    const providerMsgId = waResponse.data?.id || waResponse.data?.message_id || waResponse.data?.data?.id || (typeof waResponse.data === 'string' ? waResponse.data : null);
-    const isSuccess = (waResponse.status === 200 || waResponse.status === 201);
+    const providerMsgId = waResponse?.data?.id || waResponse?.data?.message_id || waResponse?.data?.data?.id || (typeof waResponse?.data === 'string' ? waResponse?.data : null);
+    const isSuccess = (waResponse?.status === 200 || waResponse?.status === 201);
 
-    // ------------------------------------------------------------------------
-    // 6. Security & Audit Logging
-    // ------------------------------------------------------------------------
-    await logSecurityEvent({
+    // Non-blocking Security & Audit Logging
+    logSecurityEvent({
       eventType: isSuccess ? 'OTP_DISPATCHED_SECURELY' : 'OTP_PROVIDER_DISPATCH_FAILED',
       severity: isSuccess ? 'INFO' : 'MEDIUM',
       requestId,
@@ -386,7 +374,7 @@ module.exports = async function handler(req, res) {
       providerMessageId: providerMsgId ? String(providerMsgId).substring(0, 120) : null,
       details: {
         phone_masked: cleanPhone.substring(0, 4) + '****' + cleanPhone.slice(-2),
-        provider_status: waResponse.status,
+        provider_status: waResponse?.status,
         provider_name: 'WA_PILOT'
       }
     });
@@ -399,12 +387,12 @@ module.exports = async function handler(req, res) {
         provider_message_id: providerMsgId
       });
     } else {
-      let errMsg = (waResponse.data && waResponse.data.message) ? waResponse.data.message : 'فشل إرسال كود التحقق عبر الواتساب';
+      let errMsg = (waResponse?.data && waResponse?.data.message) ? waResponse?.data.message : 'فشل إرسال كود التحقق عبر الواتساب';
       return res.status(502).json({ success: false, error: errMsg, request_id: requestId });
     }
   } catch (err) {
     console.error('[SendOtp] Internal Server Error:', err);
-    await logSecurityEvent({
+    logSecurityEvent({
       eventType: 'SERVER_EXCEPTION_IN_OTP',
       severity: 'HIGH',
       requestId,

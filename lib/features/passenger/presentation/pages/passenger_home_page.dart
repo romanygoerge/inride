@@ -52,7 +52,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
   String get _toText => GlobalState.instance.toAddress ?? '';
   
   // Fare input
-  final TextEditingController _fareController = TextEditingController(text: '15');
+  final TextEditingController _fareController = TextEditingController();
 
   // Selected vehicle details
   String _selectedVehicle = 'motorcycle'; // motorcycle only now
@@ -62,6 +62,7 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
   @override
   void initState() {
     super.initState();
+    _fareController.text = _getDefaultFare(_selectedVehicle).round().toString();
     GlobalState.instance.addListener(_onStateChange);
     // Request location permissions and cache current position early
     _initializeLocation();
@@ -90,7 +91,14 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
   }
 
   void _onStateChange() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      final minAllowed = GlobalState.instance.minFare.round();
+      final currentVal = int.tryParse(_fareController.text);
+      if (currentVal == null || currentVal < minAllowed) {
+        _fareController.text = minAllowed.toString();
+      }
+      setState(() {});
+    }
   }
 
   @override
@@ -110,22 +118,22 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
         endLatLng.latitude,
         endLatLng.longitude,
       );
-      return GlobalState.instance.calculateEstimatedFare(
+      final estimated = GlobalState.instance.calculateEstimatedFare(
         distanceInKm: distance,
         vehicleType: vehicle,
         hasAC: vehicle == 'car', // Car gets AC fare by default in estimates
       );
+      return estimated < GlobalState.instance.minFare ? GlobalState.instance.minFare : estimated;
     }
 
-    final settings = GlobalState.instance.appSettings;
     switch (vehicle) {
       case 'scooter':
-        return (settings['defaultFareScooter'] ?? 20.0).toDouble();
+        return GlobalState.instance.defaultFareScooter;
       case 'motorcycle':
-        return (settings['defaultFareMotorcycle'] ?? 15.0).toDouble();
+        return GlobalState.instance.defaultFareMotorcycle;
       case 'car':
       default:
-        return (settings['defaultFareCar'] ?? 45.0).toDouble();
+        return GlobalState.instance.defaultFareCar;
     }
   }
 
@@ -326,7 +334,24 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
         return;
       }
 
-      final double fare = double.tryParse(_fareController.text) ?? 30.0;
+      final double minAllowedFare = GlobalState.instance.minFare;
+      final double fare = double.tryParse(_fareController.text) ?? minAllowedFare;
+
+      if (fare < minAllowedFare) {
+        setState(() {
+          _fareController.text = minAllowedFare.round().toString();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'الحد الأدنى لسعر أي رحلة هو ${minAllowedFare.round()} ${l10n.egp}',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
       
       // Start searching in global state
       GlobalState.instance.startSearchingForDrivers(
@@ -652,7 +677,9 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            _selectedVehicle == 'car' ? AppLocalizations.of(context)!.requestCarRide : AppLocalizations.of(context)!.requestBikeRide,
+                            _selectedVehicle == 'car'
+                                ? (AppLocalizations.of(context)?.requestCarRide ?? 'طلب سيارة')
+                                : (AppLocalizations.of(context)?.requestBikeRide ?? 'طلب دراجة / سكوتر'),
                             style: GoogleFonts.cairo(
                               fontSize: 15,
                               fontWeight: FontWeight.bold,
@@ -950,9 +977,11 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                             IconButton(
                               icon: const Icon(Icons.add_circle, color: AppColors.mediumBlue),
                               onPressed: () {
-                                int val = int.tryParse(_fareController.text) ?? 20;
+                                final minAllowed = GlobalState.instance.minFare.round();
+                                int val = int.tryParse(_fareController.text) ?? minAllowed;
+                                final effectiveBase = val < minAllowed ? minAllowed : val;
                                 setState(() {
-                                  _fareController.text = (val + 5).toString();
+                                  _fareController.text = (effectiveBase + 5).toString();
                                 });
                               },
                             ),
@@ -979,10 +1008,15 @@ class _PassengerHomePageState extends State<PassengerHomePage> {
                             IconButton(
                               icon: const Icon(Icons.remove_circle, color: AppColors.textLight),
                               onPressed: () {
-                                int val = int.tryParse(_fareController.text) ?? 20;
-                                if (val > 5) {
+                                final minAllowed = GlobalState.instance.minFare.round();
+                                int val = int.tryParse(_fareController.text) ?? minAllowed;
+                                if (val - 5 >= minAllowed) {
                                   setState(() {
                                     _fareController.text = (val - 5).toString();
+                                  });
+                                } else if (val > minAllowed) {
+                                  setState(() {
+                                    _fareController.text = minAllowed.toString();
                                   });
                                 }
                               },

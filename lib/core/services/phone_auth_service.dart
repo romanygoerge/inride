@@ -184,6 +184,7 @@ class PhoneAuthService {
 
     String authEmail;
     String authPassword;
+    bool isNewUser = false;
 
     if (isDemoAccount && trimmedToken == '123456') {
       debugPrint('[PhoneAuthService] 🚀 Demo account fast-pass for $cleanedPhone.');
@@ -223,41 +224,20 @@ class PhoneAuthService {
 
       authEmail = (resData['authEmail'] as String?) ?? 'phone_$cleanedPhone@inride.app';
       authPassword = resData['authKey'] as String;
+      isNewUser = (resData is Map && resData['isNewUser'] == true);
     }
 
     debugPrint('[PhoneAuthService] ✓ Step 1 Success: Server verified OTP for $cleanedPhone.');
 
     // Step 2: Establish real Supabase Auth session for the phone user
-    debugPrint('[PhoneAuthService] ▶ Step 2: Creating/Signing in Supabase Auth user ($authEmail)...');
+    debugPrint('[PhoneAuthService] ▶ Step 2: Creating/Signing in Supabase Auth user ($authEmail, isNewUser=$isNewUser)...');
 
     late AuthResponse response;
     try {
-      try {
-        // Attempt 1: Sign in with the server-verified auth key
-        response = await _supabase.auth.signInWithPassword(
-          email: authEmail,
-          password: authPassword,
-        ).timeout(const Duration(seconds: 10));
-        debugPrint('[PhoneAuthService] ✓ Step 2 Success: Existing user signed in.');
-      } catch (signInError) {
-        // Attempt 2: Check legacy password upgrade path
-        bool legacySucceeded = false;
-        final legacyPassword = 'InRide_Phone_${cleanedPhone}_AuthSecKey!';
+      if (isNewUser) {
+        // Fast-path for new users: Direct sign up without waiting for failed sign-in attempts
         try {
-          response = await _supabase.auth.signInWithPassword(
-            email: authEmail,
-            password: legacyPassword,
-          ).timeout(const Duration(seconds: 10));
-          legacySucceeded = true;
-          debugPrint('[PhoneAuthService] ⚠️ Signed in with legacy password. Upgrading password...');
-          await _supabase.auth.updateUser(UserAttributes(password: authPassword));
-          debugPrint('[PhoneAuthService] ✓ Upgraded user password successfully.');
-        } catch (_) {
-          legacySucceeded = false;
-        }
-
-        if (!legacySucceeded) {
-          debugPrint('[PhoneAuthService] User sign-in notice ($signInError). Attempting signUp for new phone user...');
+          debugPrint('[PhoneAuthService] Fast-path: registering new user...');
           response = await _supabase.auth.signUp(
             email: authEmail,
             password: authPassword,
@@ -265,16 +245,64 @@ class PhoneAuthService {
               'phone_number': e164Phone,
               'full_name': 'مستخدم هاتف',
             },
-          ).timeout(const Duration(seconds: 10));
+          ).timeout(const Duration(seconds: 8));
 
           if (response.session == null) {
-            debugPrint('[PhoneAuthService] SignUp succeeded without immediate session. Executing signInWithPassword...');
             response = await _supabase.auth.signInWithPassword(
               email: authEmail,
               password: authPassword,
-            ).timeout(const Duration(seconds: 10));
+            ).timeout(const Duration(seconds: 8));
           }
-          debugPrint('[PhoneAuthService] ✓ Step 2 Success: New user registered and signed in.');
+          debugPrint('[PhoneAuthService] ✓ Fast-path: New user registered and signed in.');
+        } catch (signUpError) {
+          debugPrint('[PhoneAuthService] New user sign up fallback: attempting signIn ($signUpError)...');
+          response = await _supabase.auth.signInWithPassword(
+            email: authEmail,
+            password: authPassword,
+          ).timeout(const Duration(seconds: 8));
+        }
+      } else {
+        // Existing user path: Sign in directly
+        try {
+          response = await _supabase.auth.signInWithPassword(
+            email: authEmail,
+            password: authPassword,
+          ).timeout(const Duration(seconds: 8));
+          debugPrint('[PhoneAuthService] ✓ Existing user signed in.');
+        } catch (signInError) {
+          // Attempt legacy password upgrade path
+          bool legacySucceeded = false;
+          final legacyPassword = 'InRide_Phone_${cleanedPhone}_AuthSecKey!';
+          try {
+            response = await _supabase.auth.signInWithPassword(
+              email: authEmail,
+              password: legacyPassword,
+            ).timeout(const Duration(seconds: 5));
+            legacySucceeded = true;
+            debugPrint('[PhoneAuthService] ⚠️ Signed in with legacy password. Upgrading password in background...');
+            unawaited(_supabase.auth.updateUser(UserAttributes(password: authPassword)));
+          } catch (_) {
+            legacySucceeded = false;
+          }
+
+          if (!legacySucceeded) {
+            debugPrint('[PhoneAuthService] Sign-in failed; attempting signUp fallback...');
+            response = await _supabase.auth.signUp(
+              email: authEmail,
+              password: authPassword,
+              data: {
+                'phone_number': e164Phone,
+                'full_name': 'مستخدم هاتف',
+              },
+            ).timeout(const Duration(seconds: 8));
+
+            if (response.session == null) {
+              response = await _supabase.auth.signInWithPassword(
+                email: authEmail,
+                password: authPassword,
+              ).timeout(const Duration(seconds: 8));
+            }
+          }
         }
       }
     } catch (e, stack) {

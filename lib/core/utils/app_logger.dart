@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 import 'package:flutter/foundation.dart';
 
 /// Professional Logger for InRide Application
@@ -56,6 +57,10 @@ class AppLogger {
     dynamic error, [
     StackTrace? stackTrace,
   ]) {
+    print('🚨 $_tag ERROR [$stage] -> $message: $error');
+    if (stackTrace != null) {
+      print('Stack Trace:\n$stackTrace');
+    }
     debugPrint('🚨 $_tag ERROR [$stage] -> $message: $error');
     if (stackTrace != null) {
       debugPrint('Stack Trace:\n$stackTrace');

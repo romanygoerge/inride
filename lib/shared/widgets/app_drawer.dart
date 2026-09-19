@@ -94,10 +94,10 @@ class AppDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     final state = GlobalState.instance;
     final isRider = state.currentRole == UserRole.rider;
-    final otherRoleText = isRider ? l10n.driverRole : l10n.passengerRole;
+    final otherRoleText = isRider ? (l10n?.driverRole ?? 'كابتن') : (l10n?.passengerRole ?? 'راكب');
 
     return Drawer(
       backgroundColor: Colors.white,
@@ -128,7 +128,7 @@ class AppDrawer extends StatelessWidget {
                               radius: 30,
                               backgroundColor: AppColors.mediumBlue.withValues(alpha: 0.1),
                               child: Text(
-                                (state.userName ?? (isRider ? (state.passengerName ?? '') : l10n.driverRole))
+                                (state.userName ?? (isRider ? (state.passengerName ?? '') : (l10n?.driverRole ?? 'كابتن')))
                                     .trim()
                                     .characters
                                     .firstOrNull
@@ -146,7 +146,7 @@ class AppDrawer extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              state.userName ?? (isRider ? (state.passengerName ?? l10n.passengerRole) : l10n.driverRole),
+                              state.userName ?? (isRider ? (state.passengerName ?? (l10n?.passengerRole ?? 'راكب')) : (l10n?.driverRole ?? 'كابتن')),
                               style: GoogleFonts.cairo(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -161,8 +161,8 @@ class AppDrawer extends StatelessWidget {
                                 const SizedBox(width: 4),
                                 Text(
                                   (state.userTotalRatingsCount == 0 && state.userCompletedTripsCount == 0)
-                                      ? '5.0 (${isRider ? l10n.passengerRole : l10n.driverRole} • ${LocaleController.instance.isArabic ? "جديد ⭐" : "New ⭐"})'
-                                      : '${(state.userRating > 0.0 ? state.userRating : 5.0).toStringAsFixed(1)} (${isRider ? l10n.passengerRole : l10n.driverRole})',
+                                      ? '5.0 (${isRider ? (l10n?.passengerRole ?? 'راكب') : (l10n?.driverRole ?? 'كابتن')} • ${LocaleController.instance.isArabic ? "جديد ⭐" : "New ⭐"})'
+                                      : '${(state.userRating > 0.0 ? state.userRating : 5.0).toStringAsFixed(1)} (${isRider ? (l10n?.passengerRole ?? 'راكب') : (l10n?.driverRole ?? 'كابتن')})',
                                   style: GoogleFonts.cairo(
                                     fontSize: 12,
                                     color: AppColors.textSecondary,
@@ -180,7 +180,7 @@ class AppDrawer extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
-                                  '⭐ ${l10n.driverRole} & ${l10n.passengerRole}',
+                                  '⭐ ${(l10n?.driverRole ?? 'كابتن')} & ${(l10n?.passengerRole ?? 'راكب')}',
                                   style: GoogleFonts.cairo(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
@@ -226,7 +226,7 @@ class AppDrawer extends StatelessWidget {
                     const SizedBox(width: 16),
                     Expanded(
                       child: Text(
-                        l10n.switchToRole(otherRoleText),
+                        l10n?.switchToRole(otherRoleText) ?? 'التبديل إلى $otherRoleText',
                         style: GoogleFonts.cairo(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
@@ -251,7 +251,7 @@ class AppDrawer extends StatelessWidget {
                 _buildDrawerItem(
                   context,
                   icon: Icons.history_outlined,
-                  title: l10n.historyTitle,
+                  title: l10n?.historyTitle ?? 'سجل الرحلات',
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const HistoryPage()));
@@ -314,7 +314,7 @@ class AppDrawer extends StatelessWidget {
                 _buildDrawerItem(
                   context,
                   icon: Icons.description_outlined,
-                  title: l10n.legalTerms,
+                  title: l10n?.legalTerms ?? 'الشروط والأحكام القانونية',
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const TermsOfUsePage()));
@@ -323,7 +323,7 @@ class AppDrawer extends StatelessWidget {
                 _buildDrawerItem(
                   context,
                   icon: Icons.assignment_outlined,
-                  title: l10n.termsAndConditionsText,
+                  title: l10n?.termsAndConditionsText ?? 'شروط الاستخدام',
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const TermsAndConditionsPage()));
@@ -332,7 +332,7 @@ class AppDrawer extends StatelessWidget {
                 _buildDrawerItem(
                   context,
                   icon: Icons.privacy_tip_outlined,
-                  title: l10n.privacyPolicyText,
+                  title: l10n?.privacyPolicyText ?? 'سياسة الخصوصية',
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, SnappyPageRoute(page: const PrivacyPolicyPage()));
@@ -386,7 +386,7 @@ class AppDrawer extends StatelessWidget {
           _buildDrawerItem(
             context,
             icon: Icons.logout_outlined,
-            title: l10n.logout,
+            title: l10n?.logout ?? 'تسجيل الخروج',
             textColor: AppColors.error,
             iconColor: AppColors.error,
             onTap: () async {

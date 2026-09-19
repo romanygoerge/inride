@@ -29,6 +29,7 @@ abstract class IRideRepository {
     required double pickupLat,
     required double pickupLng,
     required String vehicleType,
+    String serviceType = 'ride',
     required double maxRangeKm,
   });
 

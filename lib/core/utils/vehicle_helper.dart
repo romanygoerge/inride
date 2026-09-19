@@ -1,19 +1,39 @@
 class VehicleHelper {
-  /// Checks if driver's vehicle type matches the passenger's requested vehicle type.
-  /// Handles English ('car', 'private_car', 'motorcycle', 'scooter') and Arabic ('ملاكي', 'سيارة', 'عربية', 'موتوسيكل', 'بايك', 'اسكوتر', 'ديلفري').
-  static bool isVehicleTypeMatching(String? driverType, String? requestType) {
-    if (driverType == null || driverType.trim().isEmpty || requestType == null || requestType.trim().isEmpty) {
-      return true; // Don't block if unspecified
-    }
+  /// Checks if driver's vehicle type matches the passenger's requested vehicle type or service.
+  /// Handles English ('car', 'private_car', 'motorcycle', 'scooter', 'delivery')
+  /// and Arabic ('ملاكي', 'سيارة', 'عربية', 'موتوسيكل', 'بايك', 'اسكوتر', 'ديلفري', 'طرد', 'توصيل').
+  static bool isVehicleTypeMatching(
+    String? driverType, 
+    String? requestType, {
+    String? serviceType,
+  }) {
+    final rawS = (serviceType ?? '').trim().toLowerCase();
+    final rawR = (requestType ?? '').trim().toLowerCase();
+    final isDeliv = rawS == 'delivery' || 
+        rawS == 'طرد' || 
+        rawS == 'توصيل' || 
+        rawS == 'ديلفري' || 
+        rawS.contains('delivery') || 
+        rawS.contains('توصيل') || 
+        rawS.contains('طرد') ||
+        rawR == 'delivery' || 
+        rawR == 'طرد' || 
+        rawR == 'توصيل' || 
+        rawR == 'ديلفري' || 
+        rawR.contains('delivery') || 
+        rawR.contains('توصيل') || 
+        rawR.contains('طرد');
 
-    final rawR = requestType.trim().toLowerCase();
-    // Delivery requests can be served by any driver vehicle type
-    if (rawR == 'delivery' || rawR == 'طرد' || rawR == 'توصيل' || rawR == 'ديلفري') {
+    final dNorm = normalizeVehicleType(driverType ?? 'car');
+    final rNorm = normalizeVehicleType(requestType ?? 'car');
+
+    // 1. Delivery requests: if customer specifically requested car for a large parcel, only cars match. Otherwise all vehicles match.
+    if (isDeliv) {
+      if (rNorm == 'car') {
+        return dNorm == 'car';
+      }
       return true;
     }
-
-    final dNorm = normalizeVehicleType(driverType);
-    final rNorm = normalizeVehicleType(requestType);
 
     // Direct normalized match (car vs car, motorcycle vs motorcycle, scooter vs scooter)
     if (dNorm == rNorm) return true;
@@ -36,28 +56,58 @@ class VehicleHelper {
     final t = rawType.trim().toLowerCase();
     if (t.isEmpty) return 'car';
     
-    // Bike / Motorcycle keywords & models
+    // Bike / Motorcycle keywords & Egyptian popular models
     if (t == 'motorcycle' ||
         t == 'bike' ||
         t == 'موتوسيكل' ||
         t == 'موتسيكل' ||
+        t == 'موتسكل' ||
+        t == 'موتوسيكلات' ||
         t == 'بايك' ||
         t == 'دراجة' ||
         t == 'دراجة نارية' ||
+        t == 'دراجات' ||
         t.contains('موتوسيكل') ||
+        t.contains('موتسيكل') ||
+        t.contains('موتسكل') ||
         t.contains('بايك') ||
         t.contains('حلاوة') ||
+        t.contains('حلاوه') ||
         t.contains('دايون') ||
+        t.contains('dayun') ||
         t.contains('بكسر') ||
+        t.contains('بوكسر') ||
+        t.contains('boxer') ||
+        t.contains('بجاج') ||
+        t.contains('bajaj') ||
+        t.contains('هوجان') ||
+        t.contains('هوجن') ||
+        t.contains('haojue') ||
+        t.contains('haojiang') ||
+        t.contains('بينيلي') ||
+        t.contains('بنيللي') ||
+        t.contains('benelli') ||
+        t.contains('tvs') ||
         t.contains('فيسبا') ||
+        t.contains('vespa') ||
         t.contains('هوندا') ||
+        t.contains('honda') ||
         t.contains('توكتوك') ||
         t.contains('توك توك')) {
       return 'motorcycle';
     }
     
     // Scooter keywords
-    if (t == 'scooter' || t == 'اسكوتر' || t == 'إسكوتر' || t.contains('اسكوتر')) {
+    if (t == 'scooter' || 
+        t == 'اسكوتر' || 
+        t == 'إسكوتر' || 
+        t == 'سكوتر' || 
+        t == 'سكوترز' ||
+        t.contains('اسكوتر') || 
+        t.contains('إسكوتر') || 
+        t.contains('سكوتر') ||
+        t.contains('sym') ||
+        t.contains('marine')) {
       return 'scooter';
     }
 
@@ -74,13 +124,20 @@ class VehicleHelper {
         t == 'trip' ||
         t.contains('جامبو') ||
         t.contains('تويوتا') ||
+        t.contains('toyota') ||
         t.contains('شيفروليه') ||
         t.contains('شفروليه') ||
+        t.contains('chevrolet') ||
         t.contains('نيسان') ||
+        t.contains('nissan') ||
         t.contains('هيونداي') ||
+        t.contains('hyundai') ||
         t.contains('سوزوكي') ||
+        t.contains('suzuki') ||
         t.contains('كيا') ||
+        t.contains('kia') ||
         t.contains('فيات') ||
+        t.contains('fiat') ||
         t.contains('ملاكي') ||
         t.contains('سيارة') ||
         t.contains('عربية')) {

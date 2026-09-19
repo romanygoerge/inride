@@ -1011,9 +1011,10 @@ function renderDashboard() {
   const weeklyActivity = Object.keys(activityMap).map(day => ({ day, trips: activityMap[day] }));
   const maxTrips = Math.max(...weeklyActivity.map(d => d.trips), 1);
 
-  const carTripsCount = filteredTrips.filter(t => t.vehicle === 'عربية' || t.vehicle === 'car').length;
-  const scooterTripsCount = filteredTrips.filter(t => t.vehicle === 'اسكوتر' || t.vehicle === 'scooter').length;
-  const motorcycleTripsCount = filteredTrips.filter(t => t.vehicle === 'موتوسيكل' || t.vehicle === 'motorcycle').length;
+  const deliveryTripsCount = filteredTrips.filter(t => t.isDelivery || t.serviceType === 'delivery').length;
+  const carTripsCount = filteredTrips.filter(t => !t.isDelivery && t.serviceType !== 'delivery' && (t.vehicle === 'عربية' || t.vehicle === 'car')).length;
+  const scooterTripsCount = filteredTrips.filter(t => !t.isDelivery && t.serviceType !== 'delivery' && (t.vehicle === 'اسكوتر' || t.vehicle === 'scooter')).length;
+  const motorcycleTripsCount = filteredTrips.filter(t => !t.isDelivery && t.serviceType !== 'delivery' && (t.vehicle === 'موتوسيكل' || t.vehicle === 'motorcycle')).length;
   const completedCount = filteredTrips.filter(t => t.status === 'مكتملة' || (t.status || '').toLowerCase() === 'completed').length;
   const completionRate = filteredTrips.length > 0 ? Math.round((completedCount / filteredTrips.length) * 100) : 0;
 
@@ -1029,7 +1030,7 @@ function renderDashboard() {
             <div class="stat-card-trend up"><i class="ri-arrow-up-s-line"></i> مباشر</div>
           </div>
           <div class="stat-card-value" data-target="${stats.totalTrips}">0</div>
-          <div class="stat-card-label">إجمالي الرحلات</div>
+          <div class="stat-card-label">إجمالي الرحلات والطلبات</div>
         </div>
         <div class="stat-card green">
           <div class="stat-card-header">
@@ -1039,13 +1040,13 @@ function renderDashboard() {
           <div class="stat-card-value" data-target="${stats.activeDrivers}">0</div>
           <div class="stat-card-label">السائقين النشطين</div>
         </div>
-        <div class="stat-card orange">
+        <div class="stat-card orange" style="border-right:4px solid #EA580C;">
           <div class="stat-card-header">
-            <div class="stat-card-icon"><i class="ri-group-fill"></i></div>
-            <div class="stat-card-trend up"><i class="ri-arrow-up-s-line"></i> مسجل</div>
+            <div class="stat-card-icon" style="color:#EA580C;background:#FFEDD5;"><i class="ri-box-3-fill"></i></div>
+            <div class="stat-card-trend up"><i class="ri-arrow-up-s-line"></i> توصيل</div>
           </div>
-          <div class="stat-card-value" data-target="${stats.totalPassengers}">0</div>
-          <div class="stat-card-label">إجمالي الركاب</div>
+          <div class="stat-card-value" data-target="${deliveryTripsCount}" style="color:#EA580C;">0</div>
+          <div class="stat-card-label">طلبات الديلفري (الطرود)</div>
         </div>
         <div class="stat-card red">
           <div class="stat-card-header">
@@ -1084,39 +1085,46 @@ function renderDashboard() {
         <!-- Quick Stats Sidebar -->
         <div class="card">
           <div class="card-header">
-            <h3><i class="ri-pie-chart-fill text-blue" style="margin-left:8px;"></i> ملخص سريع للفترة</h3>
+            <h3><i class="ri-pie-chart-fill text-blue" style="margin-left:8px;"></i> ملخص الخدمات بالفترة</h3>
           </div>
           <div class="card-body">
-            <div style="display:flex;flex-direction:column;gap:16px;">
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg-primary);border-radius:var(--radius-md);">
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:#FFF7ED;border-radius:var(--radius-md);border:1px solid #FFEDD5;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <i class="ri-box-3-fill" style="color:#EA580C;font-size:20px;"></i>
+                  <span style="font-weight:700;font-size:13px;color:#C2410C;">طلبات الديلفري (طرد)</span>
+                </div>
+                <span class="font-outfit fw-900" style="color:#EA580C;font-size:16px;">${deliveryTripsCount}</span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--bg-primary);border-radius:var(--radius-md);">
                 <div style="display:flex;align-items:center;gap:10px;">
                   <i class="ri-car-fill" style="color:var(--medium-blue);font-size:20px;"></i>
-                  <span style="font-weight:600;font-size:13px;">رحلات العربيات</span>
+                  <span style="font-weight:600;font-size:13px;">مشاوير السيارات</span>
                 </div>
-                <span class="font-outfit fw-900" style="color:var(--medium-blue);">${carTripsCount}</span>
+                <span class="font-outfit fw-900" style="color:var(--medium-blue);font-size:16px;">${carTripsCount}</span>
               </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg-primary);border-radius:var(--radius-md);">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--bg-primary);border-radius:var(--radius-md);">
                 <div style="display:flex;align-items:center;gap:10px;">
                   <i class="ri-e-bike-2-fill" style="color:var(--light-blue);font-size:20px;"></i>
-                  <span style="font-weight:600;font-size:13px;">رحلات الاسكوتر</span>
+                  <span style="font-weight:600;font-size:13px;">مشاوير الاسكوتر</span>
                 </div>
-                <span class="font-outfit fw-900" style="color:var(--light-blue);">${scooterTripsCount}</span>
+                <span class="font-outfit fw-900" style="color:var(--light-blue);font-size:16px;">${scooterTripsCount}</span>
               </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg-primary);border-radius:var(--radius-md);">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--bg-primary);border-radius:var(--radius-md);">
                 <div style="display:flex;align-items:center;gap:10px;">
                   <i class="ri-motorbike-fill" style="color:var(--dark-blue);font-size:20px;"></i>
-                  <span style="font-weight:600;font-size:13px;">رحلات الموتوسيكل</span>
+                  <span style="font-weight:600;font-size:13px;">مشاوير الموتوسيكل</span>
                 </div>
-                <span class="font-outfit fw-900" style="color:var(--dark-blue);">${motorcycleTripsCount}</span>
+                <span class="font-outfit fw-900" style="color:var(--dark-blue);font-size:16px;">${motorcycleTripsCount}</span>
               </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--success-bg);border-radius:var(--radius-md);">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--success-bg);border-radius:var(--radius-md);">
                 <div style="display:flex;align-items:center;gap:10px;">
                   <i class="ri-check-double-fill" style="color:var(--success);font-size:20px;"></i>
                   <span style="font-weight:600;font-size:13px;">نسبة الإكمال</span>
                 </div>
                 <span class="font-outfit fw-900" style="color:var(--success);">${completionRate}%</span>
               </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--warning-bg);border-radius:var(--radius-md);">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--warning-bg);border-radius:var(--radius-md);">
                 <div style="display:flex;align-items:center;gap:10px;">
                   <i class="ri-time-fill" style="color:var(--warning);font-size:20px;"></i>
                   <span style="font-weight:600;font-size:13px;">سائقين بانتظار الاعتماد</span>
@@ -1131,7 +1139,7 @@ function renderDashboard() {
       <!-- Recent Trips Table -->
       <div class="card">
         <div class="card-header">
-          <h3><i class="ri-history-fill text-blue" style="margin-left:8px;"></i> رحلات الفترة المختارة</h3>
+          <h3><i class="ri-history-fill text-blue" style="margin-left:8px;"></i> أحدث الرحلات والطلبات للفترة المختارة</h3>
           <button class="btn btn-outline btn-sm" onclick="navigateTo('trips')">
             عرض الكل <i class="ri-arrow-left-s-line"></i>
           </button>
@@ -1141,22 +1149,19 @@ function renderDashboard() {
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>رقم الرحلة</th>
-                  <th>الراكب</th>
-                  <th>السائق</th>
-                  <th>المسار</th>
-                  <th>المركبة</th>
+                  <th>رقم الطلب/الرحلة</th>
+                  <th>العميل / الراكب</th>
+                  <th>الكابتن</th>
+                  <th>المسار / الشحنة</th>
+                  <th>الخدمة / المركبة</th>
                   <th>السعر</th>
                   <th>الحالة</th>
                 </tr>
               </thead>
               <tbody>
-                ${filteredTrips.length === 0 ? `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-light);">لا توجد رحلات لهذه الفترة الزمانية المحددة</td></tr>` : ''}
+                ${filteredTrips.length === 0 ? `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-light);">لا توجد رحلات أو طلبات لهذه الفترة الزمانية المحددة</td></tr>` : ''}
                 ${filteredTrips.slice(0, 5).map(trip => `
                   <tr>
-                    <td><span class="font-outfit fw-700" style="color:var(--medium-blue);">${trip.id}</span></td>
-                    <td>
-                      <div class="user-cell" style="cursor:pointer;" onclick="${trip.riderUid ? `viewUserProfile('${trip.riderUid}', 'rider')` : ''}" title="عرض ملف الراكب">
                         <div class="user-avatar-placeholder">${trip.riderName.charAt(0)}</div>
                         <div>
                           <div class="user-name" style="color:var(--medium-blue);font-weight:700;text-decoration:underline;">${trip.riderName}</div>
@@ -1184,10 +1189,21 @@ function renderDashboard() {
                       </div>
                     </td>
                     <td>
-                      <div class="vehicle-badge">
-                        <i class="${getVehicleIcon(trip.vehicle)}"></i>
-                        ${trip.vehicle}
-                      </div>
+                      ${trip.isDelivery ? `
+                        <div class="vehicle-badge" style="background:#FFF7ED;color:#C2410C;border-color:#FED7AA;display:inline-flex;align-items:center;gap:6px;padding:4px 8px;">
+                          <i class="ri-box-3-fill" style="color:#EA580C;"></i>
+                          <span style="font-weight:700;">طرد</span>
+                          <span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;padding:1px 5px;border-radius:4px;${(trip.deliveryVehicle === 'عربية') ? 'background:#DCFCE7;color:#166534;' : 'background:#DBEAFE;color:#1E40AF;'}">
+                            <i class="${(trip.deliveryVehicle === 'عربية') ? 'ri-car-fill' : 'ri-riding-line'}"></i>
+                            <span>${trip.deliveryVehicle || 'موتوسيكل'}</span>
+                          </span>
+                        </div>
+                      ` : `
+                        <div class="vehicle-badge">
+                          <i class="${getVehicleIcon(trip.vehicle)}"></i>
+                          ${trip.vehicle}
+                        </div>
+                      `}
                     </td>
                     <td>
                       <span class="price font-outfit">${trip.price}</span>
@@ -1294,21 +1310,38 @@ function renderTrips() {
   const filteredTrips = (currentFilter === 'all'
     ? baseTrips
     : baseTrips.filter(t => {
-      if (currentFilter === 'completed') return t.status === 'مكتملة';
-      if (currentFilter === 'cancelled') return t.status === 'ملغاة';
-      if (currentFilter === 'active') return t.status === 'جارية' || t.status === 'بانتظار سائق' || t.status === 'تم القبول';
+      if (currentFilter === 'delivery') return t.isDelivery || t.serviceType === 'delivery';
+      if (currentFilter === 'rides') return !t.isDelivery && t.serviceType !== 'delivery';
+      if (currentFilter === 'completed') return t.status === 'مكتملة' || (t.rawStatus || '').toLowerCase() === 'completed';
+      if (currentFilter === 'cancelled') return t.status === 'ملغاة' || (t.rawStatus || '').toLowerCase() === 'cancelled';
+      if (currentFilter === 'active') {
+        const raw = (t.rawStatus || '').toLowerCase();
+        return !['مكتملة', 'ملغاة'].includes(t.status) && !['completed', 'finished', 'cancelled', 'expired'].includes(raw);
+      }
       return true;
     })).filter(t => {
-      return t.id.toLowerCase().includes(searchQuery) ||
-        t.riderName.toLowerCase().includes(searchQuery) ||
-        t.driverName.toLowerCase().includes(searchQuery) ||
-        t.from.toLowerCase().includes(searchQuery) ||
-        t.to.toLowerCase().includes(searchQuery);
+      const q = (searchQuery || '').toLowerCase().trim();
+      if (!q) return true;
+      return (t.id || '').toLowerCase().includes(q) ||
+        (t.riderName || '').toLowerCase().includes(q) ||
+        (t.riderPhone || '').toLowerCase().includes(q) ||
+        (t.driverName || '').toLowerCase().includes(q) ||
+        (t.from || '').toLowerCase().includes(q) ||
+        (t.to || '').toLowerCase().includes(q) ||
+        (t.vehicle || '').toLowerCase().includes(q) ||
+        (t.packageDescription || '').toLowerCase().includes(q) ||
+        (t.deliveryNotes || '').toLowerCase().includes(q) ||
+        (t.recipientPhone || '').toLowerCase().includes(q) ||
+        (t.recipientRegion || '').toLowerCase().includes(q) ||
+        (t.recipientStreet || '').toLowerCase().includes(q) ||
+        ((q === 'ديلفري' || q === 'delivery' || q === 'طرد' || q === 'توصيل') && (t.isDelivery || t.serviceType === 'delivery'));
     });
 
-  const completedCount = baseTrips.filter(t => t.status === 'مكتملة').length;
-  const cancelledCount = baseTrips.filter(t => t.status === 'ملغاة').length;
-  const activeCount = baseTrips.filter(t => t.status === 'جارية' || t.status === 'بانتظار سائق' || t.status === 'تم القبول').length;
+  const deliveryCount = baseTrips.filter(t => t.isDelivery || t.serviceType === 'delivery').length;
+  const ridesCount = baseTrips.filter(t => !t.isDelivery && t.serviceType !== 'delivery').length;
+  const completedCount = baseTrips.filter(t => t.status === 'مكتملة' || (t.rawStatus || '').toLowerCase() === 'completed').length;
+  const cancelledCount = baseTrips.filter(t => t.status === 'ملغاة' || (t.rawStatus || '').toLowerCase() === 'cancelled').length;
+  const activeCount = baseTrips.filter(t => !['مكتملة', 'ملغاة'].includes(t.status) && !['completed', 'finished', 'cancelled', 'expired'].includes((t.rawStatus || '').toLowerCase())).length;
 
   const page = currentPages['trips'] || 1;
   const totalItems = filteredTrips.length;
@@ -1321,7 +1354,7 @@ function renderTrips() {
   const grouped = groupTripsByDate(paginatedTrips);
   let tableBodyHtml = '';
   if (paginatedTrips.length === 0) {
-    tableBodyHtml = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-light);">لا توجد رحلات لعرضها</td></tr>`;
+    tableBodyHtml = `<tr><td colspan="10" style="text-align:center;padding:28px;color:var(--text-light);font-size:14px;"><i class="ri-inbox-line" style="font-size:32px;display:block;margin-bottom:8px;color:var(--border-color);"></i>لا توجد رحلات أو طلبات لعرضها في هذا القسم</td></tr>`;
   } else {
     for (const groupName in grouped) {
       tableBodyHtml += `
@@ -1334,14 +1367,36 @@ function renderTrips() {
       grouped[groupName].forEach(trip => {
         tableBodyHtml += `
           <tr>
-            <td><span class="font-outfit fw-700" style="color:var(--medium-blue);">${trip.id}</span></td>
+            <td>
+              <span class="font-outfit fw-700" style="color:var(--medium-blue);cursor:pointer;" onclick="showTripDetailsModal('${trip.requestId}')" title="عرض تفاصيل الطلب الكاملة">${trip.id}</span>
+              ${trip.isDelivery ? `
+                <div>
+                  <span class="badge" style="background:#FFF7ED;color:#C2410C;border:1px solid #FED7AA;font-size:10px;font-weight:700;display:inline-flex;align-items:center;gap:3px;margin-top:3px;padding:2px 6px;border-radius:4px;">
+                    <i class="ri-box-3-fill"></i> ديلفري / طرد
+                  </span>
+                </div>
+              ` : `
+                <div>
+                  <span class="badge" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #DBEAFE;font-size:10px;font-weight:600;display:inline-flex;align-items:center;gap:3px;margin-top:3px;padding:2px 6px;border-radius:4px;">
+                    <i class="ri-car-fill"></i> مشوار راكب
+                  </span>
+                </div>
+              `}
+            </td>
             <td><span style="font-size:12px;color:var(--text-light);font-weight:600;">${trip.date}</span></td>
             <td>
-              <div class="user-cell" style="cursor:pointer;" onclick="${trip.riderUid ? `viewUserProfile('${trip.riderUid}', 'rider')` : ''}" title="عرض ملف الراكب">
-                <div class="user-avatar-placeholder">${trip.riderName.charAt(0)}</div>
+              <div class="user-cell" style="cursor:pointer;" onclick="${trip.riderUid ? `viewUserProfile('${trip.riderUid}', 'rider')` : ''}" title="عرض ملف العميل">
+                <div class="user-avatar-placeholder" style="${trip.isDelivery ? 'background:#FFEDD5;color:#C2410C;' : ''}">${trip.riderName.charAt(0)}</div>
                 <div>
-                  <div class="user-name" style="color:var(--medium-blue);font-weight:700;text-decoration:underline;">${trip.riderName}</div>
+                  <div class="user-name" style="color:var(--medium-blue);font-weight:700;text-decoration:underline;">
+                    ${trip.isDelivery ? `<i class="ri-user-shared-line text-orange" style="margin-left:2px;font-size:12px;"></i>` : ''}${trip.riderName}
+                  </div>
                   <div class="user-sub">${trip.riderPhone}</div>
+                  ${trip.isDelivery && trip.recipientPhone ? `
+                    <div class="user-sub" style="color:#C2410C;font-weight:700;margin-top:3px;background:#FFF7ED;padding:2px 5px;border-radius:4px;border:1px solid #FED7AA;" title="رقم هاتف المستلم">
+                      <i class="ri-user-received-line"></i> المستلم: ${trip.recipientPhone}
+                    </div>
+                  ` : ''}
                 </div>
               </div>
             </td>
@@ -1360,17 +1415,43 @@ function renderTrips() {
                   <div class="route-dot to"></div>
                 </div>
                 <div class="route-addresses">
-                  <div class="route-from">${trip.from}</div>
-                  <div class="route-to">${trip.to}</div>
+                  <div class="route-from">${trip.isDelivery ? '<strong style="color:var(--text-secondary);font-size:11px;">استلام: </strong>' : ''}${trip.from}</div>
+                  <div class="route-to">${trip.isDelivery ? '<strong style="color:var(--text-secondary);font-size:11px;">تسليم: </strong>' : ''}${trip.to}</div>
+                  ${trip.isDelivery && trip.packageDescription ? `
+                    <div style="font-size:11px;color:#9A3412;background:#FFF7ED;border:1px solid #FED7AA;padding:3px 8px;border-radius:6px;margin-top:4px;display:inline-flex;align-items:center;gap:4px;font-weight:700;">
+                      <i class="ri-archive-line"></i> <span>محتوى الطرد: ${trip.packageDescription}</span>
+                    </div>
+                  ` : ''}
+                  ${trip.isDelivery && trip.deliveryNotes ? `
+                    <div style="font-size:11px;color:#475569;background:#F8FAFC;padding:2px 6px;border-radius:4px;margin-top:3px;">
+                      <i class="ri-file-text-line"></i> تعليمات: ${trip.deliveryNotes}
+                    </div>
+                  ` : ''}
+                  ${trip.isDelivery && (trip.recipientRegion || trip.recipientStreet || trip.recipientBuilding || trip.recipientFloor) ? `
+                    <div style="font-size:10.5px;color:#334155;background:#F1F5F9;padding:3px 6px;border-radius:4px;margin-top:3px;">
+                      <i class="ri-map-pin-2-line" style="color:#C2410C;"></i> تفاصيل التسليم: ${[trip.recipientRegion, trip.recipientStreet, trip.recipientBuilding ? 'عمارة ' + trip.recipientBuilding : '', trip.recipientFloor ? 'دور ' + trip.recipientFloor : '', trip.recipientLandmark ? 'علامة مميزة: ' + trip.recipientLandmark : ''].filter(Boolean).join('، ')}
+                    </div>
+                  ` : ''}
                   ${getReceiverTrackingHtml(trip)}
                 </div>
               </div>
             </td>
             <td>
-              <div class="vehicle-badge">
-                <i class="${getVehicleIcon(trip.vehicle)}"></i>
-                ${trip.vehicle}
-              </div>
+              ${trip.isDelivery ? `
+                <div class="vehicle-badge" style="background:#FFF7ED;color:#C2410C;border-color:#FED7AA;display:inline-flex;align-items:center;gap:6px;padding:4px 9px;">
+                  <i class="ri-box-3-fill" style="color:#EA580C;font-size:14px;"></i>
+                  <span style="font-weight:700;">طرد</span>
+                  <span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;${(trip.deliveryVehicle === 'عربية') ? 'background:#DCFCE7;color:#166534;border:1px solid #BBF7D0;' : 'background:#DBEAFE;color:#1E40AF;border:1px solid #BFDBFE;'}">
+                    <i class="${(trip.deliveryVehicle === 'عربية') ? 'ri-car-fill' : 'ri-riding-line'}"></i>
+                    <span>${trip.deliveryVehicle === 'عربية' ? 'عربية' : 'موتوسيكل'}</span>
+                  </span>
+                </div>
+              ` : `
+                <div class="vehicle-badge">
+                  <i class="${getVehicleIcon(trip.vehicle)}"></i>
+                  ${trip.vehicle}
+                </div>
+              `}
             </td>
             <td>
               <span class="price font-outfit">${trip.price}</span>
@@ -1400,17 +1481,17 @@ function renderTrips() {
               ` : ''}
               ${(liveTripReports || []).some(r => r.trip_id === trip.requestId) ? `
                 <div style="margin-top:4px;">
-                  <span class="badge" style="background:#FEE2E2;color:#DC2626;font-size:10px;cursor:pointer;font-weight:700;" onclick="navigateTo('reports')" title="يوجد بلاغ مقدم على هذه الرحلة">🚨 بلاغ مسجل</span>
+                  <span class="badge" style="background:#FEE2E2;color:#DC2626;font-size:10px;cursor:pointer;font-weight:700;" onclick="navigateTo('reports')" title="يوجد بلاغ مقدم على هذا الطلب">🚨 بلاغ مسجل</span>
                 </div>
               ` : ''}
             </td>
             <td>
               <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
-                <button class="btn btn-outline btn-sm" style="padding:4px 8px;font-size:11px;" onclick="changeTripPricePrompt('${trip.requestId}')" title="تعديل سعر الرحلة"><i class="ri-edit-line"></i> تسعير</button>
-                ${(trip.status === 'جارية' || trip.status === 'بانتظار سائق' || trip.status === 'تم القبول' || (trip.rawStatus && !['completed', 'finished', 'cancelled', 'expired'].includes(trip.rawStatus.toLowerCase()))) ? `
-                  <button class="btn btn-outline btn-sm" style="color:#DC2626;border-color:#DC2626;padding:4px 8px;font-size:11px;display:inline-flex;align-items:center;gap:3px;" onclick="modifyTripStatus('${trip.requestId}', 'Cancelled', 'normal')" title="إلغاء عادي للرحلة"><i class="ri-close-circle-line"></i> إلغاء عادي</button>
-                  <button class="btn btn-sm" style="background:#991B1B;color:#FFFFFF;border:none;padding:4px 8px;font-size:11px;display:inline-flex;align-items:center;gap:3px;" onclick="modifyTripStatus('${trip.requestId}', 'Cancelled', 'admin')" title="إلغاء رسمي للرحلة من قبل إدارة inRide"><i class="ri-shield-cross-line"></i> إلغاء من قبل الإدارة</button>
-                  <button class="btn btn-success btn-sm" style="padding:4px 8px;font-size:11px;background:var(--success);display:inline-flex;align-items:center;gap:3px;" onclick="modifyTripStatus('${trip.requestId}', 'Completed')" title="إنهاء واكتمال الرحلة"><i class="ri-check-line"></i> إنهاء</button>
+                <button class="btn btn-outline btn-sm" style="padding:4px 8px;font-size:11px;" onclick="changeTripPricePrompt('${trip.requestId}')" title="تعديل السعر"><i class="ri-edit-line"></i> تسعير</button>
+                ${(!['مكتملة', 'ملغاة'].includes(trip.status) && !['completed', 'finished', 'cancelled', 'expired'].includes((trip.rawStatus || '').toLowerCase())) ? `
+                  <button class="btn btn-outline btn-sm" style="color:#DC2626;border-color:#DC2626;padding:4px 8px;font-size:11px;display:inline-flex;align-items:center;gap:3px;" onclick="modifyTripStatus('${trip.requestId}', 'Cancelled', 'normal')" title="إلغاء عادي"><i class="ri-close-circle-line"></i> إلغاء عادي</button>
+                  <button class="btn btn-sm" style="background:#991B1B;color:#FFFFFF;border:none;padding:4px 8px;font-size:11px;display:inline-flex;align-items:center;gap:3px;" onclick="modifyTripStatus('${trip.requestId}', 'Cancelled', 'admin')" title="إلغاء رسمي من قبل إدارة inRide"><i class="ri-shield-cross-line"></i> إلغاء إداري</button>
+                  <button class="btn btn-success btn-sm" style="padding:4px 8px;font-size:11px;background:var(--success);display:inline-flex;align-items:center;gap:3px;" onclick="modifyTripStatus('${trip.requestId}', 'Completed')" title="${trip.isDelivery ? 'تأكيد اكتمال التوصيل' : 'إنهاء واكتمال الرحلة'}"><i class="ri-check-line"></i> إنهاء</button>
                 ` : ''}
               </div>
             </td>
@@ -1425,15 +1506,21 @@ function renderTrips() {
       ${renderDateFilterBar()}
 
       <!-- Filters -->
-      <div class="filters-bar">
+      <div class="filters-bar" style="display:flex;flex-wrap:wrap;gap:8px;">
         <button class="filter-btn ${currentFilter === 'all' ? 'active' : ''}" onclick="filterTrips('all')">
           الكل <span class="filter-count">${baseTrips.length}</span>
         </button>
-        <button class="filter-btn ${currentFilter === 'completed' ? 'active' : ''}" onclick="filterTrips('completed')">
-          مكتملة <span class="filter-count">${completedCount}</span>
+        <button class="filter-btn ${currentFilter === 'delivery' ? 'active' : ''}" onclick="filterTrips('delivery')" style="${currentFilter === 'delivery' ? 'border-color:#EA580C;background:#FFF7ED;color:#C2410C;' : ''}">
+          <i class="ri-box-3-fill" style="margin-left:4px;color:#EA580C;"></i> طلبات ديلفري <span class="filter-count" style="background:#FFEDD5;color:#C2410C;">${deliveryCount}</span>
+        </button>
+        <button class="filter-btn ${currentFilter === 'rides' ? 'active' : ''}" onclick="filterTrips('rides')">
+          <i class="ri-car-fill" style="margin-left:4px;"></i> مشاوير الركاب <span class="filter-count">${ridesCount}</span>
         </button>
         <button class="filter-btn ${currentFilter === 'active' ? 'active' : ''}" onclick="filterTrips('active')">
-          جارية <span class="filter-count">${activeCount}</span>
+          جارية / نشطة <span class="filter-count">${activeCount}</span>
+        </button>
+        <button class="filter-btn ${currentFilter === 'completed' ? 'active' : ''}" onclick="filterTrips('completed')">
+          مكتملة <span class="filter-count">${completedCount}</span>
         </button>
         <button class="filter-btn ${currentFilter === 'cancelled' ? 'active' : ''}" onclick="filterTrips('cancelled')">
           ملغاة <span class="filter-count">${cancelledCount}</span>
@@ -1443,9 +1530,9 @@ function renderTrips() {
       <!-- Trips Table -->
       <div class="card">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-          <h3><i class="ri-route-fill text-blue" style="margin-left:8px;"></i> جميع الرحلات والطلبات</h3>
+          <h3><i class="ri-route-fill text-blue" style="margin-left:8px;"></i> جميع الرحلات وطلبات الديلفري</h3>
           <div style="display:flex;gap:10px;align-items:center;">
-            <span class="text-light" style="font-size:13px;">${filteredTrips.length} رحلة</span>
+            <span class="text-light" style="font-size:13px;">${filteredTrips.length} رحلة وطلب</span>
             <button class="btn btn-outline btn-sm" onclick="exportTripsCSV()"><i class="ri-download-2-line"></i> تصدير تقرير</button>
           </div>
         </div>
@@ -1454,16 +1541,16 @@ function renderTrips() {
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>رقم الرحلة</th>
-                  <th>التاريخ</th>
-                  <th>الراكب</th>
-                  <th>السائق</th>
-                  <th>المسار</th>
-                  <th>المركبة</th>
+                  <th>رقم الطلب / الرحلة</th>
+                  <th>التاريخ والوقت</th>
+                  <th>العميل / المرسل</th>
+                  <th>الكابتن</th>
+                  <th>المسار وبيانات الشحنة</th>
+                  <th>الخدمة / المركبة</th>
                   <th>السعر</th>
                   <th>التقييم</th>
                   <th>الحالة</th>
-                  <th>إجراء</th>
+                  <th>الإجراءات</th>
                 </tr>
               </thead>
               <tbody>
@@ -1472,7 +1559,7 @@ function renderTrips() {
             </table>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;padding:16px;border-top:1px solid var(--border-color);font-size:13px;">
-            <div style="color:var(--text-secondary);">عرض ${totalItems > 0 ? startIndex + 1 : 0} - ${endIndex} من أصل ${totalItems} رحلة</div>
+            <div style="color:var(--text-secondary);">عرض ${totalItems > 0 ? startIndex + 1 : 0} - ${endIndex} من أصل ${totalItems} رحلة وطلب</div>
             <div style="display:flex;gap:6px;align-items:center;">
               <button class="btn btn-outline btn-sm" style="padding:4px 10px;" ${page === 1 ? 'disabled style="opacity:0.5;pointer-events:none;"' : ''} onclick="changePage('trips', ${page - 1})">السابق</button>
               <span style="font-weight:700;">صفحة ${page} من ${totalPages}</span>
@@ -1486,7 +1573,7 @@ function renderTrips() {
 }
 
 function changeTripPricePrompt(requestId) {
-  const newPriceStr = prompt('ادخل السعر الجديد للرحلة (ج.م):');
+  const newPriceStr = prompt('ادخل السعر الجديد للطلب / الرحلة (ج.م):');
   const newPrice = parseFloat(newPriceStr);
   if (isNaN(newPrice) || newPrice <= 0) {
     showToast('⚠️ سعر غير صالح');
@@ -1502,21 +1589,21 @@ function changeTripPricePrompt(requestId) {
             trip.price = newPrice;
             renderPage('trips');
           }
-          logAction(`تعديل سعر الرحلة ${requestId} إلى ${newPrice} ج.م`);
-          showToast(`✅ تم تعديل سعر الرحلة بنجاح`);
+          logAction(`تعديل سعر الطلب/الرحلة ${requestId} إلى ${newPrice} ج.م`);
+          showToast(`✅ تم تعديل السعر بنجاح`);
           if (typeof window.runBulkSync === 'function') {
             window.runBulkSync();
           }
 
-          // Push Notification: إبلاغ الراكب بتعديل سعر الرحلة
+          // Push Notification: إبلاغ العميل بتعديل السعر
           try {
             const { data: reqData } = await supabaseClient.from('ride_requests')
               .select('passenger_id').eq('id', requestId).maybeSingle();
             if (reqData && reqData.passenger_id) {
               await sendPushNotificationBackend({
                 recipientId: reqData.passenger_id,
-                title: '🔄 تم تعديل سعر الرحلة',
-                body: `تم تعديل سعر رحلتك إلى ${newPrice} ج.م بواسطة إدارة inRide.`,
+                title: '🔄 تم تعديل السعر',
+                body: `تم تعديل سعر طلبك/رحلتك إلى ${newPrice} ج.م بواسطة إدارة inRide.`,
                 type: 'wallet'
               });
             }
@@ -1538,7 +1625,174 @@ function changeTripPricePrompt(requestId) {
 
 function filterTrips(filter) {
   currentFilter = filter;
+  if (currentPages['trips']) {
+    currentPages['trips'] = 1;
+  }
   renderPage('trips');
+}
+
+function showTripDetailsModal(requestId) {
+  if (!requestId) return;
+  const trip = (mockData.trips || []).find(t => t.requestId === requestId || t.id === requestId);
+  const rawData = (mockData.tripsDataMap && mockData.tripsDataMap[requestId]) || (trip ? mockData.tripsDataMap[trip.requestId] : null) || {};
+  if (!trip && !rawData.id) {
+    showToast('⚠️ تعذر العثور على بيانات هذا الطلب');
+    return;
+  }
+
+  const isDelivery = trip ? trip.isDelivery : (rawData.service_type === 'delivery' || rawData.vehicle_type === 'delivery');
+  const tripId = trip ? trip.id : (rawData.id || '').substring(0, 8).toUpperCase();
+  const reqId = trip ? trip.requestId : rawData.id;
+  const price = trip ? trip.price : (rawData.offered_fare || 0);
+  const status = trip ? trip.status : (rawData.status || 'Pending');
+  const dateStr = trip ? trip.date : new Date(rawData.created_at || Date.now()).toLocaleString('ar-EG');
+  const fromAddr = trip ? trip.from : (rawData.pickup_address || '—');
+  const toAddr = trip ? trip.to : (rawData.destination_address || '—');
+  const packageDesc = trip ? trip.packageDescription : (rawData.package_description || '');
+  const notes = trip ? trip.deliveryNotes : (rawData.delivery_notes || '');
+  const rPhone = trip ? trip.riderPhone : (rawData.passenger_phone || '—');
+  const rName = trip ? trip.riderName : 'العميل';
+  const recPhone = trip ? trip.recipientPhone : (rawData.recipient_phone || '');
+  const dName = trip ? trip.driverName : '—';
+  const deliveryVehicle = trip ? trip.deliveryVehicle : (rawData.vehicle_type === 'car' ? 'عربية' : 'موتوسيكل');
+  const vehicle = trip ? trip.vehicle : (isDelivery ? `ديلفري (طرد) - ${deliveryVehicle}` : (rawData.vehicle_type || 'عربية'));
+
+  let modal = document.getElementById('tripDetailsModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'tripDetailsModal';
+    modal.className = 'modal-overlay';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:99999;padding:16px;';
+    document.body.appendChild(modal);
+  }
+
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 40px rgba(0,0,0,0.3);direction:rtl;">
+      <div style="padding:16px 20px;background:${isDelivery ? 'linear-gradient(135deg, #EA580C, #C2410C)' : 'linear-gradient(135deg, #1E40AF, #1E293B)'};color:white;display:flex;justify-content:space-between;align-items:center;border-radius:16px 16px 0 0;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <i class="${isDelivery ? 'ri-box-3-fill' : 'ri-car-fill'}" style="font-size:24px;"></i>
+          <div>
+            <h3 style="margin:0;font-size:16px;font-weight:800;">${isDelivery ? 'تفاصيل طلب الديلفري والتوصيل' : 'تفاصيل مشوار الراكب'}</h3>
+            <span style="font-size:12px;opacity:0.9;font-family:'Outfit',sans-serif;font-weight:700;">#${tripId}</span>
+          </div>
+        </div>
+        <button onclick="closeTripDetailsModal()" style="background:none;border:none;color:white;font-size:24px;cursor:pointer;line-height:1;">&times;</button>
+      </div>
+
+      <div style="padding:20px;display:flex;flex-direction:column;gap:14px;font-size:13px;">
+        <!-- Status & Price Ribbon -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:#F8FAFC;border-radius:10px;border:1px solid #E2E8F0;">
+          <div>
+            <span style="font-size:11px;color:#64748B;display:block;margin-bottom:2px;">حالة الطلب:</span>
+            <span class="status-badge ${getStatusClass(status)}" style="font-size:12px;">
+              <span class="status-dot"></span> ${status}
+            </span>
+          </div>
+          <div style="text-align:left;">
+            <span style="font-size:11px;color:#64748B;display:block;margin-bottom:2px;">السعر الإجمالي:</span>
+            <span class="price font-outfit" style="font-size:18px;color:${isDelivery ? '#EA580C' : 'var(--medium-blue)'};">${price}</span>
+            <span class="price-currency">ج.م</span>
+          </div>
+        </div>
+
+        <!-- Time & Service -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div style="padding:10px;background:#F8FAFC;border-radius:8px;border:1px solid #E2E8F0;">
+            <span style="font-size:11px;color:#64748B;"><i class="ri-time-line"></i> وقت الطلب:</span>
+            <div style="font-weight:700;margin-top:2px;">${dateStr}</div>
+          </div>
+          <div style="padding:10px;background:#F8FAFC;border-radius:8px;border:1px solid #E2E8F0;">
+            <span style="font-size:11px;color:#64748B;"><i class="ri-steering-2-line"></i> نوع الخدمة والمركبة:</span>
+            <div style="font-weight:700;margin-top:2px;display:flex;align-items:center;gap:6px;">
+              ${isDelivery ? `
+                <i class="ri-box-3-fill" style="color:#EA580C;font-size:16px;"></i>
+                <span>طرد ديلفري</span>
+                <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;${deliveryVehicle === 'عربية' ? 'background:#DCFCE7;color:#166534;border:1px solid #BBF7D0;' : 'background:#DBEAFE;color:#1E40AF;border:1px solid #BFDBFE;'}">
+                  <i class="${deliveryVehicle === 'عربية' ? 'ri-car-fill' : 'ri-riding-line'}"></i>
+                  ${deliveryVehicle === 'عربية' ? 'عربية' : 'موتوسيكل'}
+                </span>
+              ` : `
+                <i class="${getVehicleIcon(vehicle)}" style="color:var(--medium-blue);"></i>
+                <span>${vehicle}</span>
+              `}
+            </div>
+          </div>
+        </div>
+
+        <!-- Customer & Recipient -->
+        <div style="padding:12px;background:#FFF7ED;border-radius:10px;border:1px solid #FED7AA;">
+          <div style="font-weight:700;color:#9A3412;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+            <i class="ri-user-shared-line"></i> بيانات العميل والمرسل:
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span><strong>الاسم:</strong> ${rName}</span>
+            <span><strong>الهاتف:</strong> <a href="tel:${rPhone}" style="color:#C2410C;direction:ltr;font-weight:700;">${rPhone}</a></span>
+          </div>
+          ${isDelivery && recPhone ? `
+            <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #FDBA74;display:flex;justify-content:space-between;align-items:center;">
+              <span style="color:#9A3412;"><strong><i class="ri-user-received-line"></i> المستلم:</strong></span>
+              <span><strong>الهاتف:</strong> <a href="tel:${recPhone}" style="color:#C2410C;direction:ltr;font-weight:700;">${recPhone}</a></span>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- Captain -->
+        <div style="padding:12px;background:#F1F5F9;border-radius:10px;border:1px solid #E2E8F0;">
+          <div style="font-weight:700;color:#1E293B;margin-bottom:4px;display:flex;align-items:center;gap:6px;">
+            <i class="ri-steering-2-fill text-blue"></i> بيانات الكابتن المنفذ:
+          </div>
+          <div><strong>الكابتن:</strong> ${dName}</div>
+        </div>
+
+        <!-- Route -->
+        <div style="padding:12px;background:#F8FAFC;border-radius:10px;border:1px solid #E2E8F0;">
+          <div style="font-weight:700;color:#1E293B;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+            <i class="ri-map-pin-range-fill text-blue"></i> مسار الطلب:
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div><strong style="color:#2563EB;">نقطة الانطلاق (استلام):</strong> ${fromAddr}</div>
+            <div><strong style="color:#EA580C;">الوجهة (تسليم):</strong> ${toAddr}</div>
+          </div>
+          ${trip ? getReceiverTrackingHtml(trip) : ''}
+        </div>
+
+        <!-- Parcel Info (if delivery) -->
+        ${isDelivery ? `
+          <div style="padding:12px;background:#FFFBEB;border-radius:10px;border:1px solid #FDE68A;">
+            <div style="font-weight:700;color:#92400E;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+              <i class="ri-archive-line"></i> بيانات ومحتوى الشحنة:
+            </div>
+            <div><strong>وصف الطرد:</strong> ${packageDesc || 'طرد ديلفري'}</div>
+            ${notes ? `<div style="margin-top:4px;"><strong>تعليمات خاصة:</strong> ${notes}</div>` : ''}
+            ${(trip && (trip.recipientRegion || trip.recipientStreet || trip.recipientBuilding || trip.recipientFloor)) ? `
+              <div style="margin-top:6px;font-size:12px;color:#78350F;background:#FEF3C7;padding:4px 8px;border-radius:6px;">
+                <strong>عنوان التسليم بالتفصيل:</strong> ${[trip.recipientRegion, trip.recipientStreet, trip.recipientBuilding ? 'عمارة ' + trip.recipientBuilding : '', trip.recipientFloor ? 'دور ' + trip.recipientFloor : '', trip.recipientLandmark ? 'علامة: ' + trip.recipientLandmark : ''].filter(Boolean).join(' - ')}
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
+      </div>
+
+      <!-- Actions Footer -->
+      <div style="padding:14px 20px;background:#F8FAFC;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;gap:8px;border-radius:0 0 16px 16px;flex-wrap:wrap;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" onclick="changeTripPricePrompt('${reqId}')" style="font-size:12px;"><i class="ri-edit-line"></i> تسعير</button>
+          ${(!['مكتملة', 'ملغاة'].includes(status) && !['completed', 'finished', 'cancelled', 'expired'].includes((trip ? trip.rawStatus : '').toLowerCase())) ? `
+            <button class="btn btn-sm" style="background:#991B1B;color:#FFFFFF;border:none;font-size:12px;" onclick="closeTripDetailsModal(); modifyTripStatus('${reqId}', 'Cancelled', 'admin')"><i class="ri-shield-cross-line"></i> إلغاء إداري</button>
+            <button class="btn btn-success btn-sm" style="font-size:12px;background:var(--success);" onclick="closeTripDetailsModal(); modifyTripStatus('${reqId}', 'Completed')"><i class="ri-check-line"></i> إنهاء الطلب</button>
+          ` : ''}
+        </div>
+        <button onclick="closeTripDetailsModal()" class="btn btn-primary btn-sm" style="padding:6px 16px;border-radius:8px;">إغلاق</button>
+      </div>
+    </div>
+  `;
+}
+
+function closeTripDetailsModal() {
+  const modal = document.getElementById('tripDetailsModal');
+  if (modal) {
+    modal.remove();
+  }
 }
 
 // ---- DRIVERS ----
@@ -6075,13 +6329,19 @@ async function deleteRegionPricing(id) {
 async function saveSettings() {
   if (supabaseClient) {
     try {
+      const minFareVal = Number(mockData.settings.minFare ?? 35);
+      mockData.settings.minFare = minFareVal;
+      mockData.settings.defaultFareCar = Math.max(minFareVal, Number(mockData.settings.defaultFareCar ?? 35));
+      mockData.settings.defaultFareScooter = Math.max(minFareVal, Number(mockData.settings.defaultFareScooter ?? 35));
+      mockData.settings.defaultFareMotorcycle = Math.max(minFareVal, Number(mockData.settings.defaultFareMotorcycle ?? 35));
+
       const updateObj = {
-        default_fare_car: Number(mockData.settings.defaultFareCar ?? 45),
-        default_fare_scooter: Number(mockData.settings.defaultFareScooter ?? 20),
-        default_fare_motorcycle: Number(mockData.settings.defaultFareMotorcycle ?? 15),
-        commission_rate: Number(mockData.settings.commissionRate ?? 10),
-        min_fare: Number(mockData.settings.minFare ?? 10),
-        max_fare: Number(mockData.settings.maxFare ?? 500),
+        default_fare_car: mockData.settings.defaultFareCar,
+        default_fare_scooter: mockData.settings.defaultFareScooter,
+        default_fare_motorcycle: mockData.settings.defaultFareMotorcycle,
+        commission_rate: Number(mockData.settings.commissionRate ?? 0),
+        min_fare: minFareVal,
+        max_fare: Number(mockData.settings.maxFare ?? 10000),
         first_km_fare: Number(mockData.settings.first_km_fare ?? 20),
         extra_km_fare: Number(mockData.settings.extra_km_fare ?? 5),
         ac_km_fare: Number(mockData.settings.ac_km_fare ?? 1),
@@ -8897,7 +9157,7 @@ function initSupabaseSync() {
 
         let rName = passengerObj.cleanName || passengerObj.name || passengerObj.full_name;
         if (!rName || rName === 'مستخدم هاتف' || rName === 'مستخدم جديد' || rName.trim() === '') {
-          rName = passengerObj.phone_number || passengerObj.phone || (pId ? 'راكب (' + pId.substring(0, 6) + ')' : 'عميل');
+          rName = passengerObj.phone_number || passengerObj.phone || data.passenger_phone || (pId ? 'عميل (' + pId.substring(0, 6) + ')' : 'عميل');
         }
 
         let dName = '—';
@@ -8908,11 +9168,63 @@ function initSupabaseSync() {
           }
         }
 
+        const serviceType = (data.service_type || data.serviceType || '').toLowerCase();
+        const vehicleTypeRaw = (data.vehicle_type || data.vehicleType || '').toLowerCase();
+        const isDelivery = serviceType === 'delivery' || vehicleTypeRaw === 'delivery';
+
+        // Check assigned driver's vehicle if available
+        let driverVehicleObj = null;
+        if (dId) {
+          driverVehicleObj = vehiclesByDriver[dId];
+          if (!driverVehicleObj) {
+            const drv = driversList.find(d => d.id === dId);
+            if (drv && drv.vehicle_id) driverVehicleObj = vehiclesById[drv.vehicle_id];
+          }
+        }
+
+        // Determine vehicle for delivery (motorcycle vs car)
+        let deliveryVehicle = 'موتوسيكل'; // Default delivery vehicle
+        if (driverVehicleObj) {
+          const dVType = (driverVehicleObj.type || driverVehicleObj.vehicle_category || '').toLowerCase();
+          const dVModel = (driverVehicleObj.model || '').toLowerCase();
+          if (dVType === 'car' || dVType === 'private_car' || dVType === 'taxi' || dVType === 'ملاكي' || dVType === 'سيارة' || dVType === 'عربية') {
+            deliveryVehicle = 'عربية';
+          } else if (dVType === 'motorcycle' || dVType === 'scooter' || dVType === 'bike' || dVModel.includes('بوكسر') || dVModel.includes('بجاج') || dVModel.includes('دايون') || dVModel.includes('هوجان') || dVModel.includes('حلاوة')) {
+            deliveryVehicle = 'موتوسيكل';
+          }
+        } else if (vehicleTypeRaw === 'car' || vehicleTypeRaw === 'private_car' || vehicleTypeRaw === 'ملاكي' || vehicleTypeRaw === 'سيارة' || vehicleTypeRaw === 'عربية') {
+          deliveryVehicle = 'عربية';
+        } else if (vehicleTypeRaw === 'motorcycle' || vehicleTypeRaw === 'scooter' || vehicleTypeRaw === 'بايك' || vehicleTypeRaw === 'موتوسيكل') {
+          deliveryVehicle = 'موتوسيكل';
+        }
+
+        let vehicleName = 'عربية';
+        if (isDelivery) {
+          vehicleName = `ديلفري (طرد) - ${deliveryVehicle}`;
+        } else if (vehicleTypeRaw === 'scooter') {
+          vehicleName = 'اسكوتر';
+        } else if (vehicleTypeRaw === 'motorcycle') {
+          vehicleName = 'موتوسيكل';
+        }
+
         let statusArabic = 'جارية';
-        if (st === 'completed' || st === 'finished') statusArabic = 'مكتملة';
-        else if (st === 'cancelled') statusArabic = 'ملغاة';
-        else if (st === 'pending') statusArabic = 'بانتظار سائق';
-        else if (st === 'accepted') statusArabic = 'تم القبول';
+        if (st === 'completed' || st === 'finished') {
+          statusArabic = 'مكتملة';
+        } else if (st === 'cancelled') {
+          statusArabic = 'ملغاة';
+        } else if (st === 'pending' || st === 'searching') {
+          if (isDelivery && data.is_delivery_location_confirmed === false) {
+            statusArabic = 'بانتظار تأكيد المستلم';
+          } else {
+            statusArabic = 'بانتظار سائق';
+          }
+        } else if (st === 'accepted' || st === 'driveronway') {
+          statusArabic = isDelivery ? 'الكابتن بالطريق للاستلام' : 'تم القبول';
+        } else if (st === 'arrived') {
+          statusArabic = isDelivery ? 'وصل للاستلام' : 'وصل السائق';
+        } else if (st === 'in_progress' || st === 'ontrip' || st === 'inprogress') {
+          statusArabic = isDelivery ? 'جاري توصيل الطرد' : 'جارية';
+        }
 
         fullTrips.push({
           id: (data.id || '').substring(0, 8).toUpperCase(),
@@ -8921,7 +9233,7 @@ function initSupabaseSync() {
           createdAt: data.created_at,
           riderUid: pId,
           riderName: rName,
-          riderPhone: passengerObj.phone_number || passengerObj.phone || '—',
+          riderPhone: passengerObj.phone_number || passengerObj.phone || data.passenger_phone || '—',
           driverUid: dId,
           driverName: dName,
           from: data.pickup_address || data.pickupAddress || '—',
@@ -8929,8 +9241,29 @@ function initSupabaseSync() {
           price: tripPrice,
           status: statusArabic,
           rawStatus: data.status || 'Pending',
-          vehicle: data.vehicle_type === 'scooter' ? 'اسكوتر' : (data.vehicle_type === 'motorcycle' ? 'موتوسيكل' : 'عربية'),
-          isDeliveryLocationConfirmed: data.is_delivery_location_confirmed || false,
+          vehicle: vehicleName,
+          vehicleTypeRaw: vehicleTypeRaw,
+          serviceType: isDelivery ? 'delivery' : 'ride',
+          isDelivery: isDelivery,
+          deliveryVehicle: deliveryVehicle,
+          packageDescription: data.package_description || data.packageDescription || '',
+          deliveryNotes: data.delivery_notes || data.deliveryNotes || '',
+          recipientPhone: data.recipient_phone || data.recipientPhone || '',
+          recipientRegion: data.recipient_region || data.recipientRegion || '',
+          recipientStreet: data.recipient_street || data.recipientStreet || '',
+          recipientBuilding: data.recipient_building || data.recipientBuilding || '',
+          recipientFloor: data.recipient_floor || data.recipientFloor || '',
+          recipientLandmark: data.recipient_landmark || data.recipientLandmark || '',
+          pickupPhotoUrl: data.pickup_photo_url || data.pickupPhotoUrl || '',
+          deliveryPhotoUrl: data.delivery_photo_url || data.deliveryPhotoUrl || '',
+          isDeliveryLocationConfirmed: data.is_delivery_location_confirmed !== false,
+          linkOpened: data.link_opened || false,
+          linkOpenedTime: data.link_opened_time || null,
+          locationPermissionGranted: data.location_permission_granted,
+          locationSent: data.location_sent || false,
+          receiverLocationSource: data.receiver_location_source || '',
+          locationSentTime: data.location_sent_time || null,
+          receiverLocationConfirmed: data.receiver_location_confirmed || false,
           cancelledBy: data.cancelled_by || data.cancelledBy || '',
           cancelReason: data.cancel_reason || data.cancellation_reason || '',
         });
@@ -8969,13 +9302,14 @@ function initSupabaseSync() {
       // This prevents race conditions where auto-sync reads stale DB data before the write propagates
       const settingsCooldownActive = (Date.now() - settingsLastSavedAt) < 5000;
       if (settingsData && !settingsDirty && !settingsCooldownActive) {
+        const incomingMinFare = settingsData.min_fare !== undefined && settingsData.min_fare !== null ? parseFloat(settingsData.min_fare) : 35;
         mockData.settings = {
-          defaultFareCar: settingsData.default_fare_car !== undefined && settingsData.default_fare_car !== null ? parseFloat(settingsData.default_fare_car) : 45,
-          defaultFareScooter: settingsData.default_fare_scooter !== undefined && settingsData.default_fare_scooter !== null ? parseFloat(settingsData.default_fare_scooter) : 20,
-          defaultFareMotorcycle: settingsData.default_fare_motorcycle !== undefined && settingsData.default_fare_motorcycle !== null ? parseFloat(settingsData.default_fare_motorcycle) : 15,
-          commissionRate: settingsData.commission_rate !== undefined && settingsData.commission_rate !== null ? parseFloat(settingsData.commission_rate) : 10,
-          minFare: settingsData.min_fare !== undefined && settingsData.min_fare !== null ? parseFloat(settingsData.min_fare) : 10,
-          maxFare: settingsData.max_fare !== undefined && settingsData.max_fare !== null ? parseFloat(settingsData.max_fare) : 500,
+          defaultFareCar: Math.max(incomingMinFare, settingsData.default_fare_car !== undefined && settingsData.default_fare_car !== null ? parseFloat(settingsData.default_fare_car) : 35),
+          defaultFareScooter: Math.max(incomingMinFare, settingsData.default_fare_scooter !== undefined && settingsData.default_fare_scooter !== null ? parseFloat(settingsData.default_fare_scooter) : 35),
+          defaultFareMotorcycle: Math.max(incomingMinFare, settingsData.default_fare_motorcycle !== undefined && settingsData.default_fare_motorcycle !== null ? parseFloat(settingsData.default_fare_motorcycle) : 35),
+          commissionRate: settingsData.commission_rate !== undefined && settingsData.commission_rate !== null ? parseFloat(settingsData.commission_rate) : 0,
+          minFare: incomingMinFare,
+          maxFare: settingsData.max_fare !== undefined && settingsData.max_fare !== null ? parseFloat(settingsData.max_fare) : 10000,
           first_km_fare: settingsData.first_km_fare !== undefined && settingsData.first_km_fare !== null ? parseFloat(settingsData.first_km_fare) : 20,
           extra_km_fare: settingsData.extra_km_fare !== undefined && settingsData.extra_km_fare !== null ? parseFloat(settingsData.extra_km_fare) : 5,
           ac_km_fare: settingsData.ac_km_fare !== undefined && settingsData.ac_km_fare !== null ? parseFloat(settingsData.ac_km_fare) : 1,
@@ -9206,9 +9540,21 @@ function downloadCSV(filename, data, headers) {
 }
 
 function exportTripsCSV() {
-  const headers = ['رقم الرحلة', 'التاريخ', 'الراكب', 'السائق', 'نقطة الانطلاق', 'الوجهة', 'السعر (ج.م)', 'المركبة', 'الحالة'];
-  const data = mockData.trips.map(t => [t.id, t.date, t.riderName, t.driverName, t.from, t.to, t.price, t.vehicle, t.status]);
-  downloadCSV('inRide_Trips_' + new Date().toISOString().slice(0, 10) + '.csv', data, headers);
+  const headers = ['رقم الطلب/الرحلة', 'نوع الخدمة', 'التاريخ', 'العميل/المرسل', 'السائق/الكابتن', 'نقطة الانطلاق', 'الوجهة/المستلم', 'وصف الطرد', 'السعر (ج.م)', 'المركبة', 'الحالة'];
+  const data = mockData.trips.map(t => [
+    t.id,
+    t.isDelivery ? `ديلفري (طرد - ${t.deliveryVehicle || 'موتوسيكل'})` : 'مشوار راكب',
+    t.date,
+    t.riderName + (t.riderPhone && t.riderPhone !== '—' ? ` (${t.riderPhone})` : ''),
+    t.driverName,
+    t.from,
+    t.to + (t.recipientPhone ? ` [المستلم: ${t.recipientPhone}]` : ''),
+    t.packageDescription || '—',
+    t.price,
+    t.isDelivery ? (t.deliveryVehicle || 'موتوسيكل') : t.vehicle,
+    t.status
+  ]);
+  downloadCSV('inRide_Trips_Orders_' + new Date().toISOString().slice(0, 10) + '.csv', data, headers);
 }
 
 function exportDriversCSV() {
@@ -11196,13 +11542,25 @@ function initDashboardRealtimeTriggers() {
       const ride = payload.new;
       if (ride) {
         const fare = ride.offered_fare || ride.offeredFare || 0;
-        addDashboardNotification(
-          'طلب رحلة جديد 🚗',
-          `رحلة جديدة من ${ride.pickup_address || 'الموقع الحالي'} بقيمة ${fare} ج.م`,
-          'ride',
-          'ri-car-fill',
-          'trips'
-        );
+        const isDelivery = (ride.service_type === 'delivery' || ride.vehicle_type === 'delivery');
+        if (isDelivery) {
+          const parcelDesc = ride.package_description ? ` (${ride.package_description})` : '';
+          addDashboardNotification(
+            'طلب ديلفري جديد 📦',
+            `طلب توصيل طرد بقيمة ${fare} ج.م من ${ride.pickup_address || 'الموقع الحالي'}${parcelDesc}`,
+            'delivery',
+            'ri-box-3-fill',
+            'trips'
+          );
+        } else {
+          addDashboardNotification(
+            'طلب رحلة جديد 🚗',
+            `رحلة جديدة من ${ride.pickup_address || 'الموقع الحالي'} بقيمة ${fare} ج.م`,
+            'ride',
+            'ri-car-fill',
+            'trips'
+          );
+        }
       }
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_messages' }, payload => {

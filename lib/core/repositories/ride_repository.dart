@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/ride_request_model.dart';
@@ -85,7 +86,7 @@ class RideRepository {
       destinationLongitude: destLng,
       destinationAddress: destAddress,
       vehicleType: vehicleType,
-      offeredFare: offeredFare,
+      offeredFare: max(GlobalState.instance.minFare, offeredFare),
       distance: distance,
       status: 'Pending',
       createdAt: DateTime.now(),
@@ -116,12 +117,14 @@ class RideRepository {
     required double pickupLat,
     required double pickupLng,
     required String vehicleType,
+    String serviceType = 'ride',
     required double maxRangeKm,
   }) async {
     AppLogger.rideLog('SearchDrivers', 'Searching for eligible drivers within $maxRangeKm km', extra: {
       'pickupLat': pickupLat,
       'pickupLng': pickupLng,
       'vehicleType': vehicleType,
+      'serviceType': serviceType,
     });
 
     try {
@@ -155,13 +158,16 @@ class RideRepository {
           continue;
         }
 
-        // Heartbeat / freshness check: ignore drivers inactive for > 5 minutes
+        // Heartbeat / freshness check: ignore drivers inactive for > 45 minutes
+        // Only exclude if driver's last update is genuinely more than 45 minutes in the past.
+        // We do not use .abs() because client clock desync (where client clock is behind server)
+        // produces negative diff, which .abs() would mistakenly treat as expired!
         final updatedAtRaw = driverMap['updated_at'];
         if (updatedAtRaw != null) {
           final updatedAt = DateTime.tryParse(updatedAtRaw.toString())?.toUtc();
           if (updatedAt != null) {
-            final diffMinutes = DateTime.now().toUtc().difference(updatedAt).inMinutes.abs();
-            if (diffMinutes > 5) {
+            final diffMinutes = DateTime.now().toUtc().difference(updatedAt).inMinutes;
+            if (diffMinutes > 45) {
               AppLogger.driverCheckLog(driverId.toString(), false, 'Driver heartbeat expired ($diffMinutes min ago)');
               continue;
             }
@@ -188,7 +194,12 @@ class RideRepository {
           continue;
         }
 
-        String driverVehicleType = driverMap['vehicle_category'] ?? driverMap['vehicle_type'] ?? driverMap['vehicleCategory'] ?? driverMap['vehicleType'] ?? driverMap['vehicle_name'] ?? '';
+        String driverVehicleType = (driverMap['vehicle_category'] ?? 
+            driverMap['vehicle_type'] ?? 
+            driverMap['vehicleCategory'] ?? 
+            driverMap['vehicleType'] ?? 
+            driverMap['vehicle_name'] ?? 
+            '').toString().trim();
         VehicleModel? vehicle;
 
         if (driverModel.vehicleId != null && driverModel.vehicleId.toString().isNotEmpty) {
@@ -201,11 +212,33 @@ class RideRepository {
             if (vehicleRes != null) {
               final vMap = Map<String, dynamic>.from(vehicleRes);
               vehicle = VehicleModel.fromMap(vMap, vMap['id']);
-              driverVehicleType = vMap['vehicle_category'] ?? vMap['type'] ?? vehicle.type;
+              final vCat = (vMap['vehicle_category'] ?? vMap['type'] ?? vehicle.type).toString().trim();
+              if (vCat.isNotEmpty && vCat != 'null') {
+                driverVehicleType = vCat;
+              }
             }
           } catch (e) {
             AppLogger.error('SearchDrivers', 'Error fetching vehicle record for driver $driverId', e);
           }
+        }
+
+        // Fallback: If vehicleId was missing or vehicleRes was null, try finding vehicle by driver_id
+        if (vehicle == null || driverVehicleType.isEmpty) {
+          try {
+            final vehicleByDriver = await _supabase
+                .from('vehicles')
+                .select()
+                .eq('driver_id', driverId)
+                .maybeSingle();
+            if (vehicleByDriver != null) {
+              final vMap = Map<String, dynamic>.from(vehicleByDriver);
+              vehicle = VehicleModel.fromMap(vMap, vMap['id']);
+              final vCat = (vMap['vehicle_category'] ?? vMap['type'] ?? vehicle.type).toString().trim();
+              if (vCat.isNotEmpty && vCat != 'null') {
+                driverVehicleType = vCat;
+              }
+            }
+          } catch (_) {}
         }
 
         vehicle ??= VehicleModel(
@@ -214,10 +247,10 @@ class RideRepository {
           model: driverMap['vehicle_name'] ?? 'مركبة',
           numberPlate: driverMap['vehicle_number'] ?? '',
           color: 'فضي',
-          type: driverVehicleType.isNotEmpty ? driverVehicleType : 'car',
+          type: driverVehicleType.isNotEmpty ? driverVehicleType : 'motorcycle',
         );
 
-        if (VehicleHelper.isVehicleTypeMatching(driverVehicleType, vehicleType)) {
+        if (VehicleHelper.isVehicleTypeMatching(driverVehicleType, vehicleType, serviceType: serviceType)) {
           qualifiedCount++;
           String name = 'سائق';
           double rating = 0.0;
@@ -422,6 +455,23 @@ class RideRepository {
     }
   }
 
+  /// Fetch a single ride request by ID
+  Future<RideRequestModel?> fetchRequestById(String requestId) async {
+    try {
+      final res = await _supabase
+          .from('ride_requests')
+          .select()
+          .eq('id', requestId)
+          .maybeSingle();
+      if (res != null) {
+        return RideRequestModel.fromMap(Map<String, dynamic>.from(res), res['id']);
+      }
+    } catch (e, stack) {
+      AppLogger.error('FetchRequestById', 'Error fetching request $requestId', e, stack);
+    }
+    return null;
+  }
+
   /// Stream of active pending requests for drivers
   Stream<List<RideRequestModel>> streamPendingRequests() {
     AppLogger.streamLog('PendingRequests', 'Subscribing for online drivers');
@@ -429,6 +479,7 @@ class RideRepository {
         .from('ride_requests')
         .stream(primaryKey: ['id'])
         .order('created_at', ascending: false)
+        .limit(50)
         .map((dataList) {
       final pendingRequests = dataList
           .map((data) => RideRequestModel.fromMap(Map<String, dynamic>.from(data), data['id']))
@@ -589,13 +640,13 @@ class RideRepository {
         final bool isAvailable = driver['is_available'] ?? driver['isAvailable'] ?? true;
         if (!isAvailable) return false;
 
-        // Freshness check: exclude drivers who haven't sent a location/heartbeat in > 5 minutes
+        // Freshness check: exclude drivers who haven't sent a location/heartbeat in > 45 minutes
         final updatedAtRaw = driver['updated_at'];
         if (updatedAtRaw != null) {
           final updatedAt = DateTime.tryParse(updatedAtRaw.toString())?.toUtc();
           if (updatedAt != null) {
-            final diffMinutes = DateTime.now().toUtc().difference(updatedAt).inMinutes.abs();
-            if (diffMinutes > 5) {
+            final diffMinutes = DateTime.now().toUtc().difference(updatedAt).inMinutes;
+            if (diffMinutes > 45) {
               return false;
             }
           }
@@ -665,6 +716,7 @@ class RideRepository {
       if (vRes != null) vehicleMap = Map<String, dynamic>.from(vRes);
     }
 
+    final safePrice = max(GlobalState.instance.minFare, price);
     final offer = RideOffer(
       id: offerId,
       driverId: driverId,
@@ -675,7 +727,7 @@ class RideRepository {
       vehicleType: vehicleMap['type'] ?? 'car',
       vehicleName: vehicleMap['model'] ?? '',
       licensePlate: vehicleMap['number_plate'] ?? '',
-      price: price,
+      price: safePrice,
       eta: eta,
       timestamp: DateTime.now(),
       status: OfferStatus.pending,
@@ -683,7 +735,7 @@ class RideRepository {
     ).toDatabaseMap();
 
     await _supabase.from('ride_offers').upsert(offer);
-    debugPrint('[TripLifecycle] Driver $driverId sent offer $offerId ($price EGP) for request $requestId');
+    debugPrint('[TripLifecycle] Driver $driverId sent offer $offerId ($safePrice EGP) for request $requestId');
     return offerId;
   }
 
@@ -717,9 +769,12 @@ class RideRepository {
     required String response,
     double? counterPrice,
   }) async {
+    final double? safeCounterPrice = counterPrice != null
+        ? max(GlobalState.instance.minFare, counterPrice)
+        : null;
     final updateData = <String, dynamic>{'status': response};
-    if (response == 'countered' && counterPrice != null) {
-      updateData['price'] = counterPrice;
+    if (response == 'countered' && safeCounterPrice != null) {
+      updateData['price'] = safeCounterPrice;
     }
     await _supabase.from('ride_offers').update(updateData).eq('id', offerId);
     debugPrint('[TripLifecycle] Responded to offer $offerId with status $response');
@@ -743,15 +798,15 @@ class RideRepository {
                 'tripId': requestId ?? '',
               },
             ));
-          } else if (response == 'countered' && counterPrice != null) {
+          } else if (response == 'countered' && safeCounterPrice != null) {
             unawaited(NotificationService.instance.sendNotification(
               recipientId: driverId.toString(),
               title: 'عرض مضاد من الراكب 💰',
-              body: 'اقترح الراكب سعراً جديداً: ${counterPrice.round()} ج.م',
+              body: 'اقترح الراكب سعراً جديداً: ${safeCounterPrice.round()} ج.م',
               type: 'new_offer',
               data: {
                 'offerId': offerId,
-                'price': counterPrice.toString(),
+                'price': safeCounterPrice.toString(),
                 'requestId': requestId ?? '',
                 'tripId': requestId ?? '',
               },

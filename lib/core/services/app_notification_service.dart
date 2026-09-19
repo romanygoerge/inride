@@ -14,6 +14,7 @@ import '../../main.dart' show navigatorKey;
 import '../../shared/widgets/in_app_notification.dart';
 import '../DI/injection_container.dart';
 import 'ride_sound_service.dart';
+import '../utils/vehicle_helper.dart';
 
 
 const AndroidNotificationChannel highImportanceChannel = AndroidNotificationChannel(
@@ -71,16 +72,24 @@ class AppNotificationService {
     }
 
     // ── 2. OneSignal Initialization ──
-    if (!OneSignalConfig.isAppConfigured) {
+    if (OneSignalConfig.isAppConfigured) {
+      try {
+        OneSignal.initialize(OneSignalConfig.appId);
+        debugPrint('[AppNotificationService] OneSignal initialized with App ID: ${OneSignalConfig.appId}');
+
+        // Permanently disable OneSignal In-App Messages / popup banners to prevent cold-start Flutter crashes.
+        // The app uses its own high-quality in-app notification system (InAppNotificationWidget).
+        OneSignal.InAppMessages.paused(true);
+      } catch (e) {
+        debugPrint('[AppNotificationService] Error initializing OneSignal: $e');
+      }
+    } else {
       debugPrint('[AppNotificationService] WARNING: OneSignal App ID not configured!');
     }
 
-    OneSignal.initialize(OneSignalConfig.appId);
-    await OneSignal.Notifications.requestPermission(true);
-    OneSignal.InAppMessages.paused(false);
-
     // ── 3. Foreground Notification Handler ──
-    OneSignal.Notifications.addForegroundWillDisplayListener((event) {
+    try {
+      OneSignal.Notifications.addForegroundWillDisplayListener((event) {
       event.preventDefault();
 
       final notif = event.notification;
@@ -105,6 +114,20 @@ class AppNotificationService {
         return;
       }
 
+      // Check vehicle category compatibility for drivers
+      if (currentRole == UserRole.driver && (type == 'new_trip' || type == 'new_ride' || type == 'delivery_request')) {
+        final reqVehicleType = (data['vehicleType'] ?? data['vehicle_type'])?.toString();
+        final serviceType = (data['serviceType'] ?? data['service_type'])?.toString();
+        final driverVehicle = GlobalState.instance.driverVehicleCategory ?? GlobalState.instance.vehicleName ?? 'car';
+
+        if (serviceType != 'delivery' && type != 'delivery_request' && reqVehicleType != null && reqVehicleType.trim().isNotEmpty) {
+          if (!VehicleHelper.isVehicleTypeMatching(driverVehicle, reqVehicleType, serviceType: serviceType)) {
+            debugPrint('[AppNotificationService] Suppressed foreground notification for vehicle mismatch: driver=$driverVehicle vs request=$reqVehicleType');
+            return;
+          }
+        }
+      }
+
       // Professional Banner Notification System:
       // When the app is in the foreground, we DO NOT show the OS-level local notification
       // to avoid redundant and unprofessional double-notifications.
@@ -113,8 +136,10 @@ class AppNotificationService {
       // Play appropriate sound based on notification type
       try {
         final soundService = sl<RideSoundService>();
-        if (_isTripCritical(type)) {
-          if (type == 'new_trip' || type == 'new_ride') {
+        if (type == 'counter_offer' || type == 'new_offer' || type == 'driver_offer') {
+          soundService.playNegotiationAlert();
+        } else if (_isTripCritical(type)) {
+          if (type == 'new_trip' || type == 'new_ride' || type == 'delivery_request') {
             soundService.playIncomingRide();
           } else {
             soundService.playSuccess();
@@ -156,19 +181,22 @@ class AppNotificationService {
       debugPrint('[AppNotificationService] Foreground notification handled with premium banner: type=$type, title=$title');
     });
 
-    // ── 4. Notification Tap Handler (Background / Terminated) ──
-    OneSignal.Notifications.addClickListener((event) {
-      final data = Map<String, dynamic>.from(event.notification.additionalData ?? {});
-      final actionId = event.result.actionId;
-      debugPrint('[Notification] Notification opened actionId=$actionId: $data');
+      // ── 4. Notification Tap Handler (Background / Terminated) ──
+      OneSignal.Notifications.addClickListener((event) {
+        final data = Map<String, dynamic>.from(event.notification.additionalData ?? {});
+        final actionId = event.result.actionId;
+        debugPrint('[Notification] Notification opened actionId=$actionId: $data');
 
-      if (actionId == 'reject_trip') {
-        debugPrint('[Notification] Driver dismissed/rejected trip push notification');
-        return;
-      }
+        if (actionId == 'reject_trip') {
+          debugPrint('[Notification] Driver dismissed/rejected trip push notification');
+          return;
+        }
 
-      NotificationService.instance.handleNotificationClick(data);
-    });
+        NotificationService.instance.handleNotificationClick(data);
+      });
+    } catch (e) {
+      debugPrint('[AppNotificationService] Error setting up OneSignal notification listeners: $e');
+    }
 
     _isInitialized = true;
     debugPrint('[AppNotificationService] Initialized successfully with OneSignal.');
@@ -217,6 +245,9 @@ class AppNotificationService {
     if (kIsWeb) return;
 
     final isCritical = _isTripCritical(type);
+    final vibrationPattern = (type == 'counter_offer' || type == 'new_offer' || type == 'driver_offer' || isCritical)
+        ? Int64List.fromList([0, 250, 150, 250, 150, 250])
+        : null;
 
     _localNotifications.show(
       id,
@@ -232,6 +263,7 @@ class AppNotificationService {
           priority: Priority.high,
           playSound: true,
           enableVibration: true,
+          vibrationPattern: vibrationPattern,
           // BigTextStyle allows the notification to expand and show full body text
           styleInformation: BigTextStyleInformation(
             body,
@@ -262,5 +294,28 @@ class AppNotificationService {
       ),
       payload: data != null ? jsonEncode(data) : null,
     );
+
+    // If negotiation/counter-offer, trigger in-app sound and physical haptic vibration
+    if (type == 'counter_offer' || type == 'new_offer' || type == 'driver_offer') {
+      try {
+        sl<RideSoundService>().playNegotiationAlert();
+      } catch (_) {}
+
+      // If app is currently running in foreground, display the floating interactive banner
+      final context = navigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        InAppNotificationWidget.show(
+          context,
+          title: title,
+          body: body,
+          type: type,
+          onTap: () {
+            if (data != null) {
+              NotificationService.instance.handleNotificationClick(data);
+            }
+          },
+        );
+      }
+    }
   }
 }
